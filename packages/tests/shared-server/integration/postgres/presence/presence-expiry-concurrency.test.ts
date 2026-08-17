@@ -1,3 +1,4 @@
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -1184,31 +1185,18 @@ function groupFixture(ref: GroupRef, displayName: string): Group {
     traceId: null,
     requestId: null,
   };
-  return {
+  return createTestGroup({
     ...ref,
-    slug: null,
     displayName,
-    description: null,
-    kind: "room",
-    status: "active",
-    archived: null,
-    deleted: null,
-    joinMode: "open",
-    maxMembers: null,
-    maxSessionsPerMember: null,
-    metadata: {},
     activeMemberCount: 1,
     ownerPrincipalId: "alice",
     snapshotVersion: 1,
     metadataVersion: 1,
     rosterVersion: 1,
     presenceVersion: 0,
-    expiresAtEpochMs: null,
-    emptySinceEpochMs: null,
-    purgeAfterEpochMs: null,
     created: audit,
     updated: audit,
-  };
+  });
 }
 
 async function seedExpiredClientSession(

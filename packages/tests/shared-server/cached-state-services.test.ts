@@ -19,6 +19,7 @@ import {
 } from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';
 import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('cached state services', () => {
     it('keeps client cache compatibility exports on the canonical factories', () => {
@@ -182,21 +183,11 @@ function createGroupSnapshot(stateRevision: number): GroupSnapshot {
             groupRevision: stateRevision,
             presenceRevision: 1,
         },
-        group: {
+        group: createTestGroup({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId: 'group-1',
-            slug: null,
             displayName: 'Group 1',
-            description: null,
-            kind: 'room',
-            status: 'active',
-            archived: null,
-            deleted: null,
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             snapshotVersion: 1,
             metadataVersion: 1,
             rosterVersion: 1,
@@ -205,10 +196,7 @@ function createGroupSnapshot(stateRevision: number): GroupSnapshot {
             ownerPrincipalId: 'alice',
             created: audit,
             updated: audit,
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-        },
+        }),
         members: [],
         activeSessions: [],
         memberCount: 0,

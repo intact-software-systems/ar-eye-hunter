@@ -7,19 +7,16 @@ import {
   groupStorageKey,
   storedEntry,
 } from './group-state/mutation/group-mutation-test-runtime.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 export function createCorruptionMutationRead(): GroupMutationRead {
   const audit = persistenceAuditStamp(1_000, 'alice', 'seed');
-  const group = {
+  const group = createTestGroup({
     ...groupRef('pure-room'),
-    ...{ slug: null, displayName: 'Before', description: null },
-    ...{ kind: 'room' as const, status: 'active' as const, joinMode: 'open' as const },
-    ...{ archived: null, deleted: null, expiresAtEpochMs: null },
-    ...{ maxMembers: null, maxSessionsPerMember: null, metadata: {} },
-    ...{ activeMemberCount: 1, ownerPrincipalId: 'alice' },
+    ...{ displayName: 'Before', activeMemberCount: 1, ownerPrincipalId: 'alice' },
     ...{ snapshotVersion: 1, metadataVersion: 1, rosterVersion: 1, presenceVersion: 0 },
-    ...{ emptySinceEpochMs: null, purgeAfterEpochMs: null, created: audit, updated: audit },
-  };
+    ...{ created: audit, updated: audit },
+  });
   const actorMember = {
     ...groupRef('pure-room'),
     ...{ principalId: 'alice', role: 'owner' as const, status: 'active' as const },
@@ -41,16 +38,12 @@ export function createCorruptionMutationRead(): GroupMutationRead {
 
 export function createIdentityMutationRead(): GroupMutationRead {
   const audit = persistenceAuditStamp(1_000, 'alice', 'seed');
-  const group = {
+  const group = createTestGroup({
     ...groupRef('pure-room'),
-    ...{ slug: null, displayName: 'Before', description: null },
-    ...{ kind: 'room' as const, status: 'active' as const, joinMode: 'open' as const },
-    ...{ archived: null, deleted: null, expiresAtEpochMs: null },
-    ...{ maxMembers: null, maxSessionsPerMember: null, metadata: {} },
-    ...{ activeMemberCount: 1, ownerPrincipalId: 'alice' },
+    ...{ displayName: 'Before', activeMemberCount: 1, ownerPrincipalId: 'alice' },
     ...{ snapshotVersion: 1, metadataVersion: 1, rosterVersion: 1, presenceVersion: 0 },
-    ...{ emptySinceEpochMs: null, purgeAfterEpochMs: null, created: audit, updated: audit },
-  };
+    ...{ created: audit, updated: audit },
+  });
   const actorMember = {
     ...groupRef('pure-room'),
     ...{ principalId: 'alice', role: 'owner' as const, status: 'active' as const },
@@ -72,16 +65,12 @@ export function createIdentityMutationRead(): GroupMutationRead {
 
 export function createSnapshotAssemblyMutationRead(): GroupMutationRead {
   const audit = persistenceAuditStamp(1_000, 'alice', 'seed');
-  const group = {
+  const group = createTestGroup({
     ...groupRef('pure-room'),
-    ...{ slug: null, displayName: 'Before', description: null },
-    ...{ kind: 'room' as const, status: 'active' as const, joinMode: 'open' as const },
-    ...{ archived: null, deleted: null, expiresAtEpochMs: null },
-    ...{ maxMembers: null, maxSessionsPerMember: null, metadata: {} },
-    ...{ activeMemberCount: 1, ownerPrincipalId: 'alice' },
+    ...{ displayName: 'Before', activeMemberCount: 1, ownerPrincipalId: 'alice' },
     ...{ snapshotVersion: 1, metadataVersion: 1, rosterVersion: 1, presenceVersion: 0 },
-    ...{ emptySinceEpochMs: null, purgeAfterEpochMs: null, created: audit, updated: audit },
-  };
+    ...{ created: audit, updated: audit },
+  });
   const actorMember = {
     ...groupRef('pure-room'),
     ...{ principalId: 'alice', role: 'owner' as const, status: 'active' as const },

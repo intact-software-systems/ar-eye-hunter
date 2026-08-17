@@ -12,6 +12,7 @@ import type {
 import type { StateScope } from '@shared/api/state-types.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
 import { SpaStatisticsService } from '@shared-server/rallar-system/spa-statistics/SpaStatisticsService.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
 const TEST_SCOPE: StateScope = {
@@ -577,20 +578,11 @@ function createGroupSnapshot(
     return {
         stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 1 },
-        group: {
+        group: createTestGroup({
             ...TEST_SCOPE,
             groupId,
-            slug: null,
             displayName: `Room ${groupId}`,
-            description: null,
-            kind: 'room',
-            status: 'active',
-            archived: null,
-            deleted: null,
             joinMode: 'invite-only',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             activeMemberCount: groupMembers.length,
             ownerPrincipalId: 'owner',
             snapshotVersion: 1,
@@ -599,10 +591,7 @@ function createGroupSnapshot(
             presenceVersion: 1,
             created: audit,
             updated: audit,
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-        },
+        }),
         members: groupMembers,
         activeSessions,
         memberCount: groupMembers.length,

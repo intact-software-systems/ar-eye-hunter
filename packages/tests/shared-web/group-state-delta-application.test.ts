@@ -29,6 +29,7 @@ import {
     setBrowserStateReadDiagnosticsSink,
 } from '@shared-web/browser/state-read/diagnostics.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 vi.mock('@shared/repository/group-state-snapshot-revision.ts', async (importOriginal) => {
     const actual = await importOriginal<
@@ -366,33 +367,20 @@ function createDeltaGroupSnapshot(input: DeltaGroupSnapshotInput): GroupSnapshot
         stateRevision: input.causalRevision.groupRevision +
             input.causalRevision.presenceRevision,
         causalRevision: input.causalRevision,
-        group: {
+        group: createTestGroup({
             applicationId: DEFAULT_STATE_APPLICATION_ID,
             workspaceId: DEFAULT_STATE_WORKSPACE_ID,
             groupId: input.groupId,
-            slug: null,
             displayName: input.groupId,
-            description: null,
-            kind: 'room',
-            status: 'active',
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             snapshotVersion: input.causalRevision.groupRevision,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: input.causalRevision.presenceRevision,
             created: deltaAuditStamp(),
             updated: deltaAuditStamp(),
-            archived: null,
-            deleted: null,
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
             activeMemberCount: input.memberPrincipalIds.length,
             ownerPrincipalId,
-        },
+        }),
         members: input.memberPrincipalIds.map((principalId) =>
             createDeltaGroupMember(input.groupId, principalId, principalId === ownerPrincipalId)
         ),

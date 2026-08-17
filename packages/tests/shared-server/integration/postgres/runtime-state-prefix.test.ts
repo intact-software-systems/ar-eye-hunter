@@ -13,6 +13,7 @@ import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-stat
 import {
   clientStateWorkspaceStorageKey,
 } from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const POSTGRES_INTEGRATION_ENABLED = readEnv('RALLAR_POSTGRES_INTEGRATION') === '1';
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
@@ -290,17 +291,9 @@ describe('Postgres runtime-state prefix selection', () => {
 
 function groupFixture(ref: GroupRef): Group {
   const audit = auditStamp();
-  return {
+  return createTestGroup({
     ...ref,
-    slug: null,
     displayName: ref.groupId,
-    description: null,
-    kind: 'room',
-    status: 'active',
-    joinMode: 'open',
-    maxMembers: null,
-    maxSessionsPerMember: null,
-    metadata: {},
     activeMemberCount: 1,
     ownerPrincipalId: 'alice',
     snapshotVersion: 1,
@@ -309,12 +302,7 @@ function groupFixture(ref: GroupRef): Group {
     presenceVersion: 1,
     created: audit,
     updated: audit,
-    archived: null,
-    deleted: null,
-    expiresAtEpochMs: null,
-    emptySinceEpochMs: null,
-    purgeAfterEpochMs: null,
-  };
+  });
 }
 
 function activeMemberFixture(ref: GroupRef, principalId: string): GroupMember {

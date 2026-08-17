@@ -13,6 +13,7 @@ import type {
     GroupMember,
     GroupPresenceSession,
 } from '@shared/api/group-types.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('runtime-state hierarchical prefix isolation', () => {
     it('keeps sibling workspace identifiers isolated', async () => {
@@ -140,18 +141,10 @@ function clientSession(
 }
 
 function group(workspaceId: string, groupId: string): Group {
-    return {
+    return createTestGroup({
         ...scope(workspaceId),
         groupId,
-        slug: null,
         displayName: groupId,
-        description: null,
-        kind: 'room',
-        status: 'active',
-        joinMode: 'open',
-        maxMembers: null,
-        maxSessionsPerMember: null,
-        metadata: {},
         ownerPrincipalId: 'owner',
         activeMemberCount: 1,
         snapshotVersion: 1,
@@ -160,12 +153,7 @@ function group(workspaceId: string, groupId: string): Group {
         presenceVersion: 0,
         created: auditStamp,
         updated: auditStamp,
-        expiresAtEpochMs: null,
-        emptySinceEpochMs: null,
-        purgeAfterEpochMs: null,
-        archived: null,
-        deleted: null,
-    };
+    });
 }
 
 function groupMember(

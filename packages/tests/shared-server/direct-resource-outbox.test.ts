@@ -33,6 +33,7 @@ import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/
 import { runInTransaction } from '@shared-server/postgres/run-in-transaction.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const CREATED_AT_EPOCH_MS = 1_800_000_000_000;
 const EXPIRE_AT_EPOCH_MS = 1_800_000_060_000;
@@ -858,21 +859,11 @@ function createGroupSnapshot(): GroupSnapshot {
   return {
     stateRevision: 7,
     causalRevision: { groupRevision: 4, presenceRevision: 3 },
-    group: {
+    group: createTestGroup({
       applicationId: 'app-1',
       workspaceId: 'workspace-1',
       groupId: 'room-1',
-      slug: null,
       displayName: 'Room 1',
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       activeMemberCount: 1,
       ownerPrincipalId: 'alice',
       snapshotVersion: 4,
@@ -881,10 +872,7 @@ function createGroupSnapshot(): GroupSnapshot {
       presenceVersion: 3,
       created: audit,
       updated: audit,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-    },
+    }),
     members: [
       {
         applicationId: 'app-1',

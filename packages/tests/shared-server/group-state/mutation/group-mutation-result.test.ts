@@ -23,6 +23,7 @@ import {
   groupStorageKey,
   storedEntry,
 } from './group-mutation-test-runtime.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 class GroupBarrierRepository extends FakeRuntimeStateRepository {}
 
@@ -294,31 +295,18 @@ function auditStamp(atEpochMs: number, principalId: string, requestId: string | 
 
 function createMutationRead(): GroupMutationRead {
   const audit = auditStamp(1_000, 'alice', 'seed');
-  const group = {
+  const group = createTestGroup({
     ...runtimeGroupRef('pure-room'),
-    slug: null,
     displayName: 'Before',
-    description: null,
-    kind: 'room' as const,
-    status: 'active' as const,
-    archived: null,
-    deleted: null,
-    joinMode: 'open' as const,
-    maxMembers: null,
-    maxSessionsPerMember: null,
-    metadata: {},
     activeMemberCount: 1,
     ownerPrincipalId: 'alice',
     snapshotVersion: 1,
     metadataVersion: 1,
     rosterVersion: 1,
     presenceVersion: 0,
-    expiresAtEpochMs: null,
-    emptySinceEpochMs: null,
-    purgeAfterEpochMs: null,
     created: audit,
     updated: audit,
-  };
+  });
   const actorMember = {
     ...runtimeGroupRef('pure-room'),
     principalId: 'alice',

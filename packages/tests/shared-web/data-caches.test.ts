@@ -28,6 +28,7 @@ import { findOverlayById, setOverlayById } from '@shared/repository/overlays-rep
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import * as dataCaches from '@shared-web/browser/data-caches.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('browser data caches state scope filtering', () => {
     beforeEach(() => {
@@ -1064,33 +1065,20 @@ function createGroupSnapshot(
             groupRevision: snapshotVersion,
             presenceRevision: snapshotVersion,
         },
-        group: {
+        group: createTestGroup({
             applicationId,
             workspaceId,
             groupId,
-            slug: null,
             displayName: groupId,
-            description: null,
-            kind: 'room',
-            status: 'active',
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             snapshotVersion,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: snapshotVersion,
             created: auditStamp(1),
             updated: auditStamp(snapshotVersion),
-            archived: null,
-            deleted: null,
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
             activeMemberCount: sessionIds.length,
             ownerPrincipalId,
-        },
+        }),
         members: sessionIds.map((sessionId, index) => ({
             applicationId,
             workspaceId,

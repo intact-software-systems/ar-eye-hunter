@@ -23,6 +23,7 @@ import {
   readRtcTopologyWorkEnvelope,
   toRtcTopologyExecutionId,
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-work-codec.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const GROUP_REF = {
   applicationId: 'app-1',
@@ -337,19 +338,9 @@ function createGroupSnapshot(groupRevision: number, presenceRevision: number): G
   return {
     stateRevision: toGroupSnapshotStateRevision(groupRevision, presenceRevision),
     causalRevision: { groupRevision, presenceRevision },
-    group: {
+    group: createTestGroup({
       ...GROUP_REF,
-      slug: null,
       displayName: 'Room 1',
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       activeMemberCount: 1,
       ownerPrincipalId: 'alice',
       snapshotVersion: groupRevision,
@@ -358,10 +349,7 @@ function createGroupSnapshot(groupRevision: number, presenceRevision: number): G
       presenceVersion: presenceRevision,
       created: audit,
       updated: audit,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-    },
+    }),
     members: [
       {
         ...GROUP_REF,

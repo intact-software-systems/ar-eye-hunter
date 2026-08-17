@@ -1,5 +1,6 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 interface CreateRtcTopologyRttMeasurementInput {
   readonly sessionIdFrom: string;
@@ -62,33 +63,20 @@ export function createRtcTopologyGroupSnapshot(
   return {
     stateRevision: 1,
     causalRevision: { groupRevision: 1, presenceRevision: 0 },
-    group: {
+    group: createTestGroup({
       applicationId,
       workspaceId,
       groupId,
-      slug: null,
       displayName: groupId,
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       activeMemberCount: memberSessionIds.length,
       ownerPrincipalId,
       snapshotVersion: 1,
       metadataVersion: 0,
       rosterVersion: 1,
       presenceVersion: 0,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
       created: createAuditStamp(1),
       updated: createAuditStamp(1),
-    },
+    }),
     members: memberSessionIds.map((sessionId) => ({
       applicationId,
       workspaceId,

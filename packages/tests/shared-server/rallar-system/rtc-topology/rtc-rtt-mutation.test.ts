@@ -14,6 +14,7 @@ import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-topolog
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
 import { writeRtcRttMutation } from '@shared-server/rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const RTT_COMMAND_HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_RTT_COMMAND_HASH = `sha256:${'b'.repeat(64)}`;
@@ -736,31 +737,18 @@ function rttGroupSnapshot(
   return {
     stateRevision: 2,
     causalRevision: { groupRevision: 1, presenceRevision: 1 },
-    group: {
+    group: createTestGroup({
       ...groupRef,
-      slug: null,
       displayName: 'Room 1',
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      metadata: {},
       snapshotVersion: 1,
       metadataVersion: 1,
-      maxMembers: null,
-      maxSessionsPerMember: null,
       rosterVersion: 1,
       presenceVersion: 1,
       activeMemberCount: sessionIds.length,
       ownerPrincipalId,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
       created: stamp,
       updated: stamp,
-    },
+    }),
     members: sessionIds.map<GroupMember>((sessionId, index) => ({
       ...groupRef,
       principalId: sessionId,

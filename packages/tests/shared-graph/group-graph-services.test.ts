@@ -31,6 +31,7 @@ import type {
     GroupPresenceSession,
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('shared-graph group graph services', () => {
     beforeEach(() => {
@@ -333,21 +334,13 @@ function createGroupStateSnapshot(
     return {
         stateRevision: 3,
         causalRevision: { groupRevision: 3, presenceRevision: 1 },
-        group: {
+        group: createTestGroup({
             applicationId: 'app',
             workspaceId: 'ws',
             groupId,
             slug: groupId,
             displayName: groupId,
-            description: null,
-            kind: 'room',
-            status: 'active',
-            archived: null,
-            deleted: null,
             joinMode: 'invite-only',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             activeMemberCount: sessionIds.length,
             ownerPrincipalId,
             snapshotVersion: 3,
@@ -356,10 +349,7 @@ function createGroupStateSnapshot(
             presenceVersion: 1,
             created: createAuditStamp(1, ownerPrincipalId),
             updated: createAuditStamp(1, ownerPrincipalId),
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-        },
+        }),
         members: sessionIds.map((principalId, index): GroupMember => ({
             applicationId: 'app',
             workspaceId: 'ws',

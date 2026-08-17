@@ -7,6 +7,7 @@ import {
   groupStateMemberStorageKey,
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('GroupStateRepository authority fence', () => {
   it('preserves the exact raw group bytes, physical expiry, and every domain field', async () => {
@@ -219,19 +220,9 @@ function fixture(): Readonly<{ group: Group; owner: GroupMember }> {
     requestId: null,
   } satisfies Group['created'];
   return {
-    group: {
+    group: createTestGroup({
       ...ref,
-      slug: null,
       displayName: 'Authority fence room',
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       activeMemberCount: 1,
       ownerPrincipalId: 'owner',
       snapshotVersion: 1,
@@ -240,10 +231,7 @@ function fixture(): Readonly<{ group: Group; owner: GroupMember }> {
       presenceVersion: 0,
       created: audit,
       updated: audit,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-    },
+    }),
     owner: {
       ...ref,
       principalId: 'owner',

@@ -6,6 +6,7 @@ import {
   isTuplePreservingGroupLivenessReduction,
 } from '@shared/repository/group-state-snapshot-revision.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('decideGroupSnapshotCausalRevision', () => {
   it('orders snapshots by causal tuple', () => {
@@ -126,19 +127,9 @@ function createGroupSnapshot(
   return {
     stateRevision: 4 + input.presenceRevision,
     causalRevision: { groupRevision: 4, presenceRevision: input.presenceRevision },
-    group: {
+    group: createTestGroup({
       ...ref,
-      slug: null,
       displayName: 'Room 1',
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       activeMemberCount: 2,
       ownerPrincipalId: 'alice',
       snapshotVersion: 4,
@@ -147,10 +138,7 @@ function createGroupSnapshot(
       presenceVersion: input.presenceRevision,
       created: audit,
       updated: audit,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-    },
+    }),
     members: [member('alice'), member('bob')],
     activeSessions: [session('alice', 'session-alice'), session('bob', 'session-bob')],
     memberCount: 2,

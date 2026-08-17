@@ -28,6 +28,7 @@ import {
   rekey,
 } from '../group-state-concurrency-test-fixtures.ts';
 import { groupRef, presenceFor } from '../mutation/group-mutation-test-runtime.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const REF: GroupRef = {
   applicationId: 'summary-app',
@@ -245,19 +246,9 @@ function createExpiryCrossingRead(): GroupPresenceSummaryRead {
 }
 
 function createExpiryCrossingGroup(audit: Group['created']): Group {
-  return {
+  return createTestGroup({
     ...REF,
-    slug: null,
     displayName: 'Summary group',
-    description: null,
-    kind: 'room',
-    status: 'active',
-    archived: null,
-    deleted: null,
-    joinMode: 'open',
-    maxMembers: null,
-    maxSessionsPerMember: null,
-    metadata: {},
     activeMemberCount: 1,
     ownerPrincipalId: 'alice',
     snapshotVersion: 1,
@@ -265,11 +256,9 @@ function createExpiryCrossingGroup(audit: Group['created']): Group {
     rosterVersion: 1,
     presenceVersion: 1,
     expiresAtEpochMs: 1_500,
-    emptySinceEpochMs: null,
-    purgeAfterEpochMs: null,
     created: audit,
     updated: audit,
-  };
+  });
 }
 
 function createExpiryCrossingMember(audit: GroupMember['joined']): GroupMember {

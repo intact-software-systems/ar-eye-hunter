@@ -34,6 +34,7 @@ import type {
     RuntimeStateEntry,
     RuntimeStateTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('ClientStateRepository', () => {
     it('exposes only conditional client-state mutation methods', () => {
@@ -558,14 +559,10 @@ describe('GroupStateRepository', () => {
             groupId: 'legacy-group',
         };
         const legacyAudit = { atEpochMs: 1, byServiceId: 'seed' };
-        const legacyGroup = {
+        const legacyGroup = createTestGroup({
             applicationId: ref.applicationId,
             groupId: ref.groupId,
             displayName: 'Legacy group',
-            kind: 'room',
-            status: 'active',
-            joinMode: 'open',
-            metadata: {},
             activeMemberCount: 1,
             ownerPrincipalId: 'owner',
             snapshotVersion: 1,
@@ -574,7 +571,7 @@ describe('GroupStateRepository', () => {
             presenceVersion: 0,
             created: legacyAudit,
             updated: legacyAudit,
-        };
+        });
         const legacyMember = {
             applicationId: ref.applicationId,
             groupId: ref.groupId,
@@ -1389,21 +1386,14 @@ function createClientEvent(
 }
 
 function createGroup(groupId = 'group-1'): Group {
-    return {
+    return createTestGroup({
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
         groupId,
         slug: groupId === 'group-1' ? 'party-1' : groupId,
         displayName: groupId === 'group-1' ? 'Party 1' : groupId,
-        description: null,
         kind: 'party',
-        status: 'active',
-        archived: null,
-        deleted: null,
         joinMode: 'invite-only',
-        maxMembers: null,
-        maxSessionsPerMember: null,
-        metadata: {},
         activeMemberCount: 1,
         ownerPrincipalId: ownerPrincipalIdFor(groupId),
         snapshotVersion: 6,
@@ -1412,10 +1402,7 @@ function createGroup(groupId = 'group-1'): Group {
         presenceVersion: 3,
         created: createGroupAuditStamp(1),
         updated: createGroupAuditStamp(2),
-        expiresAtEpochMs: null,
-        emptySinceEpochMs: null,
-        purgeAfterEpochMs: null,
-    };
+    });
 }
 
 function createGroupMember(

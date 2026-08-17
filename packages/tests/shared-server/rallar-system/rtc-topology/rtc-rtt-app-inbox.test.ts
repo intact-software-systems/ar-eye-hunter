@@ -20,6 +20,7 @@ import {
   createResilience,
   SCOPE,
 } from '../../group-state/inbox/group-state-inbox-test-runtime.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('durable RTC RTT refinement work', () => {
   it('preserves the accepted RTT observation in final topology work', async () => {
@@ -105,31 +106,18 @@ function createRttGroupSnapshot(nowEpochMs: number): GroupSnapshot {
   return {
     stateRevision: 2,
     causalRevision: { groupRevision: 1, presenceRevision: 1 },
-    group: {
+    group: createTestGroup({
       ...groupRef,
-      slug: null,
       displayName: 'RTC room',
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      metadata: {},
       snapshotVersion: 1,
       metadataVersion: 1,
       rosterVersion: 1,
       presenceVersion: 1,
       activeMemberCount: 2,
       ownerPrincipalId: 'alice',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
       created: audit,
       updated: audit,
-    },
+    }),
     members,
     activeSessions,
     memberCount: 2,

@@ -15,6 +15,7 @@ import {
     resolveStateSyncRecipients,
     sendStateSyncMessage,
 } from '@shared-server/rallar-system/state-sync-routing.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const NOW = 1_000;
 
@@ -304,21 +305,11 @@ function createGroupSnapshot(
     return {
         stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: members.length },
-        group: {
+        group: createTestGroup({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId: 'room-1',
-            slug: null,
             displayName: 'room-1',
-            description: null,
-            kind: 'room',
-            status: 'active',
-            archived: null,
-            deleted: null,
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             activeMemberCount: activeMembers.length,
             ownerPrincipalId: 'alice',
             snapshotVersion: 1,
@@ -327,10 +318,7 @@ function createGroupSnapshot(
             presenceVersion: members.length,
             created: audit,
             updated: audit,
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-        },
+        }),
         members: members.map(toGroupMember),
         activeSessions: members.map(toGroupPresenceSession),
         memberCount: members.filter((member) => member.status === 'active').length,

@@ -2,6 +2,7 @@ import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { AuditStamp, GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/WsQueueBoxServerService.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 export const DELTA_ENVELOPE_FIXTURE_NOW = Date.now();
 
@@ -46,21 +47,11 @@ export function createDeltaEnvelopeFixtureGroupSnapshot(
   return {
     stateRevision: 2_000_002,
     causalRevision: { groupRevision: 2, presenceRevision: 2 },
-    group: {
+    group: createTestGroup({
       applicationId: DELTA_ENVELOPE_FIXTURE_GROUP_REF.applicationId,
       workspaceId: DELTA_ENVELOPE_FIXTURE_GROUP_REF.workspaceId,
       groupId,
-      slug: null,
       displayName: groupId,
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       activeMemberCount: members.length,
       ownerPrincipalId: members[0]?.principalId ?? 'alice',
       snapshotVersion: 2,
@@ -69,10 +60,7 @@ export function createDeltaEnvelopeFixtureGroupSnapshot(
       presenceVersion: 2,
       created: audit,
       updated: audit,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-    },
+    }),
     members: members.map((member) => toFixtureActiveMember(member, groupId)),
     activeSessions: members.map((member) => toFixtureActiveSession(member, groupId)),
     memberCount: members.length,

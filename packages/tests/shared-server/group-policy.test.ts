@@ -22,6 +22,7 @@ import {
     readGroupVisibility,
     shouldPlanGroupPurge,
 } from '@shared-server/rallar-system/group-policy.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const NOW = 1_000;
 const ACTOR: GroupPolicyActor = {
@@ -504,7 +505,7 @@ function snapshot(
 ): GroupSnapshot {
     const members = options.members ?? [member('alice', {role: 'owner'})];
     const activeSessions = options.activeSessions ?? [];
-    const common = {
+    const common = createTestGroup({
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
         groupId: 'room-1',
@@ -530,7 +531,7 @@ function snapshot(
         ownerPrincipalId: options.ownerPrincipalId ?? members.find((entry) =>
             entry.status === 'active' && entry.role === 'owner'
         )?.principalId ?? 'alice',
-    };
+    });
     const group: Group = options.status === 'archived'
         ? {
             ...common,

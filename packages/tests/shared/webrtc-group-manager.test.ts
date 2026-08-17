@@ -10,6 +10,7 @@ import type {
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('WebRtcGroupManager', () => {
     it('reconciles desired groups against online clients and connection state', async () => {
@@ -868,21 +869,12 @@ function createGroupSnapshot(
             groupRevision: membershipVersion,
             presenceRevision: membershipVersion,
         },
-        group: {
+        group: createTestGroup({
             applicationId,
             workspaceId,
             groupId,
             slug: groupId,
             displayName: groupId,
-            description: null,
-            kind: 'room',
-            status: 'active',
-            archived: null,
-            deleted: null,
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             activeMemberCount: memberSessionIds.length,
             ownerPrincipalId,
             snapshotVersion: membershipVersion,
@@ -891,10 +883,7 @@ function createGroupSnapshot(
             presenceVersion: 0,
             created: createAuditStamp(1, ownerPrincipalId),
             updated: createAuditStamp(membershipVersion, ownerPrincipalId),
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-        },
+        }),
         members: memberSessionIds.map((sessionId): GroupMember => ({
             applicationId,
             workspaceId,

@@ -8,6 +8,7 @@ import type { AppInboxFailure } from '@shared-server/rallar-system/services/AppI
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 export type PostgresSql = PSqlSql & Readonly<{ end(): Promise<void> }>;
 
@@ -158,31 +159,18 @@ export function topologyGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
   return {
     stateRevision: 1,
     causalRevision: { groupRevision: 1, presenceRevision: 0 },
-    group: {
+    group: createTestGroup({
       ...groupRef,
-      slug: null,
       displayName: 'Topology concurrency room',
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       snapshotVersion: 1,
       metadataVersion: 1,
       rosterVersion: 1,
       presenceVersion: 0,
       activeMemberCount: 1,
       ownerPrincipalId: 'owner',
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
       created: audit,
       updated: audit,
-    },
+    }),
     members: [
       {
         ...groupRef,
