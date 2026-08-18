@@ -30,6 +30,23 @@ export function isGroupTopologyActiveAt(
   );
 }
 
+/**
+ * The formation window (Phase 5, M7): FORMING holds topology planning, so a
+ * forming group has no planned overlay to establish and no dials to command.
+ * Every other intent state plans -- RECONFIGURING exists precisely to redo
+ * establishment work. Groups with immediate formation are created ACTIVE and
+ * never enter FORMING, which keeps today's behaviour byte-identical for them.
+ */
+export function isGroupTopologyPlannableAt(
+  snapshot: GroupSnapshot,
+  observedAtEpochMs: number,
+): boolean {
+  return (
+    isGroupTopologyActiveAt(snapshot, observedAtEpochMs) &&
+    snapshot.group.lifecycleState !== 'forming'
+  );
+}
+
 export function selectGroupTopologyPlanningSnapshot(
   knownGroup: GroupSnapshot,
   currentGroup: GroupSnapshot | undefined,

@@ -184,6 +184,32 @@
       }
     },
     {
+      "name": "topologyHeldWhileForming",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "bodyAnyOf": [
+          {
+            "snapshot": null
+          },
+          {
+            "snapshot": {
+              "state": "removed"
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "bobCannotStartEstablishment",
       "type": "http",
       "connection": "primary",
@@ -223,6 +249,33 @@
           "group": {
             "lifecycleState": "establishing",
             "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "topologyPlannedAfterEstablish",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
           }
         }
       }

@@ -42,7 +42,7 @@ import {
   createRtcOverlayTopologyBroadcastMessage,
 } from './materialize-rtc-overlay-topology-broadcast-message.ts';
 import {
-  isGroupTopologyActiveAt,
+  isGroupTopologyPlannableAt,
   selectGroupTopologyPlanningSnapshot,
 } from './select-group-topology-planning-snapshot.ts';
 
@@ -108,7 +108,7 @@ export class GroupTopologyPlanningService {
     previous: RallarOverlayTopologySnapshot | undefined,
     planningIntent: RtcTopologyPlanningIntent = 'full-rebuild',
   ): ReconcileGroupTopologyResult {
-    if (!isGroupTopologyActiveAt(authority.group, authority.nowEpochMs)) {
+    if (!isGroupTopologyPlannableAt(authority.group, authority.nowEpochMs)) {
       return removedTopologyResult(authority.group, previous);
     }
     const filteredRttMeasurements = this.filterRttMeasurementsForGroup(

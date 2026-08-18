@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
@@ -60,7 +62,87 @@ describe('GroupTopologyPlanningService', () => {
       },
     });
   });
+
+  it('holds topology planning while the group is FORMING', () => {
+    const forming = groupWithSessionsIn('forming');
+    const service = createPlanningService({ group: forming });
+
+    const result = service.computeTopologyFromAuthority(
+      planningAuthority(forming),
+      undefined,
+    );
+
+    expect(result.snapshot.state).toBe('removed');
+    expect(Object.values(result.snapshot.nextHopsBySessionId).flat()).toEqual([]);
+  });
+
+  it('drops a previously planned topology when the group returns to FORMING', () => {
+    const active = groupWithSessionsIn('active');
+    const service = createPlanningService({ group: active });
+    const planned = service.computeTopologyFromAuthority(
+      planningAuthority(active),
+      undefined,
+    );
+    expect(planned.snapshot.state).not.toBe('removed');
+
+    const forming = groupWithSessionsIn('forming');
+    const held = createPlanningService({ group: forming }).computeTopologyFromAuthority(
+      planningAuthority(forming),
+      planned.snapshot,
+    );
+    expect(held.snapshot.state).toBe('removed');
+  });
+
+  it('plans in every non-forming lifecycle state', () => {
+    for (const lifecycleState of ['establishing', 'active', 'reconfiguring'] as const) {
+      const group = groupWithSessionsIn(lifecycleState);
+      const service = createPlanningService({ group });
+
+      const result = service.computeTopologyFromAuthority(
+        planningAuthority(group),
+        undefined,
+      );
+
+      expect(result.snapshot.state).not.toBe('removed');
+      expect(result.snapshot.activeSessionIds).toEqual(['session-a', 'session-b']);
+    }
+  });
 });
+
+function groupWithSessionsIn(
+  lifecycleState: GroupLifecycleState,
+): ReturnType<typeof createTopologyTestGroupSnapshot> {
+  const base = createTopologyTestGroupSnapshot();
+  const sessions = ['session-a', 'session-b'].map((sessionId) => ({
+    ...createTopologyTestGroupRef(),
+    principalId: sessionId,
+    sessionId,
+    generationId: `generation-${sessionId}`,
+    generationVersion: 1,
+    status: 'active' as const,
+    connectedAtEpochMs: 1,
+    lastHeartbeatAtEpochMs: 1_999,
+    expiresAtEpochMs: 60_000,
+    disconnectedAtEpochMs: null,
+    disconnectReason: null,
+  }));
+  return {
+    ...base,
+    group: { ...base.group, lifecycleState, formationEpoch: 1 },
+    activeSessions: sessions,
+    onlineMemberCount: sessions.length,
+  };
+}
+
+function planningAuthority(group: ReturnType<typeof createTopologyTestGroupSnapshot>) {
+  return {
+    group,
+    config: resolveGroupTopologyConfig({}),
+    kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
+    rttMeasurements: [],
+    nowEpochMs: 2_000,
+  };
+}
 
 function createPlanningService(input: {
   group: ReturnType<typeof createTopologyTestGroupSnapshot>;

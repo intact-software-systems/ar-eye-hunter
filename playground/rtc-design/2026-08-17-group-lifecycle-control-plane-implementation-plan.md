@@ -127,6 +127,12 @@ The lifecycle rejection vocabulary extends `GroupPolicyReasonCode`
 (`lifecycle-transition-invalid`, `lifecycle-manager-unavailable`) rather than
 paralleling it, per the slice 1 finding.
 
+#### Decision taken during the FORMING gate (2026-08-18)
+
+| # | Decision |
+| --- | --- |
+| 2.4 | **Only FORMING holds topology planning.** The gate is one predicate (`isGroupTopologyPlannableAt`) at the single planning choke point; a forming group takes the same removed-topology branch as an archived one. ESTABLISHING, ACTIVE, and RECONFIGURING all plan — RECONFIGURING exists precisely to redo establishment work, so holding planning there would defeat its purpose. Commanded dials follow the plan automatically: with no planned overlay there is nothing to materialize into `overlay.topology` broadcasts. The admin `reconfigureGroupTopology` path deliberately bypasses the gate as an operator escape hatch. |
+
 ### Slice 3 — Activation criterion and readiness
 
 `threshold` / `deadline` / `manual` / `threshold-or-deadline`, evaluated against two rates:
