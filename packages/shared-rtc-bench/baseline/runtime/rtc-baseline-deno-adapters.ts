@@ -4,6 +4,9 @@ import type {
   RtcBaselineRuntimeObservationDto,
 } from '../contracts/rtc-baseline-contracts.ts';
 import type { RtcBaselineFilePort } from '../evidence/rtc-baseline-evidence-store.ts';
+import { createRtcBaselineDenoFilePort } from './rtc-baseline-deno-file-port.ts';
+import type { RtcBaselineDenoPort } from './rtc-baseline-deno-port.ts';
+export type { RtcBaselineDenoPort } from './rtc-baseline-deno-port.ts';
 
 interface CommandInput {
   executable: string;
@@ -13,41 +16,6 @@ export interface RtcBaselineCommandOutput {
   exitStatus: number;
   stdout: string;
   stderr: string;
-}
-interface RuntimeFileInfo {
-  isFile: boolean;
-  isDirectory: boolean;
-  isSymlink: boolean;
-}
-interface RuntimeDirectoryEntry extends RuntimeFileInfo {
-  name: string;
-}
-interface RuntimeErrorConstructor {
-  new (...args: string[]): Error;
-}
-export interface RtcBaselineDenoPort {
-  envGet(name: string): string | undefined;
-  build: { os: string; arch: string };
-  version: { deno: string };
-  lstat(path: string): Promise<RuntimeFileInfo>;
-  mkdir(path: string, options: { recursive: boolean }): Promise<void>;
-  readFile(path: string): Promise<Uint8Array>;
-  writeFile(path: string, bytes: Uint8Array, options: { createNew: boolean }): Promise<void>;
-  remove(path: string, options: { recursive: boolean }): Promise<void>;
-  readDir(path: string): AsyncIterable<RuntimeDirectoryEntry>;
-  command(
-    executable: string,
-    arguments_: readonly string[],
-  ): Promise<{ code: number; stdout: Uint8Array; stderr: Uint8Array }>;
-  now(): Date;
-  performanceNow(): number;
-  systemMemoryInfo(): { total: number };
-  availableParallelism(): number;
-  errors?: {
-    NotFound?: RuntimeErrorConstructor;
-    AlreadyExists?: RuntimeErrorConstructor;
-    PermissionDenied?: RuntimeErrorConstructor;
-  };
 }
 interface ProcessPort {
   run(input: CommandInput): Promise<RtcBaselineResult<RtcBaselineCommandOutput>>;
@@ -109,7 +77,9 @@ export function createDenoRtcBaselineAdapters(
         stdout: decoder.decode(output.stdout),
         stderr: decoder.decode(output.stderr),
       };
-      if (output.code === 0) return { ok: true, value };
+      if (output.code === 0) {
+        return { ok: true, value };
+      }
       return {
         ok: false,
         issues: [
@@ -136,67 +106,27 @@ export function createDenoRtcBaselineAdapters(
     trim: boolean,
   ): Promise<RtcBaselineResult<string>> {
     const result = await run({ executable: 'git', arguments: arguments_ });
-    if (!result.ok) return result;
+    if (!result.ok) {
+      return result;
+    }
     return { ok: true, value: trim ? result.value.stdout.trim() : result.value.stdout };
   }
 
-  const filePort = {
-    async inspectPath(path: string) {
-      try {
-        const value = await runtime.lstat(path);
-        if (value.isSymlink) return { kind: 'symlink' as const };
-        if (value.isDirectory) return { kind: 'directory' as const };
-        if (value.isFile) return { kind: 'file' as const };
-        return { kind: 'other' as const };
-      } catch (error) {
-        const NotFound = runtime.errors?.NotFound;
-        if (NotFound && error instanceof NotFound) return null;
-        throw error;
-      }
-    },
-    createDirectory: (path: string, options: { recursive: boolean }) =>
-      runtime.mkdir(path, options),
-    writeFileCreateNew: (path: string, bytes: Uint8Array) =>
-      runtime.writeFile(path, bytes, { createNew: true }),
-    readFile: (path: string) => runtime.readFile(path),
-    removeFile: (path: string) => runtime.remove(path, { recursive: false }),
-    removeDirectory: (path: string) => runtime.remove(path, { recursive: true }),
-    classifyError(error: Error) {
-      if (runtime.errors?.AlreadyExists && error instanceof runtime.errors.AlreadyExists) {
-        return 'already-exists' as const;
-      }
-      if (runtime.errors?.PermissionDenied && error instanceof runtime.errors.PermissionDenied) {
-        return 'permission-denied' as const;
-      }
-      return 'other' as const;
-    },
-    async listDirectory(path: string) {
-      const entries = [];
-      for await (const entry of runtime.readDir(path)) {
-        entries.push({
-          name: entry.name,
-          kind: entry.isSymlink
-            ? ('symlink' as const)
-            : entry.isDirectory
-              ? ('directory' as const)
-              : entry.isFile
-                ? ('file' as const)
-                : ('other' as const),
-        });
-      }
-      return entries;
-    },
-  };
+  const filePort = createRtcBaselineDenoFilePort(runtime);
 
   async function sha256(bytes: Uint8Array) {
-    const copy = new Uint8Array(bytes.byteLength);
-    copy.set(bytes);
-    return bytesToHex(new Uint8Array(await crypto.subtle.digest('SHA-256', copy.buffer)));
+    const digestInput =
+      bytes.buffer instanceof ArrayBuffer
+        ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+        : new Uint8Array(bytes);
+    return bytesToHex(new Uint8Array(await crypto.subtle.digest('SHA-256', digestInput)));
   }
 
   async function readGitRef() {
     const symbolic = await gitValue(['symbolic-ref', '--short', '-q', 'HEAD'], true);
-    if (symbolic.ok) return symbolic;
+    if (symbolic.ok) {
+      return symbolic;
+    }
     const details = symbolic.issues[0]?.details;
     if (
       typeof details !== 'object' ||
@@ -222,7 +152,9 @@ export function createDenoRtcBaselineAdapters(
         const values: Record<string, string> = {};
         for (const name of names) {
           const value = runtime.envGet(name);
-          if (value !== undefined) values[name] = value;
+          if (value !== undefined) {
+            values[name] = value;
+          }
         }
         return values;
       },
@@ -230,18 +162,24 @@ export function createDenoRtcBaselineAdapters(
     runtimeHost: {
       async read() {
         const kernel = await run({ executable: 'uname', arguments: ['-r'] });
-        if (!kernel.ok) throw new Error(kernel.issues[0]!.message);
+        if (!kernel.ok) {
+          throw new Error(kernel.issues[0]!.message);
+        }
         let cpuModel: string;
         if (runtime.build.os === 'linux') {
           const cpuInfo = decoder.decode(await runtime.readFile('/proc/cpuinfo'));
           cpuModel = /^model name\s*:\s*(.+)$/m.exec(cpuInfo)?.[1]?.trim() ?? '';
-          if (cpuModel.length === 0) throw new Error('Linux CPU model is unavailable.');
+          if (cpuModel.length === 0) {
+            throw new Error('Linux CPU model is unavailable.');
+          }
         } else {
           const cpu = await run({
             executable: 'sysctl',
             arguments: ['-n', 'machdep.cpu.brand_string'],
           });
-          if (!cpu.ok) throw new Error(cpu.issues[0]!.message);
+          if (!cpu.ok) {
+            throw new Error(cpu.issues[0]!.message);
+          }
           cpuModel = cpu.value.stdout.trim();
         }
         return {

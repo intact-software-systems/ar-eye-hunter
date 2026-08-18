@@ -1,39 +1,29 @@
+import { decodeRtcBaselineStoredJson } from '../contracts/rtc-baseline-artifact-decoding.ts';
 import {
-  decodeRtcBaselineExternalAttempt,
-  decodeRtcBaselineExternalCohort,
-  decodeRtcBaselineFinalizationFailure,
-  decodeRtcBaselineSample,
-} from '../contracts/rtc-baseline-artifact-decoding.ts';
-import {
-  isRtcBaselineExternalAttemptDto,
-  isRtcBaselineExternalCohortDto,
-  isRtcBaselineFinalizationFailureDto,
-  isRtcBaselineSampleDto,
   rtcBaselineIssue,
   type RtcBaselineJson,
   type RtcBaselineResult,
 } from '../contracts/rtc-baseline-contracts.ts';
 import {
-  validateRtcBaselineCompleteAccounting,
-  validateRtcBaselineReconciliation,
-} from '../contracts/rtc-baseline-artifact-validation.ts';
-import { requireRtcBaselineDecodedType } from '../contracts/rtc-baseline-decoding.ts';
-// prettier-ignore
-import { computeRtcBaselineExpectedSampleIdentities } from
-  '../catalog/rtc-baseline-workload-manifest.ts';
-import {
   decodeRtcBaselineFailureOutcome,
-  isRtcBaselineSampleFailureOutcomeArtifact,
   resolveRtcBaselineAcceptedArtifactPath,
 } from '../acceptance/rtc-baseline-failure-accounting.ts';
-import { classifyRtcBaselineArtifactPath } from '../evidence/rtc-baseline-evidence-layout.ts';
+import {
+  classifyRtcBaselineArtifactPath,
+  type RtcBaselineArtifactKind,
+} from '../evidence/rtc-baseline-evidence-layout.ts';
 import type {
   RtcBaselineLockedWriter,
   RtcBaselineStoredFile,
 } from '../evidence/rtc-baseline-evidence-store.ts';
 import {
+  createRtcBaselineArtifactProjector,
+  type RtcBaselineArtifactProjection,
+  type RtcBaselineArtifactProjector,
+} from '../evidence/rtc-baseline-artifact-projection.ts';
+import {
   createRtcBaselineFinalizedEvidence,
-  type CollectedArtifacts,
+  type RtcBaselineCollectedArtifacts,
   type RtcBaselineFinalizationLockedWriter,
   type RtcBaselineFinalizedEvidence,
 } from '../evidence/rtc-baseline-finalized-evidence.ts';
@@ -47,23 +37,22 @@ import {
 } from '../evidence/rtc-baseline-statistics.ts';
 import type { RtcBaselineDenoEvidence } from './rtc-baseline-deno-evidence.ts';
 
-interface RtcBaselineResultArtifactCollection {
-  readonly sampleOutcomes: CollectedArtifacts['sampleOutcomes'][number][];
-  readonly externalAttempts: CollectedArtifacts['externalAttempts'][number][];
-  readonly cohortOutcomes: CollectedArtifacts['cohortOutcomes'][number][];
-  readonly samples: CollectedArtifacts['samples'][number][];
-  readonly failures: CollectedArtifacts['failures'][number][];
-}
-
 type RtcBaselineClassifiedArtifactKind = NonNullable<
   ReturnType<typeof classifyRtcBaselineArtifactPath>
 >;
 
 interface AppendRtcBaselineResultArtifactInput {
-  readonly collection: RtcBaselineResultArtifactCollection;
+  readonly projector: RtcBaselineArtifactProjector;
   readonly kind: RtcBaselineClassifiedArtifactKind;
   readonly artifactJson: RtcBaselineJson;
   readonly relativePath: string;
+}
+
+interface CollectRtcBaselineResultArtifactsInput {
+  readonly evidence: RtcBaselineDenoEvidence;
+  readonly baselineId: string;
+  readonly listedFiles: readonly RtcBaselineStoredFile[];
+  readonly projector: RtcBaselineArtifactProjector;
 }
 
 export interface RtcBaselineDenoFinalization {
@@ -84,157 +73,48 @@ function unsupportedArtifactPath(relativePath: string) {
   };
 }
 
-function appendUniqueSamples(
-  collection: RtcBaselineResultArtifactCollection,
-  incoming: readonly CollectedArtifacts['samples'][number][],
-) {
-  for (const sample of incoming) {
-    const existing = collection.samples.find(
-      (value) => value.identity.sampleId === sample.identity.sampleId,
-    );
-    if (existing && JSON.stringify(existing) !== JSON.stringify(sample)) {
-      return rtcBaselineIssue(
-        '$.samples',
-        'conflicting-sample-duplicate',
-        `Sample ${sample.identity.sampleId} has unequal accepted representations.`,
-      );
-    }
-    if (!existing) {
-      collection.samples.push(sample);
-      collection.sampleOutcomes.push({
-        identity: sample.identity,
-        outcome: sample.outcome,
-        issues: sample.issues,
-      });
-    }
-  }
-  return null;
-}
-
-function appendRtcBaselineSample(
-  collection: RtcBaselineResultArtifactCollection,
-  sampleJson: RtcBaselineJson,
-): RtcBaselineResult<void> {
-  const decoded = requireRtcBaselineDecodedType(
-    decodeRtcBaselineSample(sampleJson),
-    isRtcBaselineSampleDto,
+function isStoredResultArtifactKind(
+  kind: RtcBaselineClassifiedArtifactKind,
+): kind is RtcBaselineArtifactKind {
+  return (
+    kind === 'sample' ||
+    kind === 'external-attempt' ||
+    kind === 'external-cohort' ||
+    kind === 'finalization-failure'
   );
-  if (!decoded.ok) {
-    return decoded;
-  }
-  const duplicate = appendUniqueSamples(collection, [decoded.value]);
-  return duplicate ? { ok: false, issues: [duplicate] } : { ok: true, value: undefined };
 }
 
-function appendRtcBaselineExternalAttempt(
-  collection: RtcBaselineResultArtifactCollection,
-  attemptJson: RtcBaselineJson,
-): RtcBaselineResult<void> {
-  const decoded = requireRtcBaselineDecodedType(
-    decodeRtcBaselineExternalAttempt(attemptJson),
-    isRtcBaselineExternalAttemptDto,
-  );
-  if (!decoded.ok) {
-    return decoded;
-  }
-  collection.externalAttempts.push(decoded.value);
-  const duplicate = appendUniqueSamples(collection, decoded.value.samples);
-  return duplicate ? { ok: false, issues: [duplicate] } : { ok: true, value: undefined };
-}
-
-function appendRtcBaselineExternalCohort(
-  collection: RtcBaselineResultArtifactCollection,
-  cohortJson: RtcBaselineJson,
-): RtcBaselineResult<void> {
-  const decoded = requireRtcBaselineDecodedType(
-    decodeRtcBaselineExternalCohort(cohortJson),
-    isRtcBaselineExternalCohortDto,
-  );
-  if (!decoded.ok) {
-    return decoded;
-  }
-  collection.cohortOutcomes.push(decoded.value);
-  const duplicate = appendUniqueSamples(collection, decoded.value.samples);
-  return duplicate ? { ok: false, issues: [duplicate] } : { ok: true, value: undefined };
-}
-
-function appendRtcBaselineFailureOutcome(
-  collection: RtcBaselineResultArtifactCollection,
-  failureJson: RtcBaselineJson,
-  relativePath: string,
-): RtcBaselineResult<void> {
-  const decoded = decodeRtcBaselineFailureOutcome(failureJson, relativePath);
-  if (!decoded.ok) {
-    return decoded;
-  }
-  collection.failures.push(decoded.value);
-  if (isRtcBaselineSampleFailureOutcomeArtifact(decoded.value)) {
-    collection.sampleOutcomes.push(decoded.value);
-  }
-  return { ok: true, value: undefined };
-}
-
-function appendRtcBaselineResultArtifact(
+async function appendRtcBaselineResultArtifact(
   artifactInput: AppendRtcBaselineResultArtifactInput,
-): RtcBaselineResult<void> {
+): Promise<RtcBaselineResult<void>> {
   if (artifactInput.kind === 'failure-outcome') {
-    return appendRtcBaselineFailureOutcome(
-      artifactInput.collection,
+    const decoded = decodeRtcBaselineFailureOutcome(
       artifactInput.artifactJson,
       artifactInput.relativePath,
     );
+    return decoded.ok ? artifactInput.projector.appendFailureOutcome(decoded.value) : decoded;
   }
-  if (artifactInput.kind === 'sample') {
-    return appendRtcBaselineSample(artifactInput.collection, artifactInput.artifactJson);
+  if (!isStoredResultArtifactKind(artifactInput.kind)) {
+    return unsupportedArtifactPath(artifactInput.relativePath);
   }
-  if (artifactInput.kind === 'external-attempt') {
-    return appendRtcBaselineExternalAttempt(artifactInput.collection, artifactInput.artifactJson);
-  }
-  if (artifactInput.kind === 'external-cohort') {
-    return appendRtcBaselineExternalCohort(artifactInput.collection, artifactInput.artifactJson);
-  }
-  if (artifactInput.kind === 'finalization-failure') {
-    const decoded = requireRtcBaselineDecodedType(
-      decodeRtcBaselineFinalizationFailure(artifactInput.artifactJson),
-      isRtcBaselineFinalizationFailureDto,
-    );
-    return decoded.ok ? { ok: true, value: undefined } : decoded;
-  }
-  return {
-    ok: false,
-    issues: [
-      rtcBaselineIssue(
-        `$.${artifactInput.relativePath}`,
-        'unsupported-artifact-path',
-        'Unsupported.',
-      ),
-    ],
-  };
+  const decoded = decodeRtcBaselineStoredJson(artifactInput.kind, artifactInput.artifactJson);
+  return decoded.ok ? artifactInput.projector.appendStoredArtifact(decoded.value) : decoded;
 }
 
 async function collectRtcBaselineResultArtifacts(
-  evidence: RtcBaselineDenoEvidence,
-  baselineId: string,
-  listedFiles: readonly RtcBaselineStoredFile[],
-): Promise<RtcBaselineResult<RtcBaselineResultArtifactCollection>> {
-  const collection: RtcBaselineResultArtifactCollection = {
-    sampleOutcomes: [],
-    externalAttempts: [],
-    cohortOutcomes: [],
-    samples: [],
-    failures: [],
-  };
-  for (const listedFile of listedFiles) {
+  input: CollectRtcBaselineResultArtifactsInput,
+): Promise<RtcBaselineResult<RtcBaselineArtifactProjection>> {
+  for (const listedFile of input.listedFiles) {
     const kind = classifyRtcBaselineArtifactPath(listedFile.relativePath);
     if (kind === null) {
       return unsupportedArtifactPath(listedFile.relativePath);
     }
-    const artifact = await evidence.store.readJson(baselineId, listedFile.relativePath);
+    const artifact = await input.evidence.store.readJson(input.baselineId, listedFile.relativePath);
     if (!artifact.ok) {
       return artifact;
     }
-    const appended = appendRtcBaselineResultArtifact({
-      collection,
+    const appended = await appendRtcBaselineResultArtifact({
+      projector: input.projector,
       kind,
       artifactJson: artifact.value,
       relativePath: listedFile.relativePath,
@@ -243,29 +123,14 @@ async function collectRtcBaselineResultArtifacts(
       return appended;
     }
   }
-  return { ok: true, value: collection };
-}
-
-async function readRtcBaselineRetainedArtifacts(
-  evidence: RtcBaselineDenoEvidence,
-  baselineId: string,
-  relativePaths: readonly string[],
-): Promise<RtcBaselineResult<CollectedArtifacts['retainedArtifacts']>> {
-  const retainedArtifacts: CollectedArtifacts['retainedArtifacts'][number][] = [];
-  for (const relativePath of relativePaths) {
-    const bytes = await evidence.store.readBytes(baselineId, relativePath);
-    if (!bytes.ok) {
-      return bytes;
-    }
-    retainedArtifacts.push({ relativePath, bytes: bytes.value });
-  }
-  return { ok: true as const, value: retainedArtifacts };
+  return { ok: true, value: input.projector.getProjection() };
 }
 
 async function collectRtcBaselineArtifacts(
   evidence: RtcBaselineDenoEvidence,
+  sha256: (bytes: Uint8Array) => Promise<string>,
   baselineId: string,
-): Promise<RtcBaselineResult<CollectedArtifacts>> {
+): Promise<RtcBaselineResult<RtcBaselineCollectedArtifacts>> {
   const reconciliation = await evidence.reconcileAcceptedOperation('finalize', { baselineId });
   if (reconciliation.length > 0) {
     return { ok: false, issues: reconciliation };
@@ -289,17 +154,22 @@ async function collectRtcBaselineArtifacts(
   if (!listed.ok) {
     return listed;
   }
-  const collection = await collectRtcBaselineResultArtifacts(evidence, baselineId, listed.value);
-  if (!collection.ok) {
-    return collection;
-  }
-  const retained = await readRtcBaselineRetainedArtifacts(evidence, baselineId, [
-    'environment.json',
-    'manifest.json',
-    ...listed.value.map((entry) => entry.relativePath),
-  ]);
-  if (!retained.ok) {
-    return retained;
+  const projector = createRtcBaselineArtifactProjector({
+    environmentId: manifest.value.request.environmentId,
+    environmentObservation: observation,
+    conflictingSampleCode: 'conflicting-sample-duplicate',
+    conflictingSampleMessage: (sampleId) =>
+      `Sample ${sampleId} has unequal accepted representations.`,
+    sha256,
+  });
+  const projection = await collectRtcBaselineResultArtifacts({
+    evidence,
+    baselineId,
+    listedFiles: listed.value,
+    projector,
+  });
+  if (!projection.ok) {
+    return projection;
   }
   return {
     ok: true,
@@ -310,8 +180,12 @@ async function collectRtcBaselineArtifacts(
       environmentId: manifest.value.request.environmentId,
       repeatLink: manifest.value.repeatLink,
       conditionalEnvironmentDecisions: manifest.value.request.conditionalEnvironmentDecisions,
-      ...collection.value,
-      retainedArtifacts: retained.value,
+      retainedArtifactPaths: [
+        'environment.json',
+        'manifest.json',
+        ...listed.value.map((entry) => entry.relativePath),
+      ],
+      ...projection.value,
     },
   };
 }
@@ -383,26 +257,10 @@ export function createRtcBaselineDenoFinalization(
   const finalizedEvidence = createRtcBaselineFinalizedEvidence({
     withFinalizationLock: (baselineId, operation) =>
       withRtcBaselineFinalizationLock(evidence, baselineId, operation),
-    collectArtifacts: (baselineId) => collectRtcBaselineArtifacts(evidence, baselineId),
-    validateCompleteAccounting: (value) =>
-      validateRtcBaselineCompleteAccounting({
-        expectedSamples: computeRtcBaselineExpectedSampleIdentities(value.manifest),
-        expectedCohorts: value.manifest.expectedCohorts,
-        sampleOutcomes: value.sampleOutcomes,
-        cohortOutcomes: value.cohortOutcomes,
-      }),
-    validateReconciliation: (value) =>
-      value.sampleOutcomes.flatMap((sample) =>
-        sample.runtimeObservation
-          ? validateRtcBaselineReconciliation(
-              value.environment.observation,
-              sample.runtimeObservation,
-            )
-          : [],
-      ),
+    collectArtifacts: (baselineId) => collectRtcBaselineArtifacts(evidence, sha256, baselineId),
     partitionMetricObservations: partitionRtcBaselineMetricObservations,
     summarizeMetricValues: computeRtcBaselineMetricSummary,
-    readRawBytes: evidence.store.readBytes,
+    readBytes: evidence.store.readBytes,
     sha256,
   });
   return { finalizedEvidence, finalizedReader };

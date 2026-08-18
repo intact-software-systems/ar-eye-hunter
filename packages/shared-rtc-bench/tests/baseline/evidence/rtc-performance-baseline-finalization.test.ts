@@ -1,16 +1,37 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createRtcBaselineFinalizedEvidence,
+  type RtcBaselineCollectedArtifacts,
   type RtcBaselineFinalizationLockedWriter,
 } from '../../../baseline/evidence/rtc-baseline-finalized-evidence.ts';
+import { computeRtcBaselineMetricObservations } from '../../../baseline/catalog/rtc-baseline-workload-manifest.ts';
+import type { RtcBaselineSampleDto } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
 import {
   computeRtcBaselineMetricSummary,
   partitionRtcBaselineMetricObservations,
 } from '../../../baseline/evidence/rtc-baseline-statistics.ts';
 const emptyCollectedJson =
   '{"environment":{"schema":"rallar.rtc-baseline.environment.v1","baselineId":"20260807-0123456789ab-e1-local","workloadIds":["RTC-B01"],"environmentId":"E1-local","repeatLink":null,"conditionalEnvironmentDecisions":[],"observation":{"git":{"headCommit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","headTree":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","ref":"codex/rtc","clean":true},"runtime":{"node":"24","npm":"11","deno":"2","playwright":"1","chromium":"139"},"host":{"os":"darwin","kernel":"24.6.0","architecture":"arm64","logicalCpuCount":10,"cpuModel":"Apple M4","totalMemoryBytes":1,"executionContext":"local"},"timing":{"startedAtUtc":"2026-08-07T10:00:00.000Z","endedAtUtc":"2026-08-07T10:00:01.000Z","monotonicDurationMs":1000,"monotonicSource":"performance.now"},"deviations":[],"sourceHashes":[],"configurationInputs":[],"resolvedConfiguration":[],"controllerInputs":[],"workerCommand":{"redactedArgv":{"executable":"deno","arguments":[]},"projection":{"fixedWorkerFlags":[],"configurationFlags":[]}},"allowlistedEnvironment":{}}},"manifest":{"schema":"rallar.rtc-baseline.manifest.v1","request":{"schema":"rallar.rtc-baseline.capture-request.v1","baselineId":"20260807-0123456789ab-e1-local","workloadIds":["RTC-B01"],"environmentId":"E1-local","retainedSampleMultiplier":1,"repeatLink":null,"conditionalEnvironmentDecisions":[]},"workloadIds":["RTC-B01"],"cases":[],"outerAttempts":[],"expectedCohorts":[{"cohortId":"cohort-failed","workloadId":"RTC-B01","memberSampleIds":[]}],"repeatLink":null},"workloadIds":["RTC-B01"],"environmentId":"E1-local","repeatLink":null,"conditionalEnvironmentDecisions":[],"sampleOutcomes":[],"cohortOutcomes":[],"failures":[{"artifactKind":"failure","failureId":"failure-cohort-cohort-failed","identity":{"cohortId":"cohort-failed","workloadId":"RTC-B01","memberSampleIds":[]},"outcome":"failed","causalFailureId":null,"issues":[{"path":"$.cohort","code":"producer-failed","message":"producer failed"}],"rawEvidence":null}],"samples":[],"retainedArtifacts":[],"rawReferences":[{"relativePath":"raw.json","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":0}]}';
-const emptyCollected = { ...JSON.parse(emptyCollectedJson), externalAttempts: [] };
-const retainedSample = {
+const decodedCollected = JSON.parse(emptyCollectedJson);
+const emptyCollected: RtcBaselineCollectedArtifacts = {
+  environment: decodedCollected.environment,
+  manifest: {
+    ...decodedCollected.manifest,
+    expectedCohorts: [],
+  },
+  workloadIds: decodedCollected.workloadIds,
+  environmentId: decodedCollected.environmentId,
+  repeatLink: decodedCollected.repeatLink,
+  conditionalEnvironmentDecisions: decodedCollected.conditionalEnvironmentDecisions,
+  sampleOutcomes: [],
+  cohortOutcomes: [],
+  failures: [],
+  metricObservations: [],
+  rawReferences: [],
+  artifactIssues: [],
+  retainedArtifactPaths: [],
+};
+const retainedSample: RtcBaselineSampleDto = {
   schema: 'rallar.rtc-baseline.sample.v1',
   identity: {
     sampleId: 'rtc-b01-peer-connection-diagnostics-burst-pairs-500-retained-001-001',
@@ -29,17 +50,18 @@ const retainedSample = {
   issues: [],
   runtimeObservation: emptyCollected.environment.observation,
 };
-const collectedWithRawSample = { ...emptyCollected, samples: [retainedSample] };
+const collectedWithRawSample = {
+  ...emptyCollected,
+  rawReferences: retainedSample.rawReferences,
+};
 function finalizationDependencies(overrides: Record<string, unknown> = {}) {
   const configured = {
     collectArtifacts: async () => ({ ok: true as const, value: emptyCollected }),
-    validateCompleteAccounting: () => [],
-    validateReconciliation: () => [],
     partitionMetricObservations: () => ({ ok: true as const, value: [] }),
     summarizeMetricValues: () => {
       throw new Error('not called');
     },
-    readRawBytes: async () => ({ ok: true as const, value: new Uint8Array() }),
+    readBytes: async () => ({ ok: true as const, value: new Uint8Array() }),
     sha256: async () => 'a'.repeat(64),
     publishSummary: async () => ({ ok: true as const, value: undefined }),
     writeFinalizationFailure: async () => ({ ok: true as const, value: undefined }),
@@ -59,11 +81,13 @@ function finalizationDependencies(overrides: Record<string, unknown> = {}) {
   } as unknown as Parameters<typeof createRtcBaselineFinalizedEvidence>[0];
 }
 describe('RTC baseline finalization', () => {
-  it('validates accounting and reconciliation before grouping and publication', async () => {
+  it('publishes a deterministic summary and checksums from compact projections', async () => {
     const calls: string[] = [];
     const publishSummary = vi.fn(async (_baselineId, summaryBytes, checksumBytes) => {
       calls.push(
-        `publish:${new TextDecoder().decode(summaryBytes)}:${new TextDecoder().decode(checksumBytes)}`,
+        `publish:${new TextDecoder().decode(summaryBytes)}:${new TextDecoder().decode(
+          checksumBytes,
+        )}`,
       );
       return { ok: true as const, value: undefined };
     });
@@ -79,48 +103,53 @@ describe('RTC baseline finalization', () => {
       },
       collectArtifacts: async () => {
         calls.push('collect');
+        const samples = [
+          retainedSample,
+          {
+            ...retainedSample,
+            identity: {
+              ...retainedSample.identity,
+              sampleId: 'rtc-b01-heap-case-heap-1-retained-001-001',
+              caseId: 'heap-case',
+              inputKey: 'heap-1',
+            },
+            metrics: [{ metric: 'heapBytes', unit: 'bytes', value: 1024 }],
+            rawReferences: [],
+          },
+        ];
         return {
           ok: true,
           value: {
             ...emptyCollected,
-            samples: [
-              retainedSample,
-              {
-                ...retainedSample,
-                identity: {
-                  ...retainedSample.identity,
-                  sampleId: 'rtc-b01-heap-case-heap-1-retained-001-001',
-                  caseId: 'heap-case',
-                  inputKey: 'heap-1',
-                },
-                metrics: [{ metric: 'heapBytes', unit: 'bytes', value: 1024 }],
-                rawReferences: [],
-              },
-            ],
-            retainedArtifacts: [
-              {
-                relativePath: 'environment.json',
-                bytes: new TextEncoder().encode('environment'),
-              },
-              {
-                relativePath: 'manifest.json',
-                bytes: new TextEncoder().encode('manifest'),
-              },
-              {
-                relativePath: 'results/samples/sample.json',
-                bytes: new TextEncoder().encode('sample'),
-              },
+            manifest: {
+              ...emptyCollected.manifest,
+              outerAttempts: samples.map((sample) => ({
+                workloadId: sample.identity.workloadId,
+                caseId: sample.identity.caseId,
+                inputKey: sample.identity.inputKey,
+                environmentId: emptyCollected.environmentId,
+                intendedPhase: sample.identity.intendedPhase,
+                outerOrdinal: sample.identity.outerOrdinal,
+                sampleIds: [sample.identity.sampleId],
+              })),
+            },
+            sampleOutcomes: samples.map((sample) => ({
+              identity: sample.identity,
+              outcome: sample.outcome,
+              issues: sample.issues,
+            })),
+            metricObservations: computeRtcBaselineMetricObservations(
+              samples,
+              emptyCollected.environmentId,
+            ),
+            rawReferences: samples.flatMap((sample) => sample.rawReferences),
+            retainedArtifactPaths: [
+              'environment.json',
+              'manifest.json',
+              'results/samples/sample.json',
             ],
           },
         };
-      },
-      validateCompleteAccounting: (value) => {
-        calls.push(`account:${value.manifest.schema}:${value.sampleOutcomes.length}`);
-        return [];
-      },
-      validateReconciliation: (value) => {
-        calls.push(`reconcile:${value.environment.schema}:${value.cohortOutcomes.length}`);
-        return [];
       },
       partitionMetricObservations: (observations) => {
         calls.push('partition');
@@ -130,23 +159,16 @@ describe('RTC baseline finalization', () => {
         calls.push('summarize');
         return computeRtcBaselineMetricSummary(values);
       },
-      readRawBytes: async () => ({ ok: true, value: new TextEncoder().encode('raw') }),
+      readBytes: async () => ({ ok: true, value: new TextEncoder().encode('raw') }),
       sha256: async () => 'a'.repeat(64),
     });
     const summaryText =
-      '{"schema":"rallar.rtc-baseline.summary.v1","baselineId":"20260807-0123456789ab-e1-local","workloadIds":["RTC-B01"],"environmentId":"E1-local","repeatLink":null,"conditionalEnvironmentDecisions":[],"sampleOutcomes":[],"cohortOutcomes":[{"identity":{"cohortId":"cohort-failed","workloadId":"RTC-B01","memberSampleIds":[]},"outcome":"failed","issues":[{"path":"$.cohort","code":"producer-failed","message":"producer failed"}]}],"metricSummaries":[{"workloadId":"RTC-B01","caseId":"heap-case","inputKey":"heap-1","metric":"heapBytes","unit":"bytes","count":1,"minimum":1024,"median":1024,"maximum":1024,"mad":0,"coefficientOfVariation":0},{"workloadId":"RTC-B01","caseId":"peer-connection-diagnostics-burst","inputKey":"pairs-500","metric":"durationMs","unit":"ms","count":1,"minimum":10,"median":10,"maximum":10,"mad":0,"coefficientOfVariation":0}],"rawReferences":[{"relativePath":"artifacts/raw.bin","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":3}]}';
+      '{"schema":"rallar.rtc-baseline.summary.v1","baselineId":"20260807-0123456789ab-e1-local","workloadIds":["RTC-B01"],"environmentId":"E1-local","repeatLink":null,"conditionalEnvironmentDecisions":[],"sampleOutcomes":[{"identity":{"sampleId":"rtc-b01-heap-case-heap-1-retained-001-001","workloadId":"RTC-B01","caseId":"heap-case","inputKey":"heap-1","intendedPhase":"retained","outerOrdinal":1,"innerOrdinal":1},"outcome":"passed","issues":[]},{"identity":{"sampleId":"rtc-b01-peer-connection-diagnostics-burst-pairs-500-retained-001-001","workloadId":"RTC-B01","caseId":"peer-connection-diagnostics-burst","inputKey":"pairs-500","intendedPhase":"retained","outerOrdinal":1,"innerOrdinal":1},"outcome":"passed","issues":[]}],"cohortOutcomes":[],"metricSummaries":[{"workloadId":"RTC-B01","caseId":"heap-case","inputKey":"heap-1","metric":"heapBytes","unit":"bytes","count":1,"minimum":1024,"median":1024,"maximum":1024,"mad":0,"coefficientOfVariation":0},{"workloadId":"RTC-B01","caseId":"peer-connection-diagnostics-burst","inputKey":"pairs-500","metric":"durationMs","unit":"ms","count":1,"minimum":10,"median":10,"maximum":10,"mad":0,"coefficientOfVariation":0}],"rawReferences":[{"relativePath":"artifacts/raw.bin","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":3}]}';
     expect(await finalizer.finalize({ baselineId: '20260807-0123456789ab-e1-local' })).toEqual({
       ok: true,
       value: JSON.parse(summaryText),
     });
-    expect(calls.slice(0, 6)).toEqual([
-      'lock:start',
-      'collect',
-      'account:rallar.rtc-baseline.manifest.v1:0',
-      'reconcile:rallar.rtc-baseline.environment.v1:0',
-      'partition',
-      'summarize',
-    ]);
+    expect(calls.slice(0, 4)).toEqual(['lock:start', 'collect', 'partition', 'summarize']);
     expect([publishSummary.mock.calls.length, calls.at(-1)]).toEqual([1, 'lock:end']);
     expect(publishSummary).toHaveBeenCalledWith(
       '20260807-0123456789ab-e1-local',
@@ -164,7 +186,7 @@ describe('RTC baseline finalization', () => {
     const publishSummary = vi.fn();
     const writeFailure = vi.fn(async () => ({ ok: true as const, value: undefined }));
     const rawBytes = new TextEncoder().encode('x');
-    const readRawBytes = vi.fn(async () => ({ ok: true as const, value: rawBytes }));
+    const readBytes = vi.fn(async () => ({ ok: true as const, value: rawBytes }));
     const finalizer = createRtcBaselineFinalizedEvidence({
       withFinalizationLock: async (_baselineId, operation) =>
         operation({ publishSummary, writeFinalizationFailure: writeFailure }),
@@ -172,24 +194,17 @@ describe('RTC baseline finalization', () => {
         ok: true,
         value: {
           ...emptyCollected,
-          samples: [
-            {
-              ...retainedSample,
-              rawReferences: [
-                { relativePath: 'artifacts/raw.json', sha256: 'b'.repeat(64), bytes: 2 },
-                { relativePath: 'artifacts/raw.json', sha256: 'b'.repeat(64), bytes: 2 },
-              ],
-            },
+          rawReferences: [
+            { relativePath: 'artifacts/raw.json', sha256: 'b'.repeat(64), bytes: 2 },
+            { relativePath: 'artifacts/raw.json', sha256: 'b'.repeat(64), bytes: 2 },
           ],
         },
       }),
-      validateCompleteAccounting: () => [],
-      validateReconciliation: () => [],
       partitionMetricObservations: () => ({ ok: true, value: [] }),
       summarizeMetricValues: () => {
         throw new Error('not called');
       },
-      readRawBytes,
+      readBytes,
       sha256: async () => 'c'.repeat(64),
     });
     const result = await finalizer.finalize({ baselineId: '20260807-0123456789ab-e1-local' });
@@ -209,7 +224,7 @@ describe('RTC baseline finalization', () => {
       ],
     });
     expect(publishSummary).not.toHaveBeenCalled();
-    expect(readRawBytes).toHaveBeenCalledTimes(1);
+    expect(readBytes).toHaveBeenCalledTimes(1);
     expect(writeFailure).toHaveBeenCalledWith('20260807-0123456789ab-e1-local', {
       schema: 'rallar.rtc-baseline.finalization-failure.v1',
       baselineId: '20260807-0123456789ab-e1-local',
@@ -299,7 +314,7 @@ describe('RTC baseline finalization', () => {
     [
       {
         collectArtifacts: async () => ({ ok: true, value: collectedWithRawSample }),
-        readRawBytes: async () => ({
+        readBytes: async () => ({
           ok: false,
           issues: [{ path: '$.raw', code: 'read-failed', message: 'raw failed' }],
         }),
@@ -313,7 +328,13 @@ describe('RTC baseline finalization', () => {
           ok: true,
           value: {
             ...emptyCollected,
-            samples: [{ ...retainedSample, runtimeObservation: null }],
+            artifactIssues: [
+              {
+                path: '$.samples[0].runtimeObservation',
+                code: 'missing-runtime-observation',
+                message: 'Metric samples require observation.',
+              },
+            ],
           },
         }),
       },
@@ -323,15 +344,6 @@ describe('RTC baseline finalization', () => {
         message: 'Metric samples require observation.',
       },
       'finalization-artifact-validation',
-    ],
-    [
-      {
-        validateReconciliation: () => [
-          { path: '$.git', code: 'git-mismatch', message: 'commit changed' },
-        ],
-      },
-      { path: '$.git', code: 'git-mismatch', message: 'commit changed' },
-      'finalization-reconciliation',
     ],
     [
       {

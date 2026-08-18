@@ -4,9 +4,8 @@ import {
 } from './rtc-baseline-evidence-layout.ts';
 import type { RtcBaselineCohortOutcomeRecord } from './rtc-baseline-evidence-layout.ts';
 import {
-  validateRtcBaselineCompleteAccounting,
   validateRtcBaselineArtifactReconciliation,
-  validateRtcBaselineRetainedSampleObservations,
+  validateRtcBaselineCompleteAccounting,
   validateRtcBaselineStoredArtifact,
 } from '../contracts/rtc-baseline-artifact-validation.ts';
 import type {
@@ -14,14 +13,11 @@ import type {
   RtcBaselineConditionalEnvironmentDecisionDto,
   RtcBaselineEnvironmentDto,
   RtcBaselineEnvironmentId,
-  RtcBaselineExternalAttemptDto,
-  RtcBaselineExternalCohortDto,
   RtcBaselineIssueDto,
   RtcBaselineRawReferenceDto,
   RtcBaselineRepeatLinkDto,
   RtcBaselineResult,
   RtcBaselineRuntimeObservationDto,
-  RtcBaselineSampleDto,
   RtcBaselineSampleOutcomeDto,
   RtcBaselineWorkloadId,
 } from '../contracts/rtc-baseline-contracts.ts';
@@ -31,16 +27,14 @@ import type {
   RtcBaselineMetricSummary,
 } from './rtc-baseline-statistics.ts';
 import { summarizeRtcBaselineMetricPartitions } from './rtc-baseline-statistics.ts';
+// prettier-ignore
+import { computeRtcBaselineExpectedSampleIdentities } from
+  '../catalog/rtc-baseline-workload-manifest.ts';
 import {
-  computeRtcBaselineExpectedSampleIdentities,
-  computeRtcBaselineMetricObservations,
-  projectRtcBaselineStoredOutcomes,
-  validateRtcBaselineStoredOutcomeReconciliation,
-} from '../catalog/rtc-baseline-workload-manifest.ts';
-import type {
-  RtcBaselineFailureArtifact,
-  RtcBaselineNotRunArtifact,
-} from '../acceptance/rtc-baseline-failure-accounting.ts';
+  projectRtcBaselineArtifactOutcomes,
+  type RtcBaselineArtifactProjection,
+  validateRtcBaselineArtifactOutcomeReconciliation,
+} from './rtc-baseline-artifact-projection.ts';
 
 interface PersistedFinalizationFailure {
   schema: 'rallar.rtc-baseline.finalization-failure.v1';
@@ -87,11 +81,7 @@ export interface RtcBaselineFinalizedSummary {
   metricSummaries: readonly (MetricGrouping & RtcBaselineMetricSummary)[];
   rawReferences: readonly RtcBaselineRawReferenceDto[];
 }
-export interface RtcBaselineCollectedSampleOutcome extends RtcBaselineSampleOutcomeDto {
-  runtimeObservation?: RtcBaselineRuntimeObservationDto | null;
-  rawReferences?: readonly RtcBaselineRawReferenceDto[];
-}
-export interface CollectedArtifacts {
+export interface RtcBaselineCollectedArtifacts extends RtcBaselineArtifactProjection {
   environment: Omit<RtcBaselineEnvironmentDto, 'observation'> & {
     observation: RtcBaselineRuntimeObservationDto;
   };
@@ -100,45 +90,35 @@ export interface CollectedArtifacts {
   environmentId: RtcBaselineEnvironmentId;
   repeatLink: RtcBaselineRepeatLinkDto | null;
   conditionalEnvironmentDecisions: readonly RtcBaselineConditionalEnvironmentDecisionDto[];
-  sampleOutcomes: readonly RtcBaselineCollectedSampleOutcome[];
-  externalAttempts: readonly RtcBaselineExternalAttemptDto[];
-  cohortOutcomes: readonly RtcBaselineExternalCohortDto[];
-  failures: readonly (RtcBaselineFailureArtifact | RtcBaselineNotRunArtifact)[];
-  samples: readonly RtcBaselineSampleDto[];
-  retainedArtifacts: readonly { relativePath: string; bytes: Uint8Array }[];
+  retainedArtifactPaths: readonly string[];
 }
 interface Dependencies extends RtcBaselineFinalizationLockPort {
-  collectArtifacts(baselineId: string): Promise<RtcBaselineResult<CollectedArtifacts>>;
-  validateCompleteAccounting(value: CollectedArtifacts): RtcBaselineIssueDto[];
-  validateReconciliation(value: CollectedArtifacts): RtcBaselineIssueDto[];
+  collectArtifacts(baselineId: string): Promise<RtcBaselineResult<RtcBaselineCollectedArtifacts>>;
   partitionMetricObservations(
     value: readonly RtcBaselineMetricObservation[],
   ): RtcBaselineResult<RtcBaselineMetricPartition[]>;
   summarizeMetricValues(values: readonly number[]): RtcBaselineMetricSummary;
-  readRawBytes(baselineId: string, relativePath: string): Promise<RtcBaselineResult<Uint8Array>>;
+  readBytes(baselineId: string, relativePath: string): Promise<RtcBaselineResult<Uint8Array>>;
   sha256(bytes: Uint8Array): Promise<string>;
 }
 export interface RtcBaselineFinalizedEvidence {
   finalize(input: { baselineId: string }): Promise<RtcBaselineResult<RtcBaselineFinalizedSummary>>;
 }
 export function projectRtcBaselineFinalizedOutcomes(
-  value: Pick<CollectedArtifacts, 'sampleOutcomes' | 'cohortOutcomes' | 'failures'>,
+  value: Pick<RtcBaselineCollectedArtifacts, 'sampleOutcomes' | 'cohortOutcomes' | 'failures'>,
 ) {
-  return projectRtcBaselineStoredOutcomes(value);
+  return projectRtcBaselineArtifactOutcomes(value);
 }
 
 export function validateRtcBaselineCollectedArtifacts(
-  value: CollectedArtifacts,
+  value: RtcBaselineCollectedArtifacts,
   baselineId: string,
 ) {
   const outcomes = projectRtcBaselineFinalizedOutcomes(value);
   return [
-    ...validateRtcBaselineRetainedSampleObservations(value.environment.observation, value.samples),
+    ...value.artifactIssues,
     ...validateRtcBaselineStoredArtifact(value.environment),
     ...validateRtcBaselineStoredArtifact(value.manifest),
-    ...value.samples.flatMap(validateRtcBaselineStoredArtifact),
-    ...value.externalAttempts.flatMap(validateRtcBaselineStoredArtifact),
-    ...value.cohortOutcomes.flatMap(validateRtcBaselineStoredArtifact),
     ...validateRtcBaselineArtifactReconciliation({
       baselineId,
       environment: value.environment,
@@ -189,10 +169,13 @@ export function createRtcBaselineFinalizedEvidence(
     const failWith = (failureId: string, issues: RtcBaselineIssueDto[]) =>
       fail(writer, { baselineId: input.baselineId, failureId, issues });
     const collected = await dependencies.collectArtifacts(input.baselineId);
-    if (!collected.ok) return failWith('finalization-artifact-collection', collected.issues);
+    if (!collected.ok) {
+      return failWith('finalization-artifact-collection', collected.issues);
+    }
     const artifactIssues = validateRtcBaselineCollectedArtifacts(collected.value, input.baselineId);
-    if (artifactIssues.length > 0)
+    if (artifactIssues.length > 0) {
       return failWith('finalization-artifact-validation', artifactIssues);
+    }
     const outcomes = projectRtcBaselineFinalizedOutcomes(collected.value);
     const accounting = [
       ...validateRtcBaselineCompleteAccounting({
@@ -200,29 +183,38 @@ export function createRtcBaselineFinalizedEvidence(
         expectedCohorts: collected.value.manifest.expectedCohorts,
         ...outcomes,
       }),
-      ...dependencies.validateCompleteAccounting(collected.value),
+      ...validateRtcBaselineCompleteAccounting({
+        expectedSamples: computeRtcBaselineExpectedSampleIdentities(collected.value.manifest),
+        expectedCohorts: collected.value.manifest.expectedCohorts,
+        sampleOutcomes: collected.value.sampleOutcomes,
+        cohortOutcomes: collected.value.cohortOutcomes,
+      }),
     ];
-    if (accounting.length > 0) return failWith('finalization-accounting', accounting);
-    const reconciliation = dependencies.validateReconciliation(collected.value);
-    if (reconciliation.length > 0) return failWith('finalization-reconciliation', reconciliation);
+    if (accounting.length > 0) {
+      return failWith('finalization-accounting', accounting);
+    }
     const partitioned = dependencies.partitionMetricObservations(
-      computeRtcBaselineMetricObservations(collected.value.samples, collected.value.environmentId),
+      collected.value.metricObservations,
     );
-    if (!partitioned.ok) return failWith('finalization-statistics', partitioned.issues);
+    if (!partitioned.ok) {
+      return failWith('finalization-statistics', partitioned.issues);
+    }
     const metricSummaries = summarizeRtcBaselineMetricPartitions(
       partitioned.value,
       dependencies.summarizeMetricValues,
     );
-    const canonicalRaw = canonicalizeRtcBaselineRawReferences(
-      collected.value.samples.flatMap((sample) => sample.rawReferences),
-    );
-    if (!canonicalRaw.ok) return failWith('finalization-raw-reference', canonicalRaw.issues);
+    const canonicalRaw = canonicalizeRtcBaselineRawReferences(collected.value.rawReferences);
+    if (!canonicalRaw.ok) {
+      return failWith('finalization-raw-reference', canonicalRaw.issues);
+    }
     const rawReferences = canonicalRaw.value;
-    const retainedRawArtifacts: Array<{ relativePath: string; bytes: Uint8Array }> = [];
+    const checksumEntries: Array<{ sha256: string; relativePath: string }> = [];
     for (let index = 0; index < rawReferences.length; index += 1) {
       const reference = rawReferences[index];
-      const bytes = await dependencies.readRawBytes(input.baselineId, reference.relativePath);
-      if (!bytes.ok) return failWith('finalization-raw-reference', bytes.issues);
+      const bytes = await dependencies.readBytes(input.baselineId, reference.relativePath);
+      if (!bytes.ok) {
+        return failWith('finalization-raw-reference', bytes.issues);
+      }
       const issues: RtcBaselineIssueDto[] = [];
       if (bytes.value.byteLength !== reference.bytes) {
         issues.push(
@@ -254,8 +246,10 @@ export function createRtcBaselineFinalizedEvidence(
           ),
         );
       }
-      if (issues.length > 0) return failWith('finalization-raw-reference', issues);
-      retainedRawArtifacts.push({ relativePath: reference.relativePath, bytes: bytes.value });
+      if (issues.length > 0) {
+        return failWith('finalization-raw-reference', issues);
+      }
+      checksumEntries.push({ relativePath: reference.relativePath, sha256: digest });
     }
     const summary = {
       schema: 'rallar.rtc-baseline.summary.v1' as const,
@@ -268,21 +262,26 @@ export function createRtcBaselineFinalizedEvidence(
       metricSummaries,
       rawReferences,
     };
-    const outcomeIssues = validateRtcBaselineStoredOutcomeReconciliation({
+    const outcomeIssues = validateRtcBaselineArtifactOutcomeReconciliation({
       sampleOutcomes: collected.value.sampleOutcomes,
-      samples: collected.value.samples,
+      rawReferences: collected.value.rawReferences,
       cohorts: collected.value.cohortOutcomes,
       failures: collected.value.failures,
       summary,
     });
-    if (outcomeIssues.length > 0) return failWith('finalization-reconciliation', outcomeIssues);
+    if (outcomeIssues.length > 0) {
+      return failWith('finalization-reconciliation', outcomeIssues);
+    }
     const summaryBytes = new TextEncoder().encode(JSON.stringify(summary));
-    const checksumEntries = [];
     try {
-      for (const artifact of [...collected.value.retainedArtifacts, ...retainedRawArtifacts]) {
+      for (const relativePath of collected.value.retainedArtifactPaths) {
+        const artifact = await dependencies.readBytes(input.baselineId, relativePath);
+        if (!artifact.ok) {
+          return failWith('finalization-summary-publication', artifact.issues);
+        }
         checksumEntries.push({
-          sha256: await dependencies.sha256(artifact.bytes),
-          relativePath: artifact.relativePath,
+          sha256: await dependencies.sha256(artifact.value),
+          relativePath,
         });
       }
       checksumEntries.push({
