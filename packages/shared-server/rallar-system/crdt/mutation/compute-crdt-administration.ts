@@ -6,20 +6,15 @@ import {
   verifyRallarCrdtDebugBundle,
 } from '@shared/crdt/mod.ts';
 import type {
-  CrdtAppendCommand,
-  CrdtCanonicalSnapshotEnvelope,
+  CrdtLifecycleFieldAction,
   CrdtMutationCommand,
   CrdtMutationComputed,
-  CrdtMutationComputedRejected,
-  CrdtMutationComputedWrite,
   CrdtMutationRead,
 } from './crdt-mutation-contracts.ts';
-import { toCrdtAuditOutbox } from './create-crdt-mutation-outbox.ts';
 import {
-  toAcceptedAdminResultDetails,
-  toCrdtMutationResult,
-  toRejectedAdminResultDetails,
-} from './create-crdt-mutation-result.ts';
+  computeCrdtAcceptedAdministrationOutcome,
+  computeCrdtRejectedOutcome,
+} from './compute-crdt-mutation-outcome.ts';
 import { toCrdtCanonicalSnapshotEnvelope } from './to-crdt-canonical-snapshot.ts';
 
 export interface ComputeCrdtAdministrationInput {
@@ -36,7 +31,7 @@ export function computeCrdtProjectionRebuild(
     throw new TypeError('CRDT projection rebuild computation requires a rebuild command');
   }
   if (!read.document) {
-    return rejectedAdmin({ command, read, code: 'document-not-found', serviceId });
+    return computeCrdtRejectedOutcome({ command, read, code: 'document-not-found', serviceId });
   }
   const sourceIntegrity = verifyRallarCrdtDebugBundle(
     createRallarCrdtDebugBundle({
@@ -49,7 +44,7 @@ export function computeCrdtProjectionRebuild(
     }),
   );
   if (!sourceIntegrity.valid) {
-    return rejectedAdmin({ command, read, code: 'integrity-invalid', serviceId });
+    return computeCrdtRejectedOutcome({ command, read, code: 'integrity-invalid', serviceId });
   }
   const document: RallarCrdtDocumentMetadata = {
     ...read.document,
@@ -57,7 +52,13 @@ export function computeCrdtProjectionRebuild(
     updatedAtEpochMs: command.capturedAtEpochMs,
     projectionIds: [...new Set([...read.document.projectionIds, command.projectionId])],
   };
-  return writeAdmin({ command, read, document, snapshot: null, serviceId });
+  return computeCrdtAcceptedAdministrationOutcome({
+    command,
+    read,
+    document,
+    snapshot: null,
+    serviceId,
+  });
 }
 
 export function computeCrdtSnapshotCompact(
@@ -68,7 +69,7 @@ export function computeCrdtSnapshotCompact(
     throw new TypeError('CRDT snapshot compaction requires a compact command');
   }
   if (!read.document) {
-    return rejectedAdmin({ command, read, code: 'document-not-found', serviceId });
+    return computeCrdtRejectedOutcome({ command, read, code: 'document-not-found', serviceId });
   }
   const document: RallarCrdtDocumentMetadata = {
     ...read.document,
@@ -95,9 +96,15 @@ export function computeCrdtSnapshotCompact(
       byteLengthOfRallarCrdtJson(snapshot) >
       read.document.quota.maxDocumentBytes
   ) {
-    return rejectedAdmin({ command, read, code: 'quota-exceeded', serviceId });
+    return computeCrdtRejectedOutcome({ command, read, code: 'quota-exceeded', serviceId });
   }
-  return writeAdmin({ command, read, document, snapshot, serviceId });
+  return computeCrdtAcceptedAdministrationOutcome({
+    command,
+    read,
+    document,
+    snapshot,
+    serviceId,
+  });
 }
 
 export function computeCrdtLifecycleUpdate(
@@ -108,7 +115,7 @@ export function computeCrdtLifecycleUpdate(
     throw new TypeError('CRDT lifecycle computation requires a lifecycle command');
   }
   if (!read.document) {
-    return rejectedAdmin({ command, read, code: 'document-not-found', serviceId });
+    return computeCrdtRejectedOutcome({ command, read, code: 'document-not-found', serviceId });
   }
   const document: RallarCrdtDocumentMetadata = {
     ...read.document,
@@ -131,7 +138,13 @@ export function computeCrdtLifecycleUpdate(
     retention: applyLifecycleAction(command.retentionAction, read.document.retention, null),
     quota: applyLifecycleAction(command.quotaAction, read.document.quota, null),
   };
-  return writeAdmin({ command, read, document, snapshot: null, serviceId });
+  return computeCrdtAcceptedAdministrationOutcome({
+    command,
+    read,
+    document,
+    snapshot: null,
+    serviceId,
+  });
 }
 
 export function computeCrdtErase(input: ComputeCrdtAdministrationInput): CrdtMutationComputed {
@@ -140,7 +153,7 @@ export function computeCrdtErase(input: ComputeCrdtAdministrationInput): CrdtMut
     throw new TypeError('CRDT erase computation requires an erase command');
   }
   if (!read.document) {
-    return rejectedAdmin({ command, read, code: 'document-not-found', serviceId });
+    return computeCrdtRejectedOutcome({ command, read, code: 'document-not-found', serviceId });
   }
   const document: RallarCrdtDocumentMetadata = {
     ...read.document,
@@ -152,108 +165,22 @@ export function computeCrdtErase(input: ComputeCrdtAdministrationInput): CrdtMut
         ? command.capturedAtEpochMs
         : read.document.destroyedAtEpochMs,
   };
-  return writeAdmin({ command, read, document, snapshot: null, serviceId });
-}
-
-interface CrdtLifecycleAction<T> {
-  readonly kind: 'preserve' | 'clear' | 'set';
-  readonly value?: T;
-}
-
-function applyLifecycleAction<T>(action: CrdtLifecycleAction<T>, current: T, cleared: T): T {
-  return action.kind === 'preserve'
-    ? current
-    : action.kind === 'clear'
-      ? cleared
-      : (action.value as T);
-}
-
-function writeAdmin(input: {
-  readonly command: Exclude<CrdtMutationCommand, CrdtAppendCommand>;
-  readonly read: CrdtMutationRead;
-  readonly document: RallarCrdtDocumentMetadata;
-  readonly snapshot: CrdtCanonicalSnapshotEnvelope | null;
-  readonly serviceId: string;
-}): CrdtMutationComputedWrite {
-  const { command, read, document, snapshot, serviceId } = input;
-  const result = toCrdtMutationResult({
-    command,
-    status: 'accepted',
-    document,
-    appendSequence: document.lastAppendSequence,
-    code: null,
-    details: toAcceptedAdminResultDetails({ command, read, document, snapshot }),
-  });
-  const auditEvent =
-    result.operation === 'erase' && result.status === 'accepted' ? result.auditEvent : null;
-  return toAdminComputed({
+  return computeCrdtAcceptedAdministrationOutcome({
     command,
     read,
     document,
-    snapshot,
-    outboxEntries: auditEvent ? [toCrdtAuditOutbox(auditEvent, command, serviceId)] : [],
-    result,
-    outcome: 'write',
-  }) as CrdtMutationComputedWrite;
-}
-
-function rejectedAdmin(input: {
-  readonly command: CrdtMutationCommand;
-  readonly read: CrdtMutationRead;
-  readonly code: string;
-  readonly serviceId: string;
-}): CrdtMutationComputedRejected {
-  const { command, read, code } = input;
-  if (command.operation === 'append') {
-    throw new TypeError('CRDT administration rejection requires an administrative command');
-  }
-  const result = toCrdtMutationResult({
-    command,
-    status: 'rejected',
-    document: read.document,
-    appendSequence: null,
-    code,
-    details: toRejectedAdminResultDetails(command),
+    snapshot: null,
+    serviceId,
   });
-  return {
-    ...(toAdminComputed({
-      command,
-      read,
-      document: read.document,
-      snapshot: null,
-      outboxEntries: [],
-      result,
-      outcome: 'rejected',
-    }) as Omit<CrdtMutationComputedRejected, 'code'>),
-    code,
-  };
 }
 
-function toAdminComputed(input: {
-  readonly command: Exclude<CrdtMutationCommand, CrdtAppendCommand>;
-  readonly read: CrdtMutationRead;
-  readonly document: RallarCrdtDocumentMetadata | null;
-  readonly snapshot: CrdtCanonicalSnapshotEnvelope | null;
-  readonly outboxEntries: CrdtMutationComputed['outboxEntries'];
-  readonly result: CrdtMutationComputed['result'];
-  readonly outcome: 'write' | 'rejected';
-}): CrdtMutationComputedWrite | Omit<CrdtMutationComputedRejected, 'code'> {
-  return {
-    command: input.command,
-    read: input.read,
-    operation: input.command.operation,
-    commandId: input.command.commandId,
-    commandHash: input.command.commandHash,
-    documentKey: input.command.documentKey,
-    expectedDocumentRevision: input.read.document?.documentRevision ?? 'absent',
-    expectedDocumentLifecycle: input.read.document?.lifecycle ?? 'absent',
-    expectedAppendSequence: input.read.document?.lastAppendSequence ?? 'absent',
-    document: input.document as RallarCrdtDocumentMetadata,
-    update: null,
-    append: null,
-    snapshot: input.snapshot,
-    outboxEntries: input.outboxEntries,
-    result: input.result,
-    outcome: input.outcome,
-  } as CrdtMutationComputedWrite | Omit<CrdtMutationComputedRejected, 'code'>;
+function applyLifecycleAction<T>(action: CrdtLifecycleFieldAction<T>, current: T, cleared: T): T {
+  switch (action.kind) {
+    case 'preserve':
+      return current;
+    case 'clear':
+      return cleared;
+    case 'set':
+      return action.value;
+  }
 }

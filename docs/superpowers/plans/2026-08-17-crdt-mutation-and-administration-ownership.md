@@ -119,6 +119,7 @@ packages/shared-server/rallar-system/crdt/
     crdt-append-rejection.ts
     to-crdt-canonical-snapshot.ts
     create-crdt-mutation-result.ts
+    compute-crdt-mutation-outcome.ts
     compute-crdt-mutation.ts
     validate-crdt-mutation.ts
     create-crdt-mutation-outbox.ts
@@ -466,6 +467,7 @@ repeat either move or setter removal.
 - Create: `packages/shared-server/rallar-system/crdt/mutation/validate-crdt-mutation.ts`
 - Create: `packages/shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts`
 - Create: `packages/shared-server/rallar-system/crdt/mutation/create-crdt-mutation-result.ts`
+- Create: `packages/shared-server/rallar-system/crdt/mutation/compute-crdt-mutation-outcome.ts`
 - Create: `packages/shared-server/rallar-system/crdt/mutation/create-crdt-mutation-outbox.ts`
 - Create: `packages/shared-server/rallar-system/crdt/mutation/crdt-append-rejection.ts`
 - Create: `packages/shared-server/rallar-system/crdt/mutation/to-crdt-canonical-snapshot.ts`
@@ -579,9 +581,10 @@ transaction begins.
 - [ ] **Step 4: Resolve decision density without fragmenting one operation**
 
 Keep one top-level exhaustive operation switch in `computeCrdtMutation`. Give each operation a
-behavior-named pure function accepting one named input. Keep replay and rejection result creation
-beside the shared result owner. Do not create an operation class, visitor, manager, or callback
-registry.
+behavior-named pure function accepting one named input. Keep the computed base plus accepted append,
+replay, rejection, and accepted administration outcome construction in the lower-level
+`compute-crdt-mutation-outcome.ts` owner imported by both mutation decision modules. Do not create
+an operation class, visitor, manager, callback registry, or parallel outcome construction.
 
 ```ts
 export interface ComputeCrdtMutationInput extends CrdtMutationAttemptFacts {
@@ -655,7 +658,7 @@ git commit -m "refactor(crdt): expose mutation decision phases"
 - Modify imports only: the current transaction, correction-3, policy, public-read, snapshot-reason,
   and task-9 PGlite CRDT suites plus the shared CRDT fixture
 - Modify imports only: `apps/api-v1/test/db/pglite-sql-adapter.test.ts`
-- Modify imports only: `apps/api-v1/test/routes/crdt-admin-route-compat-correction.test.ts`
+- Modify imports only: `apps/api-v1/test/crdt/routes/crdt-admin-response-compatibility.test.ts`
 - Modify imports only: the Task 1 persisted-contract invariant suite
 - Create/Test: `packages/tests/shared-server/crdt/crdt-public-compatibility.test.ts`
 - Remove: `packages/shared-server/postgres/crdt/psql-crdt-legacy-mutation.ts` after consolidating its
@@ -686,7 +689,7 @@ Update the focused PGlite imports to the target paths and run:
 npx vitest run packages/tests/shared-server/crdt/crdt-public-compatibility.test.ts
 cd apps/api-v1 && deno test -A \
   test/db/pglite-crdt-app-inbox-transaction.test.ts \
-  test/db/pglite-crdt-task9-correction.test.ts
+  test/crdt/persistence/crdt-persisted-contracts.test.ts
 ```
 
 Expected: FAIL on missing canonical persistence modules.
@@ -832,8 +835,8 @@ current package-root evidence proves otherwise.
 npx vitest run packages/tests/shared-server/crdt/crdt-public-compatibility.test.ts
 cd apps/api-v1 && deno test -A \
   test/db/pglite-crdt-app-inbox-transaction.test.ts \
-  test/db/pglite-crdt-task9-correction.test.ts \
-  test/db/pglite-crdt-public-reads-correction-4.test.ts
+  test/crdt/persistence/crdt-persisted-contracts.test.ts \
+  test/crdt/persistence/crdt-public-read-integrity.test.ts
 deno task check
 cd ../..
 npx tsc -p packages/shared-server/tsconfig.json --noEmit
@@ -855,14 +858,14 @@ git add packages/shared-server/rallar-system/crdt/persistence \
   apps/api-v1/src/composition/create-default-rallar-server.ts \
   apps/api-v1/src/services/create-api-crdt-inbox-service.ts \
   apps/api-v1/test/db/pglite-crdt-app-inbox-transaction.test.ts \
-  apps/api-v1/test/db/pglite-crdt-correction-3-fixtures.ts \
-  apps/api-v1/test/db/pglite-crdt-correction-3.test.ts \
+  apps/api-v1/test/crdt/crdt-api-test-fixtures.ts \
+  apps/api-v1/test/crdt/persistence/crdt-mutation-retry.test.ts \
   apps/api-v1/test/db/pglite-crdt-policy-correction-4.test.ts \
-  apps/api-v1/test/db/pglite-crdt-public-reads-correction-4.test.ts \
-  apps/api-v1/test/db/pglite-crdt-snapshot-reason-correction-6.test.ts \
-  apps/api-v1/test/db/pglite-crdt-task9-correction.test.ts \
+  apps/api-v1/test/crdt/persistence/crdt-public-read-integrity.test.ts \
+  apps/api-v1/test/crdt/persistence/crdt-snapshot-reason.test.ts \
+  apps/api-v1/test/crdt/persistence/crdt-persisted-contracts.test.ts \
   apps/api-v1/test/db/pglite-sql-adapter.test.ts \
-  apps/api-v1/test/routes/crdt-admin-route-compat-correction.test.ts
+  apps/api-v1/test/crdt/routes/crdt-admin-response-compatibility.test.ts
 git commit -m "refactor(crdt): colocate PostgreSQL persistence"
 ```
 
@@ -1034,7 +1037,8 @@ export function registerCrdtAuditDelivery(input: RegisterCrdtAuditDeliveryInput)
 The inbox constructor calls this function only when `dependencies.auditDelivery !== undefined`.
 That optional field contains both the outbox reader and sink, so construction cannot represent a
 reader-without-sink or sink-without-reader state. Default production omits the complete field.
-Delete `setAuditSink` and mutable audit state.
+`setAuditSink` and the mutable audit state were already deleted in Task 2; keep them absent while
+extracting registration.
 
 - [ ] **Step 5: Create the API admin mutation owner and update both consumers**
 
@@ -1059,9 +1063,9 @@ rejected result into the existing HTTP-facing error/result.
 
 Construct the service with named dependencies. Pass `auditDelivery` only from an explicit API
 runtime input containing both the sink and already-constructed outbox reader. Current default
-production omits it, so no handler registers. Remove
-`runtime.appCrdtInboxService?.setAuditSink(undefined)` from
-`create-default-rallar-server.ts` and remove route-level `crdtAuditSink` plumbing.
+production omits it, so no handler registers. Keep the Task 2 construction-only audit boundary:
+do not restore `setAuditSink`, its former default-server reset call, or route-level
+`crdtAuditSink` plumbing.
 
 - [ ] **Step 7: Run GREEN and the corrected PGlite audit path**
 
@@ -1071,7 +1075,7 @@ npx vitest run packages/tests/shared-server/crdt/inbox \
   packages/tests/shared-server/admin-prune-retry-lifetime.test.ts
 cd apps/api-v1 && deno test -A \
   test/crdt/inbox/crdt-admin-command-expiry.test.ts \
-  test/routes/crdt-admin-route-compat-correction.test.ts \
+  test/crdt/routes/crdt-admin-response-compatibility.test.ts \
   test/routes/crdt-admin-repository-health.test.ts \
   test/db/pglite-crdt-app-inbox-production-correction-2.test.ts \
   test/db/pglite-crdt-ws-authority-correction-4.test.ts \
@@ -1103,7 +1107,7 @@ git add packages/shared-server/rallar-system/crdt/inbox \
   apps/api-v1/src/composition/create-api-v1-system-installers.ts \
   apps/api-v1/test/composition/create-api-v1-admin-services.test.ts \
   apps/api-v1/test/composition/create-api-v1-route-installers.test.ts \
-  apps/api-v1/test/routes/crdt-admin-route-compat-correction.test.ts \
+  apps/api-v1/test/crdt/routes/crdt-admin-response-compatibility.test.ts \
   apps/api-v1/test/routes/crdt-admin-repository-health.test.ts \
   apps/api-v1/test/db/pglite-crdt-app-inbox-production-correction-2.test.ts \
   apps/api-v1/test/db/pglite-crdt-ws-authority-correction-4.test.ts \
@@ -1605,8 +1609,8 @@ git add apps/api-v1/src/crdt \
   apps/api-v1/src/composition/create-api-v1-runtime.ts \
   apps/api-v1/test/composition/create-api-v1-mutation-runtime.test.ts \
   apps/api-v1/test/db/pglite-crdt-app-inbox-production-correction-2.test.ts \
-  apps/api-v1/test/db/pglite-crdt-correction-3.test.ts \
-  apps/api-v1/test/db/pglite-crdt-snapshot-reason-correction-6.test.ts \
+  apps/api-v1/test/crdt/persistence/crdt-mutation-retry.test.ts \
+  apps/api-v1/test/crdt/persistence/crdt-snapshot-reason.test.ts \
   apps/api-v1/test/db/pglite-crdt-ws-authority-correction-4.test.ts \
   apps/api-v1/test/crdt \
   packages/tests/shared-server/crdt/realtime/crdt-principal-fanout-cold-cache.test.ts
