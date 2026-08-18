@@ -54,6 +54,13 @@ interface ImmutableSubmittedCommandInput {
   readonly submission: MutationRoutingAstNode;
 }
 
+interface AppendPatternBindingInput {
+  readonly bindings: LexicalBinding[];
+  readonly pattern: MutationRoutingAstNode | undefined;
+  readonly declarationStatement: MutationRoutingAstNode;
+  readonly bindingName: string;
+}
+
 interface LiveReturnCompletion {
   readonly kind: 'return';
   readonly value: MutationRoutingAstNode | undefined;
@@ -208,8 +215,7 @@ function readContainingLexicalScopes(
   }
   return findAll(
     owner,
-    (node) =>
-      node.type === 'BlockStatement' && containsSourceRange(node, referenceStart, referenceEnd),
+    (node) => isLexicalScopeNode(node) && containsSourceRange(node, referenceStart, referenceEnd),
   ).toSorted((left, right) => sourceRangeSize(left) - sourceRangeSize(right));
 }
 
@@ -218,17 +224,151 @@ function readScopeBindings(
   bindingName: string,
 ): readonly LexicalBinding[] {
   const bindings: LexicalBinding[] = [];
+  if (isFunctionNode(scope)) {
+    appendFunctionBindings(bindings, scope, bindingName);
+  }
+  if (scope.type === 'CatchClause') {
+    appendPatternBinding({
+      bindings,
+      pattern: asNode(scope.param),
+      declarationStatement: scope,
+      bindingName,
+    });
+  }
+  if (scope.type === 'ClassDeclaration' || scope.type === 'ClassExpression') {
+    appendPatternBinding({
+      bindings,
+      pattern: asNode(scope.id),
+      declarationStatement: scope,
+      bindingName,
+    });
+  }
+  appendDirectStatementBindings(bindings, scope, bindingName);
+  return bindings;
+}
+
+function appendFunctionBindings(
+  bindings: LexicalBinding[],
+  scope: MutationRoutingAstNode,
+  bindingName: string,
+): void {
+  if (scope.type === 'FunctionDeclaration' || scope.type === 'FunctionExpression') {
+    appendPatternBinding({
+      bindings,
+      pattern: asNode(scope.id),
+      declarationStatement: scope,
+      bindingName,
+    });
+  }
+  for (const parameter of asNodes(scope.params)) {
+    appendPatternBinding({
+      bindings,
+      pattern: parameter,
+      declarationStatement: scope,
+      bindingName,
+    });
+  }
+}
+
+function appendDirectStatementBindings(
+  bindings: LexicalBinding[],
+  scope: MutationRoutingAstNode,
+  bindingName: string,
+): void {
   for (const statement of asNodes(scope.body)) {
-    if (statement.type !== 'VariableDeclaration') {
-      continue;
-    }
-    for (const declaration of asNodes(statement.declarations)) {
-      if (readName(asNode(declaration.id)) === bindingName) {
-        bindings.push({ declaration, declarationStatement: statement });
+    appendStatementBinding(bindings, statement, bindingName);
+  }
+  const loopDeclaration = asNode(scope.init) ?? asNode(scope.left);
+  if (loopDeclaration?.type === 'VariableDeclaration') {
+    appendVariableDeclarationBindings(bindings, loopDeclaration, bindingName);
+  }
+  if (scope.type === 'SwitchStatement') {
+    for (const caseNode of asNodes(scope.cases)) {
+      for (const statement of asNodes(caseNode.consequent)) {
+        appendStatementBinding(bindings, statement, bindingName);
       }
     }
   }
-  return bindings;
+}
+
+function appendStatementBinding(
+  bindings: LexicalBinding[],
+  statement: MutationRoutingAstNode,
+  bindingName: string,
+): void {
+  if (statement.type === 'VariableDeclaration') {
+    appendVariableDeclarationBindings(bindings, statement, bindingName);
+  } else if (statement.type === 'FunctionDeclaration' || statement.type === 'ClassDeclaration') {
+    appendPatternBinding({
+      bindings,
+      pattern: asNode(statement.id),
+      declarationStatement: statement,
+      bindingName,
+    });
+  }
+}
+
+function appendVariableDeclarationBindings(
+  bindings: LexicalBinding[],
+  declarationStatement: MutationRoutingAstNode,
+  bindingName: string,
+): void {
+  for (const declaration of asNodes(declarationStatement.declarations)) {
+    if (patternBindsName(asNode(declaration.id), bindingName)) {
+      bindings.push({ declaration, declarationStatement });
+    }
+  }
+}
+
+function appendPatternBinding(input: AppendPatternBindingInput): void {
+  if (input.pattern && patternBindsName(input.pattern, input.bindingName)) {
+    input.bindings.push({
+      declaration: input.pattern,
+      declarationStatement: input.declarationStatement,
+    });
+  }
+}
+
+function patternBindsName(
+  pattern: MutationRoutingAstNode | undefined,
+  bindingName: string,
+): boolean {
+  if (!pattern) {
+    return false;
+  }
+  if (pattern.type === 'Identifier') {
+    return readName(pattern) === bindingName;
+  }
+  if (pattern.type === 'AssignmentPattern') {
+    return patternBindsName(asNode(pattern.left), bindingName);
+  }
+  if (pattern.type === 'RestElement' || pattern.type === 'TSParameterProperty') {
+    return patternBindsName(asNode(pattern.argument ?? pattern.parameter), bindingName);
+  }
+  if (pattern.type === 'ObjectProperty') {
+    return patternBindsName(asNode(pattern.value), bindingName);
+  }
+  if (pattern.type === 'ObjectPattern') {
+    return asNodes(pattern.properties).some((property) => patternBindsName(property, bindingName));
+  }
+  if (pattern.type === 'ArrayPattern') {
+    return asNodes(pattern.elements).some((element) => patternBindsName(element, bindingName));
+  }
+  return false;
+}
+
+function isLexicalScopeNode(node: MutationRoutingAstNode): boolean {
+  return (
+    node.type === 'BlockStatement' ||
+    node.type === 'CatchClause' ||
+    node.type === 'ClassDeclaration' ||
+    node.type === 'ClassExpression' ||
+    node.type === 'ForStatement' ||
+    node.type === 'ForInStatement' ||
+    node.type === 'ForOfStatement' ||
+    node.type === 'SwitchStatement' ||
+    isFunctionNode(node)
+  );
 }
 
 function isImmutableSubmittedCommand(input: ImmutableSubmittedCommandInput): boolean {

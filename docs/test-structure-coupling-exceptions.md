@@ -33,7 +33,7 @@ also invalid, so this document cannot accumulate orphan approvals.
 
 ## Reviewed boundary groups
 
-The current 138 entries were reviewed by independently meaningful behavior,
+The current 140 entries were reviewed by independently meaningful behavior,
 not by vocabulary. The metadata below splits these groups further by exact
 executable assertion so a broad domain label cannot conceal unrelated evidence.
 
@@ -44,7 +44,7 @@ executable assertion so a broad domain label cannot conceal unrelated evidence.
 | Browser control protocol                         |       7 | Two approved assertions protect server import direction and shared-test monitor ownership.                       |
 | Auth compatibility                               |       3 | Wrapper mutations and the canonical-test inventory protect distinct compatibility edges.                         |
 | Repository style and release interfaces          |       2 | Automation consumes stable rule and release-gate mappings.                                                       |
-| AppInbox transport routing                       |      12 | Concrete route and command-binding mutations must fail before they bypass the canonical transaction owner.       |
+| AppInbox transport routing                       |      14 | Concrete route and command-binding mutations must fail before they bypass the canonical transaction owner.       |
 | Mutation-analysis implementation interface       |       3 | The audit must follow new files, re-exports, and type declarations fail-closed.                                  |
 | Mutation route and owner traversal               |      13 | Route, export, helper, and capability evasions must still resolve to AppInbox.                                   |
 | Group mutation construction                      |      14 | Missing, duplicate, reordered, conditional, or rebound owner calls must be rejected.                             |
@@ -258,6 +258,22 @@ moved or changed test.
       "summary": "A canonical command and its submission may share one nested lexical block. Executable assertion: “accepts canonical command submission inside one nested lexical block”.",
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#accepts canonical command submission inside one nested lexical block",
       "coverageRelation": "The executable mutant nests the complete canonical command workflow in one block and requires lexical binding analysis to preserve the valid owner-to-submission path."
+    },
+    {
+      "id": "app-inbox-crdt-submission-parameter-shadow",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "A callback parameter named command shadows an outer command binding at terminal submission. Executable assertion: “rejects a callback parameter shadowing the outer compact command”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a callback parameter shadowing the outer compact command",
+      "coverageRelation": "The executable mutant passes a lifecycle command through a same-name callback parameter while retaining an outer compact command; the analyzer must stop at the nearer parameter binding."
+    },
+    {
+      "id": "app-inbox-crdt-submission-unrelated-parameter",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "An unrelated callback parameter does not shadow the outer command used by terminal submission. Executable assertion: “accepts an unrelated callback parameter while submitting the outer command”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#accepts an unrelated callback parameter while submitting the outer command",
+      "coverageRelation": "The executable mutant adds an unrelated callback parameter but submits the canonical outer command, proving lexical resolution falls outward only when the nearer scope has no matching binding."
     },
     {
       "id": "app-inbox-mutation-routing--rejects-a-wrong-local-presence-route-constant",
@@ -1154,6 +1170,32 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "Wraps the canonical command creation and submission in one nested block, proving exact lexical binding does not reject a valid nested owner scope.",
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#accepts canonical command submission inside one nested lexical block"
+    },
+    {
+      "id": "test-structure-coupling-5bfa52c619ea3a3f",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 366,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-submission-parameter-shadow",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Passes a lifecycle command through a callback parameter named command while retaining an outer compact declaration, requiring the analyzer to stop at the nearer parameter binding.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a callback parameter shadowing the outer compact command"
+    },
+    {
+      "id": "test-structure-coupling-30dff7f68f1fdefa",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 377,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-submission-unrelated-parameter",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Adds an unrelated callback parameter while submitting the outer command, proving lexical lookup can cross a nearer scope only when it has no matching binding.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#accepts an unrelated callback parameter while submitting the outer command"
     },
     {
       "id": "test-structure-coupling-18fc3cbf53d4a31b",

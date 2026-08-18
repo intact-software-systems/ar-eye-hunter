@@ -1122,11 +1122,13 @@ value on the live terminal path. The submitted command is created through an imm
 binding; any live assignment or update before submission invalidates that proof, while an
 assignment in a literal-false branch does not. The submission identifier resolves to exactly one
 live preceding declaration in its nearest lexical block, so a later nested same-name declaration
-cannot replace its provenance; a canonical command and submission may share a nested block.
-Executable mutants cover a hardcoded helper operation, a second wrong submitted command, live
-reassignment of the submitted binding, a later nested shadow decoy, literal-false correct returns
-followed by live fallthrough, and dead correct route/gateway calls or command reassignment masking
-live behavior.
+cannot replace its provenance; a canonical command and submission may share a nested block. A
+nearer function/arrow parameter, destructuring declaration, catch binding, or function/class
+binding stops outward resolution and fails closed unless it is the required command creation; an
+unrelated parameter does not hide the outer command. Executable mutants cover a hardcoded helper
+operation, a second wrong submitted command, live reassignment of the submitted binding, later
+nested and callback-parameter shadow decoys, literal-false correct returns followed by live
+fallthrough, and dead correct route/gateway calls or command reassignment masking live behavior.
 
 Individually review every current source-read assertion in the changed coupling registry. Replace
 stale location identities after the test move, add durable security classifications for the live

@@ -362,6 +362,24 @@ it('accepts canonical command submission inside one nested lexical block', () =>
   expect(validateWithOverride(CRDT_ADMIN_MUTATIONS, mutated)).toEqual([]);
 });
 
+it('rejects a callback parameter shadowing the outer compact command', () => {
+  const source = readFileSync(CRDT_ADMIN_MUTATIONS, 'utf8');
+  const mutated = withLifecycleCommandSubmittedThroughShadowingParameter(source);
+
+  expect(validateWithOverride(CRDT_ADMIN_MUTATIONS, mutated)).toEqual(
+    expect.arrayContaining([
+      expect.stringContaining('CRDT_SNAPSHOT_COMPACT operation is not connected'),
+    ]),
+  );
+});
+
+it('accepts an unrelated callback parameter while submitting the outer command', () => {
+  const source = readFileSync(CRDT_ADMIN_MUTATIONS, 'utf8');
+  const mutated = withOuterCommandSubmittedBesideUnrelatedParameter(source);
+
+  expect(validateWithOverride(CRDT_ADMIN_MUTATIONS, mutated)).toEqual([]);
+});
+
 it.each([
   ['/api/crdt/admin/documents/compact', AppInboxType.CRDT_SNAPSHOT_COMPACT, 'compact'],
   ['/api/admin/operations/crdt/compact', AppInboxType.CRDT_SNAPSHOT_COMPACT, 'compact'],
@@ -614,6 +632,33 @@ function withNestedCanonicalCommandScope(source: string): string {
     '      return toAdminPublicResult(result);\n    },',
     '      return toAdminPublicResult(result);\n      }\n    },',
   );
+}
+
+function withLifecycleCommandSubmittedThroughShadowingParameter(source: string): string {
+  const submission =
+    '      const completed = await input.appCrdtInboxService.' +
+    'writeCrdtCommandUntilCompletion(command);';
+  const replacement = `      const submitCommand = async (command: CrdtMutationCommand) =>
+        await input.appCrdtInboxService.writeCrdtCommandUntilCompletion(command);
+      const lifecycleCommand = await createCrdtAdminCommand({
+        ...mutation,
+        operation: 'lifecycle',
+        nowEpochMs: input.nowEpochMs,
+        createId: input.createId,
+        serviceId: input.serviceId,
+      });
+      const completed = await submitCommand(lifecycleCommand);`;
+  return replaceRequired(source, submission, replacement);
+}
+
+function withOuterCommandSubmittedBesideUnrelatedParameter(source: string): string {
+  const submission =
+    '      const completed = await input.appCrdtInboxService.' +
+    'writeCrdtCommandUntilCompletion(command);';
+  const replacement = `      const submitCommand = async (_candidate: CrdtMutationCommand) =>
+        await input.appCrdtInboxService.writeCrdtCommandUntilCompletion(command);
+      const completed = await submitCommand(command);`;
+  return replaceRequired(source, submission, replacement);
 }
 
 function withDeadCorrectCompactCommandCreation(source: string): string {
