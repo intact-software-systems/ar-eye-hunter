@@ -68,7 +68,9 @@ export function decodeCrdtMutationResult(value: unknown): CrdtMutationResult {
     ],
     'CRDT mutation result',
   );
-  if (result.version !== 1) throw new TypeError('CRDT mutation result version is invalid');
+  if (result.version !== 1) {
+    throw new TypeError('CRDT mutation result version is invalid');
+  }
   const status = requireOneOf(
     result.status,
     ['accepted', 'replay', 'rejected'] as const,
@@ -81,7 +83,9 @@ export function decodeCrdtMutationResult(value: unknown): CrdtMutationResult {
   requireString(result.documentKey, 'result documentKey');
   requireNullableInteger(result.documentRevision, 'result documentRevision');
   requireNullableInteger(result.appendSequence, 'result appendSequence');
-  if (result.code !== null) requireString(result.code, 'result code');
+  if (result.code !== null) {
+    requireString(result.code, 'result code');
+  }
   if (status === 'rejected') {
     if (result.appendSequence !== null || result.code === null) {
       throw new TypeError('CRDT rejected result sequence or code is inconsistent');
@@ -93,20 +97,25 @@ export function decodeCrdtMutationResult(value: unknown): CrdtMutationResult {
   ) {
     throw new TypeError('CRDT accepted result revision, sequence, or code is inconsistent');
   }
-  if (operation === 'append') decodeAppendResult(result.appendResult);
-  else if (operation === 'compact') {
+  if (operation === 'append') {
+    decodeAppendResult(result.appendResult);
+  } else if (operation === 'compact') {
     if (result.snapshot !== null) {
       const snapshot = decodeExactSnapshotEnvelope(result.snapshot);
       requireCrdtCanonicalSnapshotReason(snapshot.metadata.reason);
     }
-    if (result.metadata !== null) decodeExactDocumentMetadata(result.metadata);
+    if (result.metadata !== null) {
+      decodeExactDocumentMetadata(result.metadata);
+    }
   } else if (operation === 'lifecycle' && result.metadata !== null) {
     decodeExactDocumentMetadata(result.metadata);
   } else if (operation === 'rebuild-projection') {
     if (result.integrity !== null) {
       decodeExactIntegrityReport(requireRecord(result.integrity, 'CRDT integrity report'));
     }
-    if (result.metadata !== null) decodeExactDocumentMetadata(result.metadata);
+    if (result.metadata !== null) {
+      decodeExactDocumentMetadata(result.metadata);
+    }
   } else if (operation === 'erase') {
     if (result.request !== null) {
       decodeExactErasureRequest(requireRecord(result.request, 'CRDT erasure request'));
@@ -114,8 +123,12 @@ export function decodeCrdtMutationResult(value: unknown): CrdtMutationResult {
     if (result.auditEvent !== null) {
       decodeExactErasureAuditEvent(requireRecord(result.auditEvent, 'CRDT erasure audit event'));
     }
-    if (result.metadata !== null) decodeExactDocumentMetadata(result.metadata);
-    if (result.redactedBundle !== null) decodeExactDebugBundle(result.redactedBundle);
+    if (result.metadata !== null) {
+      decodeExactDocumentMetadata(result.metadata);
+    }
+    if (result.redactedBundle !== null) {
+      decodeExactDebugBundle(result.redactedBundle);
+    }
   }
   validateResultConsistency(result, operation);
   return result as CrdtMutationResult & Record<string, unknown>;
@@ -151,8 +164,9 @@ function validateResultConsistency(
         result.appendSequence !== trusted.appendSequence ||
         document.lastAppendSequence < trusted.appendSequence ||
         trusted.acceptedUpdateHash !== hashRallarCrdtUpdateEnvelope(update)
-      )
+      ) {
         throw new TypeError('CRDT append result document, revision, or sequence differs');
+      }
     } else {
       const update = append.update as RallarCrdtUpdateEnvelope;
       const document = append.document as RallarCrdtDocumentMetadata | undefined;
@@ -162,8 +176,9 @@ function validateResultConsistency(
         (document &&
           (document.documentKey !== result.documentKey ||
             document.documentRevision !== result.documentRevision))
-      )
+      ) {
         throw new TypeError('CRDT append rejection document or revision differs');
+      }
     }
     return;
   }
@@ -183,8 +198,9 @@ function validateResultConsistency(
       (metadata!.documentKey !== result.documentKey ||
         metadata!.documentRevision !== result.documentRevision ||
         metadata!.lastAppendSequence !== result.appendSequence)
-    )
+    ) {
       throw new TypeError(`CRDT ${operation} result metadata revision or sequence differs`);
+    }
   }
   if (!rejected && operation === 'lifecycle') {
     const metadata = result.metadata as RallarCrdtDocumentMetadata;
@@ -192,8 +208,9 @@ function validateResultConsistency(
       metadata.documentKey !== result.documentKey ||
       metadata.documentRevision !== result.documentRevision ||
       metadata.lastAppendSequence !== result.appendSequence
-    )
+    ) {
       throw new TypeError('CRDT lifecycle result document, revision, or sequence differs');
+    }
   }
   if (!rejected && operation === 'compact') {
     const snapshot = result.snapshot as RallarCrdtSnapshotEnvelope;
@@ -230,16 +247,18 @@ function validateResultConsistency(
       metadata.lastAppendSequence !== result.appendSequence ||
       (bundle !== null && bundle.documentKey !== result.documentKey) ||
       (bundle !== null) !== (mode === 'redact-payloads')
-    )
+    ) {
       throw new TypeError('CRDT erase result document or revision differs');
+    }
   } else if (rejected && operation === 'erase') {
     if (
       result.request !== null ||
       result.auditEvent !== null ||
       result.metadata !== null ||
       result.redactedBundle !== null
-    )
+    ) {
       throw new TypeError('CRDT erase rejected result payload is inconsistent');
+    }
   }
 }
 
@@ -278,7 +297,9 @@ function decodeAppendResult(value: unknown): void {
   if (appendRejectionReason(supportedCode) !== reason) {
     throw new TypeError('CRDT append rejection reason differs from code');
   }
-  if (typeof append.retryable !== 'boolean') throw new TypeError('append retryable is invalid');
+  if (typeof append.retryable !== 'boolean') {
+    throw new TypeError('append retryable is invalid');
+  }
   if (append.retryable !== isAppendRejectionRetryable(supportedCode)) {
     throw new TypeError('CRDT append rejection retryable differs from code');
   }
@@ -286,5 +307,7 @@ function decodeAppendResult(value: unknown): void {
   if ('validation' in append) {
     decodeExactValidationResult(requireRecord(append.validation, 'CRDT validation result'));
   }
-  if ('document' in append) decodeExactDocumentMetadata(append.document);
+  if ('document' in append) {
+    decodeExactDocumentMetadata(append.document);
+  }
 }

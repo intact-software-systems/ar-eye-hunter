@@ -1,4 +1,9 @@
-import { expect, expectTypeOf, it } from 'vitest';
+// prettier-ignore
+import {
+  expect,
+  expectTypeOf,
+  it,
+} from 'vitest';
 
 import type {
   RallarCrdtAdminReadRepository,

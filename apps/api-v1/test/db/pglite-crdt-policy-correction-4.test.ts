@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
+
 import {
   evaluateRallarCrdtFeaturePolicy,
   type RallarCrdtDocumentRef,
   toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
-import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
+// deno-fmt-ignore
+import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/\
+psql-crdt-log-repository.ts';
+
 import {
   readConfiguredCrdtPolicies,
 } from '../../src/services/create-api-mutation-inbox-factories.ts';
@@ -19,41 +23,44 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   documentId: 'document-1',
 };
 
-Deno.test('configured CRDT policy decoder rejects unknown and malformed nested fields', async () => {
-  await withPolicyEnvironment(() => {
-    const invalid = [
-      { documentType: 'checklist', rollout: 'production', unknown: true },
-      { documentType: 'checklist', rollout: 'production', applicationId: '' },
-      { documentType: 'checklist', rollout: 'production', workspaceId: 7 },
-      { documentType: 'checklist', rollout: 'production', scope: 'workspace' },
-      { documentType: 'checklist', rollout: 'production', flags: { ws: 'yes' } },
-      { documentType: 'checklist', rollout: 'production', flags: { extra: true } },
-      { documentType: 'checklist', rollout: 'production', quota: { maxUpdateBytes: 0 } },
-      { documentType: 'checklist', rollout: 'production', quota: { extra: 1 } },
-      { documentType: 'checklist', rollout: 'production', retention: { mode: 'later' } },
-      {
-        documentType: 'checklist',
-        rollout: 'production',
-        retention: { mode: 'delete-after' },
-      },
-      {
-        documentType: 'checklist',
-        rollout: 'production',
-        retention: { mode: 'retain', extra: true },
-      },
-      { documentType: 'checklist', rollout: 'production', sensitiveFields: [''] },
-      {
-        documentType: 'checklist',
-        rollout: 'production',
-        sensitiveFields: ['secret', 'secret'],
-      },
-    ];
-    for (const policy of invalid) {
-      Deno.env.set(ENVIRONMENT_KEY, JSON.stringify([policy]));
-      assert.throws(() => readConfiguredCrdtPolicies(), /policy|field|invalid/i);
-    }
-  });
-});
+Deno.test(
+  'configured CRDT policy decoder rejects unknown and malformed nested fields',
+  async () => {
+    await withPolicyEnvironment(() => {
+      const invalid = [
+        { documentType: 'checklist', rollout: 'production', unknown: true },
+        { documentType: 'checklist', rollout: 'production', applicationId: '' },
+        { documentType: 'checklist', rollout: 'production', workspaceId: 7 },
+        { documentType: 'checklist', rollout: 'production', scope: 'workspace' },
+        { documentType: 'checklist', rollout: 'production', flags: { ws: 'yes' } },
+        { documentType: 'checklist', rollout: 'production', flags: { extra: true } },
+        { documentType: 'checklist', rollout: 'production', quota: { maxUpdateBytes: 0 } },
+        { documentType: 'checklist', rollout: 'production', quota: { extra: 1 } },
+        { documentType: 'checklist', rollout: 'production', retention: { mode: 'later' } },
+        {
+          documentType: 'checklist',
+          rollout: 'production',
+          retention: { mode: 'delete-after' },
+        },
+        {
+          documentType: 'checklist',
+          rollout: 'production',
+          retention: { mode: 'retain', extra: true },
+        },
+        { documentType: 'checklist', rollout: 'production', sensitiveFields: [''] },
+        {
+          documentType: 'checklist',
+          rollout: 'production',
+          sensitiveFields: ['secret', 'secret'],
+        },
+      ];
+      for (const policy of invalid) {
+        Deno.env.set(ENVIRONMENT_KEY, JSON.stringify([policy]));
+        assert.throws(() => readConfiguredCrdtPolicies(), /policy|field|invalid/i);
+      }
+    });
+  },
+);
 
 Deno.test('configured CRDT policy decoder preserves the exact valid rollout contract', async () => {
   await withPolicyEnvironment(() => {
@@ -97,49 +104,52 @@ Deno.test('configured CRDT policy decoder preserves the exact valid rollout cont
   });
 });
 
-Deno.test('operator CRDT status defaults disabled and matches configured mutation policy', async () => {
-  await withPolicyEnvironment(async () => {
-    await withPGliteSql(async (sql) => {
-      await insertDocument(sql);
-      Deno.env.delete(ENVIRONMENT_KEY);
-      assert.deepEqual(readConfiguredCrdtPolicies(), [{
-        documentType: '*',
-        rollout: 'disabled',
-      }]);
-      const defaultStatus = await new PSqlCrdtLogRepository(sql).listDocuments();
-      assert.equal(defaultStatus.documents[0]?.rollout, 'disabled');
+Deno.test(
+  'operator CRDT status defaults disabled and matches configured mutation policy',
+  async () => {
+    await withPolicyEnvironment(async () => {
+      await withPGliteSql(async (sql) => {
+        await insertDocument(sql);
+        Deno.env.delete(ENVIRONMENT_KEY);
+        assert.deepEqual(readConfiguredCrdtPolicies(), [{
+          documentType: '*',
+          rollout: 'disabled',
+        }]);
+        const defaultStatus = await new PSqlCrdtLogRepository(sql).listDocuments();
+        assert.equal(defaultStatus.documents[0]?.rollout, 'disabled');
 
-      Deno.env.set(
-        ENVIRONMENT_KEY,
-        JSON.stringify([{
-          documentType: 'checklist',
-          rollout: 'durable-beta',
-          scope: 'app',
-          applicationId: 'app-1',
-          workspaceId: 'workspace-1',
-          flags: { appScope: true },
-        }]),
-      );
-      const policies = readConfiguredCrdtPolicies();
-      const mutation = evaluateRallarCrdtFeaturePolicy({
-        document: DOCUMENT,
-        operation: 'durable-append',
-        policies,
+        Deno.env.set(
+          ENVIRONMENT_KEY,
+          JSON.stringify([{
+            documentType: 'checklist',
+            rollout: 'durable-beta',
+            scope: 'app',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            flags: { appScope: true },
+          }]),
+        );
+        const policies = readConfiguredCrdtPolicies();
+        const mutation = evaluateRallarCrdtFeaturePolicy({
+          document: DOCUMENT,
+          operation: 'durable-append',
+          policies,
+        });
+        const admin = await new PSqlCrdtLogRepository(sql, { policies }).listDocuments();
+
+        assert.equal(admin.documents[0]?.rollout, mutation.rollout);
+        const productionSource = await Deno.readTextFile(
+          new URL(
+            '../../src/composition/create-default-rallar-server.ts',
+            import.meta.url,
+          ),
+        );
+        assert.match(productionSource, /readConfiguredCrdtPolicies/);
+        assert.match(productionSource, /PSqlCrdtLogRepository[\s\S]*policies/);
       });
-      const admin = await new PSqlCrdtLogRepository(sql, { policies }).listDocuments();
-
-      assert.equal(admin.documents[0]?.rollout, mutation.rollout);
-      const productionSource = await Deno.readTextFile(
-        new URL(
-          '../../src/composition/create-default-rallar-server.ts',
-          import.meta.url,
-        ),
-      );
-      assert.match(productionSource, /readConfiguredCrdtPolicies/);
-      assert.match(productionSource, /PSqlCrdtLogRepository[\s\S]*policies/);
     });
-  });
-});
+  },
+);
 
 async function insertDocument(
   sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],

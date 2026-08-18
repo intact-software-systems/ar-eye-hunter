@@ -6,20 +6,9 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWe
 import {
   InMemoryRallarCrdtLogRepository,
 } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/formation-metrics.ts';
 // deno-fmt-ignore
-import type {
-  GroupTopologyManagementService,
-} from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
-// deno-fmt-ignore
-import type {
-  AppAdminInboxService,
-} from '@shared-server/rallar-system/services/AppAdminInboxService.ts';
-// deno-fmt-ignore
-import type {
-  AppGroupInboxService,
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 
 import {
   createApiV1AdminServices,
@@ -133,7 +122,9 @@ function createInput(
     crdtAdminRepository: new InMemoryRallarCrdtLogRepository({
       now: () => NOW_EPOCH_MS,
     }),
-    topologyManagement: {} as GroupTopologyManagementService,
+    topologyManagement: {
+      readTopologyView: rejectUnusedOperation,
+    },
     clientStateService: {
       readSnapshot: () => Promise.resolve(undefined),
       readPresenceSnapshot: () => Promise.resolve(undefined),
@@ -151,25 +142,36 @@ function createInput(
         }),
       listEvents: () => Promise.resolve([]),
     },
-    appAdminInboxService: {} as AppAdminInboxService,
+    appAdminInboxService: {
+      pruneExpired: rejectUnusedOperation,
+    },
     crdtAdminMutations: {
       writeCrdtAdminMutation: () => Promise.reject(new Error('mutation not used')),
     },
-    appGroupInboxService: {} as AppGroupInboxService,
+    appGroupInboxService: {
+      processAuthenticatedEntryUntilCompletionResult: rejectUnusedOperation,
+    },
   };
 }
 
 function createDatabase(): PSqlSql {
   return Object.assign(
-    function <T>(_strings: TemplateStringsArray, ..._values: unknown[]): Promise<T> {
+    function <T>(
+      _stringsOrValues: TemplateStringsArray | readonly unknown[],
+      ..._values: unknown[]
+    ): Promise<T> {
       return Promise.reject(new Error('query not used'));
     },
     {
-      begin<T>(_operation: (transaction: PSqlSql) => Promise<T>): Promise<T> {
+      begin<T>(_operation: (transaction: PSqlTransactionSql) => Promise<T>): Promise<T> {
         return Promise.reject(new Error('transaction not used'));
       },
     },
-  ) as PSqlSql;
+  );
+}
+
+function rejectUnusedOperation<T>(): Promise<T> {
+  return Promise.reject(new Error('operation not used'));
 }
 
 function createSocket(readyState: WebSocket['readyState']): WebSocket {

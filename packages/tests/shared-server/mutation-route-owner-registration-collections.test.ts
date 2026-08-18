@@ -1,5 +1,10 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+// prettier-ignore
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 
 import { findMutationBoundaryViolationsFromRoots } from './mutation-boundary-analysis.ts';
 import {

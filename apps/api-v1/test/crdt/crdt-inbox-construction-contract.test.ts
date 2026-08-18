@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 
-import type { CreateApiCrdtInboxServiceInput } from '../../src/services/create-api-crdt-inbox-service.ts';
-import type { createApiMutationInboxFactories } from '../../src/services/create-api-mutation-inbox-factories.ts';
+// deno-fmt-ignore
+import type { CreateApiCrdtInboxServiceInput } from '../../src/services/\
+create-api-crdt-inbox-service.ts';
+// deno-fmt-ignore
+import type { createApiMutationInboxFactories } from '../../src/services/\
+create-api-mutation-inbox-factories.ts';
 
 type IsRequired<T, TKey extends keyof T> = {} extends Pick<T, TKey> ? false : true;
 

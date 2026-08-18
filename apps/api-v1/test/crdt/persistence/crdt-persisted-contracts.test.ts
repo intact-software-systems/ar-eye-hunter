@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+
 import {
   RALLAR_CRDT_OPERATION_VERSION,
   RALLAR_CRDT_PROTOCOL_VERSION,
@@ -6,13 +7,20 @@ import {
   type RallarCrdtOperationBatch,
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
-import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
+// deno-fmt-ignore
+import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/\
+psql-crdt-mutation-repository.ts';
+// deno-fmt-ignore
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/\
+create-crdt-mutation-service.ts';
 import {
   type CrdtMutationCommand,
   CrdtMutationConflictError,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+// deno-fmt-ignore
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/\
+crdt-mutation-command-codec.ts';
+
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -34,21 +42,24 @@ interface CrdtDocumentCounterRow {
   readonly last_append_sequence: string | number;
 }
 
-Deno.test('production CRDT mutation repository denies an explicit fail-closed authority decision', async () => {
-  await withPGliteSql(async (sql) => {
-    const read = await new PSqlCrdtMutationRepository(
-      {
-        sql,
-        authorize: () =>
-          Promise.resolve({ allowed: false, code: 'current-authority-reader-missing' }),
-      },
-      { policies: [] },
-    ).readMutation(
-      await command('deny-default', 'deny-default', 1_000),
-    );
-    assert.equal(read.authorized, false);
-  });
-});
+Deno.test(
+  'production CRDT mutation repository denies an explicit fail-closed authority decision',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const read = await new PSqlCrdtMutationRepository(
+        {
+          sql,
+          authorize: () =>
+            Promise.resolve({ allowed: false, code: 'current-authority-reader-missing' }),
+        },
+        { policies: [] },
+      ).readMutation(
+        await command('deny-default', 'deny-default', 1_000),
+      );
+      assert.equal(read.authorized, false);
+    });
+  },
+);
 
 Deno.test('CRDT CAS guards revision, lifecycle, and append sequence', async () => {
   await withPGliteSql(async (sql) => {
@@ -69,10 +80,12 @@ Deno.test('CRDT CAS guards revision, lifecycle, and append sequence', async () =
   });
 });
 
-Deno.test('CRDT persisted row decoding fails closed on physical/logical identity corruption', async () => {
-  await withPGliteSql(async (sql) => {
-    const input = await command('corrupt-read', 'corrupt-read', 1_000);
-    await sql`
+Deno.test(
+  'CRDT persisted row decoding fails closed on physical/logical identity corruption',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const input = await command('corrupt-read', 'corrupt-read', 1_000);
+      await sql`
       insert into crdt_documents (
         document_key, application_id, workspace_id, document_scope, document_type,
         document_id, document_ref, document_revision, lifecycle, created_at_ts,
@@ -84,15 +97,16 @@ Deno.test('CRDT persisted row decoding fails closed on physical/logical identity
         1, 'active', ${new Date(500)}, ${new Date(500)}, 0, 0, 0, 0, '[]'
       )
     `;
-    await assert.rejects(
-      new PSqlCrdtMutationRepository(
-        { sql, authorize: () => Promise.resolve(true) },
-        { policies: [] },
-      ).readMutation(input),
-      /document.*identity|corrupt/i,
-    );
-  });
-});
+      await assert.rejects(
+        new PSqlCrdtMutationRepository(
+          { sql, authorize: () => Promise.resolve(true) },
+          { policies: [] },
+        ).readMutation(input),
+        /document.*identity|corrupt/i,
+      );
+    });
+  },
+);
 
 Deno.test('CRDT persisted metadata decoding validates counters and nested policies', async () => {
   await withPGliteSql(async (sql) => {
@@ -141,13 +155,15 @@ Deno.test('CRDT durable trusted identity columns are mandatory', async () => {
   });
 });
 
-Deno.test('CRDT snapshot decoding binds physical identity, sequence, time, and reason', async () => {
-  await withPGliteSql(async (sql) => {
-    const service = mutationService(sql);
-    const original = await command('snapshot-base', 'snapshot-update', 1_000);
-    await apply(sql, service, original);
-    const envelope = snapshot('logical-snapshot-id', 'snapshot-value');
-    await sql`
+Deno.test(
+  'CRDT snapshot decoding binds physical identity, sequence, time, and reason',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const service = mutationService(sql);
+      const original = await command('snapshot-base', 'snapshot-update', 1_000);
+      await apply(sql, service, original);
+      const envelope = snapshot('logical-snapshot-id', 'snapshot-value');
+      await sql`
       insert into crdt_snapshots (
         document_key, snapshot_id, append_sequence, snapshot_envelope, created_at_ts, reason
       ) values (
@@ -155,35 +171,36 @@ Deno.test('CRDT snapshot decoding binds physical identity, sequence, time, and r
         ${new Date(9_999)}, 'physical-reason'
       )
     `;
-    await sql`
+      await sql`
       update crdt_documents set snapshot_count = 1
       where document_key = ${original.documentKey}
     `;
-    const compact = await createCrdtMutationCommand({
-      operation: 'compact',
-      commandId: 'snapshot-read',
-      actor: {
-        actorId: 'actor-1',
-        principalId: 'client-1',
-        sessionId: 'session-1',
-        serverId: 'server-1',
-      },
-      capturedAtEpochMs: 2_000,
-      expireAtEpochMs: 62_000,
-      document: DOCUMENT,
-      responseAudience: {
-        kind: 'admin',
-        senderSessionId: 'session-1',
-        topicId: 'crdt.admin',
-        contextId: original.documentKey,
-      },
-      snapshotId: 'snapshot-read',
-      snapshot: null,
-      reason: 'read-corrupt-snapshot',
+      const compact = await createCrdtMutationCommand({
+        operation: 'compact',
+        commandId: 'snapshot-read',
+        actor: {
+          actorId: 'actor-1',
+          principalId: 'client-1',
+          sessionId: 'session-1',
+          serverId: 'server-1',
+        },
+        capturedAtEpochMs: 2_000,
+        expireAtEpochMs: 62_000,
+        document: DOCUMENT,
+        responseAudience: {
+          kind: 'admin',
+          senderSessionId: 'session-1',
+          topicId: 'crdt.admin',
+          contextId: original.documentKey,
+        },
+        snapshotId: 'snapshot-read',
+        snapshot: null,
+        reason: 'read-corrupt-snapshot',
+      });
+      await assert.rejects(service.read(compact), /snapshot.*identity|corrupt/i);
     });
-    await assert.rejects(service.read(compact), /snapshot.*identity|corrupt/i);
-  });
-});
+  },
+);
 
 Deno.test('CRDT quota accounts for every retained snapshot byte', async () => {
   await withPGliteSql(async (sql) => {

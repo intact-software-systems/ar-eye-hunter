@@ -1,4 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest';
+// prettier-ignore
+import {
+  afterEach,
+  describe,
+  expect,
+  it,
+} from 'vitest';
 
 import {
   cleanupStructuralLineageFixtures,

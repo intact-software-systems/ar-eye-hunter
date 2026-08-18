@@ -5,6 +5,7 @@ import {
   type RallarCrdtDocumentMetadata,
   verifyRallarCrdtDebugBundle,
 } from '@shared/crdt/mod.ts';
+
 import type {
   CrdtAppendCommand,
   CrdtCanonicalSnapshotEnvelope,
@@ -53,10 +54,14 @@ export function toAcceptedAdminResultDetails(
 ): CrdtMutationResultDetails {
   const { command, read, document, snapshot } = input;
   if (command.operation === 'compact') {
-    if (!snapshot) throw new TypeError('Accepted CRDT compaction requires a snapshot');
+    if (!snapshot) {
+      throw new TypeError('Accepted CRDT compaction requires a snapshot');
+    }
     return { snapshot, metadata: document };
   }
-  if (command.operation === 'lifecycle') return { metadata: document };
+  if (command.operation === 'lifecycle') {
+    return { metadata: document };
+  }
   const bundle = createRallarCrdtDebugBundle({
     exportedAtEpochMs: command.capturedAtEpochMs,
     reason: command.operation === 'erase' ? command.reason : `rebuild:${command.projectionId}`,
@@ -89,9 +94,15 @@ export function toAcceptedAdminResultDetails(
 export function toRejectedAdminResultDetails(
   command: Exclude<CrdtMutationCommand, CrdtAppendCommand>,
 ): CrdtMutationResultDetails {
-  if (command.operation === 'compact') return { snapshot: null, metadata: null };
-  if (command.operation === 'lifecycle') return { metadata: null };
-  if (command.operation === 'rebuild-projection') return { integrity: null, metadata: null };
+  if (command.operation === 'compact') {
+    return { snapshot: null, metadata: null };
+  }
+  if (command.operation === 'lifecycle') {
+    return { metadata: null };
+  }
+  if (command.operation === 'rebuild-projection') {
+    return { integrity: null, metadata: null };
+  }
   return { request: null, auditEvent: null, metadata: null, redactedBundle: null };
 }
 

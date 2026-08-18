@@ -1,12 +1,20 @@
 import assert from 'node:assert/strict';
 import { Temporal } from '@js-temporal/polyfill';
-import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
-import { PSqlAdminPruneExpiredRepository } from '@shared-server/postgres/admin-operations/PSqlAdminPruneExpiredRepository.ts';
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+
+// deno-fmt-ignore
+import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/\
+PSqlAdminOperationsStatsReader.ts';
+// deno-fmt-ignore
+import { PSqlAdminPruneExpiredRepository } from '@shared-server/postgres/admin-operations/\
+PSqlAdminPruneExpiredRepository.ts';
+// deno-fmt-ignore
+import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
+ResourceInboxResultsRepository.ts';
 import {
   createAdminPruneAggregate,
   toAdminPruneAggregateEntry,
 } from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
+
 import {
   createResourceEntry,
   readPGliteDatabaseEpochMs,
@@ -14,26 +22,29 @@ import {
 } from './pglite-auth-test-harness.ts';
 import { queueNow } from '../crdt/crdt-api-test-fixtures.ts';
 
-Deno.test('initial prune statistics use the command capture cutoff instead of database now', async () => {
-  await withPGliteSql(async (sql) => {
-    const databaseNow = await readPGliteDatabaseEpochMs(sql);
-    await new ResourceInboxResultsRepository(sql).writeIfAbsentOrReplaceExpired(
-      createResourceEntry('resource-1', {
-        topicId: 'topic-1',
-        contextId: 'context-1',
-        expiryTs: Temporal.Instant.fromEpochMilliseconds(databaseNow - 1_000),
-      }),
-    );
-    const pruner = new PSqlAdminOperationsPruner(sql);
+Deno.test(
+  'initial prune statistics use the command capture cutoff instead of database now',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const databaseNow = await readPGliteDatabaseEpochMs(sql);
+      await new ResourceInboxResultsRepository(sql).writeIfAbsentOrReplaceExpired(
+        createResourceEntry('resource-1', {
+          topicId: 'topic-1',
+          contextId: 'context-1',
+          expiryTs: Temporal.Instant.fromEpochMilliseconds(databaseNow - 1_000),
+        }),
+      );
+      const pruner = new PSqlAdminOperationsPruner(sql);
 
-    assert.equal(
-      await pruner.countExpired('resource-inbox-results', {
-        cutoffEpochMs: databaseNow - 10_000,
-      } as never),
-      0,
-    );
-  });
-});
+      assert.equal(
+        await pruner.countExpired('resource-inbox-results', {
+          cutoffEpochMs: databaseNow - 10_000,
+        }),
+        0,
+      );
+    });
+  },
+);
 
 Deno.test('prune progress renews physical and JSON aggregate expiry together', async () => {
   await withPGliteSql(async (sql) => {

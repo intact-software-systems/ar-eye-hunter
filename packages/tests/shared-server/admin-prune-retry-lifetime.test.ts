@@ -1,5 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it } from 'vitest';
+// prettier-ignore
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 
 import {
   DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS,

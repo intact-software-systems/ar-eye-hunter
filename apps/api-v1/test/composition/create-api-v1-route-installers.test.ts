@@ -6,25 +6,25 @@ import {
   InMemoryRallarCrdtLogRepository,
 } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 // deno-fmt-ignore
-import type {
+import {
   AuthUserRepository,
 } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
-import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-
-import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
-import type { ApiV1AdminServices } from '../../src/composition/create-api-v1-admin-services.ts';
-// deno-fmt-ignore
+import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import type {
-  ApiV1TopologyServices,
-} from '../../src/composition/create-api-v1-topology-services.ts';
+  RuntimeStateRepositoryLike,
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+
 import {
-  createApiV1RouteInstallers,
+  type ApiV1RouteInstallerOperations,
+  type ApiV1RouteInstallerRuntime,
+  type ApiV1RouteInstallerTopology,
+  constructApiV1RouteInstallers,
   type CreateApiV1RouteInstallersInput,
 } from '../../src/composition/create-api-v1-route-installers.ts';
 
 Deno.test('route installers mount representative API and websocket behavior in order', async () => {
   const app = new Hono();
-  const installers = createApiV1RouteInstallers(createInput());
+  const installers = constructApiV1RouteInstallers(createInput(), TEST_OPERATIONS);
 
   installers.ws(app);
   for (const install of installers.rest) {
@@ -60,33 +60,93 @@ Deno.test('route installers mount representative API and websocket behavior in o
   assert.equal((await app.request('/api/docs')).status, 200);
 });
 
-function createInput(): CreateApiV1RouteInstallersInput {
-  const runtime = {
-    wsQBoxServerService: { socket: {} as JsonWebSocketServer },
-    authSessionRepository: {},
-    appAuthInboxService: {},
-    appClientInboxService: {},
-    appGroupInboxService: {},
-    clientStateService: {},
-    groupStateService: {},
-    clientRestSnapshotReadSelector: {},
-    groupRestSnapshotReadSelector: {},
-    groupsRepository: {},
-    clientsRepository: {},
-  } as ApiV1Runtime;
+const TEST_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1RouteInstallerRuntime> = {
+  requireApiAuthSession: rejectUnauthenticated,
+  requireWsAuthSession: rejectUnauthenticated,
+};
+
+function createInput(): CreateApiV1RouteInstallersInput<
+  ApiV1RouteInstallerRuntime,
+  ApiV1RouteInstallerTopology
+> {
   return {
-    runtime,
+    runtime: {
+      wsQBoxServerService: { socket: new JsonWebSocketServer() },
+      authSessionRepository: {},
+      appAuthInboxService: {
+        registerUser: rejectUnusedOperation,
+        issueSession: rejectUnusedOperation,
+        logoutSession: rejectUnusedOperation,
+        issueWebSocketTicket: rejectUnusedOperation,
+        issueAgentSessionTickets: rejectUnusedOperation,
+        consumeAgentSessionTicket: rejectUnusedOperation,
+      },
+      appClientInboxService: {
+        enqueueAuthorisedWsClientConnect: rejectUnusedOperation,
+        processAuthenticatedEntryUntilCompletion: rejectUnusedOperation,
+      },
+      appGroupInboxService: {
+        processAuthenticatedEntryUntilCompletion: rejectUnusedOperation,
+        processAuthenticatedEntryUntilCompletionResult: rejectUnusedOperation,
+      },
+      clientStateService: {
+        listEventPage: rejectUnusedOperation,
+        listEvents: rejectUnusedOperation,
+        listRecentEvents: rejectUnusedOperation,
+        listSnapshots: rejectUnusedOperation,
+        readCurrentSnapshot: rejectUnusedOperation,
+        readPresenceSnapshot: rejectUnusedOperation,
+        readSnapshot: rejectUnusedOperation,
+      },
+      groupStateService: {
+        listEventPage: rejectUnusedOperation,
+        listEvents: rejectUnusedOperation,
+        listRecentEvents: rejectUnusedOperation,
+        listSnapshots: rejectUnusedOperation,
+        readCurrentSnapshot: rejectUnusedOperation,
+        readSnapshot: rejectUnusedOperation,
+      },
+      clientRestSnapshotReadSelector: { read: rejectUnusedOperation },
+      groupRestSnapshotReadSelector: { read: rejectUnusedOperation },
+      groupsRepository: { readSnapshot: rejectUnusedOperation },
+      clientsRepository: { readSnapshot: rejectUnusedOperation },
+    },
     topology: createTopology(),
     admin: {
-      operations: {},
-      support: {},
-      statistics: {},
-    } as ApiV1AdminServices,
+      operations: {
+        readOverview: rejectUnusedOperation,
+        readQueues: rejectUnusedOperation,
+        readRealtime: rejectUnusedOperation,
+        readState: rejectUnusedOperation,
+        readCrdt: rejectUnusedOperation,
+        readSystem: rejectUnusedOperation,
+        resetMetrics: rejectUnusedOperation,
+        recomputeTopology: rejectUnusedOperation,
+        pruneExpired: rejectUnusedOperation,
+        verifyCrdtIntegrity: rejectUnusedOperation,
+        exportCrdtDebug: rejectUnusedOperation,
+        compactCrdt: rejectUnusedOperation,
+        updateCrdtLifecycle: rejectUnusedOperation,
+        eraseCrdt: rejectUnusedOperation,
+      },
+      support: {
+        explainClient: rejectUnusedOperation,
+        explainGroup: rejectUnusedOperation,
+        explainRequest: rejectUnusedOperation,
+        explainCrdtDocument: rejectUnusedOperation,
+        explainQueueItem: rejectUnusedOperation,
+      },
+      statistics: {
+        readWorkspaceSummary: rejectUnusedOperation,
+        readGroupStats: rejectUnusedOperation,
+        readMyRealtimeStatus: rejectUnusedOperation,
+      },
+    },
     crdtLogRepository: new InMemoryRallarCrdtLogRepository({ now: () => 1_000 }),
     crdtMutations: {
       writeCrdtAdminMutation: () => Promise.reject(new Error('mutation not used')),
     },
-    authUserRepository: {} as AuthUserRepository,
+    authUserRepository: new AuthUserRepository(new UnusedRuntimeStateRepository()),
     staticClients: [],
     authRegistrationMode: 'public',
     readEnv: () => undefined,
@@ -99,19 +159,44 @@ function createInput(): CreateApiV1RouteInstallersInput {
   };
 }
 
-function createTopology(): ApiV1TopologyServices {
+function createTopology(): ApiV1RouteInstallerTopology {
   return {
-    rtcTopologyService: {} as ApiV1TopologyServices['rtcTopologyService'],
-    rtcTopologyOptions: {},
-    topologyManagement: {} as ApiV1TopologyServices['topologyManagement'],
-    topologyConfigRepository: {} as ApiV1TopologyServices['topologyConfigRepository'],
-    groupStateRepository: {} as ApiV1TopologyServices['groupStateRepository'],
-    topologySnapshotRepository: {} as ApiV1TopologyServices['topologySnapshotRepository'],
-    rttRepository: {} as ApiV1TopologyServices['rttRepository'],
-    rttRefinementGate: {} as ApiV1TopologyServices['rttRefinementGate'],
-    rttRefinementService: {} as ApiV1TopologyServices['rttRefinementService'],
+    topologyManagement: {
+      readTopologyView: rejectUnusedOperation,
+      readConfig: rejectUnusedOperation,
+      readOverride: rejectUnusedOperation,
+      readTopologyPlanningAuthority: rejectUnusedOperation,
+    },
     adminClientIds: ['admin'],
-    readRtcTopologyMetrics: () => ({}),
-    resetRtcTopologyMetrics: () => undefined,
   };
+}
+
+function rejectUnusedOperation<T>(): Promise<T> {
+  return Promise.reject(new Error('route dependency not used'));
+}
+
+function rejectUnauthenticated<T>(): Promise<T> {
+  return Promise.reject(new Error('Unauthorized: Missing bearer token'));
+}
+
+class UnusedRuntimeStateRepository implements RuntimeStateRepositoryLike {
+  findEntry(): Promise<never> {
+    return rejectUnusedOperation();
+  }
+
+  findAllEntries(): Promise<never> {
+    return rejectUnusedOperation();
+  }
+
+  upsert(): Promise<never> {
+    return rejectUnusedOperation();
+  }
+
+  deleteByKey(): Promise<never> {
+    return rejectUnusedOperation();
+  }
+
+  deleteExpired(): Promise<never> {
+    return rejectUnusedOperation();
+  }
 }

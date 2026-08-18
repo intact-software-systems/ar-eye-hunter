@@ -1,15 +1,26 @@
 import assert from 'node:assert/strict';
+
 import {
   RALLAR_CRDT_OPERATION_VERSION,
   RALLAR_CRDT_PROTOCOL_VERSION,
   type RallarCrdtDocumentRef,
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
-import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
+// deno-fmt-ignore
+import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/\
+psql-crdt-mutation-repository.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import type { CrdtMutationActor } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+// deno-fmt-ignore
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/\
+create-crdt-mutation-service.ts';
+// deno-fmt-ignore
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/\
+crdt-mutation-command-codec.ts';
+// deno-fmt-ignore
+import type { CrdtMutationActor } from '@shared-server/rallar-system/crdt/mutation/\
+crdt-mutation-contracts.ts';
+
+import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { readPGliteDatabaseEpochMs } from '../db/pglite-auth-test-harness.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -31,9 +42,11 @@ export function withCompetingWrite(
   afterCompetingWrite: () => void,
 ): PSqlSql {
   let compete = true;
-  const wrapped =
-    ((parts: TemplateStringsArray | readonly unknown[], ...values: unknown[]) =>
-      database(parts as never, ...values)) as PSqlSql;
+  const wrapped = new Proxy(database, {
+    apply(target, thisArgument, argumentList) {
+      return Reflect.apply(target, thisArgument, argumentList);
+    },
+  });
   wrapped.begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) => {
     if (compete) {
       compete = false;
@@ -63,12 +76,14 @@ export function withCompetingWrite(
       });
       const read = await service.read(command);
       const computed = service.compute({ command, read });
-      assert.equal(computed.outcome, 'write');
+      if (computed.outcome !== 'write') {
+        assert.fail(`Expected competing append to write, received ${computed.outcome}`);
+      }
       await database.begin(async (transaction) => {
         await new PSqlCrdtMutationRepository(
           { sql: transaction, authorize: () => Promise.resolve(true) },
           { policies: [{ documentType: 'checklist', rollout: 'production' }] },
-        ).writeMutation(computed as never);
+        ).writeMutation(computed);
       });
       afterCompetingWrite();
     }
@@ -137,6 +152,6 @@ export function update(updateId: string, createdAtEpochMs: number): RallarCrdtUp
   };
 }
 
-export async function queueNow(sql: PSqlSql): Promise<number> {
-  return await readPGliteDatabaseEpochMs(sql as never) + 12 * 60 * 60 * 1_000;
+export async function queueNow(sql: PGliteSql): Promise<number> {
+  return await readPGliteDatabaseEpochMs(sql) + 12 * 60 * 60 * 1_000;
 }

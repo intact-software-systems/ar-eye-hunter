@@ -4,6 +4,7 @@ import type {
   RallarCrdtDocumentMetadata,
   RallarCrdtTrustedAppendMetadata,
 } from '@shared/crdt/mod.ts';
+
 import type {
   CrdtAppendCommand,
   CrdtCanonicalSnapshotEnvelope,

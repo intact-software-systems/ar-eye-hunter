@@ -5,6 +5,7 @@ import {
   type RallarCrdtTrustedAppendMetadata,
   validateRallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
+
 import type {
   CrdtAppendCommand,
   CrdtMutationComputed,

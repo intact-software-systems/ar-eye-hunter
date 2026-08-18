@@ -1,11 +1,18 @@
+import { decodeAuthMutationResult } from '@shared-server/mod.ts';
+// prettier-ignore
+import * as CrdtResult
+  from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
+// prettier-ignore
+import { readPersistedAppInboxFailure }
+  from '@shared-server/rallar-system/services/app-inbox-failure.ts';
+
 import {
   type PublicResultReceiptIdentity,
   publicResultIdentityMatches,
 } from './api-v1-state-write-group-causal-evidence.ts';
-import { decodeAuthMutationResult } from '@shared-server/mod.ts';
-import * as CrdtResult from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
-import { readPersistedAppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
-import { validateTopologyMutationResultPayload } from './validate-topology-mutation-result-payload.ts';
+// prettier-ignore
+import { validateTopologyMutationResultPayload }
+  from './validate-topology-mutation-result-payload.ts';
 
 interface ResultEvidence {
   readonly valid: boolean;
@@ -92,7 +99,9 @@ export function validatePersistedAppInboxResult(
       : invalid(parsedResult, 'malformed-client-expiry-result');
   }
   const result = record(parsedResult);
-  if (!result) return invalid(parsedResult, 'malformed-result-resource');
+  if (!result) {
+    return invalid(parsedResult, 'malformed-result-resource');
+  }
   if (input.resultStatus === 'FAILED') {
     const failure = readPersistedAppInboxFailure(input.resultResource ?? '');
     return failure.version !== 'malformed.v0'
@@ -159,7 +168,9 @@ export function validatePersistedAppInboxResult(
     input.commandType.startsWith('TOPOLOGY_OVERRIDE_')
   ) {
     const receipt = record(result.receipt);
-    if (!receipt) return invalid(result, 'missing-topology-receipt');
+    if (!receipt) {
+      return invalid(result, 'missing-topology-receipt');
+    }
     const embedded = validateEmbeddedAuthoritativeReceipt(
       validateReceiptResult({
         receipt,
@@ -170,7 +181,9 @@ export function validatePersistedAppInboxResult(
       input.authoritativeReceipt,
       input.requireAuthoritativeReceipt ?? false,
     );
-    if (!embedded.valid) return embedded;
+    if (!embedded.valid) {
+      return embedded;
+    }
     const payloadFailure = validateTopologyMutationResultPayload(
       input.commandType,
       result,
@@ -213,7 +226,9 @@ export function validatePersistedAppInboxResult(
     const validEither = right
       ? record(right.snapshot) !== undefined && Object.hasOwn(right, 'event')
       : typeof left === 'string';
-    if (!validStatus || !validEither) return invalid(result, 'malformed-group-result');
+    if (!validStatus || !validEither) {
+      return invalid(result, 'malformed-group-result');
+    }
     if (input.authoritativeReceipt) {
       return validatePublicResultIdentity({
         result,
@@ -271,7 +286,9 @@ function validateEmbeddedAuthoritativeReceipt(
   authoritative: AuthoritativeResultReceipt | undefined,
   required: boolean,
 ): ResultEvidence {
-  if (!embedded.valid || !embedded.receipt) return embedded;
+  if (!embedded.valid || !embedded.receipt) {
+    return embedded;
+  }
   if (!authoritative) {
     return required ? invalid(embedded.result, 'missing-authoritative-receipt') : embedded;
   }
@@ -323,8 +340,9 @@ function validateAdminPruneResult(result: RecordValue, commandIds: readonly stri
       'jobId',
       'results',
     ])
-  )
+  ) {
     return false;
+  }
   if (
     !Number.isSafeInteger(result.generatedAtEpochMs) ||
     !nonEmptyString(result.serverId) ||
@@ -335,8 +353,9 @@ function validateAdminPruneResult(result: RecordValue, commandIds: readonly stri
     typeof result.changed !== 'boolean' ||
     !readMatchingId(result.jobId, commandIds) ||
     !Array.isArray(result.results)
-  )
+  ) {
     return false;
+  }
   return result.results.every((entry) => {
     const row = record(entry);
     return Boolean(
@@ -433,7 +452,9 @@ function validateReceiptResult(input: ValidateReceiptResultInput): ResultEvidenc
 }
 
 function parseResult(value: string | null): unknown {
-  if (typeof value !== 'string') return undefined;
+  if (typeof value !== 'string') {
+    return undefined;
+  }
   try {
     return JSON.parse(value) as unknown;
   } catch {
@@ -457,7 +478,9 @@ function readMatchingId(value: unknown, commandIds: readonly string[]): string |
 }
 
 function readUniqueIds(value: unknown): readonly string[] | undefined {
-  if (!Array.isArray(value) || !value.every((id) => nonEmptyString(id))) return undefined;
+  if (!Array.isArray(value) || !value.every((id) => nonEmptyString(id))) {
+    return undefined;
+  }
   const ids = value as string[];
   return new Set(ids).size === ids.length ? ids : undefined;
 }

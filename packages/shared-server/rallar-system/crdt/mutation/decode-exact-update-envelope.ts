@@ -2,6 +2,7 @@ import {
   type RallarCrdtUpdateEnvelope,
   validateRallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
+
 import { requireExactKeys, requireRecord } from '../../services/exact-object-codec.ts';
 import {
   decodeExactCausalFrontierShape,
@@ -30,8 +31,12 @@ export function decodeExactUpdateEnvelope(value: unknown): RallarCrdtUpdateEnvel
   requireExactKeys(update, allowed, 'CRDT update envelope');
   decodeExactDocumentRef(update.document, 'CRDT update document');
   decodeExactOperationBatchShape(update.payload);
-  if ('causalFrontier' in update) decodeExactCausalFrontierShape(update.causalFrontier);
+  if ('causalFrontier' in update) {
+    decodeExactCausalFrontierShape(update.causalFrontier);
+  }
   const validation = validateRallarCrdtUpdateEnvelope(update);
-  if (!validation.valid) throw new TypeError('CRDT update envelope is invalid');
+  if (!validation.valid) {
+    throw new TypeError('CRDT update envelope is invalid');
+  }
   return update as RallarCrdtUpdateEnvelope;
 }

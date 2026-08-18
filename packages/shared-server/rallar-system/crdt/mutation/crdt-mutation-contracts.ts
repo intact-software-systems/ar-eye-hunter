@@ -17,6 +17,7 @@ import type {
   RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+
 import { AppInboxType } from '../../services/app-inbox-contracts.ts';
 
 export const CRDT_MUTATION_INBOX_TYPES = [

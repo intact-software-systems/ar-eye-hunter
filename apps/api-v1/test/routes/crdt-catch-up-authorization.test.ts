@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
+
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
   IssuedAuthSession,
@@ -12,6 +13,7 @@ import {
   type RallarCrdtSnapshotEnvelope,
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
+
 import * as crdtAdminRoutes from '../../src/routes/crdt-admin-routes.ts';
 
 const NOW = 1_700_000_000_000;
@@ -37,32 +39,35 @@ interface CatchUpAuthorizationInput {
   readonly session: AuthSession;
 }
 
-Deno.test('durable CRDT catch-up denies an authenticated non-member without reading the log', async () => {
-  let logReads = 0;
-  const app = new Hono();
-  crdtAdminRoutes.registerCrdtAdminRoutes(app, {
-    repository: createCrdtReadRepository({
-      listAfter: () => {
-        logReads += 1;
-        return Promise.reject(new Error('log must not be read on denial'));
-      },
-      readSnapshot: () => {
-        logReads += 1;
-        return Promise.reject(new Error('snapshot must not be read on denial'));
-      },
-    }),
-    requireApiUserSession: () => Promise.resolve(USER),
-    requireApiAdminSession: () => Promise.resolve(USER),
-    authorizeCatchUp: () => Promise.resolve({ allowed: false }),
-  });
+Deno.test(
+  'durable CRDT catch-up denies an authenticated non-member without reading the log',
+  async () => {
+    let logReads = 0;
+    const app = new Hono();
+    crdtAdminRoutes.registerCrdtAdminRoutes(app, {
+      repository: createCrdtReadRepository({
+        listAfter: () => {
+          logReads += 1;
+          return Promise.reject(new Error('log must not be read on denial'));
+        },
+        readSnapshot: () => {
+          logReads += 1;
+          return Promise.reject(new Error('snapshot must not be read on denial'));
+        },
+      }),
+      requireApiUserSession: () => Promise.resolve(USER),
+      requireApiAdminSession: () => Promise.resolve(USER),
+      authorizeCatchUp: () => Promise.resolve({ allowed: false }),
+    });
 
-  const response = await postCatchUp(app, { document: DOCUMENT });
-  assert.equal(response.status, 403);
-  const body = await response.json();
-  assert.equal(body.ok, false);
-  assert.equal(body.error, 'Forbidden: CRDT catch-up authorization required.');
-  assert.equal(logReads, 0);
-});
+    const response = await postCatchUp(app, { document: DOCUMENT });
+    assert.equal(response.status, 403);
+    const body = await response.json();
+    assert.equal(body.ok, false);
+    assert.equal(body.error, 'Forbidden: CRDT catch-up authorization required.');
+    assert.equal(logReads, 0);
+  },
+);
 
 Deno.test('durable CRDT catch-up serves the log for an authorized caller', async () => {
   const app = new Hono();
@@ -133,40 +138,43 @@ Deno.test('durable CRDT catch-up rejects a missing bearer token with 401', async
   assert.equal((await response.json()).error, 'Unauthorized: Missing bearer token');
 });
 
-Deno.test('CRDT admin middleware denies a non-admin with 403 on the authenticated route', async () => {
-  const app = new Hono();
-  crdtAdminRoutes.registerCrdtAdminRoutes(app, {
-    repository: createCrdtReadRepository(),
-    mutations: {
-      writeCrdtAdminMutation: () => {
-        throw new Error('mutation must not run');
+Deno.test(
+  'CRDT admin middleware denies a non-admin with 403 on the authenticated route',
+  async () => {
+    const app = new Hono();
+    crdtAdminRoutes.registerCrdtAdminRoutes(app, {
+      repository: createCrdtReadRepository(),
+      mutations: {
+        writeCrdtAdminMutation: () => {
+          throw new Error('mutation must not run');
+        },
       },
-    },
-    requireApiAdminSession: () =>
-      Promise.resolve({
-        clientId: 'non-admin',
-        username: 'non-admin',
-        sessionId: 'session-1',
-        accessToken: 'token',
-        issuedAtEpochMs: NOW,
-        expiresAtEpochMs: NOW + 60_000,
-      }),
-    requireApiUserSession: () => Promise.resolve(USER),
-    authorizeAdmin: () => false,
-  });
+      requireApiAdminSession: () =>
+        Promise.resolve({
+          clientId: 'non-admin',
+          username: 'non-admin',
+          sessionId: 'session-1',
+          accessToken: 'token',
+          issuedAtEpochMs: NOW,
+          expiresAtEpochMs: NOW + 60_000,
+        }),
+      requireApiUserSession: () => Promise.resolve(USER),
+      authorizeAdmin: () => false,
+    });
 
-  const response = await app.request('/api/crdt/admin/documents/compact', {
-    method: 'POST',
-    headers: {
-      authorization: 'Bearer token',
-      'x-client-id': 'non-admin',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({ document: DOCUMENT }),
-  });
-  assert.equal(response.status, 403);
-  assert.equal((await response.json()).error, 'Forbidden: CRDT admin authorization required.');
-});
+    const response = await app.request('/api/crdt/admin/documents/compact', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer token',
+        'x-client-id': 'non-admin',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ document: DOCUMENT }),
+    });
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).error, 'Forbidden: CRDT admin authorization required.');
+  },
+);
 
 function createCrdtReadRepository(
   overrides: Partial<RallarCrdtAdminReadRepository> = {},

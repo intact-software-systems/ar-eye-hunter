@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+
 import {
   RALLAR_CRDT_OPERATION_VERSION,
   RALLAR_CRDT_PROTOCOL_VERSION,
@@ -6,10 +7,19 @@ import {
   type RallarCrdtSnapshotEnvelope,
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
-import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
-import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+// deno-fmt-ignore
+import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/\
+psql-crdt-log-repository.ts';
+// deno-fmt-ignore
+import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/\
+psql-crdt-mutation-repository.ts';
+// deno-fmt-ignore
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/\
+create-crdt-mutation-service.ts';
+// deno-fmt-ignore
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/\
+crdt-mutation-command-codec.ts';
+
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -52,24 +62,27 @@ Deno.test('public CRDT catch-up and debug export decode exact persisted rows', a
   });
 });
 
-Deno.test('public CRDT metadata and admin listing fail closed on physical identity corruption', async () => {
-  await withPGliteSql(async (sql) => {
-    await append(sql);
-    await sql`
+Deno.test(
+  'public CRDT metadata and admin listing fail closed on physical identity corruption',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      await append(sql);
+      await sql`
             update crdt_documents set application_id = 'foreign-app'
         `;
-    const repository = new PSqlCrdtLogRepository(sql);
+      const repository = new PSqlCrdtLogRepository(sql);
 
-    await assert.rejects(
-      repository.readDocumentMetadata(DOCUMENT),
-      /document|identity|corrupt/i,
-    );
-    await assert.rejects(
-      repository.listDocuments(),
-      /document|identity|corrupt/i,
-    );
-  });
-});
+      await assert.rejects(
+        repository.readDocumentMetadata(DOCUMENT),
+        /document|identity|corrupt/i,
+      );
+      await assert.rejects(
+        repository.listDocuments(),
+        /document|identity|corrupt/i,
+      );
+    });
+  },
+);
 
 Deno.test('public CRDT catch-up fails closed on physical update identity corruption', async () => {
   await withPGliteSql(async (sql) => {
@@ -83,18 +96,21 @@ Deno.test('public CRDT catch-up fails closed on physical update identity corrupt
   });
 });
 
-Deno.test('public CRDT snapshot read fails closed on physical snapshot identity corruption', async () => {
-  await withPGliteSql(async (sql) => {
-    await append(sql);
-    await insertSnapshot(sql);
-    await sql`update crdt_snapshots set snapshot_id = 'physical-snapshot-id'`;
+Deno.test(
+  'public CRDT snapshot read fails closed on physical snapshot identity corruption',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      await append(sql);
+      await insertSnapshot(sql);
+      await sql`update crdt_snapshots set snapshot_id = 'physical-snapshot-id'`;
 
-    await assert.rejects(
-      new PSqlCrdtLogRepository(sql).readSnapshot(DOCUMENT),
-      /snapshot|identity|corrupt/i,
-    );
-  });
-});
+      await assert.rejects(
+        new PSqlCrdtLogRepository(sql).readSnapshot(DOCUMENT),
+        /snapshot|identity|corrupt/i,
+      );
+    });
+  },
+);
 
 Deno.test('public and mutation CRDT reads reject reason-only snapshot corruption', async () => {
   await withPGliteSql(async (sql) => {
@@ -168,22 +184,25 @@ Deno.test('mutation write persists one canonical snapshot reason in row and enve
   });
 });
 
-Deno.test('public CRDT integrity and export fail closed instead of reporting corrupt rows', async () => {
-  await withPGliteSql(async (sql) => {
-    await append(sql);
-    await sql`update crdt_updates set accepted_update_hash = 'forged-hash'`;
-    const repository = new PSqlCrdtLogRepository(sql);
+Deno.test(
+  'public CRDT integrity and export fail closed instead of reporting corrupt rows',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      await append(sql);
+      await sql`update crdt_updates set accepted_update_hash = 'forged-hash'`;
+      const repository = new PSqlCrdtLogRepository(sql);
 
-    await assert.rejects(
-      repository.exportDebugBundle(DOCUMENT),
-      /update|hash|identity|corrupt/i,
-    );
-    await assert.rejects(
-      repository.verifyIntegrity(DOCUMENT),
-      /update|hash|identity|corrupt/i,
-    );
-  });
-});
+      await assert.rejects(
+        repository.exportDebugBundle(DOCUMENT),
+        /update|hash|identity|corrupt/i,
+      );
+      await assert.rejects(
+        repository.verifyIntegrity(DOCUMENT),
+        /update|hash|identity|corrupt/i,
+      );
+    });
+  },
+);
 
 async function append(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]) {
   const repository = new PSqlCrdtMutationRepository(

@@ -1,4 +1,5 @@
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+
 import type { MutationRouteInventoryEntry } from './mutation-routing-inventory.ts';
 import {
   findAstNode,

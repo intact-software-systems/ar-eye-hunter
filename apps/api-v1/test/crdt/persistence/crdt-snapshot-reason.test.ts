@@ -7,12 +7,22 @@ import {
   type RallarCrdtSnapshotEnvelope,
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
-import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
+// deno-fmt-ignore
+import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/\
+psql-crdt-log-repository.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
+// deno-fmt-ignore
+import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
+ResourceInboxRepository.ts';
+// deno-fmt-ignore
+import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
+ResourceInboxResultsRepository.ts';
+// deno-fmt-ignore
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/\
+crdt-mutation-command-codec.ts';
+// deno-fmt-ignore
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/\
+decode-crdt-mutation-result.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { toResilienceDto } from '../../../src/middleware-resilience.ts';
@@ -40,89 +50,77 @@ interface PersistedSnapshotResultRow {
   readonly ris_resource: string;
 }
 
-Deno.test('modern compact normalizes one reason before compute and persists it atomically', async () => {
-  await withPGliteSql(async (sql) => {
-    const now = await readPGliteDatabaseEpochMs(sql) + 12 * 60 * 60 * 1_000;
-    const service = createService(sql, now);
-    await service.createAndEnqueueAppend({
-      update: update(now - 10_000),
-      deliveryId: 'append-delivery',
-      actor: actor(),
-      responseAudience: audience(),
-      capturedAtEpochMs: now,
-      expireAtEpochMs: now + 60_000,
-    });
-    await drain(service, sql);
-    const inputSnapshot = snapshot(now + 1);
-    const command = await createCrdtMutationCommand({
-      operation: 'compact',
-      commandId: 'compact-command',
-      actor: actor(),
-      capturedAtEpochMs: now + 1,
-      expireAtEpochMs: now + 60_001,
-      document: DOCUMENT,
-      responseAudience: audience(),
-      snapshotId: inputSnapshot.snapshotId,
-      snapshot: inputSnapshot,
-      reason: REASON,
-    });
-    assert.equal(command.operation, 'compact');
-    assert.equal(command.snapshot?.metadata.reason, REASON);
-    const read = await service.mutationService.read(command);
-    const computed = service.mutationService.compute({ command, read });
+Deno.test(
+  'modern compact normalizes one reason before compute and persists it atomically',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const now = await readPGliteDatabaseEpochMs(sql) + 12 * 60 * 60 * 1_000;
+      const service = createService(sql, now);
+      await service.createAndEnqueueAppend({
+        update: update(now - 10_000),
+        deliveryId: 'append-delivery',
+        actor: actor(),
+        responseAudience: audience(),
+        capturedAtEpochMs: now,
+        expireAtEpochMs: now + 60_000,
+      });
+      await drain(service, sql);
+      const inputSnapshot = snapshot(now + 1);
+      const command = await createCrdtMutationCommand({
+        operation: 'compact',
+        commandId: 'compact-command',
+        actor: actor(),
+        capturedAtEpochMs: now + 1,
+        expireAtEpochMs: now + 60_001,
+        document: DOCUMENT,
+        responseAudience: audience(),
+        snapshotId: inputSnapshot.snapshotId,
+        snapshot: inputSnapshot,
+        reason: REASON,
+      });
+      assert.equal(command.operation, 'compact');
+      assert.equal(command.snapshot?.metadata.reason, REASON);
+      const read = await service.mutationService.read(command);
+      const computed = service.mutationService.compute({ command, read });
 
-    assert.equal(computed.snapshot?.metadata.reason, REASON);
-    assert.equal(computed.result.operation, 'compact');
-    assert.equal(computed.result.snapshot?.metadata.reason, REASON);
-    assert.deepEqual(service.mutationService.validate({ command, read, computed }), []);
-    assert.deepEqual(decodeCrdtMutationResult(computed.result), computed.result);
+      assert.equal(computed.snapshot?.metadata.reason, REASON);
+      assert.equal(computed.result.operation, 'compact');
+      assert.equal(computed.result.snapshot?.metadata.reason, REASON);
+      assert.deepEqual(service.mutationService.validate({ command, read, computed }), []);
+      assert.deepEqual(decodeCrdtMutationResult(computed.result), computed.result);
 
-    service.writeCrdtCommandNoWaiting(command);
-    await drain(service, sql);
-    const [stored] = await sql<PersistedSnapshotResultRow[]>`
+      service.writeCrdtCommandNoWaiting(command);
+      await drain(service, sql);
+      const [stored] = await sql<PersistedSnapshotResultRow[]>`
       select s.snapshot_envelope, s.reason, r.ris_resource
       from crdt_snapshots s
       join resource_inbox_results r on r.ris_resource_id = 'compact-command'
     `;
-    const durableResult = decodeCrdtMutationResult(JSON.parse(stored!.ris_resource));
-    const persistedSnapshot = JSON.parse(stored!.snapshot_envelope) as RallarCrdtSnapshotEnvelope;
+      const durableResult = decodeCrdtMutationResult(JSON.parse(stored!.ris_resource));
+      const persistedSnapshot = JSON.parse(stored!.snapshot_envelope) as RallarCrdtSnapshotEnvelope;
 
-    assert.equal(stored?.reason, REASON);
-    assert.equal(persistedSnapshot.metadata.reason, REASON);
-    assert.equal(durableResult.operation, 'compact');
-    assert.equal(durableResult.snapshot?.metadata.reason, REASON);
-    assert.equal(
-      (await new PSqlCrdtLogRepository(sql).readSnapshot(DOCUMENT))?.metadata.reason,
-      REASON,
-    );
-  });
-});
+      assert.equal(stored?.reason, REASON);
+      assert.equal(persistedSnapshot.metadata.reason, REASON);
+      assert.equal(durableResult.operation, 'compact');
+      assert.equal(durableResult.snapshot?.metadata.reason, REASON);
+      assert.equal(
+        (await new PSqlCrdtLogRepository(sql).readSnapshot(DOCUMENT))?.metadata.reason,
+        REASON,
+      );
+    });
+  },
+);
 
-Deno.test('custom compact reason replaces snapshot input reason before command hashing', async () => {
-  const inputSnapshot = {
-    ...snapshot(2_000),
-    metadata: { updateCount: 1, reason: 'stale-caller-reason' },
-  };
-  const command = await createCrdtMutationCommand({
-    operation: 'compact',
-    commandId: 'custom-reason-command',
-    actor: actor(),
-    capturedAtEpochMs: 2_000,
-    expireAtEpochMs: 62_000,
-    document: DOCUMENT,
-    responseAudience: audience(),
-    snapshotId: inputSnapshot.snapshotId,
-    snapshot: inputSnapshot,
-    reason: 'operator-approved-compaction',
-  });
-
-  assert.equal(command.operation, 'compact');
-  assert.equal(command.snapshot?.metadata.reason, 'operator-approved-compaction');
-  assert.equal(inputSnapshot.metadata.reason, 'stale-caller-reason');
-  await assert.rejects(
-    createCrdtMutationCommand({
+Deno.test(
+  'custom compact reason replaces snapshot input reason before command hashing',
+  async () => {
+    const inputSnapshot = {
+      ...snapshot(2_000),
+      metadata: { updateCount: 1, reason: 'stale-caller-reason' },
+    };
+    const command = await createCrdtMutationCommand({
       operation: 'compact',
-      commandId: 'blank-reason-command',
+      commandId: 'custom-reason-command',
       actor: actor(),
       capturedAtEpochMs: 2_000,
       expireAtEpochMs: 62_000,
@@ -130,11 +128,29 @@ Deno.test('custom compact reason replaces snapshot input reason before command h
       responseAudience: audience(),
       snapshotId: inputSnapshot.snapshotId,
       snapshot: inputSnapshot,
-      reason: '   ',
-    }),
-    /reason|whitespace/i,
-  );
-});
+      reason: 'operator-approved-compaction',
+    });
+
+    assert.equal(command.operation, 'compact');
+    assert.equal(command.snapshot?.metadata.reason, 'operator-approved-compaction');
+    assert.equal(inputSnapshot.metadata.reason, 'stale-caller-reason');
+    await assert.rejects(
+      createCrdtMutationCommand({
+        operation: 'compact',
+        commandId: 'blank-reason-command',
+        actor: actor(),
+        capturedAtEpochMs: 2_000,
+        expireAtEpochMs: 62_000,
+        document: DOCUMENT,
+        responseAudience: audience(),
+        snapshotId: inputSnapshot.snapshotId,
+        snapshot: inputSnapshot,
+        reason: '   ',
+      }),
+      /reason|whitespace/i,
+    );
+  },
+);
 
 function createService(sql: PGliteSql, now: number) {
   const resourceInbox = new ResourceInboxRepository(sql);

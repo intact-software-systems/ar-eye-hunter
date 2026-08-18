@@ -1,5 +1,7 @@
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import * as RuntimeState from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import type {
+  RuntimeStateEntry,
+  RuntimeStateRepositoryLike,
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import * as ClientState from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import * as GroupState from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/mod.ts';
@@ -12,6 +14,7 @@ import * as TopologyMutation
 import * as AppInboxCommandIdentity
   from '@shared-server/rallar-system/services/app-inbox-command-identity.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+
 import type { ApiV1StateWriteEvidenceQuery } from './api-v1-state-write-evidence-contracts.ts';
 import type {
   AuthoritativeTopologyReceipt,
@@ -63,6 +66,78 @@ interface InboxCommandRow {
   readonly result_status?: string | null;
 }
 
+interface RuntimeStateEvidenceRow {
+  readonly store_key: string;
+  readonly store_value: string;
+  readonly updated_ts: string | Date;
+  readonly expire_at_ts: string | Date;
+  readonly revision: number | string;
+}
+
+function createStateWriteEvidenceRuntimeStateRepository(
+  sql: ApiV1StateWriteEvidenceQuery,
+): RuntimeStateRepositoryLike {
+  return {
+    findEntry: async (namespace, key) => {
+      const rows = await sql<readonly RuntimeStateEvidenceRow[]>`
+        select store_key, store_value, updated_ts, expire_at_ts, revision
+        from runtime_state_store
+        where store_namespace = ${namespace}
+          and store_key = ${key}
+        limit 1
+      `;
+      return rows[0] ? toRuntimeStateEvidenceEntry(rows[0]) : undefined;
+    },
+    findAllEntries: async () => {
+      throw unsupportedRuntimeStateEvidenceOperation('findAllEntries');
+    },
+    upsert: async () => {
+      throw unsupportedRuntimeStateEvidenceOperation('upsert');
+    },
+    deleteByKey: async () => {
+      throw unsupportedRuntimeStateEvidenceOperation('deleteByKey');
+    },
+    deleteExpired: async () => {
+      throw unsupportedRuntimeStateEvidenceOperation('deleteExpired');
+    },
+  };
+}
+
+function toRuntimeStateEvidenceEntry(row: RuntimeStateEvidenceRow): RuntimeStateEntry {
+  return {
+    key: row.store_key,
+    value: row.store_value,
+    expireAtTimestamp: readRuntimeStateEvidenceDate(row.expire_at_ts, 'expiry').getTime(),
+    updatedTimestamp: readRuntimeStateEvidenceDate(row.updated_ts, 'update').toISOString(),
+    revision: readRuntimeStateEvidenceRevision(row.revision),
+  };
+}
+
+function readRuntimeStateEvidenceDate(value: string | Date, label: string): Date {
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    throw new TypeError(`runtime state ${label} timestamp is invalid`);
+  }
+  return date;
+}
+
+function readRuntimeStateEvidenceRevision(value: number | string): number {
+  const revision =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^(0|[1-9]\d*)$/u.test(value)
+        ? Number(value)
+        : Number.NaN;
+  if (!Number.isSafeInteger(revision) || revision < 0 || Object.is(revision, -0)) {
+    throw new TypeError('runtime state revision is invalid');
+  }
+  return revision;
+}
+
+function unsupportedRuntimeStateEvidenceOperation(operation: string): Error {
+  return new Error(`State-write evidence does not support runtime state ${operation}`);
+}
+
 export async function readPersistedCommandEvidence(
   sql: ApiV1StateWriteEvidenceQuery,
   row: InboxCommandRow,
@@ -81,7 +156,7 @@ export async function readPersistedCommandEvidence(
   }
   const commandType = identity.command.type;
   try {
-    const runtime = new RuntimeState.PSqlRuntimeStateRepository(sql as unknown as PSqlSql);
+    const runtime = createStateWriteEvidenceRuntimeStateRepository(sql);
     const requireReceipt = row.result_status === 'COMPLETED';
     if (isGeneralClientCommand(commandType)) {
       return await readClientReceipt({
@@ -156,7 +231,7 @@ export async function readPersistedCommandEvidence(
 }
 
 interface ReadClientReceiptInput {
-  readonly runtime: RuntimeState.PSqlRuntimeStateRepository;
+  readonly runtime: RuntimeStateRepositoryLike;
   readonly row: InboxCommandRow;
   readonly data: unknown;
   readonly commandType: AppInboxType;
@@ -181,7 +256,7 @@ async function readClientReceipt(input: ReadClientReceiptInput): Promise<Persist
 }
 
 interface ReadAuthorisedWsClientReceiptInput {
-  readonly runtime: RuntimeState.PSqlRuntimeStateRepository;
+  readonly runtime: RuntimeStateRepositoryLike;
   readonly row: InboxCommandRow;
   readonly data: unknown;
   readonly commandType: AppInboxType;
@@ -234,7 +309,7 @@ async function readAuthorisedWsClientReceipt(
 }
 
 interface ReadClientReceiptByIdentityInput {
-  readonly runtime: RuntimeState.PSqlRuntimeStateRepository;
+  readonly runtime: RuntimeStateRepositoryLike;
   readonly row: InboxCommandRow;
   readonly commandType: AppInboxType;
   readonly ref: Readonly<{ applicationId: string; workspaceId: string; principalId: string }>;
@@ -282,7 +357,7 @@ async function readClientReceiptByIdentity(
 }
 
 interface ReadGroupReceiptInput {
-  readonly runtime: RuntimeState.PSqlRuntimeStateRepository;
+  readonly runtime: RuntimeStateRepositoryLike;
   readonly row: InboxCommandRow;
   readonly authority: unknown;
   readonly commandType: AppInboxType;
@@ -341,7 +416,7 @@ async function readGroupReceipt(input: ReadGroupReceiptInput): Promise<Persisted
 }
 
 interface ReadTopologyReceiptInput {
-  readonly runtime: RuntimeState.PSqlRuntimeStateRepository;
+  readonly runtime: RuntimeStateRepositoryLike;
   readonly row: InboxCommandRow;
   readonly authority: unknown;
   readonly commandType: AppInboxType;

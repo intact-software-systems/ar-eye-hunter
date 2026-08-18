@@ -10,13 +10,27 @@ import {
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
-import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+// deno-fmt-ignore
+import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/\
+psql-crdt-log-repository.ts';
+// deno-fmt-ignore
+import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/\
+psql-crdt-mutation-repository.ts';
+// deno-fmt-ignore
+import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
+ResourceInboxRepository.ts';
+// deno-fmt-ignore
+import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
+ResourceInboxResultsRepository.ts';
+// deno-fmt-ignore
+import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/\
+app-crdt-inbox-service.ts';
+// deno-fmt-ignore
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/\
+create-crdt-mutation-service.ts';
+// deno-fmt-ignore
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/\
+crdt-mutation-command-codec.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
@@ -106,54 +120,56 @@ interface PostAndProcessRawResult<T> {
   readonly body: T;
 }
 
-Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses and post-commit audit', async () => {
-  await withPGliteSql(async (sql) => {
-    // PGlite's timestamp-without-zone comparison follows the host offset in this suite.
-    const now = Date.now() + 12 * 60 * 60 * 1_000;
-    const resourceInbox = new ResourceInboxRepository(sql);
-    const results = new ResourceInboxResultsRepository(sql);
-    const queue = new PSqlQueueBox(resourceInbox);
-    const inbox = new InboxQueueReader(queue);
-    const outbox = new OutboxQueueReader(queue);
-    const mutationService = createCrdtMutationService({
-      repository: new PSqlCrdtMutationRepository(
-        { sql, authorize: () => Promise.resolve(true) },
-        { policies: [] },
-      ),
-      createWriter: (transaction) =>
-        new PSqlCrdtMutationRepository(
-          { sql: transaction, authorize: () => Promise.resolve(true) },
+Deno.test(
+  'actual CRDT admin routes preserve compact/lifecycle/erase responses and post-commit audit',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      // PGlite's timestamp-without-zone comparison follows the host offset in this suite.
+      const now = Date.now() + 12 * 60 * 60 * 1_000;
+      const resourceInbox = new ResourceInboxRepository(sql);
+      const results = new ResourceInboxResultsRepository(sql);
+      const queue = new PSqlQueueBox(resourceInbox);
+      const inbox = new InboxQueueReader(queue);
+      const outbox = new OutboxQueueReader(queue);
+      const mutationService = createCrdtMutationService({
+        repository: new PSqlCrdtMutationRepository(
+          { sql, authorize: () => Promise.resolve(true) },
           { policies: [] },
         ),
-      serviceId: 'server-1',
-    });
-    const initial = await createCrdtMutationCommand({
-      operation: 'append',
-      commandId: 'initial',
-      actor: {
-        actorId: 'admin',
-        principalId: 'admin',
-        sessionId: 'admin-session',
-        serverId: 'server-1',
-      },
-      capturedAtEpochMs: now,
-      expireAtEpochMs: now + 60_000,
-      document: DOCUMENT,
-      update: update(now),
-      authorizationScope: 'room',
-      responseAudience: {
-        kind: 'room',
-        senderSessionId: 'admin-session',
-        topicId: 'room.crdt',
-        contextId: 'group-1',
-      },
-    });
-    const initialRead = await mutationService.read(initial);
-    const initialComputed = mutationService.compute({ command: initial, read: initialRead });
-    await sql.begin(async (transaction) =>
-      await mutationService.write(transaction, initialComputed)
-    );
-    await sql`
+        createWriter: (transaction) =>
+          new PSqlCrdtMutationRepository(
+            { sql: transaction, authorize: () => Promise.resolve(true) },
+            { policies: [] },
+          ),
+        serviceId: 'server-1',
+      });
+      const initial = await createCrdtMutationCommand({
+        operation: 'append',
+        commandId: 'initial',
+        actor: {
+          actorId: 'admin',
+          principalId: 'admin',
+          sessionId: 'admin-session',
+          serverId: 'server-1',
+        },
+        capturedAtEpochMs: now,
+        expireAtEpochMs: now + 60_000,
+        document: DOCUMENT,
+        update: update(now),
+        authorizationScope: 'room',
+        responseAudience: {
+          kind: 'room',
+          senderSessionId: 'admin-session',
+          topicId: 'room.crdt',
+          contextId: 'group-1',
+        },
+      });
+      const initialRead = await mutationService.read(initial);
+      const initialComputed = mutationService.compute({ command: initial, read: initialRead });
+      await sql.begin(async (transaction) =>
+        await mutationService.write(transaction, initialComputed)
+      );
+      await sql`
       update crdt_documents set
         retention_policy = ${JSON.stringify({ mode: 'retain', reason: 'existing' })},
         quota_policy = ${JSON.stringify({ maxDocumentBytes: 100000 })},
@@ -161,175 +177,176 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
       where document_key = ${initial.documentKey}
     `;
 
-    const audit: RallarCrdtAuditEvent[] = [];
-    let auditAttempts = 0;
-    const auditSink = {
-      record: (event: RallarCrdtAuditEvent) => {
-        auditAttempts += 1;
-        if (auditAttempts === 1) {
-          throw new Error('audit sink unavailable');
-        }
-        audit.push(event);
-      },
-    };
-    const appCrdt = new AppCrdtInboxService(
-      {
-        inboxQueueReader: inbox,
-        resourceInboxRepository: resourceInbox,
-        resourceInboxResultsRepository: results,
-        database: sql,
-        mutationService,
-        readCurrentSession: () => Promise.reject(new Error('not read')),
-        wakeQueueEngine: () => undefined,
-        auditDelivery: {
-          auditSink,
-          outboxQueueReader: outbox,
+      const audit: RallarCrdtAuditEvent[] = [];
+      let auditAttempts = 0;
+      const auditSink = {
+        record: (event: RallarCrdtAuditEvent) => {
+          auditAttempts += 1;
+          if (auditAttempts === 1) {
+            throw new Error('audit sink unavailable');
+          }
+          audit.push(event);
         },
-      },
-      {
+      };
+      const appCrdt = new AppCrdtInboxService(
+        {
+          inboxQueueReader: inbox,
+          resourceInboxRepository: resourceInbox,
+          resourceInboxResultsRepository: results,
+          database: sql,
+          mutationService,
+          readCurrentSession: () => Promise.reject(new Error('not read')),
+          wakeQueueEngine: () => undefined,
+          auditDelivery: {
+            auditSink,
+            outboxQueueReader: outbox,
+          },
+        },
+        {
+          serviceId: 'server-1',
+          timing: undefined,
+          appInbox: {
+            waitMaxElapsedMsecs: 5_000,
+            waitRetryIntervalMsecs: 1,
+            waitMaxRetryIntervalMsecs: 4,
+            waitJitterRatio: 0,
+            nowEpochMs: () => now + 1,
+          },
+        },
+      );
+      const crdtAdminMutations = createCrdtAdminMutations({
+        appCrdtInboxService: appCrdt,
+        nowEpochMs: () => now + 1,
+        createId: () => crypto.randomUUID(),
         serviceId: 'server-1',
-        timing: undefined,
-        appInbox: {
-          waitMaxElapsedMsecs: 5_000,
-          waitRetryIntervalMsecs: 1,
-          waitMaxRetryIntervalMsecs: 4,
-          waitJitterRatio: 0,
-          nowEpochMs: () => now + 1,
+      });
+      const app = new Hono();
+      routes.registerCrdtAdminRoutes(app, {
+        repository: new PSqlCrdtLogRepository(sql),
+        mutations: crdtAdminMutations,
+        requireAuth: false,
+        requireApiAdminSession: () =>
+          Promise.resolve({
+            clientId: 'admin',
+            username: 'admin',
+            sessionId: 'admin-session',
+            accessToken: 'token',
+            issuedAtEpochMs: now,
+            expiresAtEpochMs: now + 60_000,
+          }),
+        requireApiUserSession: () => Promise.reject(new Error('unused')),
+      });
+
+      const missing = await postAndProcessRaw({
+        app,
+        inbox,
+        sql,
+        path: '/api/crdt/admin/documents/compact',
+        body: {
+          requestId: 'missing-route',
+          document: { ...DOCUMENT, documentId: 'missing-document' },
+          reason: 'missing-route',
         },
-      },
-    );
-    const crdtAdminMutations = createCrdtAdminMutations({
-      appCrdtInboxService: appCrdt,
-      nowEpochMs: () => now + 1,
-      createId: () => crypto.randomUUID(),
-      serviceId: 'server-1',
-    });
-    const app = new Hono();
-    routes.registerCrdtAdminRoutes(app, {
-      repository: new PSqlCrdtLogRepository(sql),
-      mutations: crdtAdminMutations,
-      requireAuth: false,
-      requireApiAdminSession: () =>
-        Promise.resolve({
-          clientId: 'admin',
-          username: 'admin',
-          sessionId: 'admin-session',
-          accessToken: 'token',
-          issuedAtEpochMs: now,
-          expiresAtEpochMs: now + 60_000,
-        }),
-      requireApiUserSession: () => Promise.reject(new Error('unused')),
-    });
+      });
+      assert.equal(missing.response.status, 404);
+      assert.equal(missing.body.ok, false);
 
-    const missing = await postAndProcessRaw({
-      app,
-      inbox,
-      sql,
-      path: '/api/crdt/admin/documents/compact',
-      body: {
-        requestId: 'missing-route',
-        document: { ...DOCUMENT, documentId: 'missing-document' },
-        reason: 'missing-route',
-      },
-    });
-    assert.equal(missing.response.status, 404);
-    assert.equal(missing.body.ok, false);
-
-    await sql`
+      await sql`
       update crdt_documents
       set quota_policy = ${JSON.stringify({ maxDocumentBytes: 1 })}
       where document_key = ${initial.documentKey}
     `;
-    const beforeQuotaRejection = await mutationCounts(sql, initial.documentKey);
-    const quotaRejected = await postAndProcessRaw({
-      app,
-      inbox,
-      sql,
-      path: '/api/crdt/admin/documents/compact',
-      body: {
-        requestId: 'quota-rejected-route',
-        document: DOCUMENT,
-        reason: 'quota-rejected-route',
-      },
-    });
-    assert.equal(quotaRejected.response.status, 409);
-    assert.equal(quotaRejected.body.ok, false);
-    assert.deepEqual(
-      await mutationCounts(sql, initial.documentKey),
-      beforeQuotaRejection,
-    );
-    await sql`
+      const beforeQuotaRejection = await mutationCounts(sql, initial.documentKey);
+      const quotaRejected = await postAndProcessRaw({
+        app,
+        inbox,
+        sql,
+        path: '/api/crdt/admin/documents/compact',
+        body: {
+          requestId: 'quota-rejected-route',
+          document: DOCUMENT,
+          reason: 'quota-rejected-route',
+        },
+      });
+      assert.equal(quotaRejected.response.status, 409);
+      assert.equal(quotaRejected.body.ok, false);
+      assert.deepEqual(
+        await mutationCounts(sql, initial.documentKey),
+        beforeQuotaRejection,
+      );
+      await sql`
       update crdt_documents
       set quota_policy = ${JSON.stringify({ maxDocumentBytes: 100000 })}
       where document_key = ${initial.documentKey}
     `;
 
-    const compact = await postAndProcess<CompactAdminResponse>({
-      app,
-      inbox,
-      sql,
-      path: '/api/crdt/admin/documents/compact',
-      body: {
-        requestId: 'compact-route',
-        document: DOCUMENT,
-        reason: 'compact-route',
-      },
-    });
-    assert.equal(compact.ok, true);
-    assert.equal(compact.result.appendSequence, 1);
-    assert.equal(compact.result.snapshot.document.documentId, DOCUMENT.documentId);
+      const compact = await postAndProcess<CompactAdminResponse>({
+        app,
+        inbox,
+        sql,
+        path: '/api/crdt/admin/documents/compact',
+        body: {
+          requestId: 'compact-route',
+          document: DOCUMENT,
+          reason: 'compact-route',
+        },
+      });
+      assert.equal(compact.ok, true);
+      assert.equal(compact.result.appendSequence, 1);
+      assert.equal(compact.result.snapshot.document.documentId, DOCUMENT.documentId);
 
-    const lifecycle = await postAndProcess<LifecycleAdminResponse>({
-      app,
-      inbox,
-      sql,
-      path: '/api/crdt/admin/documents/lifecycle',
-      body: {
-        requestId: 'lifecycle-route',
-        document: DOCUMENT,
-        lifecycle: 'archived',
-      },
-    });
-    assert.equal(lifecycle.result.lifecycle, 'archived');
-    assert.equal(lifecycle.result.documentKey, initial.documentKey);
-    assert.deepEqual(lifecycle.result.retention, { mode: 'retain', reason: 'existing' });
-    assert.deepEqual(lifecycle.result.quota, { maxDocumentBytes: 100000 });
-    assert.deepEqual(lifecycle.result.projectionIds, ['existing-projection']);
+      const lifecycle = await postAndProcess<LifecycleAdminResponse>({
+        app,
+        inbox,
+        sql,
+        path: '/api/crdt/admin/documents/lifecycle',
+        body: {
+          requestId: 'lifecycle-route',
+          document: DOCUMENT,
+          lifecycle: 'archived',
+        },
+      });
+      assert.equal(lifecycle.result.lifecycle, 'archived');
+      assert.equal(lifecycle.result.documentKey, initial.documentKey);
+      assert.deepEqual(lifecycle.result.retention, { mode: 'retain', reason: 'existing' });
+      assert.deepEqual(lifecycle.result.quota, { maxDocumentBytes: 100000 });
+      assert.deepEqual(lifecycle.result.projectionIds, ['existing-projection']);
 
-    const erase = await postAndProcess<EraseAdminResponse>({
-      app,
-      inbox,
-      sql,
-      path: '/api/crdt/admin/documents/erase',
-      body: {
-        requestId: 'erase-route',
-        document: DOCUMENT,
-        mode: 'destroy-document',
-        reason: 'privacy',
-      },
-    });
-    assert.equal(erase.result.request.mode, 'destroy-document');
-    assert.equal(erase.result.auditEvent.kind, 'erase');
-    assert.equal(erase.result.metadata.lifecycle, 'destroyed');
-    assert.equal(audit.length, 0);
-    const [durableAudit] = await sql<SqlCountRow[]>`
+      const erase = await postAndProcess<EraseAdminResponse>({
+        app,
+        inbox,
+        sql,
+        path: '/api/crdt/admin/documents/erase',
+        body: {
+          requestId: 'erase-route',
+          document: DOCUMENT,
+          mode: 'destroy-document',
+          reason: 'privacy',
+        },
+      });
+      assert.equal(erase.result.request.mode, 'destroy-document');
+      assert.equal(erase.result.auditEvent.kind, 'erase');
+      assert.equal(erase.result.metadata.lifecycle, 'destroyed');
+      assert.equal(audit.length, 0);
+      const [durableAudit] = await sql<SqlCountRow[]>`
       select count(*) as count from resource_inbox where ri_type_id = 'APP_OUTBOX'
     `;
-    assert.equal(Number(durableAudit?.count), 1);
-    await waitForPGliteQueueRow(sql, 'APP_OUTBOX', 'NEW');
-    await outbox.dequeueOutbox(
-      OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-      toResilienceDto(),
-    );
-    assert.equal(auditAttempts, 2);
-    assert.equal(audit.length, 1);
-    const [completedAudit] = await sql<SqlCountRow[]>`
+      assert.equal(Number(durableAudit?.count), 1);
+      await waitForPGliteQueueRow(sql, 'APP_OUTBOX', 'NEW');
+      await outbox.dequeueOutbox(
+        OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+        toResilienceDto(),
+      );
+      assert.equal(auditAttempts, 2);
+      assert.equal(audit.length, 1);
+      const [completedAudit] = await sql<SqlCountRow[]>`
       select count(*) as count from resource_inbox
       where ri_type_id = 'APP_OUTBOX' and ri_status = 'COMPLETED'
     `;
-    assert.equal(Number(completedAudit?.count), 1);
-  });
-});
+      assert.equal(Number(completedAudit?.count), 1);
+    });
+  },
+);
 
 Deno.test('actual CRDT admin Hono routes preserve 401 and 403 denials', async () => {
   const unauthorized = new Hono();

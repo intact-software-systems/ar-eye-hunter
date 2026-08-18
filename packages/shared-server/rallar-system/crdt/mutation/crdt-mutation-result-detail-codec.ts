@@ -40,7 +40,9 @@ export function decodeExactIntegrityReport(value: object): void {
   for (const issue of report.issues) {
     const fields = requireRecord(issue, 'CRDT integrity issue');
     requireExactKeys(fields, ['path', 'code', 'message'], 'CRDT integrity issue');
-    for (const field of ['path', 'code', 'message']) requireString(fields[field], `issue ${field}`);
+    for (const field of ['path', 'code', 'message']) {
+      requireString(fields[field], `issue ${field}`);
+    }
   }
   if (report.valid !== (report.issues.length === 0)) {
     throw new TypeError('CRDT integrity report validity differs from issues');
@@ -51,9 +53,12 @@ export function decodeExactIntegrityReport(value: object): void {
     !Array.isArray(report.sequenceGaps) ||
     report.sequenceGaps.some((gap) => !Number.isSafeInteger(gap) || gap < 1) ||
     new Set(report.sequenceGaps).size !== report.sequenceGaps.length
-  )
+  ) {
     throw new TypeError('CRDT integrity sequence gaps are invalid');
-  if ('bundleHash' in report) requireString(report.bundleHash, 'integrity bundleHash');
+  }
+  if ('bundleHash' in report) {
+    requireString(report.bundleHash, 'integrity bundleHash');
+  }
 }
 
 export function decodeExactErasureRequest(value: object): void {

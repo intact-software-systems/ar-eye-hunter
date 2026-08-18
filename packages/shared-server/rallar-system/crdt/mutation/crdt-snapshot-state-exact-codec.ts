@@ -99,8 +99,9 @@ export function decodeExactSequenceState(value: unknown): void {
         'insertUpdateId',
         'positionUpdateId',
         'replicaId',
-      ])
+      ]) {
         requireString(item[field], `CRDT sequence ${field}`);
+      }
       requireEpoch(item.lamport, 'CRDT sequence lamport');
       requireEpoch(item.createdAtEpochMs, 'CRDT sequence createdAtEpochMs');
     });
@@ -126,12 +127,18 @@ function decodeDynamicSection(
   decode: (entry: Record<string, unknown>) => void,
 ): void {
   const section = requireRecord(value, `CRDT ${label} section`);
-  for (const entry of Object.values(section)) decode(requireRecord(entry, `CRDT ${label} entry`));
+  for (const entry of Object.values(section)) {
+    decode(requireRecord(entry, `CRDT ${label} entry`));
+  }
 }
 
 function decodeArray(value: unknown, decode: (entry: Record<string, unknown>) => void): void {
-  if (!Array.isArray(value)) throw new TypeError('CRDT snapshot list is invalid');
-  for (const entry of value) decode(requireRecord(entry, 'CRDT snapshot list entry'));
+  if (!Array.isArray(value)) {
+    throw new TypeError('CRDT snapshot list is invalid');
+  }
+  for (const entry of value) {
+    decode(requireRecord(entry, 'CRDT snapshot list entry'));
+  }
 }
 
 function decodePath(value: unknown): void {

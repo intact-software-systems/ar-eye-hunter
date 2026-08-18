@@ -8,10 +8,18 @@ import {
 } from '@shared/crdt/mod.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import { CrdtMutationConflictError } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+// deno-fmt-ignore
+import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
+ResourceInboxRepository.ts';
+// deno-fmt-ignore
+import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
+ResourceInboxResultsRepository.ts';
+// deno-fmt-ignore
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/\
+crdt-mutation-command-codec.ts';
+// deno-fmt-ignore
+import { CrdtMutationConflictError } from '@shared-server/rallar-system/crdt/mutation/\
+crdt-mutation-contracts.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { toResilienceDto } from '../../../src/middleware-resilience.ts';
@@ -54,16 +62,19 @@ interface ResourceInboxCompletionRow {
   readonly ris_resource: string;
 }
 
-Deno.test('production CRDT factory fails closed when document policies are unavailable', async () => {
-  await withPGliteSql(async (sql) => {
-    const now = await pgliteQueueNow(sql);
-    const service = productionService({ queueSql: sql, database: sql, now });
-    const command = await appendCommand(now, 'policy-delivery', 'policy-update');
-    const read = await service.mutationService.read(command);
-    assert.equal(read.authorized, true);
-    assert.equal(read.featureDecision.allowed, false);
-  });
-});
+Deno.test(
+  'production CRDT factory fails closed when document policies are unavailable',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const now = await pgliteQueueNow(sql);
+      const service = productionService({ queueSql: sql, database: sql, now });
+      const command = await appendCommand(now, 'policy-delivery', 'policy-update');
+      const read = await service.mutationService.read(command);
+      assert.equal(read.authorized, true);
+      assert.equal(read.featureDecision.allowed, false);
+    });
+  },
+);
 
 const FAILURE_STAGES = [
   'document',
@@ -106,108 +117,116 @@ for (const stage of FAILURE_STAGES) {
           (select count(*) from crdt_documents)::text as documents,
           (select count(*) from crdt_updates)::text as updates,
           (select count(*) from resource_inbox where ri_type_id = 'WS_OUTBOX')::text as outbox,
-          (select count(*) from resource_inbox_results where ris_topic_id = 'app-inbox.crdt-state')::text as results
+          (select count(*)
+            from resource_inbox_results
+            where ris_topic_id = 'app-inbox.crdt-state')::text as results
       `;
       assert.deepEqual(domain, { documents: '0', updates: '0', outbox: '0', results: '0' });
     });
   });
 }
 
-Deno.test('production AppCrdt accepts a new session replay and rejects changed-content collision', async () => {
-  await withPGliteSql(async (sql) => {
-    const now = await pgliteQueueNow(sql);
-    const service = productionService({ queueSql: sql, database: sql, now, allow: true });
-    const original = update('shared-update', now - 10_000, 'original');
+Deno.test(
+  'production AppCrdt accepts a new session replay and rejects changed-content collision',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const now = await pgliteQueueNow(sql);
+      const service = productionService({ queueSql: sql, database: sql, now, allow: true });
+      const original = update('shared-update', now - 10_000, 'original');
 
-    await enqueueAndDrain({
-      service,
-      envelope: original,
-      deliveryId: 'session-1:delivery-1',
-      sessionId: 'session-1',
-      capturedAtEpochMs: now,
-    });
-    await enqueueAndDrain({
-      service,
-      envelope: original,
-      deliveryId: 'session-2:delivery-2',
-      sessionId: 'session-2',
-      capturedAtEpochMs: now + 1,
-    });
-    await enqueueAndDrain({
-      service,
-      envelope: update('shared-update', now - 10_000, 'changed'),
-      deliveryId: 'session-3:delivery-3',
-      sessionId: 'session-3',
-      capturedAtEpochMs: now + 2,
-    });
+      await enqueueAndDrain({
+        service,
+        envelope: original,
+        deliveryId: 'session-1:delivery-1',
+        sessionId: 'session-1',
+        capturedAtEpochMs: now,
+      });
+      await enqueueAndDrain({
+        service,
+        envelope: original,
+        deliveryId: 'session-2:delivery-2',
+        sessionId: 'session-2',
+        capturedAtEpochMs: now + 1,
+      });
+      await enqueueAndDrain({
+        service,
+        envelope: update('shared-update', now - 10_000, 'changed'),
+        deliveryId: 'session-3:delivery-3',
+        sessionId: 'session-3',
+        capturedAtEpochMs: now + 2,
+      });
 
-    const [counts] = await sql<CrdtMutationCountsRow[]>`
+      const [counts] = await sql<CrdtMutationCountsRow[]>`
       select
         (select count(*) from crdt_documents)::text as documents,
         (select count(*) from crdt_updates)::text as updates,
         (select count(*) from resource_inbox where ri_type_id = 'WS_OUTBOX')::text as outbox
     `;
-    assert.deepEqual(counts, { documents: '1', updates: '1', outbox: '4' });
-    const results = await sql<ResourceInboxResultRow[]>`
+      assert.deepEqual(counts, { documents: '1', updates: '1', outbox: '4' });
+      const results = await sql<ResourceInboxResultRow[]>`
       select ris_resource from resource_inbox_results
       where ris_topic_id = 'app-inbox.crdt-state'
       order by ris_row_id
     `;
-    assert.deepEqual(
-      results.map((row) => {
-        const result = JSON.parse(row.ris_resource);
-        return { status: result.status, code: result.code };
-      }),
-      [
-        { status: 'accepted', code: null },
-        { status: 'replay', code: null },
-        { status: 'rejected', code: 'duplicate-hash-mismatch' },
-      ],
-    );
-  });
-});
-
-Deno.test('production AppInbox retries a CRDT conflict from a fresh revoked authority read', async () => {
-  await withPGliteSql(async (sql) => {
-    const now = await pgliteQueueNow(sql);
-    let allowed = true;
-    const database = withOneCrdtConflict(sql, () => {
-      allowed = false;
+      assert.deepEqual(
+        results.map((row) => {
+          const result = JSON.parse(row.ris_resource);
+          return { status: result.status, code: result.code };
+        }),
+        [
+          { status: 'accepted', code: null },
+          { status: 'replay', code: null },
+          { status: 'rejected', code: 'duplicate-hash-mismatch' },
+        ],
+      );
     });
-    const service = productionService({
-      queueSql: sql,
-      database,
-      now,
-      allow: true,
-      isAllowed: () => allowed,
-    });
+  },
+);
 
-    await enqueueAndDrain({
-      service,
-      envelope: update('revoked-update', now - 10_000),
-      deliveryId: 'revoked-delivery',
-      sessionId: 'session-1',
-      capturedAtEpochMs: now,
-    });
+Deno.test(
+  'production AppInbox retries a CRDT conflict from a fresh revoked authority read',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const now = await pgliteQueueNow(sql);
+      let allowed = true;
+      const database = withOneCrdtConflict(sql, () => {
+        allowed = false;
+      });
+      const service = productionService({
+        queueSql: sql,
+        database,
+        now,
+        allow: true,
+        isAllowed: () => allowed,
+      });
 
-    const [counts] = await sql<CrdtMutationCountsRow[]>`
+      await enqueueAndDrain({
+        service,
+        envelope: update('revoked-update', now - 10_000),
+        deliveryId: 'revoked-delivery',
+        sessionId: 'session-1',
+        capturedAtEpochMs: now,
+      });
+
+      const [counts] = await sql<CrdtMutationCountsRow[]>`
       select
         (select count(*) from crdt_documents)::text as documents,
         (select count(*) from crdt_updates)::text as updates,
         (select count(*) from resource_inbox where ri_type_id = 'WS_OUTBOX')::text as outbox
     `;
-    assert.deepEqual(counts, { documents: '0', updates: '0', outbox: '0' });
-    const [completion] = await sql<ResourceInboxCompletionRow[]>`
+      assert.deepEqual(counts, { documents: '0', updates: '0', outbox: '0' });
+      const [completion] = await sql<ResourceInboxCompletionRow[]>`
       select ris_status, ris_resource from resource_inbox_results
       where ris_topic_id = 'app-inbox.crdt-state'
         and ris_resource_id = 'revoked-delivery'
     `;
-    assert.equal(completion?.ris_status, 'COMPLETED');
-    const result = JSON.parse(completion!.ris_resource);
-    assert.equal(result.status, 'rejected');
-    assert.equal(result.code, 'authorization-denied');
-  });
-});
+      assert.equal(completion?.ris_status, 'COMPLETED');
+      const result = JSON.parse(completion!.ris_resource);
+      assert.equal(result.status, 'rejected');
+      assert.equal(result.code, 'authorization-denied');
+    });
+  },
+);
 
 interface ProductionServiceInput {
   readonly queueSql: PSqlSql;
@@ -333,58 +352,73 @@ async function enqueueAndDrain(input: EnqueueAndDrainInput): Promise<void> {
 
 function withOneCrdtConflict(database: PSqlSql, onConflict: () => void): PSqlSql {
   let injected = false;
-  const wrapped =
-    ((parts: TemplateStringsArray | readonly unknown[], ...values: unknown[]) =>
-      executeSql(database, parts, values)) as PSqlSql;
-  wrapped.begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) =>
-    await database.begin(async (transaction) => {
-      const conflicting =
-        ((parts: TemplateStringsArray | readonly unknown[], ...values: unknown[]) => {
-          const text = Array.isArray(parts) && 'raw' in parts ? parts.join(' ') : '';
-          if (!injected && text.includes('insert into crdt_documents')) {
-            injected = true;
-            onConflict();
-            throw new CrdtMutationConflictError('injected-document');
-          }
-          return executeSql(transaction, parts, values);
-        }) as PSqlTransactionSql;
-      conflicting.begin = transaction.begin.bind(transaction);
-      return await write(conflicting);
-    });
-  return wrapped;
+  return new Proxy(database, {
+    apply: (_target, _thisArgument, argumentsList) =>
+      executeSql(database, argumentsList[0], argumentsList.slice(1)),
+    get: (target, property, receiver) => {
+      if (property !== 'begin') {
+        return Reflect.get(target, property, receiver);
+      }
+      return async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) =>
+        await database.begin(async (transaction) => {
+          const conflicting = new Proxy(transaction, {
+            apply: (_transaction, _thisArgument, argumentsList) => {
+              const parts = argumentsList[0];
+              const values = argumentsList.slice(1);
+              const text = isTemplateStringsArray(parts) ? parts.join(' ') : '';
+              if (!injected && text.includes('insert into crdt_documents')) {
+                injected = true;
+                onConflict();
+                throw new CrdtMutationConflictError('injected-document');
+              }
+              return executeSql(transaction, parts, values);
+            },
+          });
+          return await write(conflicting);
+        });
+    },
+  });
 }
 
 function withInjectedTransactionFailure(
   database: PSqlSql,
   stage: typeof FAILURE_STAGES[number],
 ): PSqlSql {
-  const wrapped =
-    ((parts: TemplateStringsArray | readonly unknown[], ...values: unknown[]) =>
-      executeSql(database, parts, values)) as PSqlSql;
-  wrapped.begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) =>
-    await database.begin(async (transaction) => {
-      let wsOutboxWrites = 0;
-      const failing = ((parts: TemplateStringsArray | readonly unknown[], ...values: unknown[]) => {
-        const text = Array.isArray(parts) && 'raw' in parts ? parts.join(' ') : '';
-        if (text.includes('insert into resource_inbox') && values.includes('WS_OUTBOX')) {
-          wsOutboxWrites += 1;
-        }
-        const fail = (stage === 'document' && text.includes('insert into crdt_documents')) ||
-          (stage === 'record' && text.includes('insert into crdt_updates')) ||
-          (stage === 'first-ws-outbox' && wsOutboxWrites === 1) ||
-          (stage === 'second-ws-outbox' && wsOutboxWrites === 2) ||
-          (stage === 'result' && text.includes('insert into resource_inbox_results')) ||
-          (stage === 'completion' && text.includes('update resource_inbox') &&
-            text.includes("ri_status = 'RESERVED'"));
-        if (fail) {
-          throw new Error(`injected ${stage} failure`);
-        }
-        return executeSql(transaction, parts, values);
-      }) as PSqlTransactionSql;
-      failing.begin = transaction.begin.bind(transaction);
-      return await write(failing);
-    });
-  return wrapped;
+  return new Proxy(database, {
+    apply: (_target, _thisArgument, argumentsList) =>
+      executeSql(database, argumentsList[0], argumentsList.slice(1)),
+    get: (target, property, receiver) => {
+      if (property !== 'begin') {
+        return Reflect.get(target, property, receiver);
+      }
+      return async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) =>
+        await database.begin(async (transaction) => {
+          let wsOutboxWrites = 0;
+          const failing = new Proxy(transaction, {
+            apply: (_transaction, _thisArgument, argumentsList) => {
+              const parts = argumentsList[0];
+              const values = argumentsList.slice(1);
+              const text = isTemplateStringsArray(parts) ? parts.join(' ') : '';
+              if (text.includes('insert into resource_inbox') && values.includes('WS_OUTBOX')) {
+                wsOutboxWrites += 1;
+              }
+              const fail = (stage === 'document' && text.includes('insert into crdt_documents')) ||
+                (stage === 'record' && text.includes('insert into crdt_updates')) ||
+                (stage === 'first-ws-outbox' && wsOutboxWrites === 1) ||
+                (stage === 'second-ws-outbox' && wsOutboxWrites === 2) ||
+                (stage === 'result' && text.includes('insert into resource_inbox_results')) ||
+                (stage === 'completion' && text.includes('update resource_inbox') &&
+                  text.includes("ri_status = 'RESERVED'"));
+              if (fail) {
+                throw new Error(`injected ${stage} failure`);
+              }
+              return executeSql(transaction, parts, values);
+            },
+          });
+          return await write(failing);
+        });
+    },
+  });
 }
 
 function executeSql(
@@ -392,7 +426,9 @@ function executeSql(
   parts: TemplateStringsArray | readonly unknown[],
   values: readonly unknown[],
 ): unknown {
-  return Array.isArray(parts) && 'raw' in parts
-    ? sql(parts as TemplateStringsArray, ...values)
-    : sql(parts);
+  return isTemplateStringsArray(parts) ? sql(parts, ...values) : sql(parts);
+}
+
+function isTemplateStringsArray(value: unknown): value is TemplateStringsArray {
+  return Array.isArray(value) && 'raw' in value;
 }

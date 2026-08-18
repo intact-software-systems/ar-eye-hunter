@@ -1,4 +1,5 @@
 import { type Context, Hono } from 'jsr:@hono/hono@4.11.9';
+
 import type {
   RallarCrdtAdminReadRepository,
   RallarCrdtCatchUpRequestEnvelope,
@@ -11,6 +12,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+
 import { toAuthErrorResponse, toAuthSession } from '../services/request-auth-service.ts';
 import type {
   CrdtAdminMutationOperation,

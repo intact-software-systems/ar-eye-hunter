@@ -26,6 +26,7 @@ import {
   toRallarCrdtDocumentKey,
   verifyRallarCrdtDebugBundle,
 } from '@shared/crdt/mod.ts';
+
 import type { PSqlSql } from '../../../postgres/PostgresSqlClient.ts';
 import {
   type DocumentRow,

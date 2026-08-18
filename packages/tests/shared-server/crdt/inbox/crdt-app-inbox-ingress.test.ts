@@ -1,4 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+// prettier-ignore
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {

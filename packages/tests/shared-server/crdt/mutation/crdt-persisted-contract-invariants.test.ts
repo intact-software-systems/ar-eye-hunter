@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest';
+// prettier-ignore
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
+
 import {
   hashRallarCrdtJson,
   hashRallarCrdtUpdateEnvelope,
@@ -24,8 +30,10 @@ import {
 } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 import {
   type DocumentRow,
+  type SnapshotRow,
   toMetadata,
   toRecord,
+  toSnapshot,
   type UpdateRow,
 } from '@shared-server/rallar-system/crdt/persistence/crdt-mutation-row-codec.ts';
 import {
@@ -111,6 +119,40 @@ describe('CRDT persisted mutation contract invariants', () => {
         DOCUMENT,
       ),
     ).toThrow(/metadata|lifecycle|corrupt/i);
+  });
+
+  it('rejects persisted snapshot rows when the envelope omits its required reason', () => {
+    const documentKey = toRallarCrdtDocumentKey(DOCUMENT);
+    const snapshotEnvelope = {
+      protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+      document: DOCUMENT,
+      snapshotId: 'snapshot-without-reason',
+      schemaVersion: 1,
+      createdAtEpochMs: 2_000,
+      maxLamport: 0,
+      includedUpdateIds: [],
+      value: {},
+      metadata: { updateCount: 0 },
+    };
+    const row: SnapshotRow = {
+      document_key: documentKey,
+      snapshot_id: snapshotEnvelope.snapshotId,
+      append_sequence: 0,
+      snapshot_envelope: JSON.stringify(snapshotEnvelope),
+      created_at_ts: new Date(snapshotEnvelope.createdAtEpochMs),
+      reason: 'legacy-import',
+      snapshot_bytes: 2,
+      snapshot_count: 1,
+    };
+
+    expect(() =>
+      toSnapshot({
+        row,
+        expectedDocumentKey: documentKey,
+        expectedDocument: DOCUMENT,
+        lastAppendSequence: 0,
+      }),
+    ).toThrow(/snapshot|reason|corrupt/i);
   });
 
   it('rejects persisted update rows with invalid physical sequence and authorization scope', () => {

@@ -1,9 +1,16 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+// prettier-ignore
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 
 import { findMutationBoundaryViolations } from './mutation-boundary-analysis.ts';
 import { readFunctionBody, readMethodBody } from './authoritative-mutation-source-analysis.ts';
-import { authoritativeMutationRuntimeSourcePaths } from './authoritative-mutation-runtime-source-inventory.ts';
+// prettier-ignore
+import { authoritativeMutationRuntimeSourcePaths }
+  from './authoritative-mutation-runtime-source-inventory.ts';
 
 // Retain permanently as cross-domain semantic phase-order evidence.
 const read = (file: string): string => readFileSync(file, 'utf8');
@@ -29,6 +36,10 @@ const sharedValidationPrimitiveNames = [
   'requirePositiveSafeInteger',
   'nullablePositiveSafeInteger',
 ] as const;
+const forbiddenPersistenceOwnerImport = new RegExp(
+  String.raw`from ['"](?:\.\.\/)+` +
+    String.raw`(?:mutation|services|inbox|repositories\/GroupStateRepository)(?:\/|\.ts)`,
+);
 
 const sources = {
   appAdmin: read(`${serviceRoot}/AppAdminInboxService.ts`),
@@ -93,9 +104,7 @@ it('keeps persistence validators below mutation and stateful owners', () => {
     `${persistenceRoot}/validate-persisted-group-presence.ts`,
   ]) {
     const source = read(file);
-    expect(source, file).not.toMatch(
-      /from ['"](?:\.\.\/)+(?:mutation|services|inbox|repositories\/GroupStateRepository)(?:\/|\.ts)/,
-    );
+    expect(source, file).not.toMatch(forbiddenPersistenceOwnerImport);
   }
 });
 

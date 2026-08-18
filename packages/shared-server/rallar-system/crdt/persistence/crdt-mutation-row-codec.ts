@@ -15,6 +15,7 @@ import {
   toRallarCrdtDocumentKey,
   validateRallarCrdtSnapshotEnvelope,
 } from '@shared/crdt/mod.ts';
+
 import type * as Crdt from '../mutation/crdt-mutation-contracts.ts';
 import {
   decodeExactDocumentMetadata,
@@ -204,7 +205,7 @@ export interface SnapshotDecodingInput {
 export function toSnapshot(input: SnapshotDecodingInput): RallarCrdtSnapshotEnvelope {
   const { row, expectedDocumentKey, expectedDocument, lastAppendSequence } = input;
   const snapshot = decodeExactSnapshotEnvelope(JSON.parse(row.snapshot_envelope));
-  const expectedReason = snapshot.metadata.reason ?? 'legacy-import';
+  const expectedReason = snapshot.metadata.reason;
   if (
     row.document_key !== expectedDocumentKey ||
     row.snapshot_id !== snapshot.snapshotId ||
@@ -214,6 +215,8 @@ export function toSnapshot(input: SnapshotDecodingInput): RallarCrdtSnapshotEnve
     new Date(row.created_at_ts).getTime() !== snapshot.createdAtEpochMs ||
     typeof row.reason !== 'string' ||
     row.reason.length === 0 ||
+    typeof expectedReason !== 'string' ||
+    expectedReason.length === 0 ||
     row.reason !== expectedReason ||
     toRallarCrdtDocumentKey(snapshot.document) !== expectedDocumentKey ||
     toRallarCrdtDocumentKey(expectedDocument) !== expectedDocumentKey ||

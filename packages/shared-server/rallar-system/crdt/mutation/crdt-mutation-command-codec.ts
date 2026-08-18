@@ -3,6 +3,7 @@ import {
   type RallarCrdtDocumentRef,
   toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
+
 import {
   decodeExactDocumentMetadata,
   decodeExactDocumentRef,
@@ -66,7 +67,9 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
             : ['mode', 'reason'],
   );
   requireExactKeys(command, allowed, 'CRDT mutation command');
-  if (command.version !== 1) throw new TypeError('CRDT mutation version is invalid');
+  if (command.version !== 1) {
+    throw new TypeError('CRDT mutation version is invalid');
+  }
   requireString(command.commandId, 'commandId');
   requireString(command.deliveryId, 'deliveryId');
   requireString(command.commandHash, 'commandHash');
@@ -234,9 +237,15 @@ function decodeLifecycleAction<T>(
     `${label} action kind`,
   );
   requireExactKeys(action, kind === 'set' ? ['kind', 'value'] : ['kind'], `${label} action`);
-  if (kind === 'preserve') return { kind };
-  if (kind === 'clear') return { kind };
-  if (action.value === null) throw new TypeError(`${label} action value is invalid`);
+  if (kind === 'preserve') {
+    return { kind };
+  }
+  if (kind === 'clear') {
+    return { kind };
+  }
+  if (action.value === null) {
+    throw new TypeError(`${label} action value is invalid`);
+  }
   return { kind, value: decodeValue(action.value) };
 }
 

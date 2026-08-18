@@ -12,11 +12,21 @@ export function decodeExactOperationBatchShape(value: unknown): void {
     ['operationGroupId', 'undo', 'redo', 'encryption'],
     'CRDT operation batch',
   );
-  if (!Array.isArray(batch.operations)) return;
-  for (const operation of batch.operations) decodeExactOperationShape(operation);
-  if ('undo' in batch) decodeExactUndoRedoShape(batch.undo, 'undo');
-  if ('redo' in batch) decodeExactUndoRedoShape(batch.redo, 'redo');
-  if ('encryption' in batch) decodeExactEncryptedEnvelopeShape(batch.encryption);
+  if (!Array.isArray(batch.operations)) {
+    return;
+  }
+  for (const operation of batch.operations) {
+    decodeExactOperationShape(operation);
+  }
+  if ('undo' in batch) {
+    decodeExactUndoRedoShape(batch.undo, 'undo');
+  }
+  if ('redo' in batch) {
+    decodeExactUndoRedoShape(batch.redo, 'redo');
+  }
+  if ('encryption' in batch) {
+    decodeExactEncryptedEnvelopeShape(batch.encryption);
+  }
 }
 
 export function decodeExactCausalFrontierShape(value: unknown): void {
@@ -27,14 +37,17 @@ export function decodeExactCausalFrontierShape(value: unknown): void {
     ['replicaClocks'],
     'CRDT causal frontier',
   );
-  if ('replicaClocks' in frontier)
+  if ('replicaClocks' in frontier) {
     decodeDynamicNumberRecord(frontier.replicaClocks, 'replica clocks');
+  }
 }
 
 function decodeExactOperationShape(value: unknown): void {
   const operation = requireRecord(value, 'CRDT operation');
   const keys = operationKeys[operation.kind as keyof typeof operationKeys];
-  if (!keys) throw new TypeError('CRDT operation kind is invalid');
+  if (!keys) {
+    throw new TypeError('CRDT operation kind is invalid');
+  }
   requireExactKeys(operation, keys, 'CRDT operation');
 }
 

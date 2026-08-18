@@ -1,4 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+// prettier-ignore
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+
 import {
   createRallarCrdtAppendRequestEnvelope,
   createRallarCrdtBackupBundle,

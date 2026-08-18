@@ -1,4 +1,5 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
+
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
   AppInboxEnqueueInput,
@@ -17,16 +18,73 @@ import type { ApiV1Runtime } from '../composition/api-v1-runtime.ts';
 import { toGroupAppInboxError } from '../group-state/group-state-route-errors.ts';
 import type { GroupStateRouteAuthSession } from '../group-state/group-state-route-contracts.ts';
 import * as groupStateRoutes from '../group-state/register-group-state-routes.ts';
-import { requireApiAuthSession } from '../services/request-auth-service.ts';
 import * as clientStateRoutes from './client-state-routes.ts';
 
-export function createStateSnapshotReadRouteRegistrars(runtime: ApiV1Runtime) {
+export interface ApiV1StateSnapshotRouteRuntime {
+  readonly authSessionRepository: object;
+  readonly appClientInboxService: Pick<
+    ApiV1Runtime['appClientInboxService'],
+    'processAuthenticatedEntryUntilCompletion'
+  >;
+  readonly appGroupInboxService: Pick<
+    ApiV1Runtime['appGroupInboxService'],
+    | 'processAuthenticatedEntryUntilCompletion'
+    | 'processAuthenticatedEntryUntilCompletionResult'
+  >;
+  readonly clientStateService: Pick<
+    ApiV1Runtime['clientStateService'],
+    | 'listEventPage'
+    | 'listEvents'
+    | 'listRecentEvents'
+    | 'listSnapshots'
+    | 'readCurrentSnapshot'
+    | 'readPresenceSnapshot'
+    | 'readSnapshot'
+  >;
+  readonly groupStateService: Pick<
+    ApiV1Runtime['groupStateService'],
+    | 'listEventPage'
+    | 'listEvents'
+    | 'listRecentEvents'
+    | 'listSnapshots'
+    | 'readCurrentSnapshot'
+    | 'readSnapshot'
+  >;
+  readonly clientRestSnapshotReadSelector: Pick<
+    ApiV1Runtime['clientRestSnapshotReadSelector'],
+    'read'
+  >;
+  readonly groupRestSnapshotReadSelector: Pick<
+    ApiV1Runtime['groupRestSnapshotReadSelector'],
+    'read'
+  >;
+}
+
+export interface ApiV1StateSnapshotAuthRequest {
+  readonly header: (name: string) => string | undefined;
+}
+
+export interface ApiV1StateSnapshotRouteOperations<
+  Runtime extends ApiV1StateSnapshotRouteRuntime,
+> {
+  readonly requireApiAuthSession: (
+    request: ApiV1StateSnapshotAuthRequest,
+    repository: Runtime['authSessionRepository'],
+  ) => Promise<IssuedAuthSession>;
+}
+
+export function createStateSnapshotReadRouteRegistrars<
+  Runtime extends ApiV1StateSnapshotRouteRuntime,
+>(
+  runtime: Runtime,
+  operations: ApiV1StateSnapshotRouteOperations<Runtime>,
+) {
   return {
     client: (app: Hono) =>
       clientStateRoutes.registerClientStateRoutes(app, {
         clientStateService: runtime.clientStateService,
         requireApiAuthSession: (request) =>
-          requireApiAuthSession(request, runtime.authSessionRepository),
+          operations.requireApiAuthSession(request, runtime.authSessionRepository),
         hydrateStateSyncSnapshotCaches,
         processClientAppInbox: async <V>(
           enqueue: AppInboxEnqueueInput<V>,
@@ -51,7 +109,7 @@ export function createStateSnapshotReadRouteRegistrars(runtime: ApiV1Runtime) {
       groupStateRoutes.registerGroupStateRoutes(app, {
         groupStateService: runtime.groupStateService,
         requireApiAuthSession: (request) =>
-          requireApiAuthSession(request, runtime.authSessionRepository),
+          operations.requireApiAuthSession(request, runtime.authSessionRepository),
         processGroupAppInbox: async <V, R>(
           authority: GroupStateRouteAuthSession,
           enqueue: AppInboxEnqueueInput<V>,
@@ -59,7 +117,7 @@ export function createStateSnapshotReadRouteRegistrars(runtime: ApiV1Runtime) {
           const result = await runtime.appGroupInboxService
             .processAuthenticatedEntryUntilCompletion<V, R>(
               enqueue,
-              authority as IssuedAuthSession,
+              authority,
             );
           return result.fold(
             (error) => {

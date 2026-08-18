@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest';
+// prettier-ignore
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
+
 import {
   RALLAR_CRDT_OPERATION_VERSION,
   RALLAR_CRDT_PROTOCOL_VERSION,
@@ -335,7 +341,9 @@ function outboxMessage(computed: CrdtMutationComputed, effect: string) {
   const entry = computed.outboxEntries.find((candidate) =>
     candidate.key.resourceId.endsWith(`:${effect}`),
   );
-  if (!entry) throw new Error(`Missing ${effect} outbox entry`);
+  if (!entry) {
+    throw new Error(`Missing ${effect} outbox entry`);
+  }
   return JSON.parse(entry.resource);
 }
 

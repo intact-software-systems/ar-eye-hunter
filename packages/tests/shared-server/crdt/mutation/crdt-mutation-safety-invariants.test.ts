@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest';
+// prettier-ignore
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
+
 import {
   hashRallarCrdtUpdateEnvelope,
   RALLAR_CRDT_OPERATION_VERSION,

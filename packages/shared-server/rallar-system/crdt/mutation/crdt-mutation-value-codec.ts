@@ -10,6 +10,7 @@ import {
   validateRallarCrdtDocumentRef,
   validateRallarCrdtSnapshotEnvelope,
 } from '@shared/crdt/mod.ts';
+
 import {
   requireEpoch,
   requireExactKeys,
@@ -101,14 +102,17 @@ export function decodeExactSnapshotEnvelope(value: unknown): RallarCrdtSnapshotE
     'CRDT snapshot envelope',
   );
   decodeExactDocumentRef(snapshot.document, 'CRDT snapshot document');
-  if ('updateClock' in snapshot) decodeExactSnapshotClock(snapshot.updateClock);
+  if ('updateClock' in snapshot) {
+    decodeExactSnapshotClock(snapshot.updateClock);
+  }
   if (
     snapshot.value &&
     typeof snapshot.value === 'object' &&
     !Array.isArray(snapshot.value) &&
     (snapshot.value as Record<string, unknown>).kind === 'encrypted-json'
-  )
+  ) {
     decodeExactEncryptedEnvelopeShape(snapshot.value);
+  }
   requireString(snapshot.snapshotId, 'snapshotId');
   requirePositiveInteger(snapshot.schemaVersion, 'snapshot schemaVersion');
   requireEpoch(snapshot.createdAtEpochMs, 'snapshot createdAtEpochMs');
@@ -117,8 +121,9 @@ export function decodeExactSnapshotEnvelope(value: unknown): RallarCrdtSnapshotE
     !Array.isArray(snapshot.includedUpdateIds) ||
     snapshot.includedUpdateIds.some((id) => typeof id !== 'string' || id.length === 0) ||
     new Set(snapshot.includedUpdateIds).size !== snapshot.includedUpdateIds.length
-  )
+  ) {
     throw new TypeError('CRDT snapshot included update IDs are invalid');
+  }
   const metadata = requireRecord(snapshot.metadata, 'CRDT snapshot metadata');
   requireExactOptionalKeys(
     metadata,
@@ -135,20 +140,31 @@ export function decodeExactSnapshotEnvelope(value: unknown): RallarCrdtSnapshotE
     'CRDT snapshot metadata',
   );
   for (const field of ['updateCount', 'tombstoneCount', 'conflictCount']) {
-    if (field in metadata) requireEpoch(metadata[field], `snapshot metadata ${field}`);
+    if (field in metadata) {
+      requireEpoch(metadata[field], `snapshot metadata ${field}`);
+    }
   }
   if ('createdByReplicaId' in metadata) {
     requireString(metadata.createdByReplicaId, 'snapshot metadata createdByReplicaId');
   }
-  if ('reason' in metadata) requireString(metadata.reason, 'snapshot metadata reason');
-  if ('crdtState' in metadata) decodeExactCrdtStateSnapshot(metadata.crdtState);
-  if ('sequenceState' in metadata) decodeExactSequenceState(metadata.sequenceState);
+  if ('reason' in metadata) {
+    requireString(metadata.reason, 'snapshot metadata reason');
+  }
+  if ('crdtState' in metadata) {
+    decodeExactCrdtStateSnapshot(metadata.crdtState);
+  }
+  if ('sequenceState' in metadata) {
+    decodeExactSequenceState(metadata.sequenceState);
+  }
   if (
     'unsafeLegacyCollectionCompaction' in metadata &&
     typeof metadata.unsafeLegacyCollectionCompaction !== 'boolean'
-  )
+  ) {
     throw new TypeError('CRDT snapshot legacy compaction flag is invalid');
-  if ('hash' in snapshot) requireString(snapshot.hash, 'snapshot hash');
+  }
+  if ('hash' in snapshot) {
+    requireString(snapshot.hash, 'snapshot hash');
+  }
   if (!validateRallarCrdtSnapshotEnvelope(snapshot).valid) {
     throw new TypeError('CRDT snapshot envelope is invalid');
   }
@@ -194,14 +210,18 @@ export function decodeExactRetentionPolicy(value: unknown): RallarCrdtRetentionP
     ['retain', 'redact-after', 'delete-after'] as const,
     'retention mode',
   );
-  if ('ttlMs' in policy) requirePositiveInteger(policy.ttlMs, 'retention ttlMs');
+  if ('ttlMs' in policy) {
+    requirePositiveInteger(policy.ttlMs, 'retention ttlMs');
+  }
   if (mode !== 'retain' && !('ttlMs' in policy)) {
     throw new TypeError('CRDT retention ttlMs is required for expiring retention');
   }
   if ('sensitivePayloads' in policy && typeof policy.sensitivePayloads !== 'boolean') {
     throw new TypeError('CRDT retention sensitivePayloads is invalid');
   }
-  if ('reason' in policy) requireString(policy.reason, 'retention reason');
+  if ('reason' in policy) {
+    requireString(policy.reason, 'retention reason');
+  }
   return policy as RallarCrdtRetentionPolicy;
 }
 
@@ -215,9 +235,13 @@ export function decodeExactQuotaPolicy(value: unknown): RallarCrdtQuotaPolicy {
     'maxUpdatesPerMinutePerActor',
   ];
   requireExactOptionalKeys(policy, [], keys, 'CRDT quota policy');
-  if (Object.keys(policy).length === 0) throw new TypeError('CRDT quota policy must set a limit');
+  if (Object.keys(policy).length === 0) {
+    throw new TypeError('CRDT quota policy must set a limit');
+  }
   for (const key of keys) {
-    if (key in policy) requirePositiveInteger(policy[key], `quota ${key}`);
+    if (key in policy) {
+      requirePositiveInteger(policy[key], `quota ${key}`);
+    }
   }
   return policy as RallarCrdtQuotaPolicy;
 }
@@ -314,8 +338,12 @@ export function decodeExactDocumentMetadata(value: unknown): RallarCrdtDocumentM
   if ((metadata.lastAppendSequence as number) < (metadata.updateCount as number)) {
     throw new TypeError('CRDT metadata update counters are inconsistent');
   }
-  if (metadata.retention !== null) decodeExactRetentionPolicy(metadata.retention);
-  if (metadata.quota !== null) decodeExactQuotaPolicy(metadata.quota);
+  if (metadata.retention !== null) {
+    decodeExactRetentionPolicy(metadata.retention);
+  }
+  if (metadata.quota !== null) {
+    decodeExactQuotaPolicy(metadata.quota);
+  }
   decodeExactProjectionIds(metadata.projectionIds);
   return metadata as RallarCrdtDocumentMetadata;
 }

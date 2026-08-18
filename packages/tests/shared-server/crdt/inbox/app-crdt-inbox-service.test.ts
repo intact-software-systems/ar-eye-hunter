@@ -1,7 +1,17 @@
-import { describe, expect, it } from 'vitest';
+// prettier-ignore
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
+
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import type { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
-import { CRDT_MUTATION_INBOX_TYPES } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+// prettier-ignore
+import type { AppCrdtInboxService }
+  from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
+// prettier-ignore
+import { CRDT_MUTATION_INBOX_TYPES }
+  from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import {
   createCrdtMutationCommand,
   decodeCrdtMutationCommand,
