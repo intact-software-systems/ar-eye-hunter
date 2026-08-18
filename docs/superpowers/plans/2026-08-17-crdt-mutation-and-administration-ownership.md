@@ -1118,9 +1118,12 @@ mapping must produce an operation-specific finding; generic reachability alone i
 The operation analysis preserves live dataflow rather than accepting compatible AST fragments:
 the direct helper must forward `input.operation`, the command submitted to AppInbox must be the
 same binding created for that mutation, and the command/type switches must return the expected
-value on the live terminal path. Executable mutants cover a hardcoded helper operation, a second
-wrong submitted command, literal-false correct returns followed by live fallthrough, and dead
-correct route/gateway calls masking live wrong calls.
+value on the live terminal path. The submitted command is created through an immutable `const`
+binding; any live assignment or update before submission invalidates that proof, while an
+assignment in a literal-false branch does not. Executable mutants cover a hardcoded helper
+operation, a second wrong submitted command, live reassignment of the submitted binding,
+literal-false correct returns followed by live fallthrough, and dead correct route/gateway calls
+or command reassignment masking live behavior.
 
 Individually review every current source-read assertion in the changed coupling registry. Replace
 stale location identities after the test move, add durable security classifications for the live

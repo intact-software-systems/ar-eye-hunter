@@ -33,7 +33,7 @@ also invalid, so this document cannot accumulate orphan approvals.
 
 ## Reviewed boundary groups
 
-The current 134 entries were reviewed by independently meaningful behavior,
+The current 136 entries were reviewed by independently meaningful behavior,
 not by vocabulary. The metadata below splits these groups further by exact
 executable assertion so a broad domain label cannot conceal unrelated evidence.
 
@@ -44,7 +44,7 @@ executable assertion so a broad domain label cannot conceal unrelated evidence.
 | Browser control protocol                         |       7 | Two approved assertions protect server import direction and shared-test monitor ownership.                       |
 | Auth compatibility                               |       3 | Wrapper mutations and the canonical-test inventory protect distinct compatibility edges.                         |
 | Repository style and release interfaces          |       2 | Automation consumes stable rule and release-gate mappings.                                                       |
-| AppInbox transport routing                       |       8 | Concrete route mutations must fail before they bypass the canonical transaction owner.                           |
+| AppInbox transport routing                       |      10 | Concrete route and command-binding mutations must fail before they bypass the canonical transaction owner.       |
 | Mutation-analysis implementation interface       |       3 | The audit must follow new files, re-exports, and type declarations fail-closed.                                  |
 | Mutation route and owner traversal               |      13 | Route, export, helper, and capability evasions must still resolve to AppInbox.                                   |
 | Group mutation construction                      |      14 | Missing, duplicate, reordered, conditional, or rebound owner calls must be rejected.                             |
@@ -226,6 +226,22 @@ moved or changed test.
       "summary": "Only the live general-admin gateway call establishes its operation. Executable assertion: “rejects a dead correct gateway call masking the live lifecycle call”.",
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a dead correct gateway call masking the live lifecycle call",
       "coverageRelation": "The executable mutant leaves a compact gateway call in a literal-false branch and executes lifecycle; the analyzer must ignore the dead decoy."
+    },
+    {
+      "id": "app-inbox-crdt-submitted-command-reassignment",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "The submitted command binding cannot be reassigned to another operation before AppInbox submission. Executable assertion: “rejects live reassignment of the submitted command to lifecycle”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects live reassignment of the submitted command to lifecycle",
+      "coverageRelation": "The executable mutant creates the correct compact command, reassigns that same live binding to lifecycle, and requires the analyzer to reject the submitted operation mismatch."
+    },
+    {
+      "id": "app-inbox-crdt-dead-command-reassignment",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "A command reassignment in a literal-false branch does not alter the submitted command. Executable assertion: “ignores a command reassignment in a dead branch”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#ignores a command reassignment in a dead branch",
+      "coverageRelation": "The executable mutant places the lifecycle reassignment in a literal-false branch and requires the analyzer to retain the live compact binding without a false routing failure."
     },
     {
       "id": "app-inbox-mutation-routing--rejects-a-wrong-local-presence-route-constant",
@@ -1070,6 +1086,32 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "Places the correct gateway call in a literal-false branch before the live lifecycle call, proving dead calls cannot satisfy general-admin ownership.",
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a dead correct gateway call masking the live lifecycle call"
+    },
+    {
+      "id": "test-structure-coupling-60e2d10a3f52f48b",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 330,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-submitted-command-reassignment",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Changes the canonical command declaration to a mutable binding, reassigns it to lifecycle before submission, and requires the analyzer to reject the live compact operation mismatch.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects live reassignment of the submitted command to lifecycle"
+    },
+    {
+      "id": "test-structure-coupling-0ce86c9bb4d7b2aa",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 341,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-dead-command-reassignment",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Places the lifecycle reassignment in a literal-false branch and requires the analyzer to preserve the live compact submission without a false finding.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#ignores a command reassignment in a dead branch"
     },
     {
       "id": "test-structure-coupling-18fc3cbf53d4a31b",

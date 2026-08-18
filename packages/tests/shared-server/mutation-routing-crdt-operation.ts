@@ -38,6 +38,7 @@ interface NamedOwnerOperationCallInput {
 interface LiveFunctionFacts {
   readonly calls: MutationRoutingAstNode[];
   readonly declarations: MutationRoutingAstNode[];
+  readonly writes: MutationRoutingAstNode[];
 }
 
 interface LiveReturnCompletion {
@@ -143,25 +144,61 @@ function hasExactAdminMutationSubmission(
   if (submissions.length !== 1) {
     return false;
   }
-  const commandBinding = readName(unwrapExpression(asNodes(submissions[0]!.arguments)[0]));
+  const submission = submissions[0]!;
+  const commandBinding = readName(unwrapExpression(asNodes(submission.arguments)[0]));
   const submittedOperation = commandOperationByBinding.get(commandBinding);
-  return [`literal:${operation}`, 'member:mutation.operation'].includes(submittedOperation ?? '');
+  return (
+    [`literal:${operation}`, 'member:mutation.operation'].includes(submittedOperation ?? '') &&
+    isImmutableSubmittedCommand(facts, commandBinding, submission)
+  );
 }
 
 function readCreatedCommandOperations(facts: LiveFunctionFacts): ReadonlyMap<string, string> {
   const operationByBinding = new Map<string, string>();
-  for (const declaration of facts.declarations) {
-    const binding = readName(asNode(declaration.id));
-    const creation = unwrapExpression(asNode(declaration.init));
-    if (!binding || !creation || !isCallNamed(creation, 'createCrdtAdminCommand')) {
+  for (const declarationStatement of facts.declarations) {
+    if (declarationStatement.kind !== 'const') {
       continue;
     }
-    const operation = readEffectiveOperation(asNodes(creation.arguments)[0]);
-    if (operation) {
-      operationByBinding.set(binding, operation);
+    for (const declaration of asNodes(declarationStatement.declarations)) {
+      const binding = readName(asNode(declaration.id));
+      const creation = unwrapExpression(asNode(declaration.init));
+      if (!binding || !creation || !isCallNamed(creation, 'createCrdtAdminCommand')) {
+        continue;
+      }
+      const operation = readEffectiveOperation(asNodes(creation.arguments)[0]);
+      if (operation) {
+        operationByBinding.set(binding, operation);
+      }
     }
   }
   return operationByBinding;
+}
+
+function isImmutableSubmittedCommand(
+  facts: LiveFunctionFacts,
+  commandBinding: string,
+  submission: MutationRoutingAstNode,
+): boolean {
+  if (!commandBinding) {
+    return false;
+  }
+  const submissionStart = readStart(submission);
+  if (submissionStart === undefined) {
+    return false;
+  }
+  return !facts.writes.some((write) => {
+    if (readWrittenBinding(write) !== commandBinding) {
+      return false;
+    }
+    const writeStart = readStart(write);
+    return writeStart === undefined || writeStart < submissionStart;
+  });
+}
+
+function readWrittenBinding(write: MutationRoutingAstNode): string {
+  return write.type === 'AssignmentExpression'
+    ? readName(asNode(write.left))
+    : readName(asNode(write.argument));
 }
 
 function hasExactCommandOperation(program: MutationRoutingAstNode, operation: string): boolean {
@@ -316,7 +353,7 @@ function readOperationValue(value: MutationRoutingAstNode | undefined): string |
 }
 
 function readLiveFunctionFacts(root: MutationRoutingAstNode): LiveFunctionFacts {
-  const facts: LiveFunctionFacts = { calls: [], declarations: [] };
+  const facts: LiveFunctionFacts = { calls: [], declarations: [], writes: [] };
   visitLiveFunction(root, facts);
   return facts;
 }
@@ -344,8 +381,8 @@ function visitLiveStatementList(
 
 function visitLiveStatement(statement: MutationRoutingAstNode, facts: LiveFunctionFacts): boolean {
   if (statement.type === 'VariableDeclaration') {
+    facts.declarations.push(statement);
     for (const declaration of asNodes(statement.declarations)) {
-      facts.declarations.push(declaration);
       visitLiveExpression(asNode(declaration.init), facts);
     }
     return true;
@@ -397,6 +434,9 @@ function visitLiveExpression(
   if (isFunctionNode(node)) {
     visitLiveFunction(node, facts);
     return;
+  }
+  if (node.type === 'AssignmentExpression' || node.type === 'UpdateExpression') {
+    facts.writes.push(node);
   }
   if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
     facts.calls.push(node);
@@ -580,6 +620,10 @@ function readBoolean(node: MutationRoutingAstNode | undefined): boolean | undefi
   return node?.type === 'BooleanLiteral' && typeof node.value === 'boolean'
     ? node.value
     : undefined;
+}
+
+function readStart(node: MutationRoutingAstNode): number | undefined {
+  return typeof node.start === 'number' ? node.start : undefined;
 }
 
 function asNode(value: unknown): MutationRoutingAstNode | undefined {

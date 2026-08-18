@@ -326,6 +326,24 @@ it('rejects a dead correct gateway call masking the live lifecycle call', () => 
   );
 });
 
+it('rejects live reassignment of the submitted command to lifecycle', () => {
+  const source = readFileSync(CRDT_ADMIN_MUTATIONS, 'utf8');
+  const mutated = withLiveLifecycleCommandReassignment(source);
+
+  expect(validateWithOverride(CRDT_ADMIN_MUTATIONS, mutated)).toEqual(
+    expect.arrayContaining([
+      expect.stringContaining('CRDT_SNAPSHOT_COMPACT operation is not connected'),
+    ]),
+  );
+});
+
+it('ignores a command reassignment in a dead branch', () => {
+  const source = readFileSync(CRDT_ADMIN_MUTATIONS, 'utf8');
+  const mutated = withDeadLifecycleCommandReassignment(source);
+
+  expect(validateWithOverride(CRDT_ADMIN_MUTATIONS, mutated)).toEqual([]);
+});
+
 it.each([
   ['/api/crdt/admin/documents/compact', AppInboxType.CRDT_SNAPSHOT_COMPACT, 'compact'],
   ['/api/admin/operations/crdt/compact', AppInboxType.CRDT_SNAPSHOT_COMPACT, 'compact'],
@@ -505,6 +523,43 @@ function withSecondLifecycleCommandSubmission(source: string): string {
         lifecycleCommand,
       );`;
   return replaceRequired(source, original, replacement);
+}
+
+function withLiveLifecycleCommandReassignment(source: string): string {
+  const mutable = replaceRequired(
+    source,
+    '      const command = await createCrdtAdminCommand({',
+    '      let command = await createCrdtAdminCommand({',
+  );
+  const submission =
+    '      const completed = await input.appCrdtInboxService.' +
+    'writeCrdtCommandUntilCompletion(command);';
+  const replacement = `      command = await createCrdtAdminCommand({
+        ...mutation,
+        operation: 'lifecycle',
+        nowEpochMs: input.nowEpochMs,
+        createId: input.createId,
+        serviceId: input.serviceId,
+      });
+${submission}`;
+  return replaceRequired(mutable, submission, replacement);
+}
+
+function withDeadLifecycleCommandReassignment(source: string): string {
+  const submission =
+    '      const completed = await input.appCrdtInboxService.' +
+    'writeCrdtCommandUntilCompletion(command);';
+  const replacement = `      if (false) {
+        command = await createCrdtAdminCommand({
+          ...mutation,
+          operation: 'lifecycle',
+          nowEpochMs: input.nowEpochMs,
+          createId: input.createId,
+          serviceId: input.serviceId,
+        });
+      }
+${submission}`;
+  return replaceRequired(source, submission, replacement);
 }
 
 function withDeadCorrectCompactCommandCreation(source: string): string {
