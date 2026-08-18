@@ -2,7 +2,7 @@
   "version": 1,
   "lineages": [
     {
-      "mergeBase": "ceaf724216f82e60a74d49d382123415fe40a5c4",
+      "mergeBase": "0886606e6aaa5de2f32c9e42cc565d7698695f8a",
       "source": {
         "path": "packages/shared-server/rallar-system/services/AppCrdtInboxService.ts",
         "blob": "492c477c67c182cd27657ac47218890e01a1cae7"
@@ -14,7 +14,7 @@
       ]
     },
     {
-      "mergeBase": "ceaf724216f82e60a74d49d382123415fe40a5c4",
+      "mergeBase": "0886606e6aaa5de2f32c9e42cc565d7698695f8a",
       "source": {
         "path": "packages/shared-server/crdt/RallarCrdtServer.ts",
         "blob": "a79908adf2425460ee1292453a990418aadee0cd"
@@ -27,7 +27,7 @@
       ]
     },
     {
-      "mergeBase": "ceaf724216f82e60a74d49d382123415fe40a5c4",
+      "mergeBase": "0886606e6aaa5de2f32c9e42cc565d7698695f8a",
       "source": {
         "path": "packages/shared-server/crdt/InMemoryRallarCrdtLogRepository.ts",
         "blob": "8bb63b7b59b4616f43aee77584ed52edbf88727a"
