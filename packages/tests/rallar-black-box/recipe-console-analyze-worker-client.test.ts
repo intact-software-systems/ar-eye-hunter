@@ -12,6 +12,10 @@ import {
     createAnalyzeWorkerFactory,
     type AnalyzeWorkerPort,
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-factory.ts';
+import type {
+    AnalyzeEvidenceWindowProjection,
+} from
+    '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-projection-contract.ts';
 import {
     ANALYZE_WORKER_PERFORMANCE_NAMES,
     recordAnalyzeWorkerPerformance,
@@ -622,8 +626,11 @@ class FakeWorkerPort implements AnalyzeWorkerPort {
     readonly terminate = vi.fn();
     readonly #listeners = new Map<string, Set<EventListener>>();
 
-    postMessage(message: unknown, transfer: readonly Transferable[] = []): void {
-        this.posts.push({ message, transfer });
+    postMessage(
+        message: unknown,
+        transfer: Transferable[] | StructuredSerializeOptions = [],
+    ): void {
+        this.posts.push({ message, transfer: toTransferList(transfer) });
     }
 
     addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
@@ -651,6 +658,12 @@ class FakeWorkerPort implements AnalyzeWorkerPort {
     private emitEvent(event: Event): void {
         for (const listener of this.#listeners.get(event.type) ?? []) listener(event);
     }
+}
+
+function toTransferList(
+    transfer: Transferable[] | StructuredSerializeOptions,
+): readonly Transferable[] {
+    return Array.isArray(transfer) ? transfer : transfer.transfer ?? [];
 }
 
 class ThrowingWorkerPort extends FakeWorkerPort {
@@ -743,7 +756,7 @@ function tuneResponse(
                 group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'group' },
                 recipeIds: { entries: [], total: 0, omitted: 0 },
                 targetPolicy: {
-                    mode: 'explicit-agents', configuredAgentCount: 0,
+                    mode: 'selected-agents', configuredAgentCount: 0,
                     configuredRoleCount: 0,
                 },
                 roleAssignmentCount: 0,
@@ -754,13 +767,18 @@ function tuneResponse(
             },
             selection: { focusRunId: 'dist', artifactRole: 'focus' },
             distributedRun: {
-                distributedRunId: 'dist', controlRunId: 'control', state: 'completed',
+                distributedRunId: 'dist', controlRunId: 'control', state: 'passed',
                 updatedAtEpochMs: 1,
                 targetAgentIds: { entries: [], total: 0, omitted: 0 },
                 rollup: {
-                    expectedAgentCount: 0, stagedAgentCount: 0,
-                    startedAgentCount: 0, completedAgentCount: 0,
-                    failedAgentCount: 0, failures: [],
+                    state: 'passed', ok: true, failures: [],
+                    summary: {
+                        participants: 0, requiredParticipants: 0, readyParticipants: 0,
+                        passedParticipants: 0, failedParticipants: 0, recipes: 0,
+                        requiredRecipes: 0, passedRecipes: 0, failedRecipes: 0,
+                        groupAssertions: 0, passedGroupAssertions: 0, failedGroupAssertions: 0,
+                        blockingFailures: 0,
+                    },
                 },
             },
             analysis: complete.projection.analysis,
@@ -785,7 +803,7 @@ function accept(
     return generation;
 }
 
-function emptyWindow() {
+function emptyWindow(): AnalyzeEvidenceWindowProjection {
     return {
         entries: [], rangeStart: 0, rangeEnd: 0,
         counts: {
@@ -795,7 +813,7 @@ function emptyWindow() {
         },
         totalMatchesIsComplete: true,
         windowSize: 64,
-    } as const;
+    };
 }
 
 function telemetry() {

@@ -96,7 +96,9 @@ describe('Recipe Console Fleet artifact evidence', () => {
         const downloads: Array<Readonly<{ filename: string; href: string }>> = [];
         vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:fleet-export');
         vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
-        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+            this: HTMLAnchorElement,
+        ) {
             downloads.push({ filename: this.download, href: this.href });
         });
         root = createRoot(container);

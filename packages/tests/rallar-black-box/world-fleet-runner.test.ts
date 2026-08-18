@@ -74,7 +74,7 @@ function snapshot(
 ): ControlDistributedRunSnapshot {
     return {
         distributedRunId: input.distributedRunId,
-        controlRunId: input.controlRunId,
+        controlRunId: input.controlRunId ?? 'world-fleet-template-control-run',
         manifest: input,
         state,
         createdAtEpochMs: 1_000,
@@ -94,6 +94,9 @@ function snapshot(
                 requiredRecipes: 1,
                 passedRecipes: state === 'passed' ? 1 : 0,
                 failedRecipes: state === 'failed' ? 1 : 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: state === 'failed' ? 1 : 0,
             },
             failures: [],

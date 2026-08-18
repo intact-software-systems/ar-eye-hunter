@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type {
+    ControlFleetAgentRunOutcome,
     ControlFleetFailureSignature,
     ControlFleetRunReport,
 } from '../../../packages/shared-test/rallar-bb-test/fleet-report.ts';
@@ -22,23 +23,99 @@ import type { RecipeConsoleUrlState } from
 import { resolveFleetFailureRunEvidence } from
     '../../../apps/rallar-black-box/src/recipe-console/fleet/fleet-failure-evidence.ts';
 
-const REPORT = {
+function agentOutcome(
+    agentId: string,
+    failureSignatureIds: readonly string[],
+): ControlFleetAgentRunOutcome {
+    const failed = failureSignatureIds.length > 0;
+    return {
+        agentId,
+        label: { agentId, region: 'eu-north', provider: 'provider-a' },
+        state: failed ? 'failed' : 'passed',
+        ok: !failed,
+        missing: false,
+        flaky: false,
+        stale: false,
+        commandCount: 1,
+        failedCommandCount: failed ? 1 : 0,
+        resultCount: 1,
+        eventCount: 1,
+        diagnosticCount: failed ? 1 : 0,
+        reconnectCount: 0,
+        durationMs: 100,
+        failureSignatureIds,
+    };
+}
+
+function failureSignature(signatureId: string): ControlFleetFailureSignature {
+    return {
+        signatureId,
+        category: 'runtime',
+        title: 'Recipe step threw at runtime',
+        normalizedMessage: 'runtime failure in <recipe>',
+        recipeId: 'rtc-smoke',
+        count: 1,
+        affectedAgents: [],
+        affectedRegions: ['eu-north'],
+        affectedRuns: [],
+        likelyCause: 'The recipe under test raised a runtime error.',
+        nextAction: 'Open the proving run evidence for this signature.',
+    };
+}
+
+const REPORT: ControlFleetRunReport = {
+    fleetReportSchemaVersion: 1,
     distributedRunId: 'distributed/Δ exact',
     controlRunId: 'control/Δ exact',
-    group: { groupId: 'fleet/group exact' },
+    generatedAtEpochMs: 1_700_000_000_000,
+    state: 'passed',
+    ok: true,
+    group: {
+        applicationId: 'rallar-server',
+        workspaceId: 'default',
+        groupId: 'fleet/group exact',
+    },
     recipeIds: ['rtc-smoke'],
+    runDurationMs: 500,
+    summary: {
+        agents: 1,
+        regions: 1,
+        passed: 1,
+        failed: 0,
+        missing: 0,
+        flaky: 0,
+        stale: 0,
+        passRate: 1,
+        failureGroups: 0,
+    },
+    timing: {
+        run: { count: 1, p95Ms: 500 },
+        commands: { count: 1, p95Ms: 100 },
+    },
+    agents: [agentOutcome('agent/Δ exact', [])],
+    regions: [{
+        region: 'eu-north',
+        provider: 'provider-a',
+        agentCount: 1,
+        passed: 1,
+        failed: 0,
+        missing: 0,
+        flaky: 0,
+        stale: 0,
+        passRate: 1,
+        timing: { count: 1, p95Ms: 100 },
+    }],
+    failureSignatures: [],
     artifactRefs: {
         distributedRun: 'opaque:must-not-navigate:distributed',
         controlRun: 'opaque:must-not-navigate:control',
         fleetReport: 'opaque:must-not-navigate:fleet',
     },
-} as ControlFleetRunReport;
+};
 
-const FAILURE = {
-    signatureId: 'signature/Δ exact',
-    category: 'runtime',
-    recipeId: 'rtc-smoke',
-} as ControlFleetFailureSignature;
+const FAILURE: ControlFleetFailureSignature = failureSignature(
+    'signature/Δ exact',
+);
 
 const FLEET_STATE: RecipeConsoleUrlState = {
     v: 1,
@@ -57,38 +134,29 @@ const FLEET_STATE: RecipeConsoleUrlState = {
 
 describe('Recipe Console Fleet URL handoffs', () => {
     it('resolves a proving run and affected agent from the same exact report', () => {
-        const failure = {
+        const failure: ControlFleetFailureSignature = {
             ...FAILURE,
             affectedRuns: ['run/non-proving', 'run/proving'],
             affectedAgents: ['agent/non-proving', 'agent/proving'],
-        } as ControlFleetFailureSignature;
-        const nonProving = {
+        };
+        const nonProving: ControlFleetRunReport = {
             ...REPORT,
             distributedRunId: 'run/non-proving',
-            agents: [{
-                agentId: 'agent/non-proving',
-                failureSignatureIds: ['another-signature'],
-            }],
+            agents: [agentOutcome('agent/non-proving', ['another-signature'])],
             failureSignatures: [],
-        } as ControlFleetRunReport;
-        const proving = {
+        };
+        const proving: ControlFleetRunReport = {
             ...REPORT,
             distributedRunId: 'run/proving',
-            agents: [{
-                agentId: 'agent/proving',
-                failureSignatureIds: [FAILURE.signatureId],
-            }],
+            agents: [agentOutcome('agent/proving', [FAILURE.signatureId])],
             failureSignatures: [],
-        } as ControlFleetRunReport;
-        const unrelated = {
+        };
+        const unrelated: ControlFleetRunReport = {
             ...REPORT,
             distributedRunId: 'run/unrelated',
-            agents: [{
-                agentId: 'agent/non-proving',
-                failureSignatureIds: [FAILURE.signatureId],
-            }],
-            failureSignatures: [{ signatureId: FAILURE.signatureId }],
-        } as ControlFleetRunReport;
+            agents: [agentOutcome('agent/non-proving', [FAILURE.signatureId])],
+            failureSignatures: [failureSignature(FAILURE.signatureId)],
+        };
 
         expect(resolveFleetFailureRunEvidence({
             failure,
@@ -101,20 +169,17 @@ describe('Recipe Console Fleet URL handoffs', () => {
     });
 
     it('does not infer an agent that the exact proving report cannot support', () => {
-        const failure = {
+        const failure: ControlFleetFailureSignature = {
             ...FAILURE,
             affectedRuns: ['run/report-level-proof'],
             affectedAgents: ['agent/aggregate-only'],
-        } as ControlFleetFailureSignature;
-        const proving = {
+        };
+        const proving: ControlFleetRunReport = {
             ...REPORT,
             distributedRunId: 'run/report-level-proof',
-            agents: [{
-                agentId: 'agent/aggregate-only',
-                failureSignatureIds: [],
-            }],
-            failureSignatures: [{ signatureId: FAILURE.signatureId }],
-        } as ControlFleetRunReport;
+            agents: [agentOutcome('agent/aggregate-only', [])],
+            failureSignatures: [failureSignature(FAILURE.signatureId)],
+        };
 
         expect(resolveFleetFailureRunEvidence({
             failure,
@@ -208,6 +273,9 @@ describe('Recipe Console Fleet URL handoffs', () => {
                     requiredRecipes: 1,
                     passedRecipes: 0,
                     failedRecipes: 1,
+                    groupAssertions: 0,
+                    passedGroupAssertions: 0,
+                    failedGroupAssertions: 0,
                     blockingFailures: 1,
                 },
             },

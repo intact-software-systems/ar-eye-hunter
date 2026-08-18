@@ -303,7 +303,9 @@ describe('Hetzner distributed manifest catalog', () => {
 
     it('synchronizes every live multi-agent Hetzner recipe before execution', () => {
         for (const entry of buildHetznerDistributedManifestCatalog()) {
-            const hasLiveRecipe = entry.manifest.recipes.some(selection => selection.live);
+            const hasLiveRecipe = manifestCommands(entry.manifest).some(command =>
+                command.kind?.startsWith('rtc.') === true
+            );
             if (!hasLiveRecipe || entry.agentCount < 2) {
                 continue;
             }
@@ -537,7 +539,7 @@ describe('Hetzner distributed manifest catalog', () => {
         const parity = catalog.find(entry =>
             entry.filePath === 'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json'
         );
-        const configure = parity?.manifest.recipes[0]?.recipe.commands[0];
+        const configure = parity?.manifest.recipes[0]?.recipe?.commands[0];
 
         expect(parity).toBeDefined();
         expect(configure).toMatchObject({ kind: 'configure' });
@@ -554,7 +556,7 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(JSON.stringify(parity?.manifest)).toContain('{rtc.readyPeerIds}');
         expect(JSON.stringify(parity?.manifest)).not.toContain('bob-session');
         expect(JSON.stringify(parity?.manifest)).not.toContain('charlie-session');
-        expect(parity?.manifest.recipes[0]?.recipe.commands.find(command =>
+        expect(parity?.manifest.recipes[0]?.recipe?.commands.find(command =>
             command.kind === 'rtc.connect'
         )).toMatchObject({
             timeoutMs: 15_000,
@@ -566,7 +568,7 @@ describe('Hetzner distributed manifest catalog', () => {
         const parity = buildHetznerDistributedManifestCatalog().find(entry =>
             entry.filePath === 'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json'
         );
-        const commands = parity?.manifest.recipes[0]?.recipe.commands as readonly ManifestCommand[] | undefined;
+        const commands = parity?.manifest.recipes[0]?.recipe?.commands as readonly ManifestCommand[] | undefined;
         const connectIndex = commands?.findIndex(command => command.kind === 'rtc.connect') ?? -1;
         const holdIndex = commands?.findIndex(command => command.commandId === 'parity-peer-overlap-hold') ?? -1;
         const closeIndex = commands?.findIndex(command => command.kind === 'close') ?? -1;
@@ -1059,6 +1061,7 @@ function emptySpaState(): RallarBlackBoxTestState {
                 events: 0,
                 failures: 0,
                 messages: 0,
+                diagnostics: 0,
             },
         },
     };

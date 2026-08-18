@@ -358,8 +358,9 @@ describe('legacy Shared Test artifact-index compaction', () => {
 
     it('gates compaction groups on coherent producer metadata and records', () => {
         const artifactIndex = fixtureArtifactIndex();
-        const validSummary = artifactIndexWithSummaries(['valid'])
-            .compaction?.repeatedSuccessSummaries?.[0];
+        const validSummary = repeatedSummaryRecords(
+            artifactIndexWithSummaries(['valid']),
+        )[0]!;
         const presentation = (compaction: Record<string, unknown> | undefined) => {
             const noOmissions = compaction?.compacted === false;
             return deriveSharedTestArtifactIndexPresentation({
@@ -508,8 +509,9 @@ describe('SharedTestArtifactIndexPanel', () => {
 
     it('renders distinct untrusted compaction states without counts or rows', async () => {
         const artifactIndex = fixtureArtifactIndex();
-        const validSummary = artifactIndexWithSummaries(['valid'])
-            .compaction?.repeatedSuccessSummaries?.[0];
+        const validSummary = repeatedSummaryRecords(
+            artifactIndexWithSummaries(['valid']),
+        )[0]!;
         const cases = [
             [undefined, 'Compaction metadata unavailable.'],
             [{ compacted: 'yes' }, 'Compaction flag is invalid.'],

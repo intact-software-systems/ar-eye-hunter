@@ -202,7 +202,7 @@ describe("rallar-black-box headless worker runtime", () => {
   it("hard-times out a never-settling fetch and aborts its signal", async () => {
     vi.useFakeTimers();
     try {
-      let fetchSignal: AbortSignal | undefined;
+      let fetchSignal: RequestInit["signal"];
       const startedAt = Date.now();
       const polling = waitForDistributedRunTerminal({
         runId: "run-never",
@@ -246,7 +246,7 @@ describe("rallar-black-box headless worker runtime", () => {
     vi.useFakeTimers();
     try {
       const shutdown = deferred<void>();
-      let fetchSignal: AbortSignal | undefined;
+      let fetchSignal: RequestInit["signal"];
       const startedAt = Date.now();
       const exit = waitForHeadlessWorkerExit({
         waitForShutdown: async () => await shutdown.promise,

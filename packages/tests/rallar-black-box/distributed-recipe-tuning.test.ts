@@ -168,9 +168,11 @@ describe('distributed recipe tuning Task 2 contracts', () => {
         const distributedRun = JSON.parse(files['distributed-run.json'] ?? '{}');
         distributedRun.manifest.distributedRunId = 'stale-distributed-id';
         distributedRun.manifest.controlRunId = 'stale-control-id';
-        files['distributed-run.json'] = JSON.stringify(distributedRun);
 
-        const snapshots = distributedArtifactSnapshotsFromFiles(files);
+        const snapshots = distributedArtifactSnapshotsFromFiles({
+            ...files,
+            'distributed-run.json': JSON.stringify(distributedRun),
+        });
 
         expect(snapshots.distributedRun.manifest).toMatchObject({
             distributedRunId: 'dist-tune',

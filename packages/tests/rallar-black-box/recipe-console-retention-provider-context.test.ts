@@ -44,6 +44,7 @@ const PREVIEW = {
 const BOOTSTRAP: RecipeConsoleControlBootstrap = {
     controlUrl: 'https://control-a.test/control',
     apiBaseUrl: 'https://api-a.test',
+    providerMode: 'browser-rallar',
     credentialPolicy: TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
     bootstrapGroup: {
         applicationId: 'app-a',
@@ -137,8 +138,7 @@ describe('retention provider context authority', () => {
     async function render(input: ProviderInput): Promise<void> {
         await act(async () => root.render(createElement(
             ControlConnectionProvider,
-            input,
-            createElement(Harness),
+            { ...input, children: createElement(Harness) },
         )));
     }
 

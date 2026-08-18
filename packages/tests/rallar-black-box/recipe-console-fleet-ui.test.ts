@@ -373,12 +373,17 @@ describe('Recipe Console Fleet evidence UI', () => {
             const refresh = vi.fn();
             await render(createElement(FleetOperationalState, {
                 acceptedCount: 1,
+                children: createElement(
+                    'p',
+                    { 'data-valid-evidence': true },
+                    'Retained evidence',
+                ),
                 isRefreshing: false,
                 legacyHref: '/?workspace=black-box-runner&tab=fleet',
                 onRefresh: refresh,
                 sourceCount: 2,
                 status,
-            }, createElement('p', { 'data-valid-evidence': true }, 'Retained evidence')));
+            }));
 
             expect(container.textContent).toContain(title);
             expect(container.textContent).toContain('1 of 2 reports accepted');
@@ -647,13 +652,14 @@ describe('Recipe Console Fleet evidence UI', () => {
             }),
             createElement(FleetOperationalState, {
                 acceptedCount: 0,
+                children: createElement('span', {}, 'Retained live evidence'),
                 collection: 'absent',
                 isRefreshing: false,
                 legacyHref: '/?workspace=black-box-runner&tab=fleet',
                 onRefresh: vi.fn(),
                 sourceCount: 0,
                 status: 'partial',
-            }, createElement('span', {}, 'Retained live evidence')),
+            }),
             createElement(FleetSummary, {
                 analysis: undefined,
                 collection: 'absent',

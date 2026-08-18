@@ -24,7 +24,10 @@ function query(
         authorization: 'ready',
         snapshot,
         completeness: 'complete',
-        provenance: { distributedRunsSource: source },
+        provenance: {
+            distributedRunsSource: source,
+            runEvidence: { detailedRunIds: [], indexOnlyRunIds: [] },
+        },
         receivedAtEpochMs: 2_000_000_000_001,
         isRefreshing: false,
     };

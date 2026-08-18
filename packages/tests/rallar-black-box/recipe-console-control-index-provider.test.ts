@@ -129,6 +129,7 @@ describe('Recipe Console indexed provider projection', () => {
                 bootstrap: {
                     controlUrl: 'https://control.test',
                     apiBaseUrl: 'https://api.test',
+                    providerMode: 'browser-rallar',
                     credentialPolicy: TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
                     bootstrapGroup: {
                         applicationId: 'app-a',
@@ -136,8 +137,8 @@ describe('Recipe Console indexed provider projection', () => {
                         groupId: 'group-a',
                     },
                 },
+                children: createElement(Harness),
             },
-            createElement(Harness),
         )));
         await vi.waitFor(() => expect(observed?.connection.query.status).toBe('live'));
 

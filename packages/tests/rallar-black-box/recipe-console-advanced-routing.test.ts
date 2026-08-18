@@ -122,7 +122,7 @@ describe('Recipe Console Advanced surface catalog', () => {
                 kind: surface.kind,
                 workspace: surface.route.workspace,
                 tab: surface.route.tab,
-                ...(surface.route.advancedSurface
+                ...('advancedSurface' in surface.route
                     ? { advancedSurface: surface.route.advancedSurface }
                     : {}),
             },
@@ -135,7 +135,9 @@ describe('Recipe Console Advanced surface catalog', () => {
     it('preserves every current app-tab and Advanced child alias', () => {
         for (const surface of ADVANCED_SURFACE_CATALOG) {
             expect(resolveAdvancedSurface(surface.id)?.id).toBe(surface.id);
-            const canonicalLeaf = surface.route.advancedSurface ?? surface.route.tab;
+            const canonicalLeaf = 'advancedSurface' in surface.route
+                ? surface.route.advancedSurface
+                : surface.route.tab;
             expect(resolveAdvancedSurface(canonicalLeaf)?.id).toBe(surface.id);
         }
         for (const [alias, id] of Object.entries(EXPECTED_ALIASES)) {

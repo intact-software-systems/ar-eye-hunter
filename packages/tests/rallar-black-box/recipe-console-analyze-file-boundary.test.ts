@@ -72,6 +72,11 @@ async function expectIntakeError(
     const error = await promise.catch(reason => reason);
     expect(error).toBeInstanceOf(AnalyzeFileIntakeError);
     expect(error).toMatchObject({ code });
+    // Unreachable once the instanceof expectation above holds; it only narrows
+    // the rejection reason so the message assertions read the real error type.
+    if (!(error instanceof AnalyzeFileIntakeError)) {
+        throw error;
+    }
     if (typeof message === 'string') {
         expect(error.message).toBe(message);
     } else {

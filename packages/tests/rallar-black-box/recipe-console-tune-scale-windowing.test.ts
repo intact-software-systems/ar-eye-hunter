@@ -132,10 +132,15 @@ describe('Recipe Console Tune scale windowing', () => {
                 ),
             };
             const same = structuredClone(first);
-            const changed = structuredClone(first);
-            changed.distributedRuns![4_998] = {
-                ...changed.distributedRuns![4_998]!,
-                state: 'failed',
+            const cloned = structuredClone(first);
+            const changed: ControlServerSnapshot = {
+                ...cloned,
+                distributedRuns: cloned.distributedRuns!.map((
+                    run,
+                    index,
+                ): ControlDistributedRunSnapshot =>
+                    index === 4_998 ? { ...run, state: 'failed' } : run
+                ),
             };
             const revisions = createControlSnapshotRevisionSession();
             for (const snapshot of [first, same, changed]) {
@@ -582,7 +587,21 @@ function distributedRun(index: number): ControlDistributedRunSnapshot {
             state: 'passed',
             ok: true,
             failures: [],
-            summary: { blockingFailures: 0 },
+            summary: {
+                participants: 1,
+                requiredParticipants: 1,
+                readyParticipants: 1,
+                passedParticipants: 1,
+                failedParticipants: 0,
+                recipes: 1,
+                requiredRecipes: 1,
+                passedRecipes: 1,
+                failedRecipes: 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
+                blockingFailures: 0,
+            },
         },
     };
 }

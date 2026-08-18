@@ -67,7 +67,21 @@ function distributedRun(
             state: 'passed',
             ok: true,
             failures: [],
-            summary: { blockingFailures: 0 },
+            summary: {
+                participants: 1,
+                requiredParticipants: 1,
+                readyParticipants: 1,
+                passedParticipants: 1,
+                failedParticipants: 0,
+                recipes: 1,
+                requiredRecipes: 1,
+                passedRecipes: 1,
+                failedRecipes: 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
+                blockingFailures: 0,
+            },
         },
     };
 }

@@ -24,6 +24,7 @@ import {
 const BOOTSTRAP = {
     controlUrl: 'https://control.test/control',
     apiBaseUrl: 'https://api.test',
+    providerMode: 'simulated',
     credentialPolicy: TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
     bootstrapGroup: {
         applicationId: 'rallar-server',
@@ -192,8 +193,7 @@ describe('Recipe Console Fleet lazy control capability', () => {
         try {
             await act(async () => root.render(createElement(
                 ControlConnectionProvider,
-                { bootstrap: BOOTSTRAP },
-                createElement(Harness),
+                { bootstrap: BOOTSTRAP, children: createElement(Harness) },
             )));
             await vi.waitFor(() => expect(observed?.query.status).toBe('live'));
             const requestCount = requests.length;

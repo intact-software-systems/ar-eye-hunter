@@ -16,6 +16,8 @@ import { FlowBuilderPanel } from
     '../../../apps/rallar-black-box/src/legacy/runner/builder/FlowBuilderPanel.tsx';
 import { flowBuilderVariablesFromGlobalValues } from
     '../../../apps/rallar-black-box/src/legacy/runner/builder/flow-builder-support.ts';
+import type { CommandCenterGlobalValues } from
+    '../../../apps/rallar-black-box/src/legacy/shell/global-context-model.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true;
@@ -28,14 +30,14 @@ const FLOW_BUILDER_STATE: RallarBlackBoxTestState = {
     resultCache: {},
 };
 
-const GLOBAL_VALUES = {
+const GLOBAL_VALUES: CommandCenterGlobalValues = {
     apiBaseUrl: 'https://api.example.test',
     applicationId: 'primary-application',
     workspaceId: 'primary-workspace',
     clientId: 'primary-client',
     sessionId: 'primary-session',
     roomId: 'primary-room',
-} as const;
+};
 
 describe('rallar-black-box flow builder helpers', () => {
     let container: HTMLDivElement;

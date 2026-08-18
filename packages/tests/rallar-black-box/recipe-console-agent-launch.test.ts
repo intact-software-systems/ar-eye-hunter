@@ -387,8 +387,8 @@ describe('Recipe Console browser-agent launch authority', () => {
                         credentialPolicy,
                         bootstrapGroup: group,
                     },
+                    children: createElement(Harness),
                 },
-                createElement(Harness),
             )));
 
             expect(observed?.browserAgentLaunch).toBeUndefined();
@@ -405,7 +405,9 @@ describe('Recipe Console browser-agent launch authority', () => {
 
 describe('legacy runner browser-agent launch compatibility', () => {
     it('copies multiple secured agent links that share the legacy run token', async () => {
-        const copyText = vi.fn(async () => undefined);
+        const copyText = vi.fn<(text: string, message: string) => Promise<void>>(
+            async () => undefined,
+        );
         let message: string | undefined;
         const actions = createRunnerAgentLaunchActions({
             agentRestoreSession: false,

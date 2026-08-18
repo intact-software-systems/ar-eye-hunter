@@ -26,6 +26,7 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
             roomId: 'room-1',
             transport: 'realtime',
             rallarRegister: false,
+            rallarAuthStorage: 'local',
             rallarRestoreSession: false,
             rallarLogoutOnClose: false,
             rallarLeaveRoomOnClose: false,
@@ -54,7 +55,7 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
             },
         },
         state: {
-            status: 'waiting',
+            status: 'configured',
             commandHistory: [],
             events: [],
             failures: [],
@@ -72,7 +73,7 @@ describe('headless status view', () => {
         expect(root.querySelector('[data-agent-id]')?.textContent).toBe('agent-1');
         expect(root.querySelector('[data-run-id]')?.textContent).toBe('run-1');
         expect(root.querySelector('[data-control-state]')?.textContent).toBe('registered');
-        expect(root.querySelector('[data-runtime-state]')?.textContent).toBe('waiting');
+        expect(root.querySelector('[data-runtime-state]')?.textContent).toBe('configured');
         expect(root.querySelector('[data-application-id]')?.textContent).toBe('rallar-server');
         expect(root.querySelector('[data-workspace-id]')?.textContent).toBe('default');
         expect(root.querySelector('[data-group-id]')?.textContent).toBe('room-1');

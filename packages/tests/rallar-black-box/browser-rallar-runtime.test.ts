@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { RallarValidationError } from '../../../packages/shared/api/rallar-validation.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '../../../packages/shared-test/rallar-bb-test/browser-adapter.ts';
+import {
+    createRallarBlackBoxBrowserTestRuntime,
+    type RallarBlackBoxBrowserRoomRefreshOptions,
+} from '../../../packages/shared-test/rallar-bb-test/browser-adapter.ts';
 import { selectRallarBlackBoxDiagnostics } from '../../../packages/shared-test/rallar-bb-test/selectors.ts';
 import {
     createSpaBrowserRallarRuntime,
@@ -11,13 +14,11 @@ async function withFakeWindow<T>(
     value: Record<string, unknown>,
     run: () => T | Promise<T>,
 ): Promise<T> {
-    const target = globalThis as typeof globalThis & { window?: unknown };
-    const previous = target.window;
-    target.window = value;
+    vi.stubGlobal('window', value);
     try {
         return await run();
     } finally {
-        target.window = previous;
+        vi.unstubAllGlobals();
     }
 }
 
@@ -84,7 +85,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
 
             await runtime.connect({ connection: 'aliceRtc', rallar: {} });
             await runtime.send({ data: { text: 'hello' } });
-            await runtime.sendWs({ typeId: 'room.manual.message', payload: { text: 'hello ws' } });
+            await runtime.sendWs?.({ typeId: 'room.manual.message', payload: { text: 'hello ws' } });
             await runtime.director?.appoint({ roomId: 'room-1' });
             await runtime.director?.status({ roomId: 'room-1' });
             await runtime.director?.relayStart({
@@ -362,7 +363,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
 
     it('refreshes room state while waiting for an initially undiscovered RTC peer', async () => {
         let roomStateRefreshed = false;
-        const refreshRoom = vi.fn(async () => {
+        const refreshRoom = vi.fn(async (_options: RallarBlackBoxBrowserRoomRefreshOptions) => {
             roomStateRefreshed = true;
         });
         const health = vi.fn(async () => ({

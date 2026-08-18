@@ -34,7 +34,7 @@ function agent(
         crdt?: boolean;
     }> = {},
 ): ControlRunSnapshot['agents'][number] {
-    const identity = options.identity === false
+    const identity: ControlRunSnapshot['agents'][number]['identity'] = options.identity === false
         ? undefined
         : {
             principalId: `${agentId}-principal`,
@@ -164,6 +164,9 @@ function distributedRun(
                 requiredRecipes: 1,
                 passedRecipes: state === 'passed' ? 1 : 0,
                 failedRecipes: state === 'failed' ? 1 : 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: state === 'failed' ? 1 : 0,
             },
             failures: state === 'failed'
@@ -393,12 +396,14 @@ describe('control agent board derivation', () => {
             nowEpochMs: 2_500,
         });
 
+        const work = controlAgentBoardWorkForTest(indexed);
         expect(JSON.stringify(indexed)).toBe(JSON.stringify(legacy));
-        expect(controlAgentBoardWorkForTest(indexed)).toMatchObject({
+        expect(work).toMatchObject({
             indexed: true,
             fallback: false,
         });
-        expect(controlAgentBoardWorkForTest(indexed)?.distributedRunProjectionCount)
+        if (work?.indexed !== true) throw new Error('indexed derivation reported fallback work');
+        expect(work.distributedRunProjectionCount)
             .toBeLessThanOrEqual(700);
     });
 

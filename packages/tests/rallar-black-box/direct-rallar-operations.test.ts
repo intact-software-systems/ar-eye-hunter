@@ -441,7 +441,9 @@ describe('direct Rallar operations', () => {
         const subscribeResult = await runDirectRallarWsSubscribe(
             context,
             { typeId: 'room.manual.message', topicId: 'room.manual.message' },
-            message => received.push(message),
+            message => {
+                received.push(message);
+            },
             async () => facade,
         );
         await subscribedHandler?.({
