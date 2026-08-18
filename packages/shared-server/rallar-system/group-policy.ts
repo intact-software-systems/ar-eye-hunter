@@ -9,6 +9,15 @@ import type {
     GroupPolicyReasonCode,
     GroupPolicyResult,
 } from '@shared/api/group-policy-types.ts';
+import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+// prettier-ignore
+import type {
+    GroupLifecycleTransition,
+} from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
+// prettier-ignore
+import {
+    computeGroupLifecycleTransition,
+} from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 
 export type GroupPolicyActor = Readonly<{
     principalId?: string;
@@ -86,6 +95,13 @@ export type CanChangeGroupLifecycleInput = Readonly<{
     snapshot: GroupSnapshot;
     actor: GroupPolicyActor;
     targetStatus: Group['status'];
+}>;
+
+export type CanCommandGroupLifecycleTransitionInput = Readonly<{
+    snapshot: GroupSnapshot;
+    actor: GroupPolicyActor;
+    policy: GroupLifecyclePolicy;
+    transition: GroupLifecycleTransition;
 }>;
 
 export type GroupGovernanceAction =
@@ -345,6 +361,83 @@ export function canChangeGroupLifecycle(
     }
 
     return ALLOWED;
+}
+
+/**
+ * Who may command a formation-intent transition, per the lifecycle policy.
+ * Distinct from `canChangeGroupLifecycle`, which guards the business `status`
+ * (archive/delete). Whether the transition is valid from the current state is
+ * part of the same decision, so this predicate answers both.
+ */
+export function canCommandGroupLifecycleTransition(
+    input: CanCommandGroupLifecycleTransitionInput,
+): GroupPolicyResult {
+    const actorMember = findActorMember(input.snapshot, input.actor);
+    const blocked = denyForPresenceMember(actorMember);
+    if (blocked) {
+        return blocked;
+    }
+    const authority = denyForLifecycleInitiator(input);
+    if (authority) {
+        return authority;
+    }
+    const transition = computeGroupLifecycleTransition({
+        transition: input.transition,
+        lifecycleState: input.snapshot.group.lifecycleState,
+        formationEpoch: input.snapshot.group.formationEpoch,
+    });
+    return transition.allowed ? ALLOWED : transition;
+}
+
+function denyForLifecycleInitiator(
+    input: CanCommandGroupLifecycleTransitionInput,
+): GroupPolicyDenied | undefined {
+    switch (input.policy.establishment.initiator) {
+        case 'any-member':
+            return undefined;
+        case 'server-auto':
+            return deny(
+                'forbidden-role',
+                'Lifecycle transitions are server-initiated under this policy.',
+            );
+        case 'manager':
+            return denyForUnderivedManager(input);
+    }
+}
+
+/**
+ * The manager role is a later slice; until it lands the manager is derived
+ * where the policy makes that possible and honestly unavailable where it does
+ * not. Election variants need the epoch-pinned member set that slice 4 owns.
+ */
+function denyForUnderivedManager(
+    input: CanCommandGroupLifecycleTransitionInput,
+): GroupPolicyDenied | undefined {
+    const principalId = input.actor.principalId;
+    switch (input.policy.manager.selection) {
+        case 'creator':
+            return principalId === input.snapshot.group.ownerPrincipalId
+                ? undefined
+                : deny(
+                    'forbidden-role',
+                    'Only the group manager can command lifecycle transitions.',
+                );
+        case 'assigned':
+            return principalId !== undefined &&
+                    input.policy.manager.assignedPrincipalIds.includes(principalId)
+                ? undefined
+                : deny(
+                    'forbidden-role',
+                    'Only an assigned group manager can command lifecycle transitions.',
+                );
+        case 'none':
+        case 'elected-by-rank':
+        case 'elected-random-deterministic':
+            return deny(
+                'lifecycle-manager-unavailable',
+                'No group manager can be derived under this policy in this release.',
+            );
+    }
 }
 
 export function canGovernGroupMember(

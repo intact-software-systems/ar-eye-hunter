@@ -76,6 +76,7 @@ const GROUP_KEYS = [
   'emptySinceEpochMs',
   'purgeAfterEpochMs',
   'lifecycleState',
+  'formationEpoch',
 ];
 const GROUP_MEMBER_KEYS = [
   'applicationId',
@@ -189,6 +190,12 @@ function validateDeltaGroup(
   for (const key of ['expiresAtEpochMs', 'emptySinceEpochMs', 'purgeAfterEpochMs'] as const) {
     nullablePositiveInteger(group[key], `${label}.${key}`);
   }
+  enumValue(
+    group.lifecycleState,
+    ['forming', 'establishing', 'active', 'reconfiguring'],
+    `${label}.lifecycleState`,
+  );
+  nonNegativeInteger(group.formationEpoch, `${label}.formationEpoch`);
   return { activeMemberCount: group.activeMemberCount, status: group.status };
 }
 

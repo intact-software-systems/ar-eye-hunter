@@ -4182,6 +4182,8 @@ components:
         - expiresAtEpochMs
         - emptySinceEpochMs
         - purgeAfterEpochMs
+        - lifecycleState
+        - formationEpoch
       discriminator:
         propertyName: status
       oneOf:
@@ -4277,6 +4279,13 @@ components:
           type: integer
           format: int64
           nullable: true
+        lifecycleState:
+          type: string
+          enum: [forming, establishing, active, reconfiguring]
+        formationEpoch:
+          type: integer
+          format: int64
+          minimum: 0
 
     GroupMember:
       type: object

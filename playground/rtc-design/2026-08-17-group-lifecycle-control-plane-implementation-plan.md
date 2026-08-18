@@ -115,6 +115,18 @@ in the group.
 Risk: highest in the plan. This is where gating first touches live behaviour, and where the
 `immediate`-collapses-to-zero path must be proven byte-identical to today.
 
+#### Decisions taken during slice 2 execution (2026-08-18)
+
+| # | Decision |
+| --- | --- |
+| 2.1 | **The aggregate epoch field is `formationEpoch`, a monotonic counter** advanced only by an accepted transition command, never by joins. One field serves both decision 1's "activation epoch" and correction 4's election pinning; a wall-clock activation timestamp would give slice 4's deterministic election nothing stable to pin to. |
+| 2.2 | **Manager authority before slice 4 is derived where the policy allows and honestly unavailable where it does not.** `selection: 'creator'` resolves to `ownerPrincipalId`, `'assigned'` to `assignedPrincipalIds`; the elected variants return a typed `lifecycle-manager-unavailable` rejection until election lands. Authority is never widened to owner/admin as a stand-in. `initiator: 'server-auto'` denies principal-commanded transitions — it appears only in `drop-in-social`, whose `immediate` formation never phases. |
+| 2.3 | **Slice 2 lands as two changes**: the pure core (field, transition table, authorization predicate — dark, no behaviour change), then the three AppInbox commands wiring it with recipes and the medium-scale gate. |
+
+The lifecycle rejection vocabulary extends `GroupPolicyReasonCode`
+(`lifecycle-transition-invalid`, `lifecycle-manager-unavailable`) rather than
+paralleling it, per the slice 1 finding.
+
 ### Slice 3 — Activation criterion and readiness
 
 `threshold` / `deadline` / `manual` / `threshold-or-deadline`, evaluated against two rates:
