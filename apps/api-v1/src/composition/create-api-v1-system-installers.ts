@@ -112,6 +112,14 @@ export function constructApiV1SystemInstallers(
   };
 }
 
+function submitFormationCriterionCommand(
+  runtime: ApiV1Runtime,
+  command: Parameters<ApiV1Runtime['appGroupInboxService']['enqueueFormationCriterionCommand']>[0],
+  atEpochMs: number,
+): Promise<void> {
+  return runtime.appGroupInboxService.enqueueFormationCriterionCommand(command, atEpochMs);
+}
+
 function createSystemTopicOptions(
   input: CreateApiV1SystemInstallersInput,
   runtime: ApiV1Runtime,
@@ -150,7 +158,7 @@ function createSystemTopicOptions(
       formationCriterion: {
         readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
         submitCommand: (command, atEpochMs) =>
-          runtime.appGroupInboxService.enqueueFormationCriterionCommand(command, atEpochMs),
+          submitFormationCriterionCommand(runtime, command, atEpochMs),
       },
     },
     enqueueRtcRttMutation: (enqueue) => runtime.appGroupInboxService.enqueueRtcRtt(enqueue),

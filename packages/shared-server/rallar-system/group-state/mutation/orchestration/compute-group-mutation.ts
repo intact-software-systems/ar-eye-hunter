@@ -221,10 +221,17 @@ export function validateTrustedAuthorityMode(
       throw new TypeError('Internal group mutation cannot use authenticated authority facts');
     }
     if (facts.internalAuthority === 'formation-criterion') {
-      if (command.operation !== 'activateGroup' && command.operation !== 'failGroupFormation') {
+      if (
+        command.operation !== 'activateGroup' &&
+        command.operation !== 'failGroupFormation' &&
+        command.operation !== 'startGroupEstablishment'
+      ) {
         throw new TypeError('Formation-criterion authority is limited to criterion transitions');
       }
-      if (command.input.observedRate === null) {
+      if (
+        (command.operation === 'activateGroup' || command.operation === 'failGroupFormation') &&
+        command.input.observedRate === null
+      ) {
         throw new TypeError('Criterion transitions must carry the observed rate');
       }
     } else if (command.operation !== 'disconnectPresence') {

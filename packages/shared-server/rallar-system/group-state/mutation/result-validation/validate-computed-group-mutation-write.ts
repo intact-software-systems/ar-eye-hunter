@@ -43,6 +43,21 @@ import {
   requireOneOf,
 } from '../../group-state-validation-primitives.ts';
 import { validateGroupEvent } from '../../../persisted-group-event.ts';
+// prettier-ignore
+import {
+  createDefaultGroupLifecyclePolicy,
+} from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import type { Group } from '@shared/api/group-types.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+// prettier-ignore
+import {
+  computeFormationTimerEntries,
+} from '../../formation-timer-outbox-entry.ts';
+// prettier-ignore
+import {
+  isGroupLifecycleTransitionOperation,
+  type GroupLifecycleTransitionOperation,
+} from '../group-mutation-contracts.ts';
 
 export interface ValidateComputedWriteInput {
   readonly command: GroupMutationCommand;
@@ -321,8 +336,14 @@ export function validateComputedOutboxEntries(input: ValidateComputedWriteInput)
     }
     return;
   }
-  if (computed.outboxEntries.length !== 1) {
+  const expectedTimerEntries = computeExpectedFormationTimerEntries(input);
+  if (computed.outboxEntries.length !== 1 + expectedTimerEntries.length) {
     throw new TypeError('Group mutation must compute one presence-summary outbox entry');
+  }
+  for (const [index, expectedTimer] of expectedTimerEntries.entries()) {
+    if (!jsonEquals(computed.outboxEntries[1 + index], expectedTimer)) {
+      throw new TypeError('Group mutation formation-timer outbox entry is not canonical');
+    }
   }
   const expected = computeGroupPresenceSummaryEntry(
     {
@@ -339,6 +360,30 @@ export function validateComputedOutboxEntries(input: ValidateComputedWriteInput)
   if (!jsonEquals(computed.outboxEntries[0], expected)) {
     throw new TypeError('Group mutation presence-summary outbox entry is not canonical');
   }
+}
+
+function computeExpectedFormationTimerEntries(
+  input: ValidateComputedWriteInput,
+): readonly ResourceEntry[] {
+  const { command, read, facts, computed } = input;
+  if (!isGroupLifecycleTransitionOperation(command.operation)) {
+    return [];
+  }
+  if (computed.guard.kind !== 'group' || read.lifecyclePolicy === null) {
+    return [];
+  }
+  if (read.lifecyclePolicy.status === 'corrupt') {
+    return [];
+  }
+  const policy = read.lifecyclePolicy.status === 'present'
+    ? read.lifecyclePolicy.policy
+    : createDefaultGroupLifecyclePolicy();
+  return computeFormationTimerEntries(
+    command as Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation }>,
+    computed.guard.value as Group,
+    policy,
+    facts,
+  );
 }
 
 function actorPrincipalId(actor: MutationActor): string | null {

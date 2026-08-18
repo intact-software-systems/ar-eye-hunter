@@ -47,6 +47,12 @@ import type {
 import type {
   GroupMutationCommand,
 } from './group-state/mutation/group-mutation-contracts.ts';
+// prettier-ignore
+import {
+  createFormationTimerWorkHandler,
+} from './topology/replay/create-formation-timer-work-handler.ts';
+import { AppOutboxType } from './services/AppOutboxService.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
 // Two rebuilds per five seconds. The RTT rebuild debounce defaults to 250 ms,
 // so an uncapped sustained stream permits four per second of synchronous
@@ -170,6 +176,24 @@ export function initRallarSystemWsTopics(
   if (rtcTopologyAppOutbox && rtcTopologyAppOutboxOptions) {
     if (!rtcTopologyManagement) {
       throw new TypeError('RTC topology AppOutbox requires topology management');
+    }
+    if (rtcTopologyAppOutboxOptions.formationCriterion) {
+      rtcTopologyAppOutboxOptions.outboxQueueReader.onOutboxMessageDo(
+        AppOutboxType.FORMATION_TIMER,
+        createFormationTimerWorkHandler({
+          findGroupSnapshotByRef: async (ref) => await findGroupSnapshotByRef(ref),
+          readPlannedTopology: async (ref) => {
+            const view = (await rtcTopologyManagement.readTopologyView(ref)) as Readonly<{
+              snapshot: RallarOverlayTopologySnapshot | null;
+            }>;
+            return view.snapshot;
+          },
+          topologyPlanning: rtcTopologyManagement.planningService,
+          readLifecyclePolicy: rtcTopologyAppOutboxOptions.formationCriterion.readLifecyclePolicy,
+          submitCommand: rtcTopologyAppOutboxOptions.formationCriterion.submitCommand,
+          nowEpochMs: options.rtcTopologyOptions?.now ?? (() => Date.now()),
+        }),
+      );
     }
     rtcTopologyAppOutboxOptions.outboxQueueReader.onOutboxMessageDo(
       rtcTopologyAppOutbox.workType,

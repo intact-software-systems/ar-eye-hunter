@@ -63,8 +63,35 @@ export function toFailFormationCommand(
   return { ...semanticCommand, commandId, requestId: commandId };
 }
 
+/**
+ * The retry leg re-enters establishment after a below-floor return: the same
+ * automation that was sanctioned by the original start-establishment, bounded
+ * by maxFormationAttempts and paced by the backoff that scheduled this.
+ */
+export function toFormationRetryEstablishCommand(input: Readonly<{
+  groupRef: GroupRef;
+  formationEpoch: number;
+}>): GroupMutationCommand {
+  const semanticCommand = {
+    operation: 'startGroupEstablishment',
+    aggregateRef: input.groupRef,
+    input: {
+      actorPrincipalId: null,
+      actorSessionId: null,
+      reason: null,
+      traceId: null,
+    },
+  } as const;
+  const commandId = groupFormationCriterionRequestId(
+    'retry-establish',
+    input.groupRef,
+    input.formationEpoch,
+  );
+  return { ...semanticCommand, commandId, requestId: commandId };
+}
+
 function groupFormationCriterionRequestId(
-  decision: 'activate' | 'activate-degraded' | 'fail-formation',
+  decision: 'activate' | 'activate-degraded' | 'fail-formation' | 'retry-establish',
   groupRef: GroupRef,
   formationEpoch: number,
 ): string {

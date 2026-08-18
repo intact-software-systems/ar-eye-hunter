@@ -24,6 +24,8 @@ const PATHS = {
   e: 'packages/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts',
   s: 'packages/shared-server/rallar-system/rtc-topology/topic/init-rtc-rtt-topic.ts',
   d: 'packages/shared-server/crdt/RallarCrdtServer.ts',
+  gi: 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts',
+  ci: 'apps/api-v1/src/composition/create-api-v1-system-installers.ts',
 } as const;
 
 interface InventoryOwnerPathAliases {

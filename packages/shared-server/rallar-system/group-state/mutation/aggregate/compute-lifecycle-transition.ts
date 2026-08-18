@@ -13,6 +13,10 @@ import {
   GroupPolicyDeniedError,
 } from '../../../group-policy.ts';
 import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
+// prettier-ignore
+import {
+  computeFormationTimerEntries,
+} from '../../formation-timer-outbox-entry.ts';
 import type {
   GroupLifecycleTransitionOperation,
   GroupMutationCommand,
@@ -146,5 +150,6 @@ export function computeLifecycleTransition(
     presenceAdmission: null,
     eventType: 'group-updated',
     presenceSummaryWork: 'enqueue',
+    extraOutboxEntries: computeFormationTimerEntries(command, next, policy, facts),
   });
 }

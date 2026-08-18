@@ -16,6 +16,7 @@ export const TIMED_ASYNC_OPERATIONS = [
   'prepareMutation',
   'prepareExpiredPresenceMutations',
   'prepareSessionCleanupMutations',
+  'prepareFormationCriterionMutation',
   'listSnapshots',
   'listSnapshotsPage',
   'readSnapshot',
@@ -103,13 +104,18 @@ function createPreparationFake(
   record: RecordTimedOperation,
 ): Pick<
   GroupStateService,
-  'prepareMutation' | 'prepareExpiredPresenceMutations' | 'prepareSessionCleanupMutations'
+  | 'prepareMutation'
+  | 'prepareExpiredPresenceMutations'
+  | 'prepareSessionCleanupMutations'
+  | 'prepareFormationCriterionMutation'
 > {
   return {
     prepareMutation: async (...arguments_) =>
       (await record('prepareMutation', arguments_)) as never,
     prepareExpiredPresenceMutations: async (...arguments_) =>
       (await record('prepareExpiredPresenceMutations', arguments_)) as never,
+    prepareFormationCriterionMutation: async (...arguments_) =>
+      (await record('prepareFormationCriterionMutation', arguments_)) as never,
     prepareSessionCleanupMutations: async (...arguments_) =>
       (await record('prepareSessionCleanupMutations', arguments_)) as never,
   };
@@ -231,6 +237,7 @@ export const TIMED_OPERATION_ARGUMENTS: TimedOperationArgumentsByOperation = {
   prepareMutation: [timingDescriptor, timingAuthority],
   prepareExpiredPresenceMutations: [1_000],
   prepareSessionCleanupMutations: [timingCleanup],
+  prepareFormationCriterionMutation: [{} as never, 1_000],
   listSnapshots: [timingScope],
   listSnapshotsPage: [timingScope, timingSnapshotPageOptions],
   readSnapshot: [timingGroupRef],
@@ -257,6 +264,10 @@ const TIMED_OPERATION_INVOCATIONS: Readonly<
   prepareSessionCleanupMutations: async (service) =>
     await service.prepareSessionCleanupMutations(
       ...TIMED_OPERATION_ARGUMENTS.prepareSessionCleanupMutations,
+    ),
+  prepareFormationCriterionMutation: async (service) =>
+    await service.prepareFormationCriterionMutation(
+      ...TIMED_OPERATION_ARGUMENTS.prepareFormationCriterionMutation,
     ),
   listSnapshots: async (service) =>
     await service.listSnapshots(...TIMED_OPERATION_ARGUMENTS.listSnapshots),
