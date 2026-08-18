@@ -252,6 +252,13 @@ export type GroupMutationRead = Readonly<{
   presenceSummary: RuntimeStateEntryValue<GroupPresenceSummary> | null;
   /** Loaded only for the lifecycle transition operations; null everywhere else. */
   lifecyclePolicy: GroupLifecyclePolicyRead | null;
+  /**
+   * The active member principal ids at read time, loaded only for the
+   * lifecycle transition operations; the compare-and-set on the group row
+   * (membership writes bump snapshotVersion) makes the pinned electorate
+   * consistent with the transition that records it.
+   */
+  activeMemberPrincipalIds: readonly string[] | null;
 }>;
 
 export type GroupMutationFacts = Readonly<{

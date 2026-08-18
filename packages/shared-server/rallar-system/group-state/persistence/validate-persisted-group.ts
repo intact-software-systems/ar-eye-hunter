@@ -50,6 +50,7 @@ const STORED_GROUP_KEYS = [
   'formationAttemptCount',
   'lastFormationOutcome',
   'establishmentStartedAtEpochMs',
+  'formationElectorate',
 ] as const;
 
 const FORMATION_OUTCOME_KEYS = ['outcome', 'observedRate', 'atEpochMs', 'formationEpoch'] as const;
@@ -139,6 +140,15 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
     value.establishmentStartedAtEpochMs,
     'Stored group establishmentStartedAtEpochMs',
   );
+  if (!Array.isArray(value.formationElectorate)) {
+    throw new TypeError('Stored group formationElectorate must be an array');
+  }
+  if (new Set(value.formationElectorate).size !== value.formationElectorate.length) {
+    throw new TypeError('Stored group formationElectorate must not repeat principal ids');
+  }
+  for (const principalId of value.formationElectorate) {
+    requireNonEmptyString(principalId, 'Stored group formationElectorate entry');
+  }
 }
 
 export function validateStoredMember(

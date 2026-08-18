@@ -80,6 +80,7 @@ const GROUP_KEYS = [
   'formationAttemptCount',
   'lastFormationOutcome',
   'establishmentStartedAtEpochMs',
+  'formationElectorate',
 ];
 const GROUP_MEMBER_KEYS = [
   'applicationId',
@@ -227,6 +228,16 @@ function validateDeltaGroup(
     group.establishmentStartedAtEpochMs,
     `${label}.establishmentStartedAtEpochMs`,
   );
+  const electorate = array(group.formationElectorate, `${label}.formationElectorate`);
+  const electoratePrincipalIds = new Set(electorate);
+  if (electoratePrincipalIds.size !== electorate.length) {
+    fail(`${label}.formationElectorate must not repeat principal ids`);
+  }
+  for (const principalId of electorate) {
+    if (typeof principalId !== 'string' || principalId.length === 0) {
+      fail(`${label}.formationElectorate entries must be non-empty strings`);
+    }
+  }
   return { activeMemberCount: group.activeMemberCount, status: group.status };
 }
 

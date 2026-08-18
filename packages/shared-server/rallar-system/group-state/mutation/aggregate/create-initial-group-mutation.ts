@@ -51,6 +51,7 @@ export function createInitialGroup({
     formationAttemptCount: 0,
     lastFormationOutcome: null,
     establishmentStartedAtEpochMs: null,
+    formationElectorate: [command.input.createdByPrincipalId],
   };
 }
 

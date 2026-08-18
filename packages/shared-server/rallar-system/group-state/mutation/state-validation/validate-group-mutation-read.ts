@@ -75,6 +75,7 @@ export function validateGroupMutationRead(
   validateAuthorityPresenceReads(read, ref);
   validateSummaryAndIdempotencyReads(read, command, ref);
   validateLifecyclePolicyRead(read, command);
+  validateActiveMemberPrincipalIdsRead(read, command);
 }
 
 /**
@@ -99,6 +100,32 @@ function validateLifecyclePolicyRead(read: GroupMutationRead, command: GroupMuta
   }
 }
 
+/**
+ * The roster read exists exactly for the lifecycle transition operations,
+ * which pin the formation electorate at the epoch boundary; anywhere else its
+ * presence would mean the read step loaded state the operation must not
+ * depend on.
+ */
+function validateActiveMemberPrincipalIdsRead(
+  read: GroupMutationRead,
+  command: GroupMutationCommand,
+): void {
+  if (isGroupLifecycleTransitionOperation(command.operation)) {
+    if (read.activeMemberPrincipalIds === null) {
+      throw new TypeError('Group mutation read is missing the active member principal ids');
+    }
+    for (const principalId of read.activeMemberPrincipalIds) {
+      requireNonEmptyString(principalId, 'Group mutation active member principal id');
+    }
+    return;
+  }
+  if (read.activeMemberPrincipalIds !== null) {
+    throw new TypeError(
+      'Group mutation read must not carry active member principal ids for this operation',
+    );
+  }
+}
+
 const GROUP_MUTATION_READ_KEYS = [
   'idempotency',
   'group',
@@ -120,6 +147,7 @@ const GROUP_MUTATION_READ_KEYS = [
   'authorityPresenceSessionEntries',
   'presenceSummary',
   'lifecyclePolicy',
+  'activeMemberPrincipalIds',
 ] as const;
 
 function validateReadShape(read: GroupMutationRead): void {

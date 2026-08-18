@@ -226,6 +226,7 @@ function createGroupSnapshotGroup(
     formationAttemptCount: 0,
     lastFormationOutcome: null,
     establishmentStartedAtEpochMs: null,
+        formationElectorate: [],
   };
 }
 

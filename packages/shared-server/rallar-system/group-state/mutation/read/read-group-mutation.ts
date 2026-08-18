@@ -99,6 +99,7 @@ function assembleExactGroupMutationRead(
     authorityPresenceSessionEntries: [],
     presenceSummary: read.presenceSummaries[0] ?? null,
     lifecyclePolicy: null,
+    activeMemberPrincipalIds: null,
   };
 }
 
@@ -108,6 +109,9 @@ async function readGroupMutationSequentially(
 ): Promise<GroupMutationRead> {
   const lifecyclePolicy = isGroupLifecycleTransitionOperation(command.operation)
     ? await repository.readLifecyclePolicy(command.aggregateRef)
+    : null;
+  const activeMemberPrincipalIds = isGroupLifecycleTransitionOperation(command.operation)
+    ? toActiveMemberPrincipalIds(await repository.listMembers(command.aggregateRef))
     : null;
   const primary = await readSequentialPrimaryEntries(repository, command);
   const identities = resolveSequentialIdentities(command, primary.groupRead.value?.value);
@@ -132,6 +136,7 @@ async function readGroupMutationSequentially(
     related,
     authorityPresenceSessionEntries,
     lifecyclePolicy,
+    activeMemberPrincipalIds,
   });
 }
 
@@ -222,6 +227,7 @@ interface AssembleSequentialGroupMutationReadInput {
   readonly related: SequentialRelatedEntries;
   readonly authorityPresenceSessionEntries: GroupMutationRead['authorityPresenceSessionEntries'];
   readonly lifecyclePolicy: GroupMutationRead['lifecyclePolicy'];
+  readonly activeMemberPrincipalIds: GroupMutationRead['activeMemberPrincipalIds'];
 }
 
 function assembleSequentialGroupMutationRead({
@@ -231,6 +237,7 @@ function assembleSequentialGroupMutationRead({
   related,
   authorityPresenceSessionEntries,
   lifecyclePolicy,
+  activeMemberPrincipalIds,
 }: AssembleSequentialGroupMutationReadInput): GroupMutationRead {
   const { idempotency, groupRead, targetPresenceRead, presenceSummary } = primary;
   const { actorPrincipalId, targetPrincipalId, ownerPrincipalId, director } = identities;
@@ -282,6 +289,7 @@ function assembleSequentialGroupMutationRead({
     authorityPresenceSessionEntries,
     presenceSummary: presenceSummary ?? null,
     lifecyclePolicy,
+    activeMemberPrincipalIds,
   };
 }
 
@@ -333,4 +341,13 @@ function uniqueDefined(values: readonly (string | null | undefined)[]): readonly
       values.filter((value): value is string => typeof value === 'string' && value.length > 0),
     ),
   ];
+}
+
+function toActiveMemberPrincipalIds(
+  members: readonly { principalId: string; status: string }[],
+): readonly string[] {
+  return members
+    .filter((member) => member.status === 'active')
+    .map((member) => member.principalId)
+    .sort();
 }

@@ -181,6 +181,7 @@ function mutationRead(storageRevision: number): GroupMutationRead {
     authorityPresenceSessionEntries: [],
     presenceSummary: null,
     lifecyclePolicy: null,
+    activeMemberPrincipalIds: null,
   } as GroupMutationRead;
 }
 

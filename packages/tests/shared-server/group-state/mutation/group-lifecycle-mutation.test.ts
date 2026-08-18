@@ -42,6 +42,25 @@ describe('group lifecycle transition computation', () => {
     expect(computed.event.eventType).toBe('group-updated');
   });
 
+  it('pins the formation electorate to the roster read at every epoch advance', () => {
+    const cases = [
+      { operation: 'startGroupEstablishment', lifecycleState: 'forming' },
+      { operation: 'activateGroup', lifecycleState: 'establishing' },
+      { operation: 'reopenGroupEstablishment', lifecycleState: 'active' },
+    ] as const;
+    for (const { operation, lifecycleState } of cases) {
+      const computed = computeGroupMutation({
+        command: transitionCommand(operation),
+        read: transitionRead({ lifecycleState }),
+        facts: transitionFacts(),
+      });
+      expect(computed.outcome).toBe('write');
+      if (computed.outcome !== 'write') continue;
+      // transitionRead loads the actor as the only active member.
+      expect((computed.guard.value as Group).formationElectorate).toEqual(['alice']);
+    }
+  });
+
   it('activates from establishing and from reconfiguring', () => {
     for (const from of ['establishing', 'reconfiguring'] as const) {
       const computed = computeGroupMutation({
@@ -299,6 +318,7 @@ function transitionRead(
     authorityPresenceSessionEntries: [],
     presenceSummary: null,
     lifecyclePolicy,
+    activeMemberPrincipalIds: [actorPrincipalId],
   } as GroupMutationRead;
 }
 

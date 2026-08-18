@@ -34,6 +34,7 @@ export function createCorruptionMutationRead(): GroupMutationRead {
     ...{ authorityPresenceSessions: [], authorityPresenceSessionEntries: [] },
     presenceSummary: null,
     lifecyclePolicy: null,
+    activeMemberPrincipalIds: null,
   } as GroupMutationRead;
 }
 
@@ -62,6 +63,7 @@ export function createIdentityMutationRead(): GroupMutationRead {
     ...{ authorityPresenceSessions: [], authorityPresenceSessionEntries: [] },
     presenceSummary: null,
     lifecyclePolicy: null,
+    activeMemberPrincipalIds: null,
   } as GroupMutationRead;
 }
 
@@ -90,6 +92,7 @@ export function createSnapshotAssemblyMutationRead(): GroupMutationRead {
     ...{ authorityPresenceSessions: [], authorityPresenceSessionEntries: [] },
     presenceSummary: null,
     lifecyclePolicy: null,
+    activeMemberPrincipalIds: null,
   } as GroupMutationRead;
 }
 
