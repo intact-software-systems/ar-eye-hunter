@@ -1,5 +1,3 @@
-/// <reference lib="deno.ns" />
-
 export type BoundedLogTailFile = Readonly<{
   size: () => Promise<number>;
   readAt: (offset: number, target: Uint8Array) => Promise<number | null>;

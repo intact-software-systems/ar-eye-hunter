@@ -16,9 +16,6 @@
       "@shared-server/*": [
         "../../packages/shared-server/*"
       ],
-      "@shared-web/*": [
-        "../../packages/shared-web/*"
-      ],
       "@shared-graph/*": [
         "../../packages/shared-graph/*"
       ],

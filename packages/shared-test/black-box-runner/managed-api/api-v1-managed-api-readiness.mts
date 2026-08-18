@@ -1,4 +1,3 @@
-/// <reference lib="deno.ns" />
 import {
   BEARER_CREDENTIAL,
   MANAGED_SECRET_ENV_KEY,

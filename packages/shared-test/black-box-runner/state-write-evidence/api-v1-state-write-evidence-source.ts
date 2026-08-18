@@ -301,7 +301,7 @@ async function runPGliteSnapshotReader(
       '--config',
       'apps/api-v1/deno.json',
       '--allow-read',
-      'apps/api-v1/src/db/read-pglite-black-box-evidence.ts',
+      'packages/shared-test/black-box-runner/state-write-evidence/read-pglite-black-box-evidence.mts',
       snapshotPath,
       JSON.stringify(input),
     ],

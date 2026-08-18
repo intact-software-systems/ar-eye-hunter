@@ -1,9 +1,10 @@
 import { PGlite } from '@electric-sql/pglite';
-import {
-  collectApiV1StateWriteEvidenceFromSql,
-} from '../../../../packages/shared-test/black-box-runner/api-v1-state-write-evidence.ts';
-import { createPGliteSqlClient } from './pglite-sql-adapter.ts';
+import { createPGliteSqlClient } from '../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import { collectApiV1StateWriteEvidenceFromSql } from '../api-v1-state-write-evidence.ts';
 
+// Runs under `deno run --config apps/api-v1/deno.json`: opening a PGlite snapshot needs the API's
+// own SQL adapter, while the evidence rules belong to the black-box runner. Keeping the bridge here
+// means the dependency points from the test runner at the app it exercises, never the reverse.
 if (import.meta.main) {
   const [snapshotPath, inputJson] = Deno.args;
   if (!snapshotPath || !inputJson) {
