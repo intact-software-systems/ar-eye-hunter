@@ -901,6 +901,7 @@ and has no `setAuditSink`; this task owns only the later audit-delivery registra
 - Move/Test: `apps/api-v1/test/crdt/inbox/crdt-production-inbox.test.ts`
 - Move/Test: `apps/api-v1/test/crdt/realtime/crdt-websocket-authority.test.ts`
 - Modify imports: `apps/api-v1/test/routes/crdt-admin-repository-health.test.ts`
+- Modify/Test: `apps/api-v1/test/routes/admin-operations-routes.test.ts`
 - Move/Test: inbox tests from the migration map
 - Move/Test: split `packages/tests/shared-server/admin-prune-correction-4.test.ts` according to the
   migration map
@@ -908,6 +909,7 @@ and has no `setAuditSink`; this task owns only the later audit-delivery registra
 - Create/Test: `apps/api-v1/test/crdt/inbox/crdt-audit-registration-construction.test.ts`
 - Modify/Test: active mutation-route owner and phase-order analyzer files under
   `packages/tests/shared-server`
+- Create/Test: `packages/tests/shared-server/mutation-routing-crdt-operation.ts`
 
 **Interfaces:**
 
@@ -1085,6 +1087,11 @@ public result. It exposes `writeCrdtCommandUntilCompletion`, preserving the curr
 `Either<AppInboxFailure, CrdtMutationResult>` contract; the API owner alone converts a left or
 rejected result into the existing HTTP-facing error/result.
 
+The general admin gateway depends on narrow typed prune, topology, and CRDT mutation ports rather
+than concrete inbox classes. Its route test uses complete typed recording/failure ports and verifies
+that compact, lifecycle, and erase requests retain their exact operation, session, and request at
+the CRDT mutation boundary. No `as never` construction remains in that consumer.
+
 - [x] **Step 6: Update the API inbox factory without restoring the bug**
 
 Construct the service with named dependencies. Remove the redundant top-level
@@ -1101,6 +1108,13 @@ preserves `AppCrdtInboxService.processCommand` as the terminal AppInbox owner. T
 boundary root and registration predicates use the canonical shared inbox paths. No shim or deleted
 source path participates in the analyzer.
 
+The analyzer inventory carries the exact CRDT operation discriminant for every direct and general
+admin mutation row. Executable AST traversal follows the registered route through
+`createCrdtAdminMutations`, the exact `createCrdtAdminCommand` switch case, terminal
+`writeCrdtCommandUntilCompletion`, and `toCrdtAppInboxType`. Controlled mutations that reroute
+compact to lifecycle at the direct route, general gateway, command builder, or AppInbox type
+mapping must produce an operation-specific finding; generic reachability alone is insufficient.
+
 - [x] **Step 7: Run GREEN and the corrected PGlite audit path**
 
 ```bash
@@ -1113,6 +1127,7 @@ cd apps/api-v1 && deno test -A \
   test/crdt/inbox/crdt-production-inbox.test.ts \
   test/crdt/realtime/crdt-websocket-authority.test.ts \
   test/crdt/routes/crdt-admin-response-compatibility.test.ts \
+  test/routes/admin-operations-routes.test.ts \
   test/routes/crdt-admin-repository-health.test.ts \
   test/composition/create-api-v1-admin-services.test.ts \
   test/composition/create-api-v1-route-installers.test.ts
@@ -1142,7 +1157,9 @@ git add packages/shared-server/rallar-system/crdt/inbox \
   packages/tests/shared-server/mutation-boundary-traversal.ts \
   packages/tests/shared-server/mutation-routing-inventory-decoding.ts \
   packages/tests/shared-server/mutation-routing-markers.ts \
+  packages/tests/shared-server/mutation-routing-crdt-operation.ts \
   packages/tests/shared-server/mutation-routing-owner-inventory.ts \
+  packages/tests/shared-server/mutation-routing-reachability.ts \
   packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts \
   packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts \
   apps/api-v1/src/crdt/create-crdt-admin-mutations.ts \
@@ -1157,6 +1174,7 @@ git add packages/shared-server/rallar-system/crdt/inbox \
   apps/api-v1/test/composition/create-api-v1-admin-services.test.ts \
   apps/api-v1/test/composition/create-api-v1-route-installers.test.ts \
   apps/api-v1/test/crdt/routes/crdt-admin-response-compatibility.test.ts \
+  apps/api-v1/test/routes/admin-operations-routes.test.ts \
   apps/api-v1/test/routes/crdt-admin-repository-health.test.ts \
   apps/api-v1/test/crdt/inbox/crdt-audit-registration-construction.test.ts \
   apps/api-v1/test/crdt/inbox/crdt-production-inbox.test.ts \

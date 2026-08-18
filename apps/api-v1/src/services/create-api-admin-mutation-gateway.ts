@@ -5,7 +5,9 @@ import type {
 // prettier-ignore
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/\
 auth-session-repository.ts';
-import type { AppAdminInboxService } from '@shared-server/rallar-system/services/AppAdminInboxService.ts';
+// prettier-ignore
+import type { AppAdminInboxService } from '@shared-server/rallar-system/services/\
+AppAdminInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 import {
   type AppGroupInboxService,
@@ -13,10 +15,19 @@ import {
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import type { CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
 
+export interface ApiAdminPruneMutationPort {
+  readonly pruneExpired: AppAdminInboxService['pruneExpired'];
+}
+
+export interface ApiTopologyRecomputeMutationPort {
+  readonly processAuthenticatedEntryUntilCompletionResult:
+    AppGroupInboxService['processAuthenticatedEntryUntilCompletionResult'];
+}
+
 export interface CreateApiAdminMutationGatewayInput {
-  readonly appAdmin: AppAdminInboxService;
+  readonly appAdmin: ApiAdminPruneMutationPort;
   readonly crdtAdminMutations: CrdtAdminMutations;
-  readonly appGroup: AppGroupInboxService;
+  readonly appGroup: ApiTopologyRecomputeMutationPort;
   readonly now: () => number;
 }
 

@@ -3,8 +3,12 @@ import type { MutationRouteInventoryEntry } from './mutation-routing-inventory.t
 import {
   findAstNode,
   hasReachableAstNode,
-  type MutationRoutingAstNode as AstNode,
+  type MutationRoutingAstNode,
 } from './mutation-routing-call-graph.ts';
+import {
+  isCrdtAdminOperationRoute,
+  isExactCrdtAdminRouteOperation,
+} from './mutation-routing-crdt-operation.ts';
 import {
   findExactHttpRouteHandler,
   isExactGroupStateRouteOperation,
@@ -16,13 +20,13 @@ import {
 
 interface MutationRouteReachabilityInput {
   readonly item: MutationRouteInventoryEntry;
-  readonly source: AstNode;
-  readonly enqueueSource: AstNode;
-  readonly ownerSource: AstNode;
-  readonly typeOwnerSource: AstNode;
-  readonly dispatchSource: AstNode;
-  readonly containsMarker: (node: AstNode, marker: string) => boolean;
-  readonly matchesMarker: (node: AstNode, marker: string) => boolean;
+  readonly source: MutationRoutingAstNode;
+  readonly enqueueSource: MutationRoutingAstNode;
+  readonly ownerSource: MutationRoutingAstNode;
+  readonly typeOwnerSource: MutationRoutingAstNode;
+  readonly dispatchSource: MutationRoutingAstNode;
+  readonly containsMarker: (node: MutationRoutingAstNode, marker: string) => boolean;
+  readonly matchesMarker: (node: MutationRoutingAstNode, marker: string) => boolean;
   readonly loadProgram: MutationRoutingProgramLoader;
 }
 
@@ -38,13 +42,24 @@ export function findMutationRouteReachabilityIssues({
   loadProgram,
 }: MutationRouteReachabilityInput): readonly string[] {
   const routeKey = `${item.transport}:${item.entrypoint}:${item.type}`;
-  const handlers = findRegisteredHandlers(item, source, containsMarker, matchesMarker);
+  const handlers = findRegisteredHandlers({ item, program: source, containsMarker, matchesMarker });
   if (handlers.length === 0) {
     return [`${routeKey} registered callback cannot be resolved`];
   }
   const operation = item.operationDiscriminant;
   const operationHandlers = operation
-    ? handlers.filter((handler) => isExactGroupStateRouteOperation(handler, enqueueSource, item))
+    ? handlers.filter((handler) =>
+        isCrdtAdminOperationRoute(item)
+          ? isExactCrdtAdminRouteOperation({
+              item,
+              source,
+              enqueueSource,
+              typeOwnerSource,
+              handler,
+              loadProgram,
+            })
+          : isExactGroupStateRouteOperation(handler, enqueueSource, item),
+      )
     : handlers;
   const handoff = operation
     ? undefined
@@ -91,12 +106,14 @@ const AUTH_COMMAND_KIND_BY_TYPE: Readonly<Partial<Record<AppInboxType, string>>>
 };
 
 function hasAuthCommandDiscriminator(
-  typeOwnerSource: AstNode,
+  typeOwnerSource: MutationRoutingAstNode,
   item: MutationRouteInventoryEntry,
-  hasMarker: (node: AstNode, marker: string) => boolean,
+  hasMarker: (node: MutationRoutingAstNode, marker: string) => boolean,
 ): boolean {
   const expected = AUTH_COMMAND_KIND_BY_TYPE[item.type];
-  if (!expected) return true;
+  if (!expected) {
+    return true;
+  }
   const publicHandoffs = findFunctionLikes(typeOwnerSource, item.enqueueMarker);
   return (
     publicHandoffs.length === 0 ||
@@ -104,12 +121,19 @@ function hasAuthCommandDiscriminator(
   );
 }
 
-function findRegisteredHandlers(
-  item: MutationRouteInventoryEntry,
-  program: AstNode,
-  containsMarker: (node: AstNode, marker: string) => boolean,
-  matchesMarker: (node: AstNode, marker: string) => boolean,
-): readonly AstNode[] {
+interface FindRegisteredHandlersInput {
+  readonly item: MutationRouteInventoryEntry;
+  readonly program: MutationRoutingAstNode;
+  readonly containsMarker: (node: MutationRoutingAstNode, marker: string) => boolean;
+  readonly matchesMarker: (node: MutationRoutingAstNode, marker: string) => boolean;
+}
+
+function findRegisteredHandlers({
+  item,
+  program,
+  containsMarker,
+  matchesMarker,
+}: FindRegisteredHandlersInput): readonly MutationRoutingAstNode[] {
   if (item.transport === 'HTTP') {
     const [method, routePath] = item.entrypoint.split(' ');
     const handler = findExactHttpRouteHandler({
@@ -159,10 +183,10 @@ function findRegisteredHandlers(
 
 interface FindReachableHandoffInput {
   readonly item: MutationRouteInventoryEntry;
-  readonly source: AstNode;
-  readonly enqueueSource: AstNode;
-  readonly handler: AstNode;
-  readonly matchesMarker: (node: AstNode, marker: string) => boolean;
+  readonly source: MutationRoutingAstNode;
+  readonly enqueueSource: MutationRoutingAstNode;
+  readonly handler: MutationRoutingAstNode;
+  readonly matchesMarker: (node: MutationRoutingAstNode, marker: string) => boolean;
 }
 
 function findReachableHandoff({
@@ -181,17 +205,22 @@ function findReachableHandoff({
   }
   for (const bridgeName of findFunctionLikeNames(enqueueSource)) {
     const bridgeIsReachable = hasReachableAstNode(source, handler, (node) => {
-      if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') return false;
+      if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') {
+        return false;
+      }
       return readCallName(asNode(node.callee)) === bridgeName;
     });
-    if (!bridgeIsReachable) continue;
+    if (!bridgeIsReachable) {
+      continue;
+    }
     for (const target of findFunctionLikes(enqueueSource, bridgeName)) {
       if (
         hasReachableAstNode(enqueueSource, target, (node) =>
           hasHandoffCall(node, item.enqueueMarker, matchesMarker),
         )
-      )
+      ) {
         return { program: enqueueSource, root: target };
+      }
     }
   }
   return undefined;
@@ -200,7 +229,7 @@ function findReachableHandoff({
 function hasExpectedTypeWhenExplicit(
   handoff: ReachableHandoff,
   expectedType: AppInboxType,
-  matchesMarker: (node: AstNode, marker: string) => boolean,
+  matchesMarker: (node: MutationRoutingAstNode, marker: string) => boolean,
 ): boolean {
   const hasAnyExplicitType = hasReachableAstNode(handoff.program, handoff.root, (node) =>
     readMemberPath(node).startsWith('AppInboxType.'),
@@ -214,16 +243,16 @@ function hasExpectedTypeWhenExplicit(
 }
 
 interface ReachableHandoff {
-  readonly program: AstNode;
-  readonly root: AstNode;
+  readonly program: MutationRoutingAstNode;
+  readonly root: MutationRoutingAstNode;
 }
 
 interface HasOwnerDispatchInput {
-  readonly program: AstNode;
+  readonly program: MutationRoutingAstNode;
   readonly filePath: string;
   readonly type: AppInboxType;
   readonly dispatchPath: string;
-  readonly matchesMarker: (node: AstNode, marker: string) => boolean;
+  readonly matchesMarker: (node: MutationRoutingAstNode, marker: string) => boolean;
   readonly loadProgram: MutationRoutingProgramLoader;
 }
 
@@ -248,7 +277,9 @@ function hasOwnerDispatch({
     const loopType =
       !!typeArgument &&
       hasLiveAppInboxRegistration(program, filePath, call, typeArgument, type, loadProgram);
-    if (!handler || (!exactType && !loopType)) return false;
+    if (!handler || (!exactType && !loopType)) {
+      return false;
+    }
     const roots =
       handler.type === 'Identifier' ? findFunctionLikes(program, readName(handler)) : [handler];
     return roots.some((root) =>
@@ -261,28 +292,32 @@ function hasOwnerDispatch({
 }
 
 function hasHandoffCall(
-  node: AstNode,
+  node: MutationRoutingAstNode,
   marker: string,
-  matchesMarker: (node: AstNode, marker: string) => boolean,
+  matchesMarker: (node: MutationRoutingAstNode, marker: string) => boolean,
 ): boolean {
   if (marker.startsWith('AppInboxType.') || marker.includes('(')) {
     return matchesMarker(node, marker);
   }
-  if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') return false;
+  if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') {
+    return false;
+  }
   const callee = asNode(node.callee);
   const path = callee ? readMemberPath(callee) : '';
   return path === marker || path.endsWith(`.${marker}`);
 }
 
-function findFunctionLikeNames(program: AstNode): ReadonlySet<string> {
+function findFunctionLikeNames(program: MutationRoutingAstNode): ReadonlySet<string> {
   const names = findAll(program, (node) => functionLikeName(node) !== '')
     .map(functionLikeName)
     .filter(Boolean);
   return new Set(names);
 }
 
-function functionLikeName(node: AstNode): string {
-  if (node.type === 'FunctionDeclaration') return readName(node.id);
+function functionLikeName(node: MutationRoutingAstNode): string {
+  if (node.type === 'FunctionDeclaration') {
+    return readName(node.id);
+  }
   if (
     node.type === 'ClassMethod' ||
     node.type === 'ClassPrivateMethod' ||
@@ -290,23 +325,33 @@ function functionLikeName(node: AstNode): string {
   ) {
     return readName(node.key);
   }
-  if (node.type !== 'VariableDeclarator' && node.type !== 'ObjectProperty') return '';
+  if (node.type !== 'VariableDeclarator' && node.type !== 'ObjectProperty') {
+    return '';
+  }
   const value = asNode(node.type === 'VariableDeclarator' ? node.init : node.value);
   return value && (value.type === 'ArrowFunctionExpression' || value.type === 'FunctionExpression')
     ? readName(node.type === 'VariableDeclarator' ? node.id : node.key)
     : '';
 }
 
-function findFunctionLikes(program: AstNode, name: string): readonly AstNode[] {
+function findFunctionLikes(
+  program: MutationRoutingAstNode,
+  name: string,
+): readonly MutationRoutingAstNode[] {
   return findAll(program, (node) => {
-    if (node.type === 'FunctionDeclaration') return readName(node.id) === name;
+    if (node.type === 'FunctionDeclaration') {
+      return readName(node.id) === name;
+    }
     if (
       node.type === 'ClassMethod' ||
       node.type === 'ClassPrivateMethod' ||
       node.type === 'ObjectMethod'
-    )
+    ) {
       return readName(node.key) === name;
-    if (node.type !== 'VariableDeclarator' && node.type !== 'ObjectProperty') return false;
+    }
+    if (node.type !== 'VariableDeclarator' && node.type !== 'ObjectProperty') {
+      return false;
+    }
     const value = asNode(node.type === 'VariableDeclarator' ? node.init : node.value);
     return (
       readName(node.type === 'VariableDeclarator' ? node.id : node.key) === name &&
@@ -314,31 +359,40 @@ function findFunctionLikes(program: AstNode, name: string): readonly AstNode[] {
       (value.type === 'ArrowFunctionExpression' || value.type === 'FunctionExpression')
     );
   }).map((node) => {
-    if (node.type === 'VariableDeclarator') return asNode(node.init)!;
-    if (node.type === 'ObjectProperty') return asNode(node.value)!;
+    if (node.type === 'VariableDeclarator') {
+      return asNode(node.init)!;
+    }
+    if (node.type === 'ObjectProperty') {
+      return asNode(node.value)!;
+    }
     return node;
   });
 }
 
 function findFunctionsContaining(
-  program: AstNode,
+  program: MutationRoutingAstNode,
   marker: string,
-  hasMarker: (node: AstNode, marker: string) => boolean,
-): readonly AstNode[] {
+  hasMarker: (node: MutationRoutingAstNode, marker: string) => boolean,
+): readonly MutationRoutingAstNode[] {
   return findAll(program, (node) => isFunction(node) && hasMarker(node, marker));
 }
 
-function readObjectCallback(object: AstNode, name: string): AstNode | undefined {
+function readObjectCallback(
+  object: MutationRoutingAstNode,
+  name: string,
+): MutationRoutingAstNode | undefined {
   const property = asNodes(object.properties).find((candidate) => readName(candidate.key) === name);
-  if (!property) return undefined;
+  if (!property) {
+    return undefined;
+  }
   return property.type === 'ObjectMethod' ? property : asNode(property.value);
 }
 
 function findCall(
-  program: AstNode,
+  program: MutationRoutingAstNode,
   name: string,
-  predicate: (call: AstNode) => boolean,
-): AstNode | undefined {
+  predicate: (call: MutationRoutingAstNode) => boolean,
+): MutationRoutingAstNode | undefined {
   return findAstNode(
     program,
     (node) =>
@@ -348,40 +402,60 @@ function findCall(
   );
 }
 
-function findAll(value: unknown, predicate: (node: AstNode) => boolean): AstNode[] {
-  const found: AstNode[] = [];
+function findAll(
+  value: unknown,
+  predicate: (node: MutationRoutingAstNode) => boolean,
+): MutationRoutingAstNode[] {
+  const found: MutationRoutingAstNode[] = [];
   visit(value, (node) => {
-    if (predicate(node)) found.push(node);
+    if (predicate(node)) {
+      found.push(node);
+    }
   });
   return found;
 }
 
-function visit(value: unknown, visitor: (node: AstNode) => void): void {
-  if (!value || typeof value !== 'object') return;
-  if (Array.isArray(value)) {
-    for (const child of value) visit(child, visitor);
+function visit(value: unknown, visitor: (node: MutationRoutingAstNode) => void): void {
+  if (!value || typeof value !== 'object') {
     return;
   }
-  const node = value as AstNode;
-  if (typeof node.type === 'string') visitor(node);
+  if (Array.isArray(value)) {
+    for (const child of value) {
+      visit(child, visitor);
+    }
+    return;
+  }
+  const node = value as MutationRoutingAstNode;
+  if (typeof node.type === 'string') {
+    visitor(node);
+  }
   for (const [key, child] of Object.entries(node)) {
-    if (!['loc', 'start', 'end', 'comments', 'tokens'].includes(key)) visit(child, visitor);
+    if (!['loc', 'start', 'end', 'comments', 'tokens'].includes(key)) {
+      visit(child, visitor);
+    }
   }
 }
 
-function readMemberPath(node: AstNode | undefined): string {
-  if (!node) return '';
-  if (node.type === 'Identifier') return readName(node);
-  if (node.type !== 'MemberExpression' && node.type !== 'OptionalMemberExpression') return '';
+function readMemberPath(node: MutationRoutingAstNode | undefined): string {
+  if (!node) {
+    return '';
+  }
+  if (node.type === 'Identifier') {
+    return readName(node);
+  }
+  if (node.type !== 'MemberExpression' && node.type !== 'OptionalMemberExpression') {
+    return '';
+  }
   const object = asNode(node.object);
   const prefix = object ? readMemberPath(object) : '';
   const property = readName(node.property);
   return property ? (prefix ? `${prefix}.${property}` : property) : '';
 }
 
-const readCallName = (node: AstNode | undefined): string => readName(node) || readMemberName(node);
+const readCallName = (node: MutationRoutingAstNode | undefined): string =>
+  readName(node) || readMemberName(node);
 
-function readMemberName(node: AstNode | undefined): string {
+function readMemberName(node: MutationRoutingAstNode | undefined): string {
   return node?.type === 'MemberExpression' || node?.type === 'OptionalMemberExpression'
     ? readName(node.property)
     : '';
@@ -392,7 +466,7 @@ function readName(value: unknown): string {
   return node && typeof node.name === 'string' ? node.name : '';
 }
 
-function isFunction(node: AstNode): boolean {
+function isFunction(node: MutationRoutingAstNode): boolean {
   return [
     'FunctionDeclaration',
     'FunctionExpression',
@@ -403,13 +477,13 @@ function isFunction(node: AstNode): boolean {
   ].includes(node.type);
 }
 
-function asNode(value: unknown): AstNode | undefined {
+function asNode(value: unknown): MutationRoutingAstNode | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as AstNode)
+    ? (value as MutationRoutingAstNode)
     : undefined;
 }
-function asNodes(value: unknown): readonly AstNode[] {
+function asNodes(value: unknown): readonly MutationRoutingAstNode[] {
   return Array.isArray(value)
-    ? value.map(asNode).filter((node): node is AstNode => node !== undefined)
+    ? value.map(asNode).filter((node): node is MutationRoutingAstNode => node !== undefined)
     : [];
 }

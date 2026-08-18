@@ -84,12 +84,12 @@ HTTP\tPOST ${TOPOLOGY_ROUTE}/reconfigure\tTOPOLOGY_RECONFIGURE\tt\t/topology/rec
 HTTP\tPOST /api/admin/operations/topology/recompute\tTOPOLOGY_RECONFIGURE\tad\t'/api/admin/operations/topology/recompute'\tag\tprocessAuthenticatedEntryUntilCompletionResult\tT\tTopologyAppInboxHandler.processMutation\tG\tG
 WS_INBOX\ttopic rallar/rtt\tRTC_RTT_SUBMIT\ts\tAppTopics.rtt\ts\tenqueueRtcRttMutation\tR\tRtcRttAppInboxHandler.processMutation\tG\tG
 WS_INBOX\ttopic rallar/crdt/update\tCRDT_UPDATE_APPEND\td\tkind === 'update'\td\tmutationIngress.enqueueUpdate\tD\tAppCrdtInboxService.processCommand
-HTTP\tPOST /api/crdt/admin/documents/rebuild-projection\tCRDT_PROJECTION_REBUILD\tcr\t'/api/crdt/admin/documents/rebuild-projection'\tcm\twriteCrdtCommandUntilCompletion\tD\tAppCrdtInboxService.processCommand
-HTTP\tPOST /api/crdt/admin/documents/compact\tCRDT_SNAPSHOT_COMPACT\tcr\t'/api/crdt/admin/documents/compact'\tcm\twriteCrdtCommandUntilCompletion\tD\tAppCrdtInboxService.processCommand
-HTTP\tPOST /api/admin/operations/crdt/compact\tCRDT_SNAPSHOT_COMPACT\tad\t'/api/admin/operations/crdt/compact'\tag\twriteCrdtAdminMutation\tD\tAppCrdtInboxService.processCommand
-HTTP\tPOST /api/crdt/admin/documents/lifecycle\tCRDT_LIFECYCLE_UPDATE\tcr\t'/api/crdt/admin/documents/lifecycle'\tcm\twriteCrdtCommandUntilCompletion\tD\tAppCrdtInboxService.processCommand
-HTTP\tPOST /api/admin/operations/crdt/lifecycle\tCRDT_LIFECYCLE_UPDATE\tad\t'/api/admin/operations/crdt/lifecycle'\tag\twriteCrdtAdminMutation\tD\tAppCrdtInboxService.processCommand
-HTTP\tPOST /api/crdt/admin/documents/erase\tCRDT_ERASE\tcr\t'/api/crdt/admin/documents/erase'\tcm\twriteCrdtCommandUntilCompletion\tD\tAppCrdtInboxService.processCommand
-HTTP\tPOST /api/admin/operations/crdt/erase\tCRDT_ERASE\tad\t'/api/admin/operations/crdt/erase'\tag\twriteCrdtAdminMutation\tD\tAppCrdtInboxService.processCommand
+HTTP\tPOST /api/crdt/admin/documents/rebuild-projection\tCRDT_PROJECTION_REBUILD\tcr\t'/api/crdt/admin/documents/rebuild-projection'\tcm\twriteCrdtCommandUntilCompletion\tD\tAppCrdtInboxService.processCommand\tD\tD\trebuild-projection
+HTTP\tPOST /api/crdt/admin/documents/compact\tCRDT_SNAPSHOT_COMPACT\tcr\t'/api/crdt/admin/documents/compact'\tcm\twriteCrdtCommandUntilCompletion\tD\tAppCrdtInboxService.processCommand\tD\tD\tcompact
+HTTP\tPOST /api/admin/operations/crdt/compact\tCRDT_SNAPSHOT_COMPACT\tad\t'/api/admin/operations/crdt/compact'\tag\twriteCrdtAdminMutation\tD\tAppCrdtInboxService.processCommand\tD\tD\tcompact
+HTTP\tPOST /api/crdt/admin/documents/lifecycle\tCRDT_LIFECYCLE_UPDATE\tcr\t'/api/crdt/admin/documents/lifecycle'\tcm\twriteCrdtCommandUntilCompletion\tD\tAppCrdtInboxService.processCommand\tD\tD\tlifecycle
+HTTP\tPOST /api/admin/operations/crdt/lifecycle\tCRDT_LIFECYCLE_UPDATE\tad\t'/api/admin/operations/crdt/lifecycle'\tag\twriteCrdtAdminMutation\tD\tAppCrdtInboxService.processCommand\tD\tD\tlifecycle
+HTTP\tPOST /api/crdt/admin/documents/erase\tCRDT_ERASE\tcr\t'/api/crdt/admin/documents/erase'\tcm\twriteCrdtCommandUntilCompletion\tD\tAppCrdtInboxService.processCommand\tD\tD\terase
+HTTP\tPOST /api/admin/operations/crdt/erase\tCRDT_ERASE\tad\t'/api/admin/operations/crdt/erase'\tag\twriteCrdtAdminMutation\tD\tAppCrdtInboxService.processCommand\tD\tD\terase
 HTTP\tPOST /api/admin/operations/maintenance/prune-expired\tADMIN_PRUNE_EXPIRED\tad\t'/api/admin/operations/maintenance/prune-expired'\tag\tappAdmin.pruneExpired\tN\tAppAdminInboxService.processCommand
 `;

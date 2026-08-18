@@ -19,6 +19,8 @@ const GROUP_PRESENCE_ROUTES = 'apps/api-v1/src/group-state/register-group-presen
 const GROUP_COMMAND_TRANSLATOR = 'apps/api-v1/src/group-state/to-group-state-command.ts';
 const CRDT_ADMIN_ROUTES = 'apps/api-v1/src/routes/crdt-admin-routes.ts';
 const CRDT_ADMIN_MUTATIONS = 'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts';
+const ADMIN_MUTATION_GATEWAY = 'apps/api-v1/src/services/create-api-admin-mutation-gateway.ts';
+const APP_CRDT_INBOX = 'packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 
 describe('AppInbox mutation routing contract', { timeout: 30_000 }, () => {
   it('inventories every command type with an explicit transport, entrypoint, and owner', () => {
@@ -139,7 +141,9 @@ function deadCorrectPresenceRegistration(app: Hono): void {
   it('fails closed when a named route path uses an unknown expression', () => {
     const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');
     const mutated = source.replace(
-      "const GROUP_PRESENCE_PATH =\n  '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/sessions/:sessionId';",
+      'const GROUP_PRESENCE_PATH =\n' +
+        "  '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/" +
+        ":groupId/sessions/:sessionId';",
       'const GROUP_PRESENCE_PATH = readConfiguredGroupPresencePath();',
     );
     expect(mutated).not.toBe(source);
@@ -178,7 +182,7 @@ function deadCorrectPresenceRegistration(app: Hono): void {
     );
   });
 
-  it('rejects an admin mutation intermediary disconnected from terminal AppInbox processing', () => {
+  it('rejects an admin intermediary disconnected from terminal AppInbox processing', () => {
     const source = readFileSync(CRDT_ADMIN_MUTATIONS, 'utf8');
     const mutated = source.replace(
       'writeCrdtCommandUntilCompletion(command)',
@@ -190,6 +194,78 @@ function deadCorrectPresenceRegistration(app: Hono): void {
       expect.arrayContaining([
         expect.stringContaining('CRDT_SNAPSHOT_COMPACT registered handler is not connected'),
       ]),
+    );
+  });
+
+  it.each([
+    {
+      name: 'direct CRDT route',
+      filePath: CRDT_ADMIN_ROUTES,
+      from: "operation: 'compact',",
+      to: "operation: 'lifecycle',",
+    },
+    {
+      name: 'general admin gateway',
+      filePath: ADMIN_MUTATION_GATEWAY,
+      from: "operation: 'compact',",
+      to: "operation: 'lifecycle',",
+    },
+  ])('rejects compact rerouted to lifecycle through the $name', ({ filePath, from, to }) => {
+    const source = readFileSync(filePath, 'utf8');
+    const mutated = source.replace(from, to);
+    expect(mutated).not.toBe(source);
+
+    expect(validateWithOverride(filePath, mutated)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('CRDT_SNAPSHOT_COMPACT operation is not connected'),
+      ]),
+    );
+  });
+
+  it('rejects compact command construction rerouted to the lifecycle operation', () => {
+    const source = readFileSync(CRDT_ADMIN_MUTATIONS, 'utf8');
+    const mutated = replaceWithinSwitchCase({
+      source,
+      caseName: 'compact',
+      followingCaseName: 'lifecycle',
+      from: 'operation: input.operation,',
+      to: "operation: 'lifecycle',",
+    });
+
+    expect(validateWithOverride(CRDT_ADMIN_MUTATIONS, mutated)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('CRDT_SNAPSHOT_COMPACT operation is not connected'),
+      ]),
+    );
+  });
+
+  it('rejects compact mapped to the lifecycle AppInbox type', () => {
+    const source = readFileSync(APP_CRDT_INBOX, 'utf8');
+    const mutated = replaceWithinSwitchCase({
+      source,
+      caseName: 'compact',
+      followingCaseName: 'lifecycle',
+      from: 'return AppInboxType.CRDT_SNAPSHOT_COMPACT;',
+      to: 'return AppInboxType.CRDT_LIFECYCLE_UPDATE;',
+    });
+
+    expect(validateWithOverride(APP_CRDT_INBOX, mutated)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('CRDT_SNAPSHOT_COMPACT operation is not connected'),
+      ]),
+    );
+  });
+
+  it.each([
+    ['/api/crdt/admin/documents/compact', AppInboxType.CRDT_SNAPSHOT_COMPACT, 'compact'],
+    ['/api/admin/operations/crdt/compact', AppInboxType.CRDT_SNAPSHOT_COMPACT, 'compact'],
+    ['/api/crdt/admin/documents/lifecycle', AppInboxType.CRDT_LIFECYCLE_UPDATE, 'lifecycle'],
+    ['/api/admin/operations/crdt/lifecycle', AppInboxType.CRDT_LIFECYCLE_UPDATE, 'lifecycle'],
+    ['/api/crdt/admin/documents/erase', AppInboxType.CRDT_ERASE, 'erase'],
+    ['/api/admin/operations/crdt/erase', AppInboxType.CRDT_ERASE, 'erase'],
+  ])('inventories %s with its exact operation and AppInbox type', (route, type, operation) => {
+    expect(MUTATION_ROUTE_INVENTORY.find((entry) => entry.entrypoint.includes(route))).toEqual(
+      expect.objectContaining({ type, operationDiscriminant: operation }),
     );
   });
 
@@ -265,12 +341,16 @@ function deadCorrectPresenceRegistration(app: Hono): void {
     {
       name: 'group',
       type: AppInboxType.GROUP_CREATE,
-      from: `const processGroupMutation = async (_payload: unknown, context: AppInboxMessageContext) =>
-      await this.groupStateInboxHandler.processGroupStateMutation(context);`,
-      to: `const processGroupMutation = async (_payload: unknown, context: AppInboxMessageContext) => {
-      const alias = { groupStateInboxHandler: this.topologyAppInboxHandler };
-      return await alias.groupStateInboxHandler.processGroupStateMutation(context);
-    };`,
+      from:
+        'const processGroupMutation = async ' +
+        '(_payload: unknown, context: AppInboxMessageContext) =>\n' +
+        '      await this.groupStateInboxHandler.processGroupStateMutation(context);',
+      to:
+        'const processGroupMutation = async ' +
+        '(_payload: unknown, context: AppInboxMessageContext) => {\n' +
+        '      const alias = { groupStateInboxHandler: this.topologyAppInboxHandler };\n' +
+        '      return await alias.groupStateInboxHandler.processGroupStateMutation(context);\n' +
+        '    };',
     },
   ])('rejects a $name alias receiver backed by the wrong handler', ({ type, from, to }) => {
     const source = readFileSync(GROUP_DISPATCH_PATH, 'utf8');
@@ -289,7 +369,7 @@ function deadCorrectPresenceRegistration(app: Hono): void {
     );
   });
 
-  it('has no direct mutator calls or mutating persistence imports at route and WS boundaries', () => {
+  it('has no direct mutators or persistence imports at route and WS boundaries', () => {
     expect(findMutationBoundaryViolations()).toEqual([]);
   });
 
@@ -318,4 +398,26 @@ function validateWithOverride(filePath: string, source: string): readonly string
   return validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {
     sourceOverrides: new Map([[filePath, source]]),
   });
+}
+
+interface ReplaceWithinSwitchCaseInput {
+  readonly source: string;
+  readonly caseName: string;
+  readonly followingCaseName: string;
+  readonly from: string;
+  readonly to: string;
+}
+
+function replaceWithinSwitchCase(input: ReplaceWithinSwitchCaseInput): string {
+  const caseStart = input.source.indexOf(`case '${input.caseName}':`);
+  const caseEnd = input.source.indexOf(`case '${input.followingCaseName}':`, caseStart);
+  if (caseStart < 0 || caseEnd < 0) {
+    throw new Error(`Switch case ${input.caseName} is absent`);
+  }
+  const caseSource = input.source.slice(caseStart, caseEnd);
+  const mutatedCase = caseSource.replace(input.from, input.to);
+  if (mutatedCase === caseSource) {
+    throw new Error(`Switch case ${input.caseName} does not contain the expected mapping`);
+  }
+  return input.source.slice(0, caseStart) + mutatedCase + input.source.slice(caseEnd);
 }
