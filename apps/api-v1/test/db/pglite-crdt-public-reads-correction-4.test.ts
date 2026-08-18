@@ -8,7 +8,7 @@ import {
 } from '@shared/crdt/mod.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
 import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrdtMutationRepository.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
@@ -144,8 +144,8 @@ Deno.test('mutation write persists one canonical snapshot reason in row and enve
       reason: 'app-inbox-compaction',
     });
     const read = await service.read(compact);
-    const computed = service.compute(compact, read);
-    service.validate(compact, read, computed);
+    const computed = service.compute({ command: compact, read });
+    assert.deepEqual(service.validate({ command: compact, read, computed }), []);
     await sql.begin(async (transaction) => await service.write(transaction, computed));
     const [stored] = await sql<{ snapshot_envelope: string; reason: string }[]>`
       select snapshot_envelope, reason from crdt_snapshots
@@ -214,8 +214,8 @@ async function append(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]) {
     update: update(),
   });
   const read = await service.read(command);
-  const computed = service.compute(command, read);
-  service.validate(command, read, computed);
+  const computed = service.compute({ command, read });
+  assert.deepEqual(service.validate({ command, read, computed }), []);
   await sql.begin(async (transaction) => await service.write(transaction, computed));
   return { command, service };
 }

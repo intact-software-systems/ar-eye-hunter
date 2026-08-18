@@ -135,7 +135,14 @@ export interface CrdtMutationRead {
   readonly storedSnapshotBytes: number;
 }
 
+export interface CrdtMutationAttemptFacts {
+  readonly command: CrdtMutationCommand;
+  readonly read: CrdtMutationRead;
+}
+
 interface CrdtMutationComputedBase {
+  readonly command: CrdtMutationCommand;
+  readonly read: CrdtMutationRead;
   readonly operation: CrdtMutationCommand['operation'];
   readonly commandId: string;
   readonly commandHash: string;
@@ -166,6 +173,15 @@ export interface CrdtMutationComputedRejected extends CrdtMutationComputedBase {
 }
 export type CrdtMutationComputed =
   CrdtMutationComputedWrite | CrdtMutationComputedReplay | CrdtMutationComputedRejected;
+
+export interface ValidateCrdtMutationInput extends CrdtMutationAttemptFacts {
+  readonly computed: CrdtMutationComputed;
+}
+
+export interface CrdtMutationValidationIssue {
+  readonly code: string;
+  readonly message: string;
+}
 
 interface CrdtAcceptedMutationResultBase<TOperation extends CrdtMutationCommand['operation']> {
   readonly version: 1;

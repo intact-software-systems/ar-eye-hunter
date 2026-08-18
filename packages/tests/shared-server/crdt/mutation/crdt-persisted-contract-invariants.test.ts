@@ -25,8 +25,8 @@ import {
   decodeCrdtMutationCommand,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
-import { computeCrdtMutation } from '@shared-server/rallar-system/services/crdt-mutation-compute.ts';
-import { toCrdtAuditOutbox } from '@shared-server/rallar-system/services/crdt-mutation-outbox.ts';
+import { computeCrdtMutation } from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
+import { toCrdtAuditOutbox } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-outbox.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
@@ -37,7 +37,7 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   principalId: 'principal-1',
 };
 
-describe('Task 9 correction 3 exact mutation contracts', () => {
+describe('CRDT persisted mutation contract invariants', () => {
   it('rejects extra fields on every command document reference', async () => {
     const command = await lifecycleCommand();
     const forged = rehash({
@@ -114,7 +114,11 @@ describe('Task 9 correction 3 exact mutation contracts', () => {
 
   it('binds accepted nested results to the outer document, revision, and sequence', async () => {
     const command = await appendCommand();
-    const computed = computeCrdtMutation(command, emptyRead(), 'server-1');
+    const computed = computeCrdtMutation({
+      command,
+      read: emptyRead(),
+      serviceId: 'server-1',
+    });
     expect(computed.outcome).toBe('write');
     const forged = {
       ...computed.result,
@@ -141,8 +145,8 @@ describe('Task 9 correction 3 exact mutation contracts', () => {
     });
     const read = existingRead();
 
-    expect(computeCrdtMutation(command, read, 'server-1')).toEqual(
-      computeCrdtMutation(command, read, 'server-1'),
+    expect(computeCrdtMutation({ command, read, serviceId: 'server-1' })).toEqual(
+      computeCrdtMutation({ command, read, serviceId: 'server-1' }),
     );
   });
 

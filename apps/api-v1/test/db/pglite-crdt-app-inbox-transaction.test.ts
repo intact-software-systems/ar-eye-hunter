@@ -7,7 +7,7 @@ import {
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
 import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrdtMutationRepository.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import {
   type CrdtMutationCommand,
   CrdtMutationConflictError,
@@ -63,10 +63,16 @@ Deno.test('CRDT mutation CAS commits state and logical WS outbox atomically', as
     const third = await command('command-3', 'update-3', 3_000);
     const secondRead = await service.read(second);
     const thirdRead = await service.read(third);
-    const secondComputed = service.compute(second, secondRead);
-    const thirdComputed = service.compute(third, thirdRead);
-    service.validate(second, secondRead, secondComputed);
-    service.validate(third, thirdRead, thirdComputed);
+    const secondComputed = service.compute({ command: second, read: secondRead });
+    const thirdComputed = service.compute({ command: third, read: thirdRead });
+    assert.deepEqual(
+      service.validate({ command: second, read: secondRead, computed: secondComputed }),
+      [],
+    );
+    assert.deepEqual(
+      service.validate({ command: third, read: thirdRead, computed: thirdComputed }),
+      [],
+    );
     await sql.begin(async (transaction) => await service.write(transaction, secondComputed));
     await assert.rejects(
       sql.begin(async (transaction) => await service.write(transaction, thirdComputed)),
@@ -95,7 +101,7 @@ Deno.test('CRDT mutation rolls metadata and update back when outbox write fails'
     });
     const input = await command('rollback-command', 'rollback-update', 1_000);
     const read = await failingService.read(input);
-    const computed = failingService.compute(input, read);
+    const computed = failingService.compute({ command: input, read });
     await assert.rejects(
       sql.begin(async (transaction) => await failingService.write(transaction, computed)),
       /injected outbox failure/,
@@ -125,8 +131,8 @@ async function apply(
   input: CrdtMutationCommand,
 ): Promise<void> {
   const read = await service.read(input);
-  const computed = service.compute(input, read);
-  service.validate(input, read, computed);
+  const computed = service.compute({ command: input, read });
+  assert.deepEqual(service.validate({ command: input, read, computed }), []);
   await sql.begin(async (transaction) => {
     await service.write(transaction, computed);
   });

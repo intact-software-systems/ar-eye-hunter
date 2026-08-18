@@ -7,7 +7,7 @@ import {
 } from '@shared/crdt/mod.ts';
 import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrdtMutationRepository.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import type { CrdtMutationActor } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { readPGliteDatabaseEpochMs } from './pglite-auth-test-harness.ts';
@@ -63,7 +63,8 @@ export function withCompetingWrite(
           serverId: 'server-2',
         },
       });
-      const computed = service.compute(command, await service.read(command));
+      const read = await service.read(command);
+      const computed = service.compute({ command, read });
       assert.equal(computed.outcome, 'write');
       await database.begin(async (transaction) => {
         await new PSqlCrdtMutationRepository(

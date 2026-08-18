@@ -13,7 +13,7 @@ import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrd
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
@@ -70,7 +70,7 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
       },
     });
     const initialRead = await mutationService.read(initial);
-    const initialComputed = mutationService.compute(initial, initialRead);
+    const initialComputed = mutationService.compute({ command: initial, read: initialRead });
     await sql.begin(async (transaction) =>
       await mutationService.write(transaction, initialComputed)
     );

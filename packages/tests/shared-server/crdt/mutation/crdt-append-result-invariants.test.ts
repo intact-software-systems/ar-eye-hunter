@@ -16,11 +16,11 @@ import {
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
-import { computeCrdtMutation } from '@shared-server/rallar-system/services/crdt-mutation-compute.ts';
-import { appendRejectionReason } from '@shared-server/rallar-system/services/crdt-append-rejection.ts';
+import { computeCrdtMutation } from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
+import { appendRejectionReason } from '@shared-server/rallar-system/crdt/mutation/crdt-append-rejection.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
@@ -31,7 +31,7 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   principalId: 'alice',
 };
 
-describe('Task 9 correction 4 mutation contracts', () => {
+describe('CRDT append and administration result invariants', () => {
   it('keeps semantic append identity stable while delivery identity and retry lifetime vary', async () => {
     const capturedAtEpochMs = 1_000;
     const service = appCrdt();
@@ -55,7 +55,7 @@ describe('Task 9 correction 4 mutation contracts', () => {
 
   it('allows replay only for append producers', async () => {
     const command = await lifecycleCommand();
-    const computed = computeCrdtMutation(command, existingRead(), 'server-1');
+    const computed = computeCrdtMutation({ command, read: existingRead(), serviceId: 'server-1' });
     expect(computed.outcome).toBe('write');
 
     expect(() =>
@@ -68,15 +68,15 @@ describe('Task 9 correction 4 mutation contracts', () => {
 
   it('requires exact producer update and rejection reason relationships', async () => {
     const command = await appendCommand();
-    const rejected = computeCrdtMutation(
+    const rejected = computeCrdtMutation({
       command,
-      {
+      read: {
         ...emptyRead(),
         authorized: false,
         authorizationCode: 'authorization-scope-denied',
       },
-      'server-1',
-    );
+      serviceId: 'server-1',
+    });
     expect(rejected.outcome).toBe('rejected');
     const appendResult = (rejected.result as { appendResult: Record<string, unknown> })
       .appendResult;
@@ -127,7 +127,11 @@ describe('Task 9 correction 4 mutation contracts', () => {
       },
     ] as const;
     for (const expected of producerCases) {
-      const computed = computeCrdtMutation(command, expected.read, 'server-1');
+      const computed = computeCrdtMutation({
+        command,
+        read: expected.read,
+        serviceId: 'server-1',
+      });
       expect(computed.result.appendResult).toMatchObject({
         code: expected.code,
         retryable: expected.retryable,
@@ -135,15 +139,15 @@ describe('Task 9 correction 4 mutation contracts', () => {
       expect(() => decodeCrdtMutationResult(computed.result)).not.toThrow();
     }
 
-    const rejected = computeCrdtMutation(
+    const rejected = computeCrdtMutation({
       command,
-      {
+      read: {
         ...emptyRead(),
         authorized: false,
         authorizationCode: 'authorization-denied',
       },
-      'server-1',
-    );
+      serviceId: 'server-1',
+    });
     const appendResult = rejected.result.appendResult as Record<string, unknown>;
     for (const code of appendRejectionCodes()) {
       const retryable = code === 'storage-failed' || code === 'rate-limited';
@@ -165,9 +169,9 @@ describe('Task 9 correction 4 mutation contracts', () => {
   it('rejects retryability on an admin integrity result', async () => {
     const command = await rebuildCommand();
     const value = update('integrity-update');
-    const rejected = computeCrdtMutation(
+    const rejected = computeCrdtMutation({
       command,
-      {
+      read: {
         ...existingRead(),
         records: [
           {
@@ -187,8 +191,8 @@ describe('Task 9 correction 4 mutation contracts', () => {
           },
         ],
       },
-      'server-1',
-    );
+      serviceId: 'server-1',
+    });
 
     expect(rejected.result).toMatchObject({ status: 'rejected', code: 'integrity-invalid' });
     expect(() =>
@@ -202,7 +206,11 @@ describe('Task 9 correction 4 mutation contracts', () => {
   it('binds compact and rebuild payloads to outer metadata revision and sequence', async () => {
     for (const operation of ['compact', 'rebuild-projection'] as const) {
       const command = operation === 'compact' ? await compactCommand() : await rebuildCommand();
-      const computed = computeCrdtMutation(command, existingRead(), 'server-1');
+      const computed = computeCrdtMutation({
+        command,
+        read: existingRead(),
+        serviceId: 'server-1',
+      });
       expect(computed.outcome).toBe('write');
       const result = computed.result;
 

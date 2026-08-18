@@ -12,8 +12,8 @@ import {
   appendRejectionReason,
   isAppendRejectionRetryable,
   toAppendRejectionCode,
-} from '../../services/crdt-append-rejection.ts';
-import { requireCrdtCanonicalSnapshotReason } from '../../services/crdt-compact-snapshot.ts';
+} from './crdt-append-rejection.ts';
+import { requireCrdtCanonicalSnapshotReason } from './to-crdt-canonical-snapshot.ts';
 import { decodeExactDebugBundle } from './decode-exact-debug-bundle.ts';
 import {
   decodeExactErasureAuditEvent,

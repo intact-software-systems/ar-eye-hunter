@@ -12,8 +12,8 @@ import {
   DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS,
   RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS,
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { toAppQueueCreatedBy, toAppQueueKey } from './app-inbox-queue-key.ts';
-import type { CrdtAppendCommand } from '../crdt/mutation/crdt-mutation-contracts.ts';
+import { toAppQueueCreatedBy, toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
+import type { CrdtAppendCommand } from './crdt-mutation-contracts.ts';
 
 interface AppendOutboxInput {
   readonly command: CrdtAppendCommand;

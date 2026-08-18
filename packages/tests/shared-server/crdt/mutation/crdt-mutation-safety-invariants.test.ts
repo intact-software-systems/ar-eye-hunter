@@ -8,8 +8,8 @@ import {
 } from '@shared/crdt/mod.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
-import { computeCrdtMutation } from '@shared-server/rallar-system/services/crdt-mutation-compute.ts';
-import { toCrdtAuditOutbox } from '@shared-server/rallar-system/services/crdt-mutation-outbox.ts';
+import { computeCrdtMutation } from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
+import { toCrdtAuditOutbox } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-outbox.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
@@ -20,7 +20,7 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   principalId: 'principal-1',
 };
 
-describe('Task 9 correction 2 exact contracts and fanout', () => {
+describe('CRDT mutation safety and audience invariants', () => {
   it('rejects impossible nested result/status combinations', () => {
     expect(() =>
       decodeCrdtMutationResult({
@@ -73,9 +73,9 @@ describe('Task 9 correction 2 exact contracts and fanout', () => {
         },
       },
     });
-    const computed = computeCrdtMutation(
+    const computed = computeCrdtMutation({
       command,
-      {
+      read: {
         document: null,
         existingUpdate: null,
         existingAppend: null,
@@ -93,8 +93,8 @@ describe('Task 9 correction 2 exact contracts and fanout', () => {
           retryable: false,
         },
       },
-      'server-1',
-    );
+      serviceId: 'server-1',
+    });
     const fanout = JSON.parse(computed.outboxEntries[1]!.resource);
     expect(fanout.targets).toEqual({
       mode: 'unicast',
@@ -115,11 +115,11 @@ describe('Task 9 correction 2 exact contracts and fanout', () => {
       snapshot: null,
       reason: 'quota-test',
     });
-    const computed = computeCrdtMutation(
+    const computed = computeCrdtMutation({
       command,
-      read({ quota: { maxDocumentBytes: 1 } }),
-      'server-1',
-    );
+      read: read({ quota: { maxDocumentBytes: 1 } }),
+      serviceId: 'server-1',
+    });
     expect(computed).toMatchObject({ outcome: 'rejected', code: 'quota-exceeded' });
   });
 
@@ -135,9 +135,9 @@ describe('Task 9 correction 2 exact contracts and fanout', () => {
       responseAudience: audience(),
       projectionId: 'projection-1',
     });
-    const computed = computeCrdtMutation(
+    const computed = computeCrdtMutation({
       command,
-      {
+      read: {
         ...read(),
         records: [
           {
@@ -157,8 +157,8 @@ describe('Task 9 correction 2 exact contracts and fanout', () => {
           },
         ],
       },
-      'server-1',
-    );
+      serviceId: 'server-1',
+    });
     expect(computed).toMatchObject({ outcome: 'rejected', code: 'integrity-invalid' });
   });
 

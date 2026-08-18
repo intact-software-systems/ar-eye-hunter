@@ -6,26 +6,30 @@ import type { ResourceInboxResultsRepository } from '@shared-server/postgres/res
 import { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
 import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import type * as Crdt from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
+import {
+  createCrdtMutationService,
+} from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type { CurrentMutationAuthority } from './create-api-mutation-inbox-factories.ts';
 
+export interface CreateApiCrdtInboxServiceInput {
+  readonly inboxQueueReader: InboxQueueReader;
+  readonly resourceInboxRepository: ResourceInboxRepository;
+  readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
+  readonly database: PSqlSql;
+  readonly serviceId: string;
+  readonly timing?: RallarTimingSink;
+  readonly options?: AppInboxServiceOptions;
+  readonly currentAuthority?: CurrentMutationAuthority;
+  readonly policies?: readonly RallarCrdtDocumentTypePolicy[];
+  readonly outboxQueueReader?: OutboxQueueReader;
+  readonly wakeQueueEngine?: () => void;
+}
+
 export function createApiCrdtInboxService(
-  input: Readonly<{
-    inboxQueueReader: InboxQueueReader;
-    resourceInboxRepository: ResourceInboxRepository;
-    resourceInboxResultsRepository: ResourceInboxResultsRepository;
-    database: PSqlSql;
-    serviceId: string;
-    timing?: RallarTimingSink;
-    options?: AppInboxServiceOptions;
-    currentAuthority?: CurrentMutationAuthority;
-    policies?: readonly RallarCrdtDocumentTypePolicy[];
-    outboxQueueReader?: OutboxQueueReader;
-    wakeQueueEngine?: () => void;
-  }>,
+  input: CreateApiCrdtInboxServiceInput,
 ): AppCrdtInboxService {
   const authorize = async (command: Crdt.CrdtMutationCommand) => {
     const session = await input.currentAuthority?.readSession(command.actor.sessionId);

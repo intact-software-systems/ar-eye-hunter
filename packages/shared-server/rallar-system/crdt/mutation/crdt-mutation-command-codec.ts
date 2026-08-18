@@ -28,7 +28,7 @@ import type {
 import {
   requireCrdtCanonicalSnapshotReason,
   toCrdtCanonicalSnapshotEnvelope,
-} from '../../services/crdt-compact-snapshot.ts';
+} from './to-crdt-canonical-snapshot.ts';
 
 export async function createCrdtMutationCommand(
   input: CreateCrdtMutationCommandInput,

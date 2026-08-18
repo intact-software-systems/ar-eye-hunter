@@ -33,9 +33,9 @@ import {
 } from '../crdt/mutation/crdt-mutation-command-codec.ts';
 import { decodeCrdtMutationResult } from '../crdt/mutation/decode-crdt-mutation-result.ts';
 import { decodeCrdtAuditEvent } from '../crdt/mutation/crdt-mutation-value-codec.ts';
-import type { CrdtMutationService } from './crdt-mutations.ts';
+import type { CrdtMutationService } from '../crdt/mutation/create-crdt-mutation-service.ts';
 import type { RallarTimingSink } from './timing.ts';
-import { CRDT_AUDIT_APP_OUTBOX_TYPE } from './crdt-mutation-outbox.ts';
+import { CRDT_AUDIT_APP_OUTBOX_TYPE } from '../crdt/mutation/create-crdt-mutation-outbox.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import {
   type AuthenticatedCrdtAppendInput,
@@ -225,8 +225,11 @@ export class AppCrdtInboxService extends AppInboxService {
     )
       throw new TypeError('CRDT AppInbox command identity differs from queue key');
     const read = await this.mutationService.read(command);
-    const computed = this.mutationService.compute(command, read);
-    this.mutationService.validate(command, read, computed);
+    const computed = this.mutationService.compute({ command, read });
+    const issues = this.mutationService.validate({ command, read, computed });
+    if (issues.length > 0) {
+      throw new TypeError(issues[0].message);
+    }
     const result = await this.writeMutation(
       context,
       async (transaction) => await this.mutationService.write(transaction, computed),

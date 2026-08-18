@@ -8,7 +8,7 @@ import {
 } from '@shared/crdt/mod.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
 import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrdtMutationRepository.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import {
   type CrdtMutationCommand,
   CrdtMutationConflictError,
@@ -40,7 +40,7 @@ Deno.test('CRDT CAS guards revision, lifecycle, and append sequence', async () =
     await apply(sql, service, await command('first', 'first', 1_000));
     const second = await command('second', 'second', 2_000);
     const observed = await service.read(second);
-    const computed = service.compute(second, observed);
+    const computed = service.compute({ command: second, read: observed });
     await sql`
       update crdt_documents
       set lifecycle = 'archived', last_append_sequence = 99
@@ -223,7 +223,7 @@ Deno.test('CRDT read includes current actor-rate and snapshot-byte policy facts'
     `;
     const second = await command('rate-second', 'rate-second', 11_000);
     const observed = await service.read(second);
-    const computed = service.compute(second, observed);
+    const computed = service.compute({ command: second, read: observed });
     assert.equal((observed as { actorUpdatesInWindow?: number }).actorUpdatesInWindow, 1);
     assert.ok((observed as { storedSnapshotBytes?: number }).storedSnapshotBytes! > 1_000);
     assert.deepEqual(
@@ -263,7 +263,7 @@ Deno.test('overlapping CRDT transaction writers keep one winner and no lost coun
     ]);
     const computed = await Promise.all(commands.map(async (entry) => {
       const read = await service.read(entry);
-      return service.compute(entry, read);
+      return service.compute({ command: entry, read });
     }));
     const writes = await Promise.allSettled(
       computed.map(async (entry) =>
@@ -305,8 +305,8 @@ async function apply(
   input: CrdtMutationCommand,
 ) {
   const read = await service.read(input);
-  const computed = service.compute(input, read);
-  service.validate(input, read, computed);
+  const computed = service.compute({ command: input, read });
+  assert.deepEqual(service.validate({ command: input, read, computed }), []);
   await sql.begin(async (transaction) => await service.write(transaction, computed));
 }
 

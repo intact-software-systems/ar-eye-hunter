@@ -16,7 +16,7 @@ import {
   type CrdtMutationRepository,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
@@ -27,7 +27,7 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
 };
 
-describe('Task 9 CRDT correction contracts', () => {
+describe('CRDT command and outbox invariants', () => {
   it('writes a browser-compatible append response and fans out only accepted updates', async () => {
     const command = await appendCommand(update('update-1'));
     const accepted = compute(command, read());
@@ -182,8 +182,8 @@ function compute(command: CrdtMutationCommand, state: CrdtMutationRead): CrdtMut
     createWriter: () => repository,
     serviceId: 'server-1',
   });
-  const computed = service.compute(command, state);
-  service.validate(command, state, computed);
+  const computed = service.compute({ command, read: state });
+  expect(service.validate({ command, read: state, computed })).toEqual([]);
   return computed;
 }
 

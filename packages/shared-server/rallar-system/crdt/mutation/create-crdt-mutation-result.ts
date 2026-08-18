@@ -11,7 +11,7 @@ import type {
   CrdtMutationCommand,
   CrdtMutationRead,
   CrdtMutationResult,
-} from '../crdt/mutation/crdt-mutation-contracts.ts';
+} from './crdt-mutation-contracts.ts';
 
 export interface CrdtMutationResultDetails {
   readonly [key: string]: unknown;
