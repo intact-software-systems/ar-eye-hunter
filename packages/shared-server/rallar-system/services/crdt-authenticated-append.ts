@@ -4,25 +4,25 @@ import type {
   CrdtMutationResponseAudience,
 } from '../crdt/mutation/crdt-mutation-contracts.ts';
 
-export type CurrentCrdtMutationSession = Readonly<{
+export interface CurrentCrdtMutationSession {
   clientId: string;
   username: string;
   sessionId: string;
-}>;
+}
 
 export type ResolveCurrentCrdtMutationSession = (
   sessionId: string,
   atEpochMs: number,
 ) => Promise<CurrentCrdtMutationSession>;
 
-export type AuthenticatedCrdtAppendInput = Readonly<{
+export interface AuthenticatedCrdtAppendInput {
   update: RallarCrdtUpdateEnvelope;
   deliveryId: string;
   trustedSessionId: string;
   responseAudience: Omit<CrdtMutationResponseAudience, 'senderSessionId'>;
   capturedAtEpochMs: number;
   expireAtEpochMs: number;
-}>;
+}
 
 export async function createAndEnqueueAuthenticatedCrdtAppend(
   input: AuthenticatedCrdtAppendInput,

@@ -254,7 +254,7 @@ function computeAppend(
     update: command.update,
     append,
     snapshot: null,
-    outboxEntries: toAppendOutbox(command, appendResult, serviceId, true),
+    outboxEntries: toAppendOutbox({ command, response: appendResult, serviceId, fanout: true }),
     result: response,
   };
 }
@@ -352,7 +352,7 @@ function replay(
     update: command.update,
     append,
     snapshot: null,
-    outboxEntries: toAppendOutbox(command, appendResult, serviceId, false),
+    outboxEntries: toAppendOutbox({ command, response: appendResult, serviceId, fanout: false }),
     result: response,
   };
 }
@@ -390,7 +390,7 @@ function rejected(input: CrdtMutationRejectedInput): CrdtMutationComputedRejecte
       read.authorized &&
       !code.startsWith('authorization-') &&
       !code.startsWith('authentication-')
-        ? toAppendOutbox(command, appendResult!, serviceId, false)
+        ? toAppendOutbox({ command, response: appendResult!, serviceId, fanout: false })
         : [],
     result: response,
   };

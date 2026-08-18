@@ -29,10 +29,10 @@ import {
   type UpdateRow,
 } from './crdt-mutation-row-codec.ts';
 
-export type CrdtMutationAuthorityDecision = Readonly<{
-  allowed: boolean;
-  code: string;
-}>;
+export interface CrdtMutationAuthorityDecision {
+  readonly allowed: boolean;
+  readonly code: string;
+}
 
 export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
   private readonly sql: PSqlSql;

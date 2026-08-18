@@ -15,25 +15,24 @@ import {
   type RallarCrdtDocumentTypePolicy,
 } from '@shared/crdt/mod.ts';
 
-export type CurrentMutationSession = Readonly<{
-  clientId: string;
-  username: string;
-  sessionId: string;
-  expiresAtEpochMs: number;
-}>;
+export interface CurrentMutationSession {
+  readonly clientId: string;
+  readonly username: string;
+  readonly sessionId: string;
+  readonly expiresAtEpochMs: number;
+}
 
-export type CurrentMutationAuthority = Readonly<{
-  readSession(sessionId: string): Promise<
+export interface CurrentMutationAuthority {
+  readonly readSession: (sessionId: string) => Promise<
     | CurrentMutationSession
     | null
-    | undefined
-  >;
-  authorizeDocument(
+    | undefined>;
+  readonly authorizeDocument: (
     command: Crdt.CrdtMutationCommand,
     session: CurrentMutationSession,
-  ): Promise<Readonly<{ allowed: boolean; code: string }>>;
-  adminClientIds: readonly string[];
-}>;
+  ) => Promise<Readonly<{ allowed: boolean; code: string }>>;
+  readonly adminClientIds: readonly string[];
+}
 
 export function createApiMutationInboxFactories(
   input: Readonly<{

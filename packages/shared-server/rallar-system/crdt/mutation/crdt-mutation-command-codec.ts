@@ -99,10 +99,6 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
   if (toRallarCrdtDocumentKey(document) !== command.documentKey) {
     throw new TypeError('CRDT command document key differs from document');
   }
-  const { commandHash: _hash, ...stable } = command;
-  if (hashRallarCrdtJson(stable) !== command.commandHash) {
-    throw new TypeError('CRDT mutation command hash differs from canonical command');
-  }
   const common = {
     version: 1 as const,
     commandId: command.commandId,
@@ -139,46 +135,43 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
       ['room', 'principal', 'app', 'custom'] as const,
       'authorizationScope',
     );
-    return { ...common, operation, update, authorizationScope };
+    return completeCommand(command, { ...common, operation, update, authorizationScope });
   } else if (operation === 'rebuild-projection') {
     requireString(command.projectionId, 'projectionId');
-    return { ...common, operation, projectionId: command.projectionId };
+    return completeCommand(command, { ...common, operation, projectionId: command.projectionId });
   } else if (operation === 'compact') {
     requireString(command.snapshotId, 'snapshotId');
-    requireCrdtCanonicalSnapshotReason(command.reason);
-    const snapshot =
-      command.snapshot === null
-        ? null
-        : toCrdtCanonicalSnapshotEnvelope(
-            decodeExactSnapshotEnvelope(command.snapshot),
-            command.reason,
-          );
+    const rawSnapshot =
+      command.snapshot === null ? null : decodeExactSnapshotEnvelope(command.snapshot);
     if (
-      snapshot !== null &&
-      toRallarCrdtDocumentKey(snapshot.document) !== toRallarCrdtDocumentKey(document)
+      rawSnapshot !== null &&
+      toRallarCrdtDocumentKey(rawSnapshot.document) !== toRallarCrdtDocumentKey(document)
     ) {
       throw new TypeError('CRDT compact snapshot document differs from command document');
     }
-    if (snapshot !== null && snapshot.snapshotId !== command.snapshotId) {
+    if (rawSnapshot !== null && rawSnapshot.snapshotId !== command.snapshotId) {
       throw new TypeError('CRDT compact snapshot ID differs from command input');
     }
-    if (snapshot !== null && snapshot.metadata.reason !== command.reason) {
+    requireCrdtCanonicalSnapshotReason(command.reason);
+    if (rawSnapshot !== null && rawSnapshot.metadata.reason !== command.reason) {
       throw new TypeError('CRDT compact snapshot reason differs from command reason');
     }
-    return {
+    const snapshot =
+      rawSnapshot === null ? null : toCrdtCanonicalSnapshotEnvelope(rawSnapshot, command.reason);
+    return completeCommand(command, {
       ...common,
       operation,
       snapshotId: command.snapshotId,
       snapshot,
       reason: command.reason,
-    };
+    });
   } else if (operation === 'lifecycle') {
     const lifecycle = requireOneOf(
       command.lifecycle,
       ['active', 'archived', 'destroyed', 'quarantined'] as const,
       'lifecycle',
     );
-    return {
+    return completeCommand(command, {
       ...common,
       operation,
       lifecycle,
@@ -193,7 +186,7 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
         'projectionIds',
         decodeExactProjectionIds,
       ),
-    };
+    });
   } else {
     const mode = requireOneOf(
       command.mode,
@@ -201,8 +194,19 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
       'erase mode',
     );
     requireString(command.reason, 'reason');
-    return { ...common, operation, mode, reason: command.reason };
+    return completeCommand(command, { ...common, operation, mode, reason: command.reason });
   }
+}
+
+function completeCommand<T extends CrdtMutationCommand>(
+  rawCommand: Record<string, unknown>,
+  command: T,
+): T {
+  const { commandHash: _hash, ...stable } = rawCommand;
+  if (hashRallarCrdtJson(stable) !== rawCommand.commandHash) {
+    throw new TypeError('CRDT mutation command hash differs from canonical command');
+  }
+  return command;
 }
 
 function toCanonicalCompactCommandInput(

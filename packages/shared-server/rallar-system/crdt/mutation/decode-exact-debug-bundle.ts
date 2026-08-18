@@ -161,8 +161,37 @@ function decodeExactHealth(value: unknown): void {
   requireExactOptionalKeys(health, required, optional, 'CRDT debug health');
   requireString(health.replicaId, 'CRDT debug health replicaId');
   for (const field of required.slice(1)) requireEpoch(health[field], `CRDT debug health ${field}`);
+  for (const field of [
+    'lastServerAppendSequence',
+    'lastServerAckAtEpochMs',
+    'snapshotAgeMs',
+    'updateLogLag',
+    'replayDurationMs',
+    'corruptLocalArtifactCount',
+    'liveSentUpdateCount',
+    'liveReceivedUpdateCount',
+    'liveDuplicateUpdateCount',
+    'liveRejectedUpdateCount',
+    'liveDependencyBlockedUpdateCount',
+    'liveRetriedUpdateCount',
+    'liveSyncRequestCount',
+    'liveSyncResponseCount',
+  ]) {
+    if (field in health) requireEpoch(health[field], `CRDT debug health ${field}`);
+  }
+  if ('lastSyncError' in health) requireString(health.lastSyncError, 'CRDT last sync error');
+  if ('transportStrategy' in health) {
+    requireOneOf(
+      health.transportStrategy,
+      ['local-only', 'ws', 'rtc', 'ws-then-rtc', 'rtc-with-ws-fallback'] as const,
+      'CRDT transport strategy',
+    );
+  }
   if ('lastLiveTransport' in health) {
     requireOneOf(health.lastLiveTransport, ['ws', 'rtc'] as const, 'CRDT last live transport');
+  }
+  if ('lastLiveSendStatus' in health) {
+    requireString(health.lastLiveSendStatus, 'CRDT last live send status');
   }
   if ('quota' in health) {
     const quota = requireRecord(health.quota, 'CRDT debug health quota');
@@ -172,6 +201,11 @@ function decodeExactHealth(value: unknown): void {
       ['usageBytes', 'quotaBytes', 'nearingLimit'],
       'health quota',
     );
+    if ('usageBytes' in quota) requireEpoch(quota.usageBytes, 'CRDT health quota usageBytes');
+    if ('quotaBytes' in quota) requireEpoch(quota.quotaBytes, 'CRDT health quota quotaBytes');
+    if ('nearingLimit' in quota && typeof quota.nearingLimit !== 'boolean') {
+      throw new TypeError('CRDT health quota nearingLimit is invalid');
+    }
   }
 }
 

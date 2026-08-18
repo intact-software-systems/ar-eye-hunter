@@ -14,11 +14,15 @@ import type { RallarTimingSink } from '@shared-server/rallar-system/services/tim
 import type { CurrentMutationAuthority } from './create-api-mutation-inbox-factories.ts';
 import { createConfiguredApiMutationInboxFactories } from './create-api-mutation-inbox-factories.ts';
 
-export type ApiCrdtDocumentAuthorizerOptions = Readonly<{
-  readGroupSnapshot(ref: GroupRef): Promise<GroupSnapshot | null | undefined>;
-  readClientSnapshot(ref: ClientPrincipalRef): Promise<ClientSnapshot | null | undefined>;
-  nowEpochMs: () => number;
-}>;
+export interface ApiCrdtDocumentAuthorizerOptions {
+  readonly readGroupSnapshot: (
+    ref: GroupRef,
+  ) => Promise<GroupSnapshot | null | undefined>;
+  readonly readClientSnapshot: (
+    ref: ClientPrincipalRef,
+  ) => Promise<ClientSnapshot | null | undefined>;
+  readonly nowEpochMs: () => number;
+}
 
 export function createApiCrdtDocumentAuthorizer(
   options: ApiCrdtDocumentAuthorizerOptions,

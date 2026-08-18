@@ -26,7 +26,7 @@ import {
 } from '../../rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
 import * as CrdtUpdate from '../../rallar-system/crdt/mutation/decode-exact-update-envelope.ts';
 
-export type DocumentRow = Readonly<{
+export interface DocumentRow {
   document_key: string;
   application_id: string;
   workspace_id: string | null;
@@ -47,9 +47,9 @@ export type DocumentRow = Readonly<{
   retention_policy: string | null;
   quota_policy: string | null;
   projection_ids: string | null;
-}>;
+}
 
-export type UpdateRow = Readonly<{
+export interface UpdateRow {
   document_key: string;
   update_id: string;
   append_sequence: number | string;
@@ -61,9 +61,9 @@ export type UpdateRow = Readonly<{
   server_id: string | null;
   authorization_scope: string;
   accepted_at_ts: Date | string;
-}>;
+}
 
-export type SnapshotRow = Readonly<{
+export interface SnapshotRow {
   document_key: string;
   snapshot_id: string;
   append_sequence: number | string;
@@ -72,7 +72,7 @@ export type SnapshotRow = Readonly<{
   reason: string;
   snapshot_bytes: number | string;
   snapshot_count: number | string;
-}>;
+}
 
 export function toMetadata(
   row: DocumentRow,

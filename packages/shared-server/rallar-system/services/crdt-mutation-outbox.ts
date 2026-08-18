@@ -15,21 +15,55 @@ import {
 import { toAppQueueCreatedBy, toAppQueueKey } from './app-inbox-queue-key.ts';
 import type { CrdtAppendCommand } from '../crdt/mutation/crdt-mutation-contracts.ts';
 
-export function toAppendOutbox(
-  command: CrdtAppendCommand,
-  response: RallarCrdtAppendResult,
-  serviceId: string,
-  fanout: boolean,
-): readonly ResourceEntry[] {
-  const reply = toWsOutbox(command, serviceId, 'reply', RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID, {
-    protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
-    requestId: command.update.updateId,
-    document: command.document,
-    acceptedAtEpochMs: command.capturedAtEpochMs,
-    results: [response],
+interface AppendOutboxInput {
+  readonly command: CrdtAppendCommand;
+  readonly response: RallarCrdtAppendResult;
+  readonly serviceId: string;
+  readonly fanout: boolean;
+}
+
+interface WsOutboxInput {
+  readonly command: CrdtAppendCommand;
+  readonly serviceId: string;
+  readonly effect: 'reply' | 'fanout';
+  readonly typeId: string;
+  readonly payload: unknown;
+}
+
+interface ResourceEntryInput {
+  readonly message: { readonly route: ResourceEntry['key'] };
+  readonly typeId: EnqueuedType;
+  readonly created: number;
+  readonly expiry: number;
+  readonly serviceId: string;
+}
+
+export function toAppendOutbox(input: AppendOutboxInput): readonly ResourceEntry[] {
+  const { command, response, serviceId, fanout } = input;
+  const reply = toWsOutbox({
+    command,
+    serviceId,
+    effect: 'reply',
+    typeId: RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
+    payload: {
+      protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+      requestId: command.update.updateId,
+      document: command.document,
+      acceptedAtEpochMs: command.capturedAtEpochMs,
+      results: [response],
+    },
   });
   return fanout
-    ? [reply, toWsOutbox(command, serviceId, 'fanout', RALLAR_CRDT_UPDATE_TYPE_ID, command.update)]
+    ? [
+        reply,
+        toWsOutbox({
+          command,
+          serviceId,
+          effect: 'fanout',
+          typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+          payload: command.update,
+        }),
+      ]
     : [reply];
 }
 
@@ -76,22 +110,17 @@ export function toCrdtAuditOutbox(
     },
     audit: { createdBy: serviceId, createdTs: command.capturedAtEpochMs },
   };
-  return toResourceEntry(
+  return toResourceEntry({
     message,
-    EnqueuedType.APP_OUTBOX,
-    command.capturedAtEpochMs,
-    auditExpireAtEpochMs,
+    typeId: EnqueuedType.APP_OUTBOX,
+    created: command.capturedAtEpochMs,
+    expiry: auditExpireAtEpochMs,
     serviceId,
-  );
+  });
 }
 
-function toWsOutbox(
-  command: CrdtAppendCommand,
-  serviceId: string,
-  effect: 'reply' | 'fanout',
-  typeId: string,
-  payload: unknown,
-): ResourceEntry {
+function toWsOutbox(input: WsOutboxInput): ResourceEntry {
+  const { command, serviceId, effect, typeId, payload } = input;
   const effectId = effect === 'reply' ? command.deliveryId : command.commandId;
   const message = {
     id: {
@@ -110,13 +139,13 @@ function toWsOutbox(
     payload: { typeId, contentType: 'application/json', resource: JSON.stringify(payload) },
     audit: { createdBy: serviceId, createdTs: command.capturedAtEpochMs },
   };
-  return toResourceEntry(
+  return toResourceEntry({
     message,
-    EnqueuedType.WS_OUTBOX,
-    command.capturedAtEpochMs,
-    command.expireAtEpochMs,
+    typeId: EnqueuedType.WS_OUTBOX,
+    created: command.capturedAtEpochMs,
+    expiry: command.expireAtEpochMs,
     serviceId,
-  );
+  });
 }
 
 function toTargets(command: CrdtAppendCommand, effect: 'reply' | 'fanout') {
@@ -142,13 +171,8 @@ function toTargets(command: CrdtAppendCommand, effect: 'reply' | 'fanout') {
   };
 }
 
-function toResourceEntry(
-  message: { route: ResourceEntry['key'] },
-  typeId: EnqueuedType,
-  created: number,
-  expiry: number,
-  serviceId: string,
-): ResourceEntry {
+function toResourceEntry(input: ResourceEntryInput): ResourceEntry {
+  const { message, typeId, created, expiry, serviceId } = input;
   const createdTs = Temporal.Instant.fromEpochMilliseconds(created)
     .toZonedDateTimeISO('UTC')
     .toPlainDateTime();
