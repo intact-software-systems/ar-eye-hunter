@@ -47,6 +47,7 @@ export function createInitialGroup({
     emptySinceEpochMs: null,
     purgeAfterEpochMs: command.input.purgeAfterEpochMs,
     lifecycleState: command.input.lifecyclePolicy?.formation === 'phased' ? 'forming' : 'active',
+    formationEpoch: 0,
   };
 }
 

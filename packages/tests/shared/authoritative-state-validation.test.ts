@@ -278,6 +278,9 @@ describe('authoritative network state validation', () => {
             { ...group.group, expiresAtEpochMs: 0 },
             { ...group.group, emptySinceEpochMs: '1' },
             { ...group.group, purgeAfterEpochMs: -1 },
+            { ...group.group, lifecycleState: 'bogus' },
+            { ...group.group, formationEpoch: -1 },
+            { ...group.group, formationEpoch: 1.5 },
         ];
 
         for (const invalidGroup of invalidGroups) {

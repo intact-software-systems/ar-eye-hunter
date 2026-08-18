@@ -37,7 +37,7 @@ const GROUP_KEYS = [
     'maxSessionsPerMember', 'metadata', 'activeMemberCount', 'ownerPrincipalId',
     'snapshotVersion', 'metadataVersion', 'rosterVersion', 'presenceVersion',
     'created', 'updated', 'archived', 'deleted', 'expiresAtEpochMs',
-    'emptySinceEpochMs', 'purgeAfterEpochMs', 'lifecycleState',
+    'emptySinceEpochMs', 'purgeAfterEpochMs', 'lifecycleState', 'formationEpoch',
 ];
 const GROUP_MEMBER_KEYS = [
     'applicationId', 'workspaceId', 'groupId', 'principalId', 'role', 'status',
@@ -306,6 +306,12 @@ export function validateAuthoritativeGroupSnapshot(
     for (const key of [
         'expiresAtEpochMs', 'emptySinceEpochMs', 'purgeAfterEpochMs',
     ] as const) nullablePositiveInteger(group[key], `GroupSnapshot.group.${key}`);
+    enumValue(
+        group.lifecycleState,
+        ['forming', 'establishing', 'active', 'reconfiguring'],
+        'GroupSnapshot.group.lifecycleState',
+    );
+    nonNegativeInteger(group.formationEpoch, 'GroupSnapshot.group.formationEpoch');
     const members = array(snapshot.members, 'GroupSnapshot.members');
     const memberIds = new Set<string>();
     const activeMemberIds = new Set<string>();

@@ -124,8 +124,7 @@ export async function runWebRtcGroupManagerPeerOwners(
 export function runWebRtcGroupManagerPeerOwnersAcceptedSamples(input: {
   readonly worker: RtcBaselineAcceptedWorker<WebRtcGroupManagerPeerOwnersInput>;
   readonly run: () =>
-    | WebRtcGroupManagerPeerOwnersResult
-    | Promise<WebRtcGroupManagerPeerOwnersResult>;
+    WebRtcGroupManagerPeerOwnersResult | Promise<WebRtcGroupManagerPeerOwnersResult>;
 }): Promise<RtcBaselineSampleDto[]> {
   return runRtcBaselineAcceptedWorker({
     worker: input.worker,
@@ -223,6 +222,7 @@ function createGroupSnapshotGroup(
     emptySinceEpochMs: null,
     purgeAfterEpochMs: null,
     lifecycleState: 'active',
+    formationEpoch: 0,
   };
 }
 
@@ -332,7 +332,7 @@ function parseAcceptedCapability(
     ...Object.entries(expected)
       .filter(([name, value]) => options[name] !== value)
       .map(([name, value]) =>
-        rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${value}.`)
+        rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${value}.`),
       ),
   ];
   return issues.length > 0 ? { ok: false, issues } : { ok: true, value: acceptedInput };
@@ -345,7 +345,8 @@ function validateResult(
   const counts = [result.ownedLookups, result.totalOwnerGroups, result.desiredPeerCount];
   return validateRules([
     {
-      valid: JSON.stringify([result.groupCount, result.peersPerGroup, result.lookups]) ===
+      valid:
+        JSON.stringify([result.groupCount, result.peersPerGroup, result.lookups]) ===
         JSON.stringify([input.groups, input.peersPerGroup, input.lookups]),
       path: '$.rawEvidence.input',
       code: 'input-mismatch',
@@ -358,7 +359,8 @@ function validateResult(
       message: 'Expected bounded counts.',
     },
     {
-      valid: JSON.stringify(counts) ===
+      valid:
+        JSON.stringify(counts) ===
         JSON.stringify([input.lookups, input.lookups * input.peersPerGroup, input.groups]),
       path: '$.rawEvidence.owners',
       code: 'ownership-result-mismatch',
@@ -376,7 +378,7 @@ function validateResult(
 function collectParsingIssues(
   results: readonly RtcBaselineResult<number>[],
 ): RtcBaselineIssueDto[] {
-  return results.flatMap((result) => result.ok ? [] : result.issues);
+  return results.flatMap((result) => (result.ok ? [] : result.issues));
 }
 
 function readDiagnosticArgument(
@@ -384,14 +386,16 @@ function readDiagnosticArgument(
   name: string,
   fallback: string,
 ): string {
-  return arguments_.find((argument) => argument.startsWith(`${name}=`))?.slice(name.length + 1) ??
-    fallback;
+  return (
+    arguments_.find((argument) => argument.startsWith(`${name}=`))?.slice(name.length + 1) ??
+    fallback
+  );
 }
 
 function validateRules(rules: readonly ValidationRule[]): RtcBaselineIssueDto[] {
-  return rules.filter((rule) => !rule.valid).map((rule) =>
-    rtcBaselineIssue(rule.path, rule.code, rule.message)
-  );
+  return rules
+    .filter((rule) => !rule.valid)
+    .map((rule) => rtcBaselineIssue(rule.path, rule.code, rule.message));
 }
 
 function toRawEvidence(result: WebRtcGroupManagerPeerOwnersResult): RtcBaselineJson {
@@ -426,7 +430,7 @@ async function main(): Promise<void> {
   const diagnostic = dispatched.diagnostic;
   const results = [];
   for (let run = 1; run <= diagnostic.runs; run += 1) {
-    results.push({ run, ...await runWebRtcGroupManagerPeerOwners(diagnostic.input) });
+    results.push({ run, ...(await runWebRtcGroupManagerPeerOwners(diagnostic.input)) });
   }
   const output = {
     createdAt: new Date().toISOString(),

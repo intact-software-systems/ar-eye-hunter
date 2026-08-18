@@ -82,6 +82,13 @@ type GroupBase =
      * never decides this.
      */
     lifecycleState: GroupLifecycleState;
+
+    /**
+     * Monotonic counter advanced only by an accepted lifecycle transition
+     * command, never by joins. Election and readiness pin their member set to
+     * this boundary so membership churn during FORMING cannot flap them.
+     */
+    formationEpoch: number;
 }>;
 
 export type Group = GroupBase & (

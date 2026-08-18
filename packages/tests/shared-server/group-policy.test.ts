@@ -11,6 +11,7 @@ import {GROUP_POLICY_REASON_CODES} from '@shared/api/group-policy-types.ts';
 import {
     canActivateGroupMember,
     canChangeGroupLifecycle,
+    canCommandGroupLifecycleTransition,
     canConnectGroupPresenceSession,
     canGovernGroupMember,
     canJoinGroup,
@@ -23,6 +24,10 @@ import {
     shouldPlanGroupPurge,
 } from '@shared-server/rallar-system/group-policy.ts';
 import { createTestGroup } from '@shared-test/create-test-group.ts';
+// prettier-ignore
+import {
+    resolveGroupLifecyclePolicyPreset,
+} from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 
 const NOW = 1_000;
 const ACTOR: GroupPolicyActor = {
@@ -415,6 +420,18 @@ describe('group policy helpers', () => {
                 actor: ACTOR,
                 targetPrincipalId: 'alice',
                 action: 'demote',
+            })),
+            expectCode(canCommandGroupLifecycleTransition({
+                snapshot: snapshot({lifecycleState: 'active'}),
+                actor: ACTOR,
+                policy: resolveGroupLifecyclePolicyPreset('optimistic'),
+                transition: 'start-establishment',
+            })),
+            expectCode(canCommandGroupLifecycleTransition({
+                snapshot: snapshot({lifecycleState: 'forming'}),
+                actor: ACTOR,
+                policy: resolveGroupLifecyclePolicyPreset('match'),
+                transition: 'start-establishment',
             })),
         ]);
 

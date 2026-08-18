@@ -304,6 +304,7 @@ function createGroupSnapshotGroup(input: CreateGroupSnapshotInput): GroupSnapsho
     emptySinceEpochMs: null,
     purgeAfterEpochMs: null,
     lifecycleState: 'active',
+    formationEpoch: 0,
   };
 }
 
@@ -364,9 +365,7 @@ function parseDiagnosticArguments(
     mode: 'diagnostic',
     input: {
       snapshots: Number(readDiagnosticArgument(arguments_, '--snapshots', '20000')),
-      matchingVersions: Number(
-        readDiagnosticArgument(arguments_, '--matching-versions', '5000'),
-      ),
+      matchingVersions: Number(readDiagnosticArgument(arguments_, '--matching-versions', '5000')),
       lookups: Number(readDiagnosticArgument(arguments_, '--lookups', '500')),
     },
     runs: Number(readDiagnosticArgument(arguments_, '--runs', '5')),
@@ -409,7 +408,7 @@ function parseAcceptedCapability(
     ...Object.entries(expected)
       .filter(([name, value]) => options[name] !== value)
       .map(([name, value]) =>
-        rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${value}.`)
+        rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${value}.`),
       ),
   ];
   return issues.length > 0 ? { ok: false, issues } : { ok: true, value: acceptedInput };
@@ -422,21 +421,24 @@ function validateResult(
   const counters = [result.readCalls, result.peekCalls, result.readAllValuesCalls];
   return validateRules([
     {
-      valid: JSON.stringify([result.snapshotCount, result.matchingVersions, result.lookups]) ===
+      valid:
+        JSON.stringify([result.snapshotCount, result.matchingVersions, result.lookups]) ===
         JSON.stringify([input.snapshots, input.matchingVersions, input.lookups]),
       path: '$.rawEvidence.input',
       code: 'input-mismatch',
       message: 'Unexpected input.',
     },
     {
-      valid: counters.every(Number.isSafeInteger) &&
+      valid:
+        counters.every(Number.isSafeInteger) &&
         JSON.stringify(counters) === JSON.stringify([input.lookups * 2, 0, input.lookups * 2]),
       path: '$.rawEvidence.calls',
       code: 'call-count-mismatch',
       message: 'Unexpected calls.',
     },
     {
-      valid: JSON.stringify([result.latestVersion, result.targetPeerCount]) ===
+      valid:
+        JSON.stringify([result.latestVersion, result.targetPeerCount]) ===
         JSON.stringify([input.matchingVersions, 1]),
       path: '$.rawEvidence.result',
       code: 'fallback-result-mismatch',
@@ -454,7 +456,7 @@ function validateResult(
 function collectParsingIssues(
   results: readonly RtcBaselineResult<number>[],
 ): RtcBaselineIssueDto[] {
-  return results.flatMap((result) => result.ok ? [] : result.issues);
+  return results.flatMap((result) => (result.ok ? [] : result.issues));
 }
 
 function readDiagnosticArgument(
@@ -462,14 +464,16 @@ function readDiagnosticArgument(
   name: string,
   fallback: string,
 ): string {
-  return arguments_.find((argument) => argument.startsWith(`${name}=`))?.slice(name.length + 1) ??
-    fallback;
+  return (
+    arguments_.find((argument) => argument.startsWith(`${name}=`))?.slice(name.length + 1) ??
+    fallback
+  );
 }
 
 function validateRules(rules: readonly ValidationRule[]): RtcBaselineIssueDto[] {
-  return rules.filter((rule) => !rule.valid).map((rule) =>
-    rtcBaselineIssue(rule.path, rule.code, rule.message)
-  );
+  return rules
+    .filter((rule) => !rule.valid)
+    .map((rule) => rtcBaselineIssue(rule.path, rule.code, rule.message));
 }
 
 function toRawEvidence(result: WebRtcGroupCacheFallbackResult): RtcBaselineJson {

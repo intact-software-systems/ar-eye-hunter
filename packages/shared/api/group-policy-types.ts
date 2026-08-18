@@ -14,6 +14,8 @@ export const GROUP_POLICY_REASON_CODES = [
     'member-banned',
     'forbidden-role',
     'last-owner',
+    'lifecycle-transition-invalid',
+    'lifecycle-manager-unavailable',
 ] as const;
 
 export type GroupPolicyReasonCode =

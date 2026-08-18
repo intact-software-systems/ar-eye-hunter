@@ -50,6 +50,7 @@ export function createDeterministicRtcTopologyGroupSnapshot(
       emptySinceEpochMs: null,
       purgeAfterEpochMs: null,
       lifecycleState: 'active',
+      formationEpoch: 0,
     },
     members: memberSessionIds.map((sessionId): GroupMember => ({
       applicationId,

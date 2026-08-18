@@ -46,6 +46,7 @@ const STORED_GROUP_KEYS = [
   'emptySinceEpochMs',
   'purgeAfterEpochMs',
   'lifecycleState',
+  'formationEpoch',
 ] as const;
 
 const STORED_MEMBER_KEYS = [
@@ -100,6 +101,12 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
   nullablePositiveSafeInteger(value.expiresAtEpochMs, 'Stored group expiresAtEpochMs');
   nullablePositiveSafeInteger(value.emptySinceEpochMs, 'Stored group emptySinceEpochMs');
   nullablePositiveSafeInteger(value.purgeAfterEpochMs, 'Stored group purgeAfterEpochMs');
+  requireOneOf(
+    value.lifecycleState,
+    ['forming', 'establishing', 'active', 'reconfiguring'],
+    'Stored group lifecycleState',
+  );
+  requireNonNegativeSafeInteger(value.formationEpoch, 'Stored group formationEpoch');
 }
 
 export function validateStoredMember(
