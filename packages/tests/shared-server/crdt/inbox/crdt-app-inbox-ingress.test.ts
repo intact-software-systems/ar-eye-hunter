@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
   RALLAR_CRDT_OPERATION_VERSION,
@@ -10,7 +11,6 @@ import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
@@ -118,7 +118,6 @@ function appCrdt(inbox: InboxQueueReader): AppCrdtInboxService {
   return new AppCrdtInboxService(
     {
       inboxQueueReader: inbox,
-      outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
       resourceInboxRepository: new ResourceInboxRepository(database),
       resourceInboxResultsRepository: new ResourceInboxResultsRepository(database),
       database,

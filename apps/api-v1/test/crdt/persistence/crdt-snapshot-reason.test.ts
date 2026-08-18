@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+
 import {
   RALLAR_CRDT_OPERATION_VERSION,
   RALLAR_CRDT_PROTOCOL_VERSION,
@@ -13,7 +14,7 @@ import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+
 import { toResilienceDto } from '../../../src/middleware-resilience.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { createApiCrdtInboxService } from '../../../src/services/create-api-crdt-inbox-service.ts';
@@ -139,7 +140,6 @@ function createService(sql: PGliteSql, now: number) {
   const resourceInbox = new ResourceInboxRepository(sql);
   return createApiCrdtInboxService({
     inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(resourceInbox)),
-    outboxQueueReader: new OutboxQueueReader(new PSqlQueueBox(resourceInbox)),
     resourceInboxRepository: resourceInbox,
     resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
     database: sql,

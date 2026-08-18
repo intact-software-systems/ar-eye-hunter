@@ -287,7 +287,7 @@ Move tests by behavior while retaining every existing semantic assertion:
 | `apps/api-v1/test/db/pglite-crdt-public-reads-correction-4.test.ts`                     | `apps/api-v1/test/crdt/persistence/crdt-public-read-integrity.test.ts`                                                                                                                                                             |
 | `apps/api-v1/test/db/pglite-crdt-snapshot-reason-correction-6.test.ts`                  | `apps/api-v1/test/crdt/persistence/crdt-snapshot-reason.test.ts`                                                                                                                                                                   |
 | `apps/api-v1/test/db/pglite-crdt-task9-correction.test.ts`                              | `apps/api-v1/test/crdt/persistence/crdt-persisted-contracts.test.ts`                                                                                                                                                               |
-| `apps/api-v1/test/db/pglite-crdt-ws-authority-correction-4.test.ts`                     | `apps/api-v1/test/crdt/inbox/crdt-websocket-authority.test.ts`                                                                                                                                                                     |
+| `apps/api-v1/test/db/pglite-crdt-ws-authority-correction-4.test.ts`                     | `apps/api-v1/test/crdt/realtime/crdt-websocket-authority.test.ts`                                                                                                                                                                  |
 | `apps/api-v1/test/routes/crdt-*.test.ts`                                                | `apps/api-v1/test/crdt/routes/*.test.ts`                                                                                                                                                                                           |
 
 Do not combine unrelated scenarios merely to reduce file count. Shared fixtures move to
@@ -891,18 +891,23 @@ and has no `setAuditSink`; this task owns only the later audit-delivery registra
 - Modify: `apps/api-v1/src/routes/crdt-admin-routes.ts`
 - Modify: `apps/api-v1/src/services/create-api-admin-mutation-gateway.ts`
 - Modify: `apps/api-v1/src/services/create-api-crdt-inbox-service.ts`
+- Modify: `apps/api-v1/src/services/create-api-mutation-inbox-factories.ts`
 - Modify: `apps/api-v1/src/composition/create-api-v1-admin-services.ts`
 - Modify: `apps/api-v1/src/composition/create-api-v1-route-installers.ts`
 - Modify: `apps/api-v1/src/composition/create-default-rallar-server.ts`
 - Modify: `apps/api-v1/src/composition/create-api-v1-system-installers.ts`
 - Modify imports: `apps/api-v1/test/composition/create-api-v1-admin-services.test.ts`
 - Modify imports: `apps/api-v1/test/composition/create-api-v1-route-installers.test.ts`
-- Modify imports: `apps/api-v1/test/db/pglite-crdt-ws-authority-correction-4.test.ts`
+- Move/Test: `apps/api-v1/test/crdt/inbox/crdt-production-inbox.test.ts`
+- Move/Test: `apps/api-v1/test/crdt/realtime/crdt-websocket-authority.test.ts`
 - Modify imports: `apps/api-v1/test/routes/crdt-admin-repository-health.test.ts`
 - Move/Test: inbox tests from the migration map
 - Move/Test: split `packages/tests/shared-server/admin-prune-correction-4.test.ts` according to the
   migration map
 - Create/Test: `packages/tests/shared-server/crdt/inbox/crdt-audit-delivery.test.ts`
+- Create/Test: `apps/api-v1/test/crdt/inbox/crdt-audit-registration-construction.test.ts`
+- Modify/Test: active mutation-route owner and phase-order analyzer files under
+  `packages/tests/shared-server`
 
 **Interfaces:**
 
@@ -911,7 +916,7 @@ and has no `setAuditSink`; this task owns only the later audit-delivery registra
 - Produces: final `AppCrdtInboxService`, shared WebSocket mutation ingress, audit registration, and
   `CrdtAdminMutations` used by both CRDT routes and general admin operations.
 
-- [ ] **Step 1: Write RED construction and audit tests**
+- [x] **Step 1: Write RED construction and audit tests**
 
 Move the remaining inbox tests exactly:
 
@@ -932,13 +937,14 @@ to capture compact/lifecycle/erase commands and assert their capture/expiry rela
 Do not retain `Function.prototype.toString`, private-member casts, regex assertions, or the task
 history suite name.
 
-Add a recording outbox reader that overrides `onOutboxMessageDo`. Assert:
+Add a recording outbox reader that overrides `onOutboxMessageDo`. Assert that no-delivery
+construction succeeds without any reader dependency, while a complete delivery pair registers
+exactly once:
 
 ```ts
 const withoutSink = createInbox({ auditDelivery: undefined });
 
 expect(withoutSink).toBeInstanceOf(AppCrdtInboxService);
-expect(outboxQueueReader.registeredTypes).toEqual([]);
 
 createInbox({ auditDelivery: { outboxQueueReader, auditSink } });
 expect(outboxQueueReader.registeredTypes).toEqual([CRDT_AUDIT_APP_OUTBOX_TYPE]);
@@ -948,7 +954,9 @@ Invoke the recorded handler with malformed content type, malformed JSON/event, a
 once, and a sink that succeeds. Assert exact failure propagation and one `record(event)` invocation
 per handler invocation.
 
-Also add a compile-time assertion that `AppCrdtInboxService` has no `setAuditSink` member.
+Also add compile-time assertions that `AppCrdtInboxService` has no `setAuditSink` member and that
+neither `AppCrdtInboxService.Dependencies` nor `CreateApiCrdtInboxServiceInput` exposes a top-level
+`outboxQueueReader`. The optional `auditDelivery` pair is the sole audit-reader registration path.
 
 Run:
 
@@ -958,7 +966,7 @@ npx vitest run packages/tests/shared-server/crdt/inbox
 
 Expected: FAIL because the target inbox modules and immutable constructor do not exist.
 
-- [ ] **Step 2: Move the inbox and ingress owners**
+- [x] **Step 2: Move the inbox and ingress owners**
 
 ```bash
 mkdir -p packages/shared-server/rallar-system/crdt/inbox apps/api-v1/src/crdt
@@ -999,7 +1007,7 @@ commit `224c850bf1e3632532b49c17995a6183c8c4c7a3` to the actual pull-request mer
 so the existing blob values remain exact. This is a provenance correction, not new finding
 capacity.
 
-- [ ] **Step 3: Move the established named constructor owner and separate mixed responsibilities**
+- [x] **Step 3: Move the established named constructor owner and separate mixed responsibilities**
 
 Task 1 already establishes the named `AppCrdtInboxService` constructor input. Move that established
 owner without repeating the constructor replacement. The shared inbox retains only durable enqueue,
@@ -1030,7 +1038,7 @@ return result;
 
 Do not change when the queue wake occurs.
 
-- [ ] **Step 4: Implement immutable audit delivery**
+- [x] **Step 4: Implement immutable audit delivery**
 
 `register-crdt-audit-delivery.ts` accepts both dependencies as required:
 
@@ -1058,7 +1066,7 @@ reader-without-sink or sink-without-reader state. Default production omits the c
 `setAuditSink` and the mutable audit state were already deleted in Task 2; keep them absent while
 extracting registration.
 
-- [ ] **Step 5: Create the API admin mutation owner and update both consumers**
+- [x] **Step 5: Create the API admin mutation owner and update both consumers**
 
 `createCrdtAdminMutations` receives the shared inbox, clock, ID creator, and service ID. Move the
 current command creation, exact request normalization, public result projection, and rejection
@@ -1077,15 +1085,23 @@ public result. It exposes `writeCrdtCommandUntilCompletion`, preserving the curr
 `Either<AppInboxFailure, CrdtMutationResult>` contract; the API owner alone converts a left or
 rejected result into the existing HTTP-facing error/result.
 
-- [ ] **Step 6: Update the API inbox factory without restoring the bug**
+- [x] **Step 6: Update the API inbox factory without restoring the bug**
 
-Construct the service with named dependencies. Pass `auditDelivery` only from an explicit API
-runtime input containing both the sink and already-constructed outbox reader. Current default
-production omits it, so no handler registers. Keep the Task 2 construction-only audit boundary:
-do not restore `setAuditSink`, its former default-server reset call, or route-level
-`crdtAuditSink` plumbing.
+Construct the service with named dependencies. Remove the redundant top-level
+`outboxQueueReader` from `AppCrdtInboxService.Dependencies` and
+`CreateApiCrdtInboxServiceInput`; the API CRDT factory no longer forwards the middleware reader into
+the service. Pass `auditDelivery` only from an explicit API runtime input containing both the sink
+and already-constructed outbox reader. Current default production omits it, so no handler registers
+and no second reader state exists. Keep the Task 2 construction-only audit boundary: do not restore
+`setAuditSink`, its former default-server reset call, or route-level `crdtAuditSink` plumbing.
 
-- [ ] **Step 7: Run GREEN and the corrected PGlite audit path**
+Update the active route-owner and phase-order validation in the same slice. It follows CRDT admin
+HTTP registrations through `create-crdt-admin-mutations.ts` and `writeCrdtAdminMutation`, then
+preserves `AppCrdtInboxService.processCommand` as the terminal AppInbox owner. The WebSocket
+boundary root and registration predicates use the canonical shared inbox paths. No shim or deleted
+source path participates in the analyzer.
+
+- [x] **Step 7: Run GREEN and the corrected PGlite audit path**
 
 ```bash
 npx vitest run packages/tests/shared-server/crdt/inbox \
@@ -1093,10 +1109,11 @@ npx vitest run packages/tests/shared-server/crdt/inbox \
   packages/tests/shared-server/admin-prune-retry-lifetime.test.ts
 cd apps/api-v1 && deno test -A \
   test/crdt/inbox/crdt-admin-command-expiry.test.ts \
+  test/crdt/inbox/crdt-audit-registration-construction.test.ts \
+  test/crdt/inbox/crdt-production-inbox.test.ts \
+  test/crdt/realtime/crdt-websocket-authority.test.ts \
   test/crdt/routes/crdt-admin-response-compatibility.test.ts \
   test/routes/crdt-admin-repository-health.test.ts \
-  test/db/pglite-crdt-app-inbox-production-correction-2.test.ts \
-  test/db/pglite-crdt-ws-authority-correction-4.test.ts \
   test/composition/create-api-v1-admin-services.test.ts \
   test/composition/create-api-v1-route-installers.test.ts
 deno task check
@@ -1108,17 +1125,31 @@ git diff --check
 Expected: no-sink construction registers no handler; configured delivery retries through Outbox;
 admin responses, conflict revalidation, and WebSocket authority remain exact.
 
-- [ ] **Step 8: Commit inbox and audit ownership**
+Also run the complete active route-owner/phase-order command from `rallar-testing`; its accepted
+result is all 23 files and every test green. This replaces the stale pre-move assumption that
+analyzer support could wait for Task 5.
+
+- [x] **Step 8: Commit inbox and audit ownership**
 
 ```bash
 git add packages/shared-server/rallar-system/crdt/inbox \
   plans/repo-style-lineages/crdt-ownership.json \
   packages/tests/shared-server/crdt/inbox \
   packages/tests/shared-server/admin-prune-retry-lifetime.test.ts \
+  packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts \
+  packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts \
+  packages/tests/shared-server/mutation-boundary-analysis.ts \
+  packages/tests/shared-server/mutation-boundary-traversal.ts \
+  packages/tests/shared-server/mutation-routing-inventory-decoding.ts \
+  packages/tests/shared-server/mutation-routing-markers.ts \
+  packages/tests/shared-server/mutation-routing-owner-inventory.ts \
+  packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts \
+  packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts \
   apps/api-v1/src/crdt/create-crdt-admin-mutations.ts \
   apps/api-v1/src/routes/crdt-admin-routes.ts \
   apps/api-v1/src/services/create-api-admin-mutation-gateway.ts \
   apps/api-v1/src/services/create-api-crdt-inbox-service.ts \
+  apps/api-v1/src/services/create-api-mutation-inbox-factories.ts \
   apps/api-v1/src/composition/create-api-v1-admin-services.ts \
   apps/api-v1/src/composition/create-api-v1-route-installers.ts \
   apps/api-v1/src/composition/create-default-rallar-server.ts \
@@ -1127,8 +1158,9 @@ git add packages/shared-server/rallar-system/crdt/inbox \
   apps/api-v1/test/composition/create-api-v1-route-installers.test.ts \
   apps/api-v1/test/crdt/routes/crdt-admin-response-compatibility.test.ts \
   apps/api-v1/test/routes/crdt-admin-repository-health.test.ts \
-  apps/api-v1/test/db/pglite-crdt-app-inbox-production-correction-2.test.ts \
-  apps/api-v1/test/db/pglite-crdt-ws-authority-correction-4.test.ts \
+  apps/api-v1/test/crdt/inbox/crdt-audit-registration-construction.test.ts \
+  apps/api-v1/test/crdt/inbox/crdt-production-inbox.test.ts \
+  apps/api-v1/test/crdt/realtime/crdt-websocket-authority.test.ts \
   apps/api-v1/test/crdt/inbox/crdt-admin-command-expiry.test.ts
 git commit -m "fix(crdt): make audit delivery construction explicit"
 ```
@@ -1153,9 +1185,10 @@ git commit -m "fix(crdt): make audit delivery construction explicit"
 - Modify: `apps/api-v1/src/composition/create-api-v1-system-installers.ts`
 - Modify imports: `apps/api-v1/test/composition/create-api-v1-admin-services.test.ts`
 - Modify imports: `apps/api-v1/test/composition/create-api-v1-route-installers.test.ts`
-- Modify imports: `apps/api-v1/test/db/pglite-crdt-ws-authority-correction-4.test.ts`
+- Modify imports: `apps/api-v1/test/crdt/realtime/crdt-websocket-authority.test.ts`
 - Modify imports: `apps/api-v1/test/routes/crdt-admin-repository-health.test.ts`
-- Modify: CRDT paths in mutation-boundary analyzer support files
+- Modify: the remaining realtime-server path in mutation-boundary analyzer support files; Task 4
+  already migrated canonical inbox and API admin ownership
 - Move/Test: realtime and in-memory tests from the migration map
 - Remove: `packages/shared-server/crdt/` after consumer closure
 
@@ -1398,7 +1431,7 @@ git add packages/shared-server/rallar-system/crdt \
   apps/api-v1/src/composition/create-api-v1-system-installers.ts \
   apps/api-v1/test/composition/create-api-v1-admin-services.test.ts \
   apps/api-v1/test/composition/create-api-v1-route-installers.test.ts \
-  apps/api-v1/test/db/pglite-crdt-ws-authority-correction-4.test.ts \
+  apps/api-v1/test/crdt/realtime/crdt-websocket-authority.test.ts \
   apps/api-v1/test/routes/crdt-admin-repository-health.test.ts
 git commit -m "refactor(crdt): consolidate server ownership"
 ```
@@ -1548,11 +1581,11 @@ Expected: the ancestry check exits 0 and the new branch is clean. Do not move
 
 - [ ] **Step 2: Add RED direct factory tests at the final paths**
 
-Create `crdt-production-inbox.test.ts` and `crdt-document-authority.test.ts` under
-`apps/api-v1/test/crdt/inbox/` and import the final API CRDT modules. Add direct assertions that the
-factory supplies current-session authority, exact policy configuration, required queue wake, and
-no audit delivery pair by default. The existing PGlite assertions remain in place until Task 9
-moves them exactly once.
+Extend the Task 4-moved `crdt-production-inbox.test.ts` and create
+`crdt-document-authority.test.ts` under `apps/api-v1/test/crdt/inbox/`; import the final API CRDT
+modules. Add direct assertions that the factory supplies current-session authority, exact policy
+configuration, required queue wake, and no audit delivery pair by default. Do not create a second
+production-inbox suite or restore its correction-named source path.
 
 ```bash
 cd apps/api-v1 && deno test -A \
@@ -1626,10 +1659,10 @@ git add apps/api-v1/src/crdt \
   apps/api-v1/src/composition/create-api-v1-route-installers.ts \
   apps/api-v1/src/composition/create-api-v1-runtime.ts \
   apps/api-v1/test/composition/create-api-v1-mutation-runtime.test.ts \
-  apps/api-v1/test/db/pglite-crdt-app-inbox-production-correction-2.test.ts \
+  apps/api-v1/test/crdt/inbox/crdt-production-inbox.test.ts \
   apps/api-v1/test/crdt/persistence/crdt-mutation-retry.test.ts \
   apps/api-v1/test/crdt/persistence/crdt-snapshot-reason.test.ts \
-  apps/api-v1/test/db/pglite-crdt-ws-authority-correction-4.test.ts \
+  apps/api-v1/test/crdt/realtime/crdt-websocket-authority.test.ts \
   apps/api-v1/test/crdt \
   packages/tests/shared-server/crdt/realtime/crdt-principal-fanout-cold-cache.test.ts
 git commit -m "refactor(api-v1): colocate CRDT construction"
@@ -1761,8 +1794,9 @@ git commit -m "refactor(api-v1): align CRDT administration"
 ### Task 9: Migrate Persistence Tests, Active Consumers, And Navigation
 
 **Current path ruling:** the correction-3 fixture and public-read, snapshot-reason, persisted-
-contracts, and correction-3 CRDT cases were moved early by Task 2. Task 9 owns only the remaining
-PGlite CRDT inventory and must not recreate historical correction-named paths.
+contracts, and correction-3 CRDT cases were moved early by Task 2. Task 4 review also moved the
+production-inbox and WebSocket-authority suites. Task 9 owns only the remaining PGlite CRDT
+inventory and must not recreate historical correction-named paths.
 
 **Files:**
 
@@ -1785,13 +1819,14 @@ PGlite CRDT inventory and must not recreate historical correction-named paths.
 
 - [ ] **Step 1: Rename every materially touched PGlite CRDT suite by behavior**
 
-The eight current PGlite CRDT files contain 37 `Deno.test` cases: 35 CRDT cases and two unrelated
-admin-prune cases. Use the current test names as the mapping authority. The exact destinations are:
+The two remaining PGlite CRDT files contain six `Deno.test` cases. Use the current test names as
+the mapping authority. Their destinations are the configuration and AppInbox-atomicity files;
+the other listed behavior paths already exist and are inputs to final inventory validation:
 
 ```text
 apps/api-v1/test/crdt/configuration/crdt-policy-configuration.test.ts
 apps/api-v1/test/crdt/inbox/crdt-production-inbox.test.ts
-apps/api-v1/test/crdt/inbox/crdt-websocket-authority.test.ts
+apps/api-v1/test/crdt/realtime/crdt-websocket-authority.test.ts
 apps/api-v1/test/crdt/persistence/crdt-app-inbox-atomicity.test.ts
 apps/api-v1/test/crdt/persistence/crdt-app-inbox-conflict-retry.test.ts
 apps/api-v1/test/crdt/persistence/crdt-legacy-snapshot-migration.test.ts
@@ -1801,12 +1836,10 @@ apps/api-v1/test/crdt/persistence/crdt-snapshot-reason.test.ts
 apps/api-v1/test/db/pglite-admin-prune-cutoff-and-expiry.test.ts
 ```
 
-Merge the three production-factory/replay/conflict tests into the Task 7 production inbox suite.
-Merge the five policy/default/status tests into the configuration suite. Split the mixed correction
-file so its snapshot migration and CAS conflict cases go to CRDT persistence while its capture
-cutoff and physical/JSON expiry cases go to the admin-prune file. Move every existing assertion
-exactly once. Delete the old task/correction files only after an executable name inventory proves
-all 37 predecessor cases have one destination and no destination duplicates one.
+Move the remaining atomicity and policy cases exactly once. Delete those final correction-named
+files only after an executable name inventory proves every remaining predecessor case has one
+destination and no destination duplicates one. The production and WebSocket suites are already at
+their final paths and are not moved or merged again.
 
 - [ ] **Step 2: Update all canonical consumers**
 
@@ -1876,10 +1909,8 @@ git add apps/api-v1/test/crdt \
   docs/rallar-crdt-guide.md \
   docs/rallar-convergent-state-and-rtc-topology.md
 git add -u \
-  apps/api-v1/test/db/pglite-crdt-app-inbox-production-correction-2.test.ts \
   apps/api-v1/test/db/pglite-crdt-app-inbox-transaction.test.ts \
-  apps/api-v1/test/db/pglite-crdt-policy-correction-4.test.ts \
-  apps/api-v1/test/db/pglite-crdt-ws-authority-correction-4.test.ts
+  apps/api-v1/test/db/pglite-crdt-policy-correction-4.test.ts
 git commit -m "test(crdt): align consumers and navigation"
 ```
 

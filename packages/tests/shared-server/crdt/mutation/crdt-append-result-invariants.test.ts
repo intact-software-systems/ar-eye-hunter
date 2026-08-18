@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import {
   RALLAR_CRDT_OPERATION_VERSION,
   RALLAR_CRDT_PROTOCOL_VERSION,
@@ -16,7 +17,6 @@ import {
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
@@ -241,7 +241,6 @@ function appCrdt(): AppCrdtInboxService {
   return new AppCrdtInboxService(
     {
       inboxQueueReader: new InboxQueueReader(new InMemoryQueueBox()),
-      outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
       resourceInboxRepository: new ResourceInboxRepository(database),
       resourceInboxResultsRepository: new ResourceInboxResultsRepository(database),
       database,

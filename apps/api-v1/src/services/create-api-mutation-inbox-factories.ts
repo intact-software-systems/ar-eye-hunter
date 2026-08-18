@@ -1,19 +1,26 @@
+import {
+  decodeRallarCrdtDocumentTypePolicies,
+  type RallarCrdtDocumentTypePolicy,
+} from '@shared/crdt/mod.ts';
 import type {
   RallarAdminInboxServiceFactory,
   RallarCrdtInboxServiceFactory,
 } from '@shared-server/rallar-system/middleware/rallar-middleware-options.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type * as Crdt from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/AppInboxService.ts';
+// prettier-ignore
+import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
+ResourceInboxRepository.ts';
+// prettier-ignore
+import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
+ResourceInboxResultsRepository.ts';
+// prettier-ignore
+import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/\
+AppInboxService.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
+
 import { createApiAdminInboxService } from './create-api-admin-inbox-service.ts';
 import { createApiCrdtInboxService } from './create-api-crdt-inbox-service.ts';
-import {
-  decodeRallarCrdtDocumentTypePolicies,
-  type RallarCrdtDocumentTypePolicy,
-} from '@shared/crdt/mod.ts';
 
 export interface CurrentMutationSession {
   readonly clientId: string;
@@ -66,7 +73,7 @@ export function createApiMutationInboxFactories(
   input: CreateApiMutationInboxFactoriesInput,
 ): ApiMutationInboxFactories {
   return {
-    createAppCrdtInboxService: ({ inboxQueueReader, outboxQueueReader, wakeQueueEngine }) =>
+    createAppCrdtInboxService: ({ inboxQueueReader, wakeQueueEngine }) =>
       createApiCrdtInboxService({
         inboxQueueReader,
         resourceInboxRepository: input.resourceInboxRepository,
@@ -77,7 +84,6 @@ export function createApiMutationInboxFactories(
         options: input.options,
         currentAuthority: input.currentAuthority,
         policies: input.crdtPolicies,
-        outboxQueueReader,
         wakeQueueEngine,
       }),
     createAppAdminInboxService: ({

@@ -1,6 +1,7 @@
 import { parse } from '@babel/parser';
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
+
 import { findCapabilityMutationCalls } from './mutation-boundary-capabilities.ts';
 import { findMutationBoundaryViolationsFromRootFiles } from './mutation-boundary-traversal.ts';
 
@@ -122,7 +123,9 @@ export function analyzeMutationBoundarySource(
       readDirectAliases(node, directAliases);
       return;
     }
-    if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') return;
+    if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') {
+      return;
+    }
     const callName = readCallName(node.callee, directAliases);
     if (callName && FORBIDDEN_DIRECT_MUTATORS.has(callName) && !isKnownAppInboxCall(node.callee)) {
       directMutatorCalls.add(callName);
@@ -143,7 +146,8 @@ function mutationBoundaryFiles(): readonly string[] {
   return [
     ...routeFiles,
     'apps/api-v1/src/services/create-api-admin-mutation-gateway.ts',
-    'apps/api-v1/src/services/create-crdt-ws-mutation-ingress.ts',
+    'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts',
+    'packages/shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts',
     'apps/api-v1/src/services/request-auth-service.ts',
     'packages/shared-server/crdt/RallarCrdtServer.ts',
     'packages/shared-server/rallar-system/ws-system-topics.ts',
@@ -155,21 +159,30 @@ function mutationBoundaryFiles(): readonly string[] {
   ];
 }
 
-type AstNode = { readonly type: string; readonly [key: string]: unknown };
+interface AstNode {
+  readonly type: string;
+  readonly [key: string]: unknown;
+}
 
 function readImportDeclaration(
   node: AstNode,
   mutatingImports: Set<string>,
   directAliases: Map<string, string>,
 ): void {
-  if (node.importKind === 'type') return;
+  if (node.importKind === 'type') {
+    return;
+  }
   const source = readStringLiteral(node.source) ?? '';
   const forbiddenSource = isForbiddenImportSource(source);
   for (const rawSpecifier of asNodeArray(node.specifiers)) {
-    if (rawSpecifier.importKind === 'type') continue;
+    if (rawSpecifier.importKind === 'type') {
+      continue;
+    }
     const imported = readNodeName(rawSpecifier.imported);
     const local = readNodeName(rawSpecifier.local);
-    if (FORBIDDEN_MUTATING_IMPORTS.has(imported)) mutatingImports.add(imported);
+    if (FORBIDDEN_MUTATING_IMPORTS.has(imported)) {
+      mutatingImports.add(imported);
+    }
     if (
       forbiddenSource &&
       (rawSpecifier.type === 'ImportDefaultSpecifier' ||
@@ -186,7 +199,9 @@ function readImportDeclaration(
 function readDirectAliases(node: AstNode, aliases: Map<string, string>): void {
   const id = asNode(node.id);
   const init = asNode(node.init);
-  if (!id || !init) return;
+  if (!id || !init) {
+    return;
+  }
   if (id.type === 'Identifier') {
     const memberName = readMemberName(init);
     if (memberName && FORBIDDEN_DIRECT_MUTATORS.has(memberName)) {
@@ -194,20 +209,28 @@ function readDirectAliases(node: AstNode, aliases: Map<string, string>): void {
     }
     return;
   }
-  if (id.type !== 'ObjectPattern') return;
+  if (id.type !== 'ObjectPattern') {
+    return;
+  }
   for (const property of asNodeArray(id.properties)) {
     const importedName = readNodeName(property.key);
-    if (!FORBIDDEN_DIRECT_MUTATORS.has(importedName)) continue;
+    if (!FORBIDDEN_DIRECT_MUTATORS.has(importedName)) {
+      continue;
+    }
     const local = asNode(property.value);
     const localName =
       local?.type === 'AssignmentPattern' ? readNodeName(asNode(local.left)) : readNodeName(local);
-    if (localName) aliases.set(localName, importedName);
+    if (localName) {
+      aliases.set(localName, importedName);
+    }
   }
 }
 
 function readCallName(value: unknown, aliases: Map<string, string>): string {
   const node = asNode(value);
-  if (!node) return '';
+  if (!node) {
+    return '';
+  }
   if (node.type === 'Identifier') {
     const name = readNodeName(node);
     return aliases.get(name) ?? name;
@@ -216,14 +239,20 @@ function readCallName(value: unknown, aliases: Map<string, string>): string {
 }
 
 function readMemberName(node: AstNode): string {
-  if (node.type !== 'MemberExpression' && node.type !== 'OptionalMemberExpression') return '';
+  if (node.type !== 'MemberExpression' && node.type !== 'OptionalMemberExpression') {
+    return '';
+  }
   return readNodeName(node.property);
 }
 
 function isKnownAppInboxCall(value: unknown): boolean {
   const callee = asNode(value);
-  if (!callee || (callee.type !== 'MemberExpression' && callee.type !== 'OptionalMemberExpression'))
+  if (
+    !callee ||
+    (callee.type !== 'MemberExpression' && callee.type !== 'OptionalMemberExpression')
+  ) {
     return false;
+  }
   const receiver = asNode(callee.object);
   const receiverPath = readMemberPath(receiver);
   if (
@@ -244,9 +273,15 @@ function isKnownAppInboxCall(value: unknown): boolean {
 }
 
 function readMemberPath(node: AstNode | undefined): string {
-  if (!node) return '';
-  if (node.type === 'Identifier') return readNodeName(node);
-  if (node.type !== 'MemberExpression' && node.type !== 'OptionalMemberExpression') return '';
+  if (!node) {
+    return '';
+  }
+  if (node.type === 'Identifier') {
+    return readNodeName(node);
+  }
+  if (node.type !== 'MemberExpression' && node.type !== 'OptionalMemberExpression') {
+    return '';
+  }
   const object = readMemberPath(asNode(node.object));
   const property = readNodeName(node.property);
   return object && property ? `${object}.${property}` : '';
@@ -258,21 +293,31 @@ function isForbiddenImportSource(source: string): boolean {
 }
 
 function walk(value: unknown, visit: (node: AstNode) => void): void {
-  if (!value || typeof value !== 'object') return;
+  if (!value || typeof value !== 'object') {
+    return;
+  }
   if (Array.isArray(value)) {
-    for (const item of value) walk(item, visit);
+    for (const item of value) {
+      walk(item, visit);
+    }
     return;
   }
   const node = value as AstNode;
-  if (typeof node.type === 'string') visit(node);
+  if (typeof node.type === 'string') {
+    visit(node);
+  }
   for (const [key, child] of Object.entries(node)) {
-    if (!['loc', 'start', 'end', 'comments', 'tokens'].includes(key)) walk(child, visit);
+    if (!['loc', 'start', 'end', 'comments', 'tokens'].includes(key)) {
+      walk(child, visit);
+    }
   }
 }
 
 function readNodeName(value: unknown): string {
   const node = asNode(value);
-  if (!node) return '';
+  if (!node) {
+    return '';
+  }
   return typeof node.name === 'string'
     ? node.name
     : typeof node.value === 'string'

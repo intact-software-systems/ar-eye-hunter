@@ -18,7 +18,6 @@ import type { CrdtMutationService } from '@shared-server/rallar-system/crdt/muta
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-
 import { CRDT_AUDIT_APP_OUTBOX_TYPE } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-outbox.ts';
 
 const EVENT: RallarCrdtAuditEvent = {
@@ -32,12 +31,9 @@ const EVENT: RallarCrdtAuditEvent = {
 
 describe('CRDT audit delivery', () => {
   it('registers no audit callback when construction omits the complete delivery pair', () => {
-    const outboxQueueReader = new RecordingOutboxQueueReader();
-
-    const inbox = createInbox({ outboxQueueReader, auditDelivery: undefined });
+    const inbox = createInbox({ auditDelivery: undefined });
 
     expect(inbox).toBeInstanceOf(AppCrdtInboxService);
-    expect(outboxQueueReader.registeredTypes).toEqual([]);
   });
 
   it('registers the audit callback only from a complete immutable delivery pair', () => {
@@ -45,7 +41,6 @@ describe('CRDT audit delivery', () => {
     const auditSink: RallarCrdtAuditSink = { record: () => undefined };
 
     createInbox({
-      outboxQueueReader,
       auditDelivery: { outboxQueueReader, auditSink },
     });
 
@@ -96,7 +91,6 @@ describe('CRDT audit delivery', () => {
 });
 
 interface CreateInboxInput {
-  readonly outboxQueueReader: RecordingOutboxQueueReader;
   readonly auditDelivery: AppCrdtInboxService.AuditDelivery | undefined;
 }
 
@@ -105,7 +99,6 @@ function createInbox(input: CreateInboxInput): AppCrdtInboxService {
   return new AppCrdtInboxService(
     {
       inboxQueueReader: new InboxQueueReader(new InMemoryQueueBox()),
-      outboxQueueReader: input.outboxQueueReader,
       resourceInboxRepository: new ResourceInboxRepository(database),
       resourceInboxResultsRepository: new ResourceInboxResultsRepository(database),
       database,

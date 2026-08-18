@@ -20,7 +20,7 @@ const EXACT_RESOLVED_HANDOFFS = new Set([
   'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts',
   'packages/shared-server/rallar-system/auth/inbox/auth-inbox-handler.ts',
   'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
-  'packages/shared-server/rallar-system/services/AppCrdtInboxService.ts',
+  'packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts',
   'packages/shared-server/rallar-system/services/AppGroupInboxService.ts',
   'packages/shared-server/rallar-system/services/AppInboxService.ts',
   'packages/shared-server/rallar-system/services/app-inbox-transaction-writer.ts',
@@ -33,6 +33,11 @@ interface TraversalInput {
   readonly analyze: (source: string, filePath: string) => MutationBoundaryViolation;
 }
 
+interface RuntimeImportSource {
+  readonly source: string;
+  readonly kind: 'import' | 'export';
+}
+
 export function findMutationBoundaryViolationsFromRootFiles(
   input: TraversalInput,
 ): readonly MutationBoundaryViolation[] {
@@ -43,9 +48,13 @@ export function findMutationBoundaryViolationsFromRootFiles(
   while (pending.length > 0) {
     const next = pending.shift()!;
     const filePath = next.filePath;
-    if (visited.get(filePath) === true || (visited.has(filePath) && !next.inspect)) continue;
+    if (visited.get(filePath) === true || (visited.has(filePath) && !next.inspect)) {
+      continue;
+    }
     visited.set(filePath, next.inspect);
-    if (EXACT_RESOLVED_HANDOFFS.has(filePath)) continue;
+    if (EXACT_RESOLVED_HANDOFFS.has(filePath)) {
+      continue;
+    }
     const source = readFileSync(filePath, 'utf8');
     if (next.inspect) {
       const violation = input.analyze(source, filePath);
@@ -76,7 +85,7 @@ export function findMutationBoundaryViolationsFromRootFiles(
 function readRuntimeImportSources(
   source: string,
   filePath: string,
-): readonly Readonly<{ source: string; kind: 'import' | 'export' }>[] {
+): readonly RuntimeImportSource[] {
   const program = parse(source, {
     sourceType: 'module',
     sourceFilename: filePath,
@@ -87,17 +96,25 @@ function readRuntimeImportSources(
 
   walk(program, (node) => {
     if (node.type === 'ImportDeclaration') {
-      if (node.importKind === 'type') return;
+      if (node.importKind === 'type') {
+        return;
+      }
       const specifiers = asNodeArray(node.specifiers);
-      if (specifiers.length > 0 && specifiers.every((item) => item.importKind === 'type')) return;
+      if (specifiers.length > 0 && specifiers.every((item) => item.importKind === 'type')) {
+        return;
+      }
       addStringLiteral(imports, node.source, 'import');
       return;
     }
     if (node.type === 'ExportNamedDeclaration' || node.type === 'ExportAllDeclaration') {
-      if (node.exportKind !== 'type') addStringLiteral(imports, node.source, 'export');
+      if (node.exportKind !== 'type') {
+        addStringLiteral(imports, node.source, 'export');
+      }
       return;
     }
-    if (node.type === 'ImportExpression') addStringLiteral(imports, node.source, 'import');
+    if (node.type === 'ImportExpression') {
+      addStringLiteral(imports, node.source, 'import');
+    }
   });
 
   return [...imports].map(([source, kind]) => ({ source, kind }));
@@ -107,10 +124,14 @@ function resolveLocalImport(fromFile: string, specifier: string): string | undef
   const mapped = specifier.startsWith('.')
     ? path.resolve(path.dirname(fromFile), specifier)
     : resolveAlias(specifier);
-  if (!mapped) return undefined;
+  if (!mapped) {
+    return undefined;
+  }
   const relative = normalizePath(path.relative(process.cwd(), mapped));
   for (const candidate of sourceCandidates(relative)) {
-    if (existsSync(candidate)) return candidate;
+    if (existsSync(candidate)) {
+      return candidate;
+    }
   }
   return undefined;
 }
@@ -140,18 +161,29 @@ function isExplicitFixtureSource(filePath: string, roots: readonly string[]): bo
   return roots.some((root) => filePath.startsWith(`${path.dirname(normalizePath(root))}/`));
 }
 
-type AstNode = { readonly type: string; readonly [key: string]: unknown };
+interface AstNode {
+  readonly type: string;
+  readonly [key: string]: unknown;
+}
 
 function walk(value: unknown, visit: (node: AstNode) => void): void {
-  if (!value || typeof value !== 'object') return;
+  if (!value || typeof value !== 'object') {
+    return;
+  }
   if (Array.isArray(value)) {
-    for (const item of value) walk(item, visit);
+    for (const item of value) {
+      walk(item, visit);
+    }
     return;
   }
   const node = value as AstNode;
-  if (typeof node.type === 'string') visit(node);
+  if (typeof node.type === 'string') {
+    visit(node);
+  }
   for (const [key, child] of Object.entries(node)) {
-    if (!['loc', 'start', 'end', 'comments', 'tokens'].includes(key)) walk(child, visit);
+    if (!['loc', 'start', 'end', 'comments', 'tokens'].includes(key)) {
+      walk(child, visit);
+    }
   }
 }
 
@@ -161,7 +193,9 @@ function addStringLiteral(
   kind: 'import' | 'export',
 ): void {
   const node = asNode(value);
-  if (node && typeof node.value === 'string') target.set(node.value, kind);
+  if (node && typeof node.value === 'string') {
+    target.set(node.value, kind);
+  }
 }
 
 function asNode(value: unknown): AstNode | undefined {

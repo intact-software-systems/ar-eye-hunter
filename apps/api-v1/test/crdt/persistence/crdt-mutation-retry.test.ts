@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+
 import {
   RALLAR_CRDT_PROTOCOL_VERSION,
   type RallarCrdtDocumentRef,
@@ -11,6 +12,7 @@ import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+
 import { toResilienceDto } from '../../../src/middleware-resilience.ts';
 import { createApiCrdtInboxService } from '../../../src/services/create-api-crdt-inbox-service.ts';
 import {
@@ -237,7 +239,6 @@ Deno.test('real SQL CAS conflict retries from revoked room membership and commit
     const resourceInbox = new ResourceInboxRepository(sql);
     const service = createApiCrdtInboxService({
       inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(resourceInbox)),
-      outboxQueueReader: new OutboxQueueReader(new PSqlQueueBox(resourceInbox)),
       resourceInboxRepository: resourceInbox,
       resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
       database,

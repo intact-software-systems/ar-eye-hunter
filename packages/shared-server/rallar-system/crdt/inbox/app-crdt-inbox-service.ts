@@ -55,7 +55,6 @@ export namespace AppCrdtInboxService {
 
   export interface Dependencies {
     readonly inboxQueueReader: InboxQueueReader;
-    readonly outboxQueueReader: OutboxQueueReader;
     readonly resourceInboxRepository: ResourceInboxRepository;
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
     readonly database: PSqlSql;

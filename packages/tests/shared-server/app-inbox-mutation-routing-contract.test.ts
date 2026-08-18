@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+
 import {
   ALLOWED_DIRECT_BOUNDARY_CALLS,
   findMutationBoundaryViolations,
@@ -17,6 +18,7 @@ const GROUP_MEMBERSHIP_ROUTES = 'apps/api-v1/src/group-state/register-group-memb
 const GROUP_PRESENCE_ROUTES = 'apps/api-v1/src/group-state/register-group-presence-routes.ts';
 const GROUP_COMMAND_TRANSLATOR = 'apps/api-v1/src/group-state/to-group-state-command.ts';
 const CRDT_ADMIN_ROUTES = 'apps/api-v1/src/routes/crdt-admin-routes.ts';
+const CRDT_ADMIN_MUTATIONS = 'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts';
 
 describe('AppInbox mutation routing contract', { timeout: 30_000 }, () => {
   it('inventories every command type with an explicit transport, entrypoint, and owner', () => {
@@ -164,12 +166,27 @@ function deadCorrectPresenceRegistration(app: Hono): void {
     );
   });
 
-  it('rejects a CRDT route connected to another admin mutation operation', () => {
+  it('rejects a CRDT route disconnected from the admin mutation intermediary', () => {
     const source = readFileSync(CRDT_ADMIN_ROUTES, 'utf8');
-    const mutated = source.replace("operation: 'compact',", "operation: 'lifecycle',");
+    const mutated = source.replace('writeCrdtAdminMutation({', 'writeCrdtAdminMutationWrong({');
     expect(mutated).not.toBe(source);
 
     expect(validateWithOverride(CRDT_ADMIN_ROUTES, mutated)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('CRDT_SNAPSHOT_COMPACT registered handler is not connected'),
+      ]),
+    );
+  });
+
+  it('rejects an admin mutation intermediary disconnected from terminal AppInbox processing', () => {
+    const source = readFileSync(CRDT_ADMIN_MUTATIONS, 'utf8');
+    const mutated = source.replace(
+      'writeCrdtCommandUntilCompletion(command)',
+      'writeCrdtCommandUntilCompletionWrong(command)',
+    );
+    expect(mutated).not.toBe(source);
+
+    expect(validateWithOverride(CRDT_ADMIN_MUTATIONS, mutated)).toEqual(
       expect.arrayContaining([
         expect.stringContaining('CRDT_SNAPSHOT_COMPACT registered handler is not connected'),
       ]),

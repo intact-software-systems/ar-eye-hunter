@@ -21,7 +21,7 @@ import {
 } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
-import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+
 import type { CurrentMutationAuthority } from './create-api-mutation-inbox-factories.ts';
 
 export interface CreateApiCrdtInboxServiceInput {
@@ -34,7 +34,6 @@ export interface CreateApiCrdtInboxServiceInput {
   readonly options: AppInboxServiceOptions;
   readonly currentAuthority: CurrentMutationAuthority;
   readonly policies: readonly RallarCrdtDocumentTypePolicy[];
-  readonly outboxQueueReader: OutboxQueueReader;
   readonly wakeQueueEngine: () => void;
   readonly auditDelivery?: AppCrdtInboxService.AuditDelivery;
 }
@@ -73,7 +72,6 @@ export function createApiCrdtInboxService(
   return new AppCrdtInboxService(
     {
       inboxQueueReader: input.inboxQueueReader,
-      outboxQueueReader: input.outboxQueueReader,
       resourceInboxRepository: input.resourceInboxRepository,
       resourceInboxResultsRepository: input.resourceInboxResultsRepository,
       database: input.database,

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+
 import type {
   AuditStamp,
   ClientInstance,
@@ -17,7 +18,6 @@ import {
 } from '@shared/crdt/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/crdt/RallarCrdtServer.ts';
@@ -29,15 +29,16 @@ import {
   createClientStateRepository,
 } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
-import { toResilienceDto } from '../../src/middleware-resilience.ts';
-import { createApiCrdtDocumentAuthorizer } from '../../src/services/create-api-crdt-document-authorizer.ts';
-import { createApiCrdtInboxService } from '../../src/services/create-api-crdt-inbox-service.ts';
 import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
+
+import { toResilienceDto } from '../../../src/middleware-resilience.ts';
+import { createApiCrdtDocumentAuthorizer } from '../../../src/services/create-api-crdt-document-authorizer.ts';
+import { createApiCrdtInboxService } from '../../../src/services/create-api-crdt-inbox-service.ts';
 import {
   toPersistedAuthSessionFixture,
   waitForPGliteQueueRow,
   withPGliteSql,
-} from './pglite-auth-test-harness.ts';
+} from '../../db/pglite-auth-test-harness.ts';
 
 const NOW = Date.now();
 const CLIENT_ID = 'client-42';
@@ -165,7 +166,6 @@ async function createFixture(
   const resourceInbox = new ResourceInboxRepository(sql);
   const service = createApiCrdtInboxService({
     inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(resourceInbox)),
-    outboxQueueReader: new OutboxQueueReader(new PSqlQueueBox(resourceInbox)),
     resourceInboxRepository: resourceInbox,
     resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
     database: sql,

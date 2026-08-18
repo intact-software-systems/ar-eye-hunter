@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
+
 import {
   RALLAR_CRDT_OPERATION_VERSION,
   RALLAR_CRDT_PROTOCOL_VERSION,
@@ -18,6 +19,7 @@ import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mut
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+
 import { toResilienceDto } from '../../../src/middleware-resilience.ts';
 import { createCrdtAdminMutations } from '../../../src/crdt/create-crdt-admin-mutations.ts';
 import * as routes from '../../../src/routes/crdt-admin-routes.ts';
@@ -173,7 +175,6 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
     const appCrdt = new AppCrdtInboxService(
       {
         inboxQueueReader: inbox,
-        outboxQueueReader: outbox,
         resourceInboxRepository: resourceInbox,
         resourceInboxResultsRepository: results,
         database: sql,

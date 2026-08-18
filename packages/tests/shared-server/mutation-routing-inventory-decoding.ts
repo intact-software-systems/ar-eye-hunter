@@ -1,4 +1,5 @@
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+
 import type { MutationRouteInventoryEntry } from './mutation-routing-inventory.ts';
 import {
   MUTATION_ROUTE_OWNER_DISPATCH_PATHS,
@@ -18,6 +19,7 @@ const PATHS = {
   w: 'apps/api-v1/src/routes/ws-routes.ts',
   ad: 'apps/api-v1/src/routes/admin-operations-routes.ts',
   cr: 'apps/api-v1/src/routes/crdt-admin-routes.ts',
+  cm: 'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts',
   ag: 'apps/api-v1/src/services/create-api-admin-mutation-gateway.ts',
   rq: 'apps/api-v1/src/services/request-auth-service.ts',
   l: 'packages/shared-server/rallar-system/services/ws-lifecycle-service.ts',
