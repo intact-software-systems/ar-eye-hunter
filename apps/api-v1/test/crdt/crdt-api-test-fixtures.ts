@@ -10,7 +10,7 @@ import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/Postgr
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import type { CrdtMutationActor } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import { readPGliteDatabaseEpochMs } from './pglite-auth-test-harness.ts';
+import { readPGliteDatabaseEpochMs } from '../db/pglite-auth-test-harness.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',

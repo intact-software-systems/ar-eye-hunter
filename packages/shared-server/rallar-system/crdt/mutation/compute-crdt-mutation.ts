@@ -1,15 +1,11 @@
 import {
   byteLengthOfRallarCrdtJson,
-  createRallarCrdtCompactedSnapshot,
-  createRallarCrdtDebugBundle,
   hashRallarCrdtUpdateEnvelope,
   type RallarCrdtAppendRejected,
   type RallarCrdtAppendResult,
   type RallarCrdtDocumentMetadata,
   validateRallarCrdtUpdateEnvelope,
-  verifyRallarCrdtDebugBundle,
 } from '@shared/crdt/mod.ts';
-import { toCrdtCanonicalSnapshotEnvelope } from './to-crdt-canonical-snapshot.ts';
 import type {
   CrdtAppendCommand,
   CrdtCanonicalSnapshotEnvelope,
@@ -33,6 +29,12 @@ import {
   toFallbackReplayAppend,
   toRejectedAdminResultDetails,
 } from './create-crdt-mutation-result.ts';
+import {
+  computeCrdtErase,
+  computeCrdtLifecycleUpdate,
+  computeCrdtProjectionRebuild,
+  computeCrdtSnapshotCompact,
+} from './compute-crdt-administration.ts';
 
 export interface ComputeCrdtMutationInput extends CrdtMutationAttemptFacts {
   readonly serviceId: string;
@@ -190,123 +192,6 @@ function computeCrdtAppend(input: ComputeCrdtMutationInput): CrdtMutationCompute
   };
 }
 
-function computeCrdtProjectionRebuild(input: ComputeCrdtMutationInput): CrdtMutationComputed {
-  return computeCrdtDocumentMutation(input);
-}
-
-function computeCrdtSnapshotCompact(input: ComputeCrdtMutationInput): CrdtMutationComputed {
-  return computeCrdtDocumentMutation(input);
-}
-
-function computeCrdtLifecycleUpdate(input: ComputeCrdtMutationInput): CrdtMutationComputed {
-  return computeCrdtDocumentMutation(input);
-}
-
-function computeCrdtErase(input: ComputeCrdtMutationInput): CrdtMutationComputed {
-  return computeCrdtDocumentMutation(input);
-}
-
-function computeCrdtDocumentMutation(input: ComputeCrdtMutationInput): CrdtMutationComputed {
-  const { command, read, serviceId } = input;
-  if (command.operation === 'append') {
-    throw new TypeError('CRDT document mutation requires an administrative command');
-  }
-  if (!read.document) {
-    return rejected({ command, read, code: 'document-not-found', serviceId });
-  }
-  if (command.operation === 'rebuild-projection') {
-    const sourceIntegrity = verifyRallarCrdtDebugBundle(
-      createRallarCrdtDebugBundle({
-        exportedAtEpochMs: command.capturedAtEpochMs,
-        reason: `rebuild-source:${command.projectionId}`,
-        document: command.document,
-        metadata: read.document,
-        ...(read.snapshot ? { snapshot: read.snapshot } : {}),
-        records: read.records,
-      }),
-    );
-    if (!sourceIntegrity.valid) {
-      return rejected({ command, read, code: 'integrity-invalid', serviceId });
-    }
-  }
-  const next: RallarCrdtDocumentMetadata = {
-    ...read.document,
-    documentRevision: read.document.documentRevision + 1,
-    updatedAtEpochMs: command.capturedAtEpochMs,
-    projectionIds:
-      command.operation === 'rebuild-projection'
-        ? [...new Set([...read.document.projectionIds, command.projectionId])]
-        : command.operation === 'lifecycle'
-          ? applyLifecycleAction(command.projectionIdsAction, read.document.projectionIds, [])
-          : read.document.projectionIds,
-    lifecycle:
-      command.operation === 'lifecycle'
-        ? command.lifecycle
-        : command.operation === 'erase' && command.mode === 'destroy-document'
-          ? 'destroyed'
-          : read.document.lifecycle,
-    archivedAtEpochMs:
-      command.operation === 'lifecycle' && command.lifecycle === 'archived'
-        ? command.capturedAtEpochMs
-        : read.document.archivedAtEpochMs,
-    destroyedAtEpochMs:
-      command.operation === 'erase' && command.mode === 'destroy-document'
-        ? command.capturedAtEpochMs
-        : command.operation === 'lifecycle' && command.lifecycle === 'destroyed'
-          ? command.capturedAtEpochMs
-          : read.document.destroyedAtEpochMs,
-    retention:
-      command.operation === 'lifecycle'
-        ? applyLifecycleAction(command.retentionAction, read.document.retention, null)
-        : read.document.retention,
-    quota:
-      command.operation === 'lifecycle'
-        ? applyLifecycleAction(command.quotaAction, read.document.quota, null)
-        : read.document.quota,
-    snapshotCount:
-      command.operation === 'compact'
-        ? read.document.snapshotCount + 1
-        : read.document.snapshotCount,
-  };
-  const snapshot: CrdtCanonicalSnapshotEnvelope | null =
-    command.operation === 'compact'
-      ? (command.snapshot ??
-        toCrdtCanonicalSnapshotEnvelope(
-          createRallarCrdtCompactedSnapshot({
-            document: command.document,
-            records: read.records,
-            reason: command.reason,
-            now: () => command.capturedAtEpochMs,
-            createSnapshotId: () => command.snapshotId,
-          }),
-          command.reason,
-        ))
-      : null;
-  if (
-    snapshot &&
-    read.document.quota?.maxDocumentBytes !== undefined &&
-    read.document.storedUpdateBytes +
-      read.storedSnapshotBytes +
-      byteLengthOfRallarCrdtJson(snapshot) >
-      read.document.quota.maxDocumentBytes
-  ) {
-    return rejected({ command, read, code: 'quota-exceeded', serviceId });
-  }
-  return writeComputed({ command, read, document: next, snapshot, serviceId });
-}
-
-interface CrdtLifecycleAction<T> {
-  readonly kind: 'preserve' | 'clear' | 'set';
-  readonly value?: T;
-}
-
-function applyLifecycleAction<T>(action: CrdtLifecycleAction<T>, current: T, cleared: T): T {
-  return action.kind === 'preserve'
-    ? current
-    : action.kind === 'clear'
-      ? cleared
-      : (action.value as T);
-}
 function nextAppendDocument(input: NextAppendDocumentInput): RallarCrdtDocumentMetadata {
   const { command, read, appendSequence, updateBytes } = input;
   const current = read.document;
@@ -339,7 +224,7 @@ function nextAppendDocument(input: NextAppendDocumentInput): RallarCrdtDocumentM
   };
 }
 
-function writeComputed(input: CrdtMutationWriteComputedInput): CrdtMutationComputedWrite {
+export function writeComputed(input: CrdtMutationWriteComputedInput): CrdtMutationComputedWrite {
   const { command, read, document, snapshot, serviceId } = input;
   const resultDetails = toAcceptedAdminResultDetails({ command, read, document, snapshot });
   const mutationResult = toCrdtMutationResult({
@@ -404,7 +289,7 @@ function replay(input: ReplayCrdtMutationInput): CrdtMutationComputedReplay {
   };
 }
 
-function rejected(input: CrdtMutationRejectedInput): CrdtMutationComputedRejected {
+export function rejected(input: CrdtMutationRejectedInput): CrdtMutationComputedRejected {
   const { command, read, code, serviceId } = input;
   const appendResult =
     command.operation === 'append' ? rejectionResult(command, read.document, code) : undefined;

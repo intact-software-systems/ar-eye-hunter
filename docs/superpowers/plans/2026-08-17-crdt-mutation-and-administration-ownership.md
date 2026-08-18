@@ -455,6 +455,11 @@ git commit -m "refactor(crdt): establish canonical mutation contracts"
 
 ### Task 2: Move Pure Mutation Decisions And The Transaction Shell
 
+**Task 2 fix-round ruling:** the direct mutation suite and the six listed historical correction
+paths were moved early to their final behavior-named destinations. Task 2 also removes the mutable
+audit setter and its default-server cleanup call; later tasks must consume those owners and must not
+repeat either move or setter removal.
+
 **Files:**
 
 - Create: `packages/shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts`
@@ -862,6 +867,9 @@ git commit -m "refactor(crdt): colocate PostgreSQL persistence"
 ```
 
 ### Task 4: Recover Inbox Ownership And Fix Audit Delivery Registration
+
+**Current boundary:** `AppCrdtInboxService` already receives immutable audit effects at construction
+and has no `setAuditSink`; this task owns only the later audit-delivery registration extraction.
 
 **Files:**
 
@@ -1607,6 +1615,9 @@ git commit -m "refactor(api-v1): colocate CRDT construction"
 
 ### Task 8: Move CRDT Routes And Align Both Administration Surfaces
 
+**Current path ruling:** `crdt-admin-response-compatibility.test.ts` already lives under
+`apps/api-v1/test/crdt/routes/`; move only the remaining route suites in this task.
+
 **Files:**
 
 - Create: `apps/api-v1/src/crdt/register-crdt-admin-routes.ts`
@@ -1726,6 +1737,10 @@ git commit -m "refactor(api-v1): align CRDT administration"
 ```
 
 ### Task 9: Migrate Persistence Tests, Active Consumers, And Navigation
+
+**Current path ruling:** the correction-3 fixture and public-read, snapshot-reason, persisted-
+contracts, and correction-3 CRDT cases were moved early by Task 2. Task 9 owns only the remaining
+PGlite CRDT inventory and must not recreate historical correction-named paths.
 
 **Files:**
 

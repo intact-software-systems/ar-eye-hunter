@@ -15,6 +15,7 @@ import {
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
@@ -44,11 +45,24 @@ describe('CRDT mutation service', () => {
 
     expect(computed.command).toBe(command);
     expect(computed.read).toBe(read);
+    expect(computed).toMatchObject({
+      outcome: 'write',
+      operation: 'append',
+      expectedDocumentRevision: 'absent',
+      document: { documentRevision: 1, lastAppendSequence: 1, updateCount: 1 },
+    });
+    expect(computed.outboxEntries.every((entry) => entry.typeId === 'WS_OUTBOX')).toBe(true);
     expect(service.validate({ command, read, computed })).toEqual([]);
     await expect(service.write(repository.transaction, computed)).resolves.toBe(computed.result);
     expect(repository.operations).toEqual(['write-mutation', 'write-final-outbox']);
     expect(repository.metadata?.documentRevision).toBe(1);
     expect(repository.outbox).toHaveLength(2);
+    expect(repository.updates.map((update) => update.updateId)).toEqual(['update-1']);
+    expect(decodeCrdtMutationResult(computed.result)).toMatchObject({
+      status: 'accepted',
+      documentRevision: 1,
+      appendSequence: 1,
+    });
   });
 
   it('replays an identical update and rejects an update-ID collision without writing a mutation', async () => {
@@ -109,29 +123,167 @@ describe('CRDT mutation service', () => {
     expect(repository.readCalls).toBe(2);
     expect(repository.operations).toEqual(['write-mutation']);
   });
+
+  it('computes each administrative operation in its named decision phase', async () => {
+    const repository = new MemoryCrdtMutationRepository();
+    repository.metadata = createMetadata();
+    const service = createCrdtMutationService({
+      repository,
+      createWriter: () => repository,
+      serviceId: 'server-1',
+    });
+
+    const rebuild = await createCrdtMutationCommand({
+      operation: 'rebuild-projection',
+      commandId: 'rebuild',
+      actor: createActor(),
+      capturedAtEpochMs: 1_000,
+      expireAtEpochMs: 61_000,
+      document: DOCUMENT,
+      projectionId: 'projection-1',
+      responseAudience: createAudience(),
+    });
+    const compact = await createCrdtMutationCommand({
+      operation: 'compact',
+      commandId: 'compact',
+      actor: createActor(),
+      capturedAtEpochMs: 1_000,
+      expireAtEpochMs: 61_000,
+      document: DOCUMENT,
+      snapshotId: 'snapshot-1',
+      snapshot: null,
+      reason: 'compact-test',
+      responseAudience: createAudience(),
+    });
+    const lifecycle = await createCrdtMutationCommand({
+      operation: 'lifecycle',
+      commandId: 'lifecycle',
+      actor: createActor(),
+      capturedAtEpochMs: 1_000,
+      expireAtEpochMs: 61_000,
+      document: DOCUMENT,
+      lifecycle: 'archived',
+      retentionAction: { kind: 'preserve' },
+      quotaAction: { kind: 'preserve' },
+      projectionIdsAction: { kind: 'preserve' },
+      responseAudience: createAudience(),
+    });
+    const erase = await createCrdtMutationCommand({
+      operation: 'erase',
+      commandId: 'erase',
+      actor: createActor(),
+      capturedAtEpochMs: 1_000,
+      expireAtEpochMs: 61_000,
+      document: DOCUMENT,
+      mode: 'destroy-document',
+      reason: 'erase-test',
+      responseAudience: createAudience(),
+    });
+
+    for (const command of [rebuild, compact, lifecycle, erase]) {
+      const read = await service.read(command);
+      expect(service.compute({ command, read })).toMatchObject({
+        outcome: 'write',
+        operation: command.operation,
+      });
+    }
+  });
+
+  it('returns ordered command and read provenance issues without throwing', async () => {
+    const repository = new MemoryCrdtMutationRepository();
+    const service = createCrdtMutationService({
+      repository,
+      createWriter: () => repository,
+      serviceId: 'server-1',
+    });
+    const command = await createAppendCommand('append-validation', 'update-validation');
+    const read = await service.read(command);
+    const computed = service.compute({ command, read });
+    const commandMismatch = { ...computed, command: { ...command } };
+    const readMismatch = { ...computed, read: { ...read } };
+
+    expect(service.validate({ command, read, computed: commandMismatch })).toMatchObject([
+      { code: 'computed-identity-differs' },
+    ]);
+    expect(service.validate({ command, read, computed: readMismatch })).toMatchObject([
+      { code: 'computed-identity-differs' },
+    ]);
+  });
+
+  it('returns all ordered validation issues for a malformed compact accepted result', async () => {
+    const repository = new MemoryCrdtMutationRepository();
+    repository.metadata = createMetadata();
+    const service = createCrdtMutationService({
+      repository,
+      createWriter: () => repository,
+      serviceId: 'server-1',
+    });
+    const command = await createCrdtMutationCommand({
+      operation: 'compact',
+      commandId: 'compact-validation',
+      actor: createActor(),
+      capturedAtEpochMs: 1_000,
+      expireAtEpochMs: 61_000,
+      document: DOCUMENT,
+      snapshotId: 'snapshot-validation',
+      snapshot: null,
+      reason: 'validation',
+      responseAudience: createAudience(),
+    });
+    const read = await service.read(command);
+    const computed = service.compute({ command, read });
+    const malformed = {
+      ...computed,
+      command: { ...command },
+      expectedDocumentRevision: 99,
+      snapshot: {
+        ...computed.snapshot,
+        metadata: { ...computed.snapshot?.metadata, reason: 'wrong-reason' },
+      },
+      result: { ...computed.result, snapshot: null, metadata: null },
+    } as CrdtMutationComputed;
+
+    expect(() => service.validate({ command, read, computed: malformed })).not.toThrow();
+    expect(
+      service.validate({ command, read, computed: malformed }).map((issue) => issue.code),
+    ).toEqual([
+      'computed-identity-differs',
+      'computed-predecessor-differs',
+      'compact-reason-differs',
+      'result-codec-invalid',
+    ]);
+  });
 });
+
+function createActor() {
+  return {
+    actorId: 'actor-1',
+    principalId: 'principal-1',
+    sessionId: 'session-1',
+    serverId: 'server-1',
+  };
+}
+
+function createAudience() {
+  return {
+    kind: 'room' as const,
+    senderSessionId: 'session-1',
+    topicId: 'room.crdt',
+    contextId: 'group-1',
+  };
+}
 
 async function createAppendCommand(commandId: string, updateId: string, title = 'accepted') {
   return await createCrdtMutationCommand({
     operation: 'append',
     commandId,
-    actor: {
-      actorId: 'actor-1',
-      principalId: 'principal-1',
-      sessionId: 'session-1',
-      serverId: 'server-1',
-    },
+    actor: createActor(),
     capturedAtEpochMs: 1_000,
     expireAtEpochMs: 61_000,
     document: DOCUMENT,
     update: createUpdate(updateId, title),
     authorizationScope: 'room',
-    responseAudience: {
-      kind: 'room',
-      senderSessionId: 'session-1',
-      topicId: 'room.crdt',
-      contextId: 'group-1',
-    },
+    responseAudience: createAudience(),
   });
 }
 

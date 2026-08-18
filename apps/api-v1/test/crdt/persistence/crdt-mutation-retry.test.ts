@@ -1,41 +1,24 @@
 import assert from 'node:assert/strict';
-import { Temporal } from '@js-temporal/polyfill';
 import {
   RALLAR_CRDT_PROTOCOL_VERSION,
   type RallarCrdtDocumentRef,
   type RallarCrdtSnapshotEnvelope,
   toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
-import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
-import { PSqlAdminPruneExpiredRepository } from '@shared-server/postgres/admin-operations/PSqlAdminPruneExpiredRepository.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import {
-  createAdminPruneAggregate,
-  toAdminPruneAggregateEntry,
-} from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
-import { toResilienceDto } from '../../src/middleware-resilience.ts';
-import { createApiCrdtInboxService } from '../../src/services/create-api-crdt-inbox-service.ts';
+import { toResilienceDto } from '../../../src/middleware-resilience.ts';
+import { createApiCrdtInboxService } from '../../../src/services/create-api-crdt-inbox-service.ts';
 import {
   createConfiguredApiMutationInboxFactories,
   readConfiguredCrdtPolicies,
-} from '../../src/services/create-api-mutation-inbox-factories.ts';
-import {
-  createResourceEntry,
-  readPGliteDatabaseEpochMs,
-  waitForPGliteQueueRow,
-  withPGliteSql,
-} from './pglite-auth-test-harness.ts';
-import {
-  appendCommand,
-  queueNow,
-  update,
-  withCompetingWrite,
-} from './pglite-crdt-correction-3-fixtures.ts';
+} from '../../../src/services/create-api-mutation-inbox-factories.ts';
+import { waitForPGliteQueueRow, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import { appendCommand, queueNow, update, withCompetingWrite } from '../crdt-api-test-fixtures.ts';
 
 Deno.test('configured production factory keeps absent CRDT policy undefined and denies writes', async () => {
   const previous = Deno.env.get('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
@@ -158,7 +141,7 @@ Deno.test('compatible migration binds omitted legacy snapshot reasons in row and
     }
     const migration = await Deno.readTextFile(
       new URL(
-        '../../prisma/migrations/20260723170000_crdt_trusted_identity_required/migration.sql',
+        '../../../prisma/migrations/20260723170000_crdt_trusted_identity_required/migration.sql',
         import.meta.url,
       ),
     );
@@ -219,82 +202,6 @@ Deno.test('compatible migration binds omitted legacy snapshot reasons in row and
       const expectedReason = fixture.reason?.trim() ? fixture.reason : 'legacy-import';
       assert.equal(snapshot?.metadata.reason, expectedReason);
     }
-  });
-});
-
-Deno.test('initial prune statistics use the command capture cutoff instead of database now', async () => {
-  await withPGliteSql(async (sql) => {
-    const databaseNow = await readPGliteDatabaseEpochMs(sql);
-    await new ResourceInboxResultsRepository(sql).writeIfAbsentOrReplaceExpired(
-      createResourceEntry('resource-1', {
-        topicId: 'topic-1',
-        contextId: 'context-1',
-        expiryTs: Temporal.Instant.fromEpochMilliseconds(databaseNow - 1_000),
-      }),
-    );
-    const pruner = new PSqlAdminOperationsPruner(sql);
-
-    assert.equal(
-      await pruner.countExpired('resource-inbox-results', {
-        cutoffEpochMs: databaseNow - 10_000,
-      } as never),
-      0,
-    );
-  });
-});
-
-Deno.test('prune progress renews physical and JSON aggregate expiry together', async () => {
-  await withPGliteSql(async (sql) => {
-    const now = await queueNow(sql);
-    const current = createAdminPruneAggregate({
-      jobId: 'prune-physical-expiry',
-      generatedAtEpochMs: now,
-      expireAtEpochMs: now + 60_000,
-      serverId: 'server-1',
-      requestedBy: 'admin-1',
-      requestedSessionId: 'session-1',
-      categories: ['runtime-state'],
-      expiredRows: { 'runtime-state': 1 },
-    });
-    const currentEntry = toAdminPruneAggregateEntry(current);
-    await new ResourceInboxResultsRepository(sql)
-      .writeIfAbsentOrReplaceExpired(currentEntry);
-    const renewed = {
-      ...current,
-      revision: 1,
-      expireAtEpochMs: now + 120_000,
-    };
-    const successor = toAdminPruneAggregateEntry(renewed);
-    await sql.begin(async (transaction) => {
-      await new PSqlAdminPruneExpiredRepository(sql, 'server-1').writeProgress(
-        transaction,
-        {
-          kind: 'page',
-          jobId: current.jobId,
-          category: 'runtime-state',
-          rowIds: [],
-          deletedRows: 0,
-          next: null,
-          expectedAggregate: currentEntry.resource,
-          aggregateSuccessor: successor,
-          finishedAtEpochMs: now + 1,
-        },
-      );
-    });
-    const [stored] = await sql<{
-      ris_resource: string;
-      expire_epoch_ms: string | number;
-    }[]>`
-            select ris_resource,
-                   floor(extract(epoch from expire_ts) * 1000)::bigint as expire_epoch_ms
-            from resource_inbox_results
-            where ris_topic_id = ${successor.key.topicId}
-              and ris_resource_id = ${successor.key.resourceId}
-              and fk_ext_bank_id = ${successor.key.contextId}
-        `;
-
-    assert.equal(JSON.parse(stored!.ris_resource).expireAtEpochMs, renewed.expireAtEpochMs);
-    assert.equal(Number(stored!.expire_epoch_ms), renewed.expireAtEpochMs);
   });
 });
 

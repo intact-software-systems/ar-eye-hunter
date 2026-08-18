@@ -90,7 +90,6 @@ export function createDefaultRallarServer(
     serverId: myServerId,
     policies: crdtPolicies,
   });
-  runtime.appCrdtInboxService?.setAuditSink(undefined);
   const runtimeStateRepository = createRuntimeStateRepository(database);
   const authUserRepository = createAuthUserRepository(runtimeStateRepository);
   const rtcTopologyOptions = getApiRtcTopologyServiceOptions();

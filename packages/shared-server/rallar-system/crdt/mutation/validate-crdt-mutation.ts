@@ -13,6 +13,8 @@ export function validateCrdtMutation(
   const { command, read, computed } = input;
   const issues: CrdtMutationValidationIssue[] = [];
   if (
+    computed.command !== command ||
+    computed.read !== read ||
     computed.commandId !== command.commandId ||
     computed.commandHash !== command.commandHash ||
     computed.documentKey !== command.documentKey
@@ -34,11 +36,13 @@ export function validateCrdtMutation(
   }
   if (command.operation === 'compact' && computed.outcome === 'write') {
     const result = computed.result;
+    const resultSnapshot =
+      result.operation === 'compact' && result.status === 'accepted' ? result.snapshot : undefined;
     if (
       computed.snapshot?.metadata.reason !== command.reason ||
       result.operation !== 'compact' ||
       result.status !== 'accepted' ||
-      result.snapshot.metadata.reason !== command.reason
+      resultSnapshot?.metadata?.reason !== command.reason
     ) {
       issues.push({
         code: 'compact-reason-differs',

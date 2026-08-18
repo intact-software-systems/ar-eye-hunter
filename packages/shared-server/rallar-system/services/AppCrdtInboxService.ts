@@ -47,6 +47,27 @@ export const CRDT_APP_INBOX_TOPIC = 'app-inbox.crdt-state';
 
 export type CrdtAdminMutationOperation = 'rebuild-projection' | 'compact' | 'lifecycle' | 'erase';
 
+export interface AppCrdtInboxEffects {
+  readonly audit?: RallarCrdtAuditSink;
+  readonly outboxQueueReader?: OutboxQueueReader;
+  readonly wakeQueueEngine?: () => void;
+  readonly resolveCurrentSession?: ResolveCurrentCrdtMutationSession;
+}
+
+export interface CreateAndEnqueueCrdtAppendInput {
+  readonly update: RallarCrdtUpdateEnvelope;
+  readonly deliveryId: string;
+  readonly actor: CrdtMutationActor;
+  readonly responseAudience: CrdtMutationResponseAudience;
+  readonly capturedAtEpochMs: number;
+  readonly expireAtEpochMs: number;
+}
+
+interface ProcessCrdtAdminMutationInput {
+  readonly adminSession: AuthSession;
+  readonly request: unknown;
+}
+
 export interface AppCrdtInboxServiceInput {
   readonly inbox: InboxQueueReader;
   readonly resourceInbox: ResourceInboxRepository;
@@ -56,16 +77,11 @@ export interface AppCrdtInboxServiceInput {
   readonly serviceId: string;
   readonly timing?: RallarTimingSink;
   readonly options?: AppInboxServiceOptions;
-  readonly effects?: Readonly<{
-    audit?: RallarCrdtAuditSink;
-    outboxQueueReader?: OutboxQueueReader;
-    wakeQueueEngine?: () => void;
-    resolveCurrentSession?: ResolveCurrentCrdtMutationSession;
-  }>;
+  readonly effects?: AppCrdtInboxEffects;
 }
 
 export class AppCrdtInboxService extends AppInboxService {
-  private audit: RallarCrdtAuditSink | undefined;
+  private readonly audit: RallarCrdtAuditSink | undefined;
   private readonly wakeQueueEngine: (() => void) | undefined;
   private readonly resolveCurrentSession: ResolveCurrentCrdtMutationSession | undefined;
 
@@ -116,10 +132,6 @@ export class AppCrdtInboxService extends AppInboxService {
     }
   }
 
-  setAuditSink(audit: RallarCrdtAuditSink | undefined): void {
-    this.audit = audit;
-  }
-
   async processCrdtCommandUntilCompletion(
     command: CrdtMutationCommand,
   ): Promise<Either<AppInboxFailure, CrdtMutationResult>> {
@@ -146,16 +158,7 @@ export class AppCrdtInboxService extends AppInboxService {
     });
   }
 
-  async createAndEnqueueAppend(
-    input: Readonly<{
-      update: RallarCrdtUpdateEnvelope;
-      deliveryId: string;
-      actor: CrdtMutationActor;
-      responseAudience: CrdtMutationResponseAudience;
-      capturedAtEpochMs: number;
-      expireAtEpochMs: number;
-    }>,
-  ): Promise<CrdtAppendCommand> {
+  async createAndEnqueueAppend(input: CreateAndEnqueueCrdtAppendInput): Promise<CrdtAppendCommand> {
     const command = await createCrdtMutationCommand({
       operation: 'append',
       commandId: input.update.updateId,
@@ -195,7 +198,7 @@ export class AppCrdtInboxService extends AppInboxService {
 
   async processAdminMutationUntilCompletion(
     operation: CrdtAdminMutationOperation,
-    input: Readonly<{ adminSession: AuthSession; request: unknown }>,
+    input: ProcessCrdtAdminMutationInput,
   ): Promise<unknown> {
     const command = await this.createAdminCommand(operation, input);
     const completed = await this.processCrdtCommandUntilCompletion(command);
@@ -242,7 +245,7 @@ export class AppCrdtInboxService extends AppInboxService {
 
   private async createAdminCommand(
     operation: CrdtAdminMutationOperation,
-    input: Readonly<{ adminSession: AuthSession; request: unknown }>,
+    input: ProcessCrdtAdminMutationInput,
   ): Promise<CrdtMutationCommand> {
     const request = requireRecord(input.request);
     const document = requireDocument(request.document);

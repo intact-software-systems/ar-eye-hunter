@@ -13,14 +13,14 @@ import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { toResilienceDto } from '../../src/middleware-resilience.ts';
-import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
-import { createApiCrdtInboxService } from '../../src/services/create-api-crdt-inbox-service.ts';
+import { toResilienceDto } from '../../../src/middleware-resilience.ts';
+import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
+import { createApiCrdtInboxService } from '../../../src/services/create-api-crdt-inbox-service.ts';
 import {
   readPGliteDatabaseEpochMs,
   waitForPGliteQueueRow,
   withPGliteSql,
-} from './pglite-auth-test-harness.ts';
+} from '../../db/pglite-auth-test-harness.ts';
 
 const REASON = 'api-v1-admin-compaction';
 const DOCUMENT: RallarCrdtDocumentRef = {

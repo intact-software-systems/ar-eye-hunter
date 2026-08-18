@@ -14,13 +14,13 @@ import { computeCrdtMutation } from './compute-crdt-mutation.ts';
 import { validateCrdtMutation } from './validate-crdt-mutation.ts';
 
 export interface CrdtMutationService {
-  readonly read: (command: CrdtMutationCommand) => Promise<CrdtMutationRead>;
-  readonly compute: (facts: CrdtMutationAttemptFacts) => CrdtMutationComputed;
-  readonly validate: (input: ValidateCrdtMutationInput) => readonly CrdtMutationValidationIssue[];
-  readonly write: (
+  read(command: CrdtMutationCommand): Promise<CrdtMutationRead>;
+  compute(facts: CrdtMutationAttemptFacts): CrdtMutationComputed;
+  validate(input: ValidateCrdtMutationInput): readonly CrdtMutationValidationIssue[];
+  write(
     transaction: PSqlTransactionSql,
     computed: CrdtMutationComputed,
-  ) => Promise<CrdtMutationResult>;
+  ): Promise<CrdtMutationResult>;
 }
 
 export interface CrdtMutationServiceDependencies {
