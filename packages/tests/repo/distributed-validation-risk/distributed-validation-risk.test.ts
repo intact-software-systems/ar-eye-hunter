@@ -343,11 +343,13 @@ describe('distributed validation risk classification', () => {
   });
 
   it.each([
-    [{ status: 'R100', paths: ['old.ts'] }],
-    [{ status: 'M', paths: ['../outside.ts'] }],
+    [[{ status: 'R100', paths: ['old.ts'] }]],
+    [[{ status: 'M', paths: ['../outside.ts'] }]],
     [
-      { status: 'M', paths: ['docs/duplicate.md'] },
-      { status: 'D', paths: ['docs/duplicate.md'] },
+      [
+        { status: 'M', paths: ['docs/duplicate.md'] },
+        { status: 'D', paths: ['docs/duplicate.md'] },
+      ],
     ],
   ])('fails closed for malformed or ambiguous changed paths %#', (changedPathRecords) => {
     const result = classifyDistributedValidationRisk({

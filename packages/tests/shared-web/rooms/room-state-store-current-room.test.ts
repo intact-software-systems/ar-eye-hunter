@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupMember, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createRallarBrowserFacadeRuntimeContext } from '@shared-web/browser/rallar-runtime-context.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 
@@ -260,16 +260,26 @@ function createMemberRoomSnapshot(): GroupSnapshot {
     role: 'member',
     actorPrincipalId: 'alice',
   });
-  const inactive = {
-    ...createActiveGroupMemberFixture({
-      ...scope,
-      principalId: 'charlie',
-      role: 'member',
-      actorPrincipalId: 'alice',
-    }),
-    status: 'left' as const,
+  const charlie = createActiveGroupMemberFixture({
+    ...scope,
+    principalId: 'charlie',
+    role: 'member',
+    actorPrincipalId: 'alice',
+  });
+  const inactive: GroupMember = {
+    applicationId: charlie.applicationId,
+    workspaceId: charlie.workspaceId,
+    groupId: charlie.groupId,
+    principalId: charlie.principalId,
+    role: charlie.role,
+    updated: charlie.updated,
+    invitedByPrincipalId: charlie.invitedByPrincipalId,
+    invitationExpiresAtEpochMs: charlie.invitationExpiresAtEpochMs,
+    status: 'left',
     left: snapshot.group.updated,
     joined: snapshot.group.created,
+    removed: null,
+    banned: null,
   };
   return {
     ...snapshot,

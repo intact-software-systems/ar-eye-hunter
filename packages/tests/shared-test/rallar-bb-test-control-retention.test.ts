@@ -146,9 +146,19 @@ describe('rallar-bb-test control retention planning', () => {
                 runSafety('keep-me'),
             ],
         });
-        const reordered = reorderRecordProperties(structuredClone(base)) as ControlRetentionPlanInput;
-        reordered.runSafety[0]!.connectedAgentIds.reverse();
-        reordered.runSafety[0]!.issuedRunTokens.reverse();
+        const cloned = reorderRecordProperties(structuredClone(base)) as ControlRetentionPlanInput;
+        const [reversedSafety, ...remainingSafety] = cloned.runSafety;
+        const reordered: ControlRetentionPlanInput = {
+            ...cloned,
+            runSafety: [
+                {
+                    ...reversedSafety,
+                    connectedAgentIds: reversedSafety.connectedAgentIds.toReversed(),
+                    issuedRunTokens: reversedSafety.issuedRunTokens.toReversed(),
+                },
+                ...remainingSafety,
+            ],
+        };
 
         const left = planControlRunRetention(base);
         const right = planControlRunRetention(reordered);
@@ -560,6 +570,9 @@ function distributedRun(
                 requiredRecipes: 0,
                 passedRecipes: 0,
                 failedRecipes: 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: 0,
             },
             failures: [],

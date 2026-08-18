@@ -80,7 +80,7 @@ describe('adaptive agent execution evaluation contract', () => {
       ]),
     );
     expect(rubric.authority.agentJudgments).not.toEqual(
-      expect.arrayContaining(rubric.authority.automatedFacts),
+      expect.arrayContaining([...rubric.authority.automatedFacts]),
     );
   });
 

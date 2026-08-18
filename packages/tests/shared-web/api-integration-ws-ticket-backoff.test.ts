@@ -104,6 +104,7 @@ describe('createWebSocketTicket backoff', () => {
                 sessionId: 'session-1',
                 username: 'test',
                 accessToken: 'token-1',
+                expiresAtEpochMs: 61_000,
             },
         })).resolves.toMatchObject({
             ticket: 'ticket-1',
@@ -116,6 +117,7 @@ describe('createWebSocketTicket backoff', () => {
                 sessionId: 'session-1',
                 username: 'test',
                 accessToken: 'token-1',
+                expiresAtEpochMs: 61_000,
             },
         })).rejects.toThrow(
             'WebSocket ticket request suppressed by local client rate limiter.',

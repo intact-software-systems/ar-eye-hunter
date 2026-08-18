@@ -30,7 +30,7 @@ describe('Relic Hunters web API client', () => {
 
     it('sends command requests with encoded game id and browser auth headers', async () => {
         writeSession(session());
-        const fetch = vi.fn(async () =>
+        const fetch = vi.fn<typeof globalThis.fetch>(async () =>
             new Response(JSON.stringify({ gameId: 'room/1' }), {
                 status: 200,
                 headers: { 'content-type': 'application/json' },
@@ -42,7 +42,7 @@ describe('Relic Hunters web API client', () => {
         await sendRelicCommand('room/1', command);
 
         expect(fetch).toHaveBeenCalledTimes(1);
-        const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
+        const [url, init = {}] = fetch.mock.calls[0];
         expect(url).toBe('/api/relic/games/room%2F1/commands');
         expect(init.method).toBe('POST');
         expect(init.headers).toMatchObject({

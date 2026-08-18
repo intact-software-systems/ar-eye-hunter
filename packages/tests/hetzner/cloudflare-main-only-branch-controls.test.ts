@@ -29,7 +29,7 @@ function cloudflareResponse(status: number, result: unknown): Response {
 
 function createFakeFetch(state: FakeCloudflareState): typeof fetch {
   return async (input, init) => {
-    const url = new URL(typeof input === 'string' ? input : input.url);
+    const url = new URL(input instanceof Request ? input.url : input);
     const method = init?.method ?? 'GET';
     const body = init?.body ? JSON.parse(String(init.body)) : null;
     state.requests.push({ method, path: url.pathname, body });

@@ -311,7 +311,7 @@ describe('governance decision transitions', () => {
     const transition = computeGovernanceDecisionTransition({
       request,
       snapshot,
-      readBlob(blobOid) {
+      readBlob(blobOid: string) {
         readBlobCalls.push(blobOid);
         return successorMarkdown;
       },

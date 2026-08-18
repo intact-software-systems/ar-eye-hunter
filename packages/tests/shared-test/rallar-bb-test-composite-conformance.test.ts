@@ -268,8 +268,8 @@ describe('rallar-bb-test composite conformance matrix', () => {
 
             expect(report.status, entry.caseId).toBe('passed');
             expect(report.observed?.resultStatus).toBe(entry.case.expectedStatus);
-            expect(report.observed?.commandKinds).toEqual(expect.arrayContaining(entry.case.requiredCommandKinds));
-            expect(report.observed?.eventTopics).toEqual(expect.arrayContaining(entry.case.requiredEventTopics ?? []));
+            expect(report.observed?.commandKinds).toEqual(expect.arrayContaining([...entry.case.requiredCommandKinds]));
+            expect(report.observed?.eventTopics).toEqual(expect.arrayContaining([...(entry.case.requiredEventTopics ?? [])]));
         }
     });
 

@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
+import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 
 describe('Rallar operation options compatibility', () => {
     it('normalizes operation options without adding empty fields', () => {
         const signal = new AbortController().signal;
         const shouldRetry = vi.fn(() => true);
-        const lanes = [{ laneId: 'motion' }];
+        const lanes: readonly RtcDataChannelLaneConfig[] = [{ id: 'motion', label: 'motion' }];
 
         expect(toRallarOperationOptions({})).toEqual({});
         expect(

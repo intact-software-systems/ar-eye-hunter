@@ -135,8 +135,11 @@ describe('Relic expedition blueprints', () => {
         expect(toPublicRelicSnapshot(state).setup).toMatchObject({
             source: 'mock',
         });
-        expect(toPublicRelicSnapshot(state).setup?.seed).toBeUndefined();
-        expect(toPublicRelicSnapshot(state).setup?.blueprintId).toBeUndefined();
+        const publicSetup: Readonly<Record<string, unknown>> = {
+            ...toPublicRelicSnapshot(state).setup,
+        };
+        expect(publicSetup.seed).toBeUndefined();
+        expect(publicSetup.blueprintId).toBeUndefined();
     });
 });
 

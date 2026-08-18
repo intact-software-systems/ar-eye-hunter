@@ -141,6 +141,7 @@ describe('room state store summaries', () => {
         ...archivedBase.group,
         status: 'archived',
         archived: archivedBase.group.updated,
+        deleted: null,
       },
     };
     stateMocks.repositoriesConfigured = true;

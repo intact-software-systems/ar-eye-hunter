@@ -90,8 +90,12 @@ describe('Rallar browser runtime foundations', () => {
   it('emits room, people, then derived state observers', () => {
     const events: string[] = [];
     const state = createFoundationStateStore();
-    state.onRoomChange(() => events.push('rooms'), { emitCurrent: false });
-    state.onPeopleChange(() => events.push('people'), { emitCurrent: false });
+    state.onRoomChange(() => {
+      events.push('rooms');
+    }, { emitCurrent: false });
+    state.onPeopleChange(() => {
+      events.push('people');
+    }, { emitCurrent: false });
     state.onAfterEmit(() => events.push('derived'));
 
     state.emit();

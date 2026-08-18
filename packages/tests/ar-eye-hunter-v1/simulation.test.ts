@@ -27,6 +27,7 @@ import {
 } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 import type {
     ArenaEvent,
+    ArenaLayoutProp,
     ShotIntent,
     Vec3Tuple,
 } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
@@ -579,11 +580,11 @@ describe('AR Eye Hunter simulation', () => {
                 ...base.layout,
                 props: [{
                     id: 'beam-cover',
-                    kind: 'cover' as const,
+                    kind: 'cover',
                     position: [hostile.position[0], 1.5, hostile.position[2] + 8],
-                    size: [8, 4, 1.5] as Vec3Tuple,
+                    size: [8, 4, 1.5],
                     blocksShots: true,
-                }],
+                }] satisfies readonly ArenaLayoutProp[],
             },
         };
         const withPlayer = upsertPlayerPose(withCover, {

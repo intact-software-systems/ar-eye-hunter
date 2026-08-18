@@ -155,7 +155,8 @@ describe('Relic scene prompt computation', () => {
             label: 'Inspect altar runes',
             inspecting: true,
         });
-        expect(prompt?.detail).toContain('altar glyphs pulse');
+        const searchPrompt = prompt?.kind === 'search' ? prompt : undefined;
+        expect(searchPrompt?.detail).toContain('altar glyphs pulse');
     });
 
     it('does not show clue search prompts before the expedition starts', () => {

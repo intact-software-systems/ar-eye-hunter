@@ -19,7 +19,10 @@ describe('Rallar realtime facade factory', () => {
             laneId: 'lane-binary',
             result: {} as RallarRealtimeSendResult['result'],
         }] satisfies readonly RallarRealtimeSendResult[];
-        const lane = {} as RallarRealtimeJsonLane<{ ok: true }>;
+        const lane = {
+            send: vi.fn(async () => jsonResults),
+            on: vi.fn(() => vi.fn()),
+        } satisfies RallarRealtimeJsonLane<{ ok: true }>;
         const health = [{
             peerId: 'peer-1',
             laneId: 'lane-json',
@@ -34,6 +37,9 @@ describe('Rallar realtime facade factory', () => {
             onJson: vi.fn(() => jsonUnsubscribe),
             onBinary: vi.fn(() => binaryUnsubscribe),
             json: vi.fn(() => lane),
+            room: vi.fn((): never => {
+                throw new Error('This test does not exercise the room channel.');
+            }),
             health: vi.fn(() => health),
         };
 

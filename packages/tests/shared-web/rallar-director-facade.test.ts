@@ -11,48 +11,33 @@ import type {
 
 describe('Rallar director facade factory', () => {
     it('delegates director methods through injected operations', async () => {
-        const status = {
+        const status: RallarDirectorStatus = {
             roomId: 'room-1',
             role: 'director',
             state: 'fresh',
             isDirector: true,
             isFresh: true,
             active: true,
-            freshness: {
-                state: 'fresh',
-                ageMs: 0,
-                ttlMs: 30_000,
-            },
+            freshness: 'fresh',
             nowEpochMs: 123,
-        } as RallarDirectorStatus;
+        };
         const unsubscribe = vi.fn();
         const listener = vi.fn() as RallarDirectorStatusListener;
         const relay = {
             status: vi.fn(() => status),
-        } as unknown as RallarDirectorRelayHandle<
-            { move: string },
-            { ok: true }
-        >;
-        const createRelay = vi.fn(
-            <TIntent, TOutput, TSnapshot = TOutput>(
-                _config: RallarDirectorRelayConfig<
-                    TIntent,
-                    TOutput,
-                    TSnapshot
-                >,
-            ): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> =>
-                relay as unknown as RallarDirectorRelayHandle<
-                    TIntent,
-                    TOutput,
-                    TSnapshot
-                >,
-        );
+        } as unknown as RallarDirectorRelayHandle<unknown, unknown, unknown>;
+        const createRelay = vi.fn();
         const operations = {
             appoint: vi.fn(async () => status),
             resign: vi.fn(async () => status),
             status: vi.fn(() => status),
             onStatus: vi.fn(() => unsubscribe),
-            createRelay,
+            createRelay<TIntent, TOutput, TSnapshot = TOutput>(
+                config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>,
+            ): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> {
+                createRelay(config);
+                return relay;
+            },
         };
 
         const facade = createRallarDirectorFacade(operations);

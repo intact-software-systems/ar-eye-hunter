@@ -559,19 +559,21 @@ describe('GroupStateRepository', () => {
             groupId: 'legacy-group',
         };
         const legacyAudit = { atEpochMs: 1, byServiceId: 'seed' };
-        const legacyGroup = createTestGroup({
-            applicationId: ref.applicationId,
-            groupId: ref.groupId,
-            displayName: 'Legacy group',
-            activeMemberCount: 1,
-            ownerPrincipalId: 'owner',
-            snapshotVersion: 1,
-            metadataVersion: 1,
-            rosterVersion: 1,
-            presenceVersion: 0,
+        const legacyGroup = {
+            ...createTestGroup({
+                applicationId: ref.applicationId,
+                groupId: ref.groupId,
+                displayName: 'Legacy group',
+                activeMemberCount: 1,
+                ownerPrincipalId: 'owner',
+                snapshotVersion: 1,
+                metadataVersion: 1,
+                rosterVersion: 1,
+                presenceVersion: 0,
+            }),
             created: legacyAudit,
             updated: legacyAudit,
-        });
+        };
         const legacyMember = {
             applicationId: ref.applicationId,
             groupId: ref.groupId,

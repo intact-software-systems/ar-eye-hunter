@@ -72,7 +72,7 @@ describe('browser data caches state scope filtering', () => {
         );
 
         await dataCaches.hydrateStateCaches(
-            manager,
+            manager as never,
             clientData,
             [sameScopeClient, otherWorkspaceClient],
             [sameScopeGroup, otherWorkspaceGroup],
@@ -127,7 +127,7 @@ describe('browser data caches state scope filtering', () => {
         );
 
         await dataCaches.hydrateStateCaches(
-            manager,
+            manager as never,
             clientData,
             [defaultScopeClient, customScopeClient],
             [defaultScopeGroup, customScopeGroup],
@@ -150,8 +150,7 @@ describe('browser data caches state scope filtering', () => {
     });
 
     it('recovers incomparable group tuples through a durable reread before RTC recomputation', async () => {
-        const manager: Parameters<typeof dataCaches.hydrateStateCaches>[0] =
-            createWebRtcGroupManager();
+        const manager = createWebRtcGroupManager();
         const acceptUpdate = vi.spyOn(manager, 'acceptGroupUpdate');
         const clientData: ClientInfo = {
             clientId: 'alice',
@@ -182,7 +181,7 @@ describe('browser data caches state scope filtering', () => {
         const rereadGroupSnapshots = vi.fn(async () => [recovered]);
 
         await dataCaches.hydrateStateCaches(
-            manager,
+            manager as never,
             clientData,
             [],
             [current],
@@ -190,7 +189,7 @@ describe('browser data caches state scope filtering', () => {
         acceptUpdate.mockClear();
 
         await dataCaches.hydrateStateCaches(
-            manager,
+            manager as never,
             clientData,
             [],
             [incomparable],
@@ -410,7 +409,7 @@ describe('browser data caches state scope filtering', () => {
 
         dataCaches.initialise(
             webSocketQueueBox,
-            manager,
+            manager as never,
             clientData,
         );
 
@@ -447,8 +446,7 @@ describe('browser data caches state scope filtering', () => {
     });
 
     it('retains durable incomparable recovery across initialise and hydrate', async () => {
-        const manager: Parameters<typeof dataCaches.initialise>[1] =
-            createWebRtcGroupManager();
+        const manager = createWebRtcGroupManager();
         const recompute = vi.spyOn(manager, 'ensureAllGroupsConnected');
         const clientData: ClientInfo = {
             clientId: 'alice',
@@ -494,12 +492,12 @@ describe('browser data caches state scope filtering', () => {
 
         dataCaches.initialise(
             webSocketQueueBox,
-            manager,
+            manager as never,
             clientData,
             cacheOptions,
         );
         await dataCaches.hydrateStateCaches(
-            manager,
+            manager as never,
             clientData,
             [],
             [current],
@@ -589,7 +587,7 @@ describe('browser data caches state scope filtering', () => {
 
         dataCaches.initialise(
             webSocketQueueBox,
-            manager,
+            manager as never,
             clientData,
         );
 
@@ -692,7 +690,7 @@ describe('browser data caches state scope filtering', () => {
                 { groupRevision: 5, presenceRevision: 5 },
                 8,
             );
-            dataCaches.initialise(webSocketQueueBox, manager, clientData);
+            dataCaches.initialise(webSocketQueueBox, manager as never, clientData);
             const receive = onInboxMessage;
             if (!receive) throw new Error('WebSocket topology callback was not installed.');
 
@@ -831,12 +829,13 @@ describe('browser data caches state scope filtering', () => {
         );
         configureApiClient({ apiBaseUrl: 'https://api.example.test' });
         vi.stubGlobal('localStorage', { getItem: () => null });
-        const fetchMock = vi.fn(async () => groupSnapshotResponse(resulting));
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
+            groupSnapshotResponse(resulting));
         vi.stubGlobal('fetch', fetchMock);
 
         dataCaches.initialise(
             webSocketQueueBox,
-            manager,
+            manager as never,
             clientData,
         );
 
@@ -886,7 +885,7 @@ describe('browser data caches state scope filtering', () => {
             1,
         );
 
-        await dataCaches.hydrateStateCaches(manager, clientData, [], [group]);
+        await dataCaches.hydrateStateCaches(manager as never, clientData, [], [group]);
 
         const overlay = findOverlayById(toScopedOverlayId(group.group));
         expect(overlay).toMatchObject({
@@ -939,7 +938,7 @@ describe('browser data caches state scope filtering', () => {
             ['session-a', 'session-b', 'session-c'],
             5,
         );
-        await dataCaches.hydrateStateCaches(manager, clientData, [], [newerGroup]);
+        await dataCaches.hydrateStateCaches(manager as never, clientData, [], [newerGroup]);
 
         expect(findOverlayById(overlayId)).toMatchObject({
             provenance: 'server',
@@ -967,7 +966,7 @@ describe('browser data caches state scope filtering', () => {
             1,
         );
 
-        await dataCaches.hydrateStateCaches(manager, clientData, [], [group], {
+        await dataCaches.hydrateStateCaches(manager as never, clientData, [], [group], {
             groupFormation: { mode: 'legacy-star', bootstrapDegree: 5 },
         });
 
@@ -989,7 +988,7 @@ function createWebRtcGroupManager() {
         ensureAllGroupsConnected: vi.fn(async () => undefined),
         delete: vi.fn(async () => undefined),
         has: vi.fn(() => false),
-    } as never;
+    };
 }
 
 function createClientSnapshot(

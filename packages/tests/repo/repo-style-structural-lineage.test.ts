@@ -9,6 +9,7 @@ import {
   readBlob,
   runChangedChecker,
   runGit,
+  type SplitFixture,
   unknownSource,
   writeBoundarySummaryVariantLoader,
   writeFixture,

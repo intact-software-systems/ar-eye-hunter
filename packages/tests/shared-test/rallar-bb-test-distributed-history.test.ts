@@ -40,6 +40,9 @@ function distributedRun(): ControlDistributedRunSnapshot {
                 requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 1,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: 1,
             },
             failures: [{
@@ -110,10 +113,12 @@ describe('distributed-run History labels', () => {
     });
 
     it('does not invent a readiness failure for a nonterminal run without recorded failures', () => {
-        const running = structuredClone(distributedRun());
-        (running as { state: string }).state = 'running';
-        (running.rollup as { failures: unknown[] }).failures = [];
-        (running.rollup as { state: string }).state = 'running';
+        const completed = distributedRun();
+        const running: ControlDistributedRunSnapshot = {
+            ...completed,
+            state: 'running',
+            rollup: { ...completed.rollup, state: 'running', failures: [] },
+        };
 
         expect(projectDistributedRunHistoryLabels(running).failures).toEqual([]);
     });

@@ -152,7 +152,9 @@ describe('browser group-state delta application', () => {
             predecessorCausalRevision: { groupRevision: 2, presenceRevision: 2 },
         });
         await runtime.hydrate([stale]);
-        const fetchMock = vi.fn(async () => groupSnapshotResponse(resulting));
+        const fetchMock = vi.fn<typeof fetch>(
+            async () => groupSnapshotResponse(resulting),
+        );
         vi.stubGlobal('fetch', fetchMock);
 
         await runtime.receiveDeltaMessage(envelope);
@@ -220,7 +222,9 @@ describe('browser group-state delta application', () => {
             sessions: [],
         });
         await runtime.hydrate([cached]);
-        const fetchMock = vi.fn(async () => groupSnapshotResponse(resulting));
+        const fetchMock = vi.fn<typeof fetch>(
+            async () => groupSnapshotResponse(resulting),
+        );
         vi.stubGlobal('fetch', fetchMock);
 
         await runtime.receiveDeltaMessage(envelope);
@@ -255,7 +259,9 @@ describe('browser group-state delta application', () => {
             eventType: 'group-updated',
         });
         await runtime.hydrate([cached]);
-        const fetchMock = vi.fn(async () => groupSnapshotResponse(resulting));
+        const fetchMock = vi.fn<typeof fetch>(
+            async () => groupSnapshotResponse(resulting),
+        );
         vi.stubGlobal('fetch', fetchMock);
         vi.mocked(decideGroupSnapshotCausalRevision).mockImplementationOnce(() => {
             throw new StateSnapshotRevisionConflictError('Group', resulting.stateRevision);

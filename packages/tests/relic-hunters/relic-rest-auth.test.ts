@@ -5,7 +5,7 @@ import type {
   GroupMember,
   GroupPresenceSession,
   GroupSnapshot,
-} from '@shared/mod.ts';
+} from '@shared/api/group-types.ts';
 import {
   authorizeRelicCommand,
   authorizeRelicReset,

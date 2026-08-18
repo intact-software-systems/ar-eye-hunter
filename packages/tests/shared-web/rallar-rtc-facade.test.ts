@@ -44,6 +44,17 @@ describe('Rallar RTC facade factory', () => {
         } satisfies RallarRtcStatus;
         const roomStatus = {
             roomId: 'room-1',
+            ws: {
+                sessionId: 'session-1',
+                connectState: 'connected',
+                readyState: 'open',
+                isOpen: true,
+                reconnecting: false,
+                reconnectEnabled: true,
+                reconnectAttempts: 0,
+                maxReconnectAttempts: 5,
+                reconnectExhausted: false,
+            },
             rtc: {
                 desired: true,
                 mode: 'warm',
@@ -55,7 +66,7 @@ describe('Rallar RTC facade factory', () => {
                 failedPeerIds: [],
                 laneId: 'lane-1',
             },
-        } as RallarRoomTransportStatus;
+        } satisfies RallarRoomTransportStatus;
         const laneResult = {
             transport: 'rtc',
             status: 'open',
@@ -72,6 +83,11 @@ describe('Rallar RTC facade factory', () => {
             rtcStatus: status,
             ready: [laneResult],
             notReady: [],
+            readyPeerIds: ['peer-1'],
+            notReadyPeerIds: [],
+            missingPeerIds: [],
+            extraPeerIds: [],
+            observedCount: 1,
         } satisfies RallarRtcRoomLaneWaitResult;
         const diagnostics = {
             sessionId: 'session-1',

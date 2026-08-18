@@ -18,7 +18,10 @@ function getJobBlock(workflow: string, jobName: string): string {
 
   const rest = workflow.slice(jobStart);
   const nextJob = rest.slice(`  ${jobName}:\n`.length).match(/\n  [a-z0-9-]+:\n/);
-  return nextJob ? rest.slice(0, `  ${jobName}:\n`.length + nextJob.index) : rest;
+  if (nextJob?.index === undefined) {
+    return rest;
+  }
+  return rest.slice(0, `  ${jobName}:\n`.length + nextJob.index);
 }
 
 describe('Deploy workflow release gate', () => {

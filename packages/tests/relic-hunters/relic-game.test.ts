@@ -543,8 +543,9 @@ describe('Relic Hunters game rules', () => {
         );
 
         const snapshot = toPublicRelicSnapshot(state);
-        expect(snapshot.setup?.seed).toBeUndefined();
-        expect(snapshot.setup?.blueprintId).toBeUndefined();
+        const publishedSetup: Record<string, unknown> = { ...snapshot.setup };
+        expect(publishedSetup.seed).toBeUndefined();
+        expect(publishedSetup.blueprintId).toBeUndefined();
         expect(JSON.stringify(snapshot)).not.toContain(blueprint.seed);
     });
 

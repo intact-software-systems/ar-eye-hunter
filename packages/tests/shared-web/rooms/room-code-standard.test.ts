@@ -207,7 +207,7 @@ describe('browser room code standard', () => {
         .map((declaration) => declaration.name)
         .sort();
 
-      expect(exportedDeclarations, fileName).toEqual(expect.arrayContaining(expectedNames));
+      expect(exportedDeclarations, fileName).toEqual(expect.arrayContaining([...expectedNames]));
     }
   });
 
@@ -301,7 +301,7 @@ function readRoomCallableMetrics(): readonly CallableMetric[] {
     const ast = parse(source, {
       sourceType: 'module',
       sourceFilename: fileName,
-      plugins: ['typescript', 'importAttributes'],
+      plugins: ['typescript'],
     });
     const metrics: CallableMetric[] = [];
     walkAst(ast.program as unknown as AstNode, undefined, (node, parent) => {

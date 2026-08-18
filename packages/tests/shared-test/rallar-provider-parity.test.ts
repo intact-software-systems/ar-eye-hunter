@@ -271,7 +271,7 @@ describe('rallar provider parity helpers', () => {
             },
         });
 
-        const report = await executeBlackBox(conversion.interactions, 0, {
+        const report = await executeBlackBox([...conversion.interactions], 0, {
             rtcProviders: {
                 'rallar-browser': createRallarBlackBoxRtcProvider(runtime),
             },
@@ -324,7 +324,7 @@ describe('rallar provider parity helpers', () => {
         });
         const server = new FakeRemoteControlServer();
 
-        const report = await executeBlackBox(conversion.interactions, 0, {
+        const report = await executeBlackBox([...conversion.interactions], 0, {
             rallarRemoteBrowser: {
                 controlBaseUrl: 'http://control.example.test',
                 runId: 'run-parity',
