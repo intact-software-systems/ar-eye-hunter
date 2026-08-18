@@ -678,7 +678,13 @@ describe('shared rallar black-box control client', () => {
             expect(uploads[0].body.kind).toBe('report');
             expect(uploads[0].authorization).toBe('Bearer run-token-1');
             expect(JSON.stringify(uploads[0].body)).not.toContain('secret-token');
-            const uploadedEvent = uploads[0].body.payload as any;
+            const uploadedBody = uploads[0].body;
+            if (uploadedBody.kind !== 'report') {
+                throw new Error(
+                    `expected an uploaded report envelope, received ${uploadedBody.kind}`,
+                );
+            }
+            const uploadedEvent = uploadedBody.payload as any;
             const uploadedReport = uploadedEvent.payload as any;
             expect(uploadedReport.summary).toBeDefined();
             expect(uploadedReport.stats).toBeDefined();

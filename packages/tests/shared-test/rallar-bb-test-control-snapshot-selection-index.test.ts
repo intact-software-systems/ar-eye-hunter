@@ -525,9 +525,13 @@ describe('control snapshot selection index', () => {
     it('drops rebind candidates when a supposedly equivalent poll changed identity order', () => {
         const snapshot = scaleSnapshot(2);
         const index = createControlSnapshotSelectionIndex(snapshot);
-        const changed = structuredClone(snapshot);
-        changed.runs.reverse();
-        changed.distributedRuns!.reverse();
+        const polled = structuredClone(snapshot);
+        const changed: ControlServerSnapshot = {
+            ...polled,
+            runs: [...polled.runs].reverse(),
+            distributedRuns: polled.distributedRuns &&
+                [...polled.distributedRuns].reverse(),
+        };
 
         expect(rebindControlRunFromSelectionIndex(index, changed, controlId(0))).toBeUndefined();
         expect(rebindDistributedRunFromSelectionIndex(
@@ -678,6 +682,9 @@ function distributedRun(
                 requiredRecipes: 0,
                 passedRecipes: 0,
                 failedRecipes: 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: 0,
             },
             failures: [],

@@ -5,6 +5,7 @@ import {
     RELIC_TYPES,
     createRelicGame,
     type RelicCommand,
+    type RelicExpeditionSetupMetadata,
     type RelicGameState,
 } from '@relic-hunters/mod.ts';
 import { installRelicHunterGame } from '../../../apps/relic-hunter-server-v1/src/relic-game-service.ts';
@@ -171,19 +172,24 @@ describe('Relic Hunter server game service', () => {
         expect(ensured.setup).toMatchObject({
             source: 'procedural',
         });
-        expect(ensured.setup?.seed).toBeUndefined();
+        // The public setup type omits `seed`; read it back as the full server-side
+        // metadata contract so the leak check stays a runtime assertion.
+        const ensuredSetup: RelicExpeditionSetupMetadata | undefined = ensured.setup;
+        expect(ensuredSetup?.seed).toBeUndefined();
 
         const joined = await service.applyCommand(joinCommand('room-2'), 'alice-session');
         expect(joined.setup).toMatchObject({
             source: 'procedural',
         });
-        expect(joined.setup?.seed).toBeUndefined();
+        const joinedSetup: RelicExpeditionSetupMetadata | undefined = joined.setup;
+        expect(joinedSetup?.seed).toBeUndefined();
 
         const reset = await service.reset('room-1');
         expect(reset.setup).toMatchObject({
             source: 'procedural',
         });
-        expect(reset.setup?.seed).toBeUndefined();
+        const resetSetup: RelicExpeditionSetupMetadata | undefined = reset.setup;
+        expect(resetSetup?.seed).toBeUndefined();
         expect(calls).toEqual([
             'ensure:room-1',
             'command:room-2',
@@ -265,7 +271,9 @@ function createFakeRallar(): Readonly<{
     };
 }
 
-function joinCommand(gameId: string): RelicCommand {
+function joinCommand(
+    gameId: string,
+): Extract<RelicCommand, Readonly<{ kind: 'join-expedition' }>> {
     return {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',

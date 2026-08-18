@@ -1,4 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type {
+    RallarCrdtSyncOptions,
+    RallarCrdtSyncResult,
+} from '@shared/crdt/crdt-types.ts';
+import type { BlackBoxRallarCloseDiagnostics } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
 
 const facade = vi.hoisted(() => {
     const session = {
@@ -119,7 +124,7 @@ type Runtime = Readonly<{
         close(input: unknown): Promise<unknown>;
         destroy(input: unknown): Promise<unknown>;
     };
-    close(): Promise<unknown>;
+    close(): Promise<BlackBoxRallarCloseDiagnostics>;
     health(input?: unknown): Promise<unknown>;
 }>;
 
@@ -237,14 +242,14 @@ function resetFacade(): void {
 
 async function loadRuntime(): Promise<Runtime> {
     vi.resetModules();
-    const target = globalThis as typeof globalThis & { window?: TestWindow };
-    target.window = {
+    const target: TestWindow = {
         __blackBoxRallarEmit: event => {
             events.push(event);
         },
     };
+    vi.stubGlobal('window', target);
     await import('../../shared-test/black-box-runner/browser/rallar-browser-runtime.ts');
-    const runtime = target.window.__blackBoxRallar;
+    const runtime = target.__blackBoxRallar;
     if (!runtime) {
         throw new Error('Browser Rallar runtime did not install.');
     }
@@ -297,16 +302,17 @@ function createFakeCrdtDocument(refId: string) {
         failedPendingUpdates: vi.fn(() => []),
         dependencyBlockedUpdates: vi.fn(() => []),
         snapshot: vi.fn(() => ({ value })),
-        flush: vi.fn(async () => undefined),
-        sync: vi.fn(async options => ({
+        flush: vi.fn(async (): Promise<void> => undefined),
+        sync: vi.fn(async (options?: RallarCrdtSyncOptions): Promise<RallarCrdtSyncResult> => ({
             status: 'synced',
             transport: options?.transport ?? 'local-only',
             sentUpdateCount: 0,
             receivedUpdateCount: 0,
             pendingUpdateCount: 0,
+            dependencyBlockedUpdateCount: 0,
         })),
-        close: vi.fn(async () => undefined),
-        destroy: vi.fn(async () => undefined),
+        close: vi.fn(async (): Promise<void> => undefined),
+        destroy: vi.fn(async (): Promise<void> => undefined),
         health: vi.fn(() => ({
             status: 'clean',
             pendingUpdateCount: 0,
@@ -323,7 +329,7 @@ describe('browser Rallar black-box runtime', () => {
     });
 
     afterEach(() => {
-        delete (globalThis as typeof globalThis & { window?: TestWindow }).window;
+        vi.unstubAllGlobals();
     });
 
     it('authenticates without initializing realtime middleware or connected runtime state', async () => {
@@ -2061,6 +2067,9 @@ describe('browser Rallar black-box runtime', () => {
             },
             delay: vi.fn(async () => undefined),
         });
+        if (runtime.authenticate === undefined) {
+            throw new Error('The injectable runtime did not expose authenticate.');
+        }
 
         await runtime.authenticate({
             connection: 'factoryAuth',
@@ -2559,7 +2568,7 @@ describe('browser Rallar black-box runtime', () => {
 
     it('rejects a CRDT wait promptly while close drains its in-flight sync', async () => {
         const document = createFakeCrdtDocument('sync-wait-during-close');
-        let resolveSync!: (result: unknown) => void;
+        let resolveSync!: (result: RallarCrdtSyncResult) => void;
         document.sync.mockImplementationOnce(() =>
             new Promise(resolve => {
                 resolveSync = resolve;
@@ -2609,6 +2618,7 @@ describe('browser Rallar black-box runtime', () => {
             sentUpdateCount: 0,
             receivedUpdateCount: 0,
             pendingUpdateCount: 0,
+            dependencyBlockedUpdateCount: 0,
         });
         const waitError = await waitOutcome;
         await closing;

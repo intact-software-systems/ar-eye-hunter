@@ -4,7 +4,8 @@ export function mutateAfterPossibleBreak(
   repository: ClientStateRepository,
   stop: boolean,
 ): void {
-  switch ('read') {
+  const mode: string = 'read';
+  switch (mode) {
     case 'read':
       if (stop) {
         break;
@@ -19,7 +20,8 @@ export function mutateAfterPossibleReturn(
   repository: ClientStateRepository,
   stop: boolean,
 ): void {
-  switch ('read') {
+  const mode: string = 'read';
+  switch (mode) {
     case 'read': {
       if (stop) {
         return;
@@ -35,7 +37,8 @@ export function mutateAfterPossibleThrow(
   repository: ClientStateRepository,
   stop: boolean,
 ): void {
-  switch ('read') {
+  const mode: string = 'read';
+  switch (mode) {
     case 'read': {
       if (stop) {
         throw new Error('stop');

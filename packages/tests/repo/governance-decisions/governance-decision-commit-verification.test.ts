@@ -30,7 +30,7 @@ describe('governance decision structural commit verification', () => {
 
     const verified = verifyGovernanceDecisionCommit({
       commitOid: fixture.commitOid,
-      readRepositorySnapshot: (commitOid) =>
+      readRepositorySnapshot: (commitOid: string) =>
         readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
     });
 
@@ -47,7 +47,7 @@ describe('governance decision structural commit verification', () => {
 
     const verified = verifyGovernanceDecisionCommit({
       commitOid: fixture.commitOid,
-      readRepositorySnapshot: (commitOid) =>
+      readRepositorySnapshot: (commitOid: string) =>
         readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
     });
 
@@ -64,7 +64,7 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: fixture.commitOid,
-        readRepositorySnapshot: (commitOid) => {
+        readRepositorySnapshot: (commitOid: string) => {
           const snapshot = readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid });
           return commitOid === fixture.commitOid ? { ...snapshot, parentOids: [] } : snapshot;
         },
@@ -73,7 +73,7 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: fixture.commitOid,
-        readRepositorySnapshot: (commitOid) => {
+        readRepositorySnapshot: (commitOid: string) => {
           const snapshot = readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid });
           return commitOid === fixture.commitOid
             ? { ...snapshot, parentOids: [fixture.parentOid, 'f'.repeat(40)] }
@@ -113,7 +113,7 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: fixture.commitOid,
-        readRepositorySnapshot: (commitOid) =>
+        readRepositorySnapshot: (commitOid: string) =>
           commitOid === fixture.commitOid
             ? { ...forgedSnapshot, parentOids: [fixture.parentOid] }
             : readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
@@ -151,7 +151,7 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: fixture.commitOid,
-        readRepositorySnapshot: (commitOid) =>
+        readRepositorySnapshot: (commitOid: string) =>
           commitOid === fixture.commitOid
             ? { ...forgedSnapshot, parentOids: [fixture.parentOid] }
             : readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
@@ -192,7 +192,7 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: fixture.commitOid,
-        readRepositorySnapshot: (commitOid) =>
+        readRepositorySnapshot: (commitOid: string) =>
           commitOid === fixture.commitOid
             ? { ...arbitrarySuccessor, parentOids: [fixture.parentOid] }
             : readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
@@ -206,7 +206,7 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: fixture.commitOid,
-        readRepositorySnapshot: (commitOid) =>
+        readRepositorySnapshot: (commitOid: string) =>
           commitOid === fixture.commitOid
             ? { ...symlinkSuccessor, parentOids: [fixture.parentOid] }
             : readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
@@ -220,7 +220,7 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: fixture.commitOid,
-        readRepositorySnapshot: (commitOid) =>
+        readRepositorySnapshot: (commitOid: string) =>
           readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
       }),
     ).toThrow('receipt serialization must be canonical JSON plus one newline');
@@ -231,7 +231,7 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: undeclared.commitOid,
-        readRepositorySnapshot: (commitOid) =>
+        readRepositorySnapshot: (commitOid: string) =>
           readGitRepositorySnapshot({ repoRoot: undeclared.root, commitOid }),
       }),
     ).toThrow('commit changes do not match receipt stateChanges');
@@ -243,7 +243,7 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: declared.commitOid,
-        readRepositorySnapshot: (commitOid) =>
+        readRepositorySnapshot: (commitOid: string) =>
           readGitRepositorySnapshot({ repoRoot: declared.root, commitOid }),
       }),
     ).toThrow('commit does not equal the deterministic governance transition');
@@ -255,7 +255,7 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: fixture.commitOid,
-        readRepositorySnapshot: (commitOid) =>
+        readRepositorySnapshot: (commitOid: string) =>
           readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
       }),
     ).toThrow('receipt requestDigest must equal the canonical request digest');
@@ -273,7 +273,7 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: modifiedCommit,
-        readRepositorySnapshot: (commitOid) =>
+        readRepositorySnapshot: (commitOid: string) =>
           readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
       }),
     ).toThrow('existing governance decision receipts are immutable');
@@ -287,7 +287,7 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: deletedCommit,
-        readRepositorySnapshot: (commitOid) =>
+        readRepositorySnapshot: (commitOid: string) =>
           readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
       }),
     ).toThrow('existing governance decision receipts are immutable');
@@ -328,7 +328,7 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: fixture.commitOid,
-        readRepositorySnapshot: (commitOid) =>
+        readRepositorySnapshot: (commitOid: string) =>
           commitOid === fixture.parentOid ? parentSnapshot : forgedCommitSnapshot,
       }),
     ).toThrow('commit does not equal the deterministic governance transition');
@@ -357,7 +357,7 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: fixture.commitOid,
-        readRepositorySnapshot: (commitOid) =>
+        readRepositorySnapshot: (commitOid: string) =>
           commitOid === fixture.parentOid ? parentSnapshot : withExtraKey,
       }),
     ).toThrow('receipt must contain exactly');
@@ -369,7 +369,7 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: fixture.commitOid,
-        readRepositorySnapshot: (commitOid) =>
+        readRepositorySnapshot: (commitOid: string) =>
           commitOid === fixture.parentOid ? parentSnapshot : symlinkReceipt,
       }),
     ).toThrow('new governance decision receipt must be a regular file');

@@ -3,8 +3,11 @@ import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { toRallarRoomSummary } from '@shared-web/browser/rooms/room-group-state-translation.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ArenaConnection } from '../../../apps/ar-eye-hunter-v1/src/game/useRallarArena.ts';
 import App from '../../../apps/ar-eye-hunter-v1/src/App.tsx';
+import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -86,9 +89,23 @@ describe('AR Eye Hunter diagnostics lifecycle', () => {
     }
 });
 
+function createArenaRoomSnapshot(): GroupSnapshot {
+    const snapshot = createGroupSnapshotFixture({
+        applicationId: 'ar-eye-hunter',
+        workspaceId: 'default',
+        groupId: 'arena-1',
+        sessionIds: ['hunter-1'],
+    });
+    return {
+        ...snapshot,
+        group: { ...snapshot.group, displayName: 'Arena: Vector Circuit' },
+    };
+}
+
 function createArenaConnection(
     overrides: Partial<ArenaConnection> = {},
 ): ArenaConnection {
+    const arenaRoomSnapshot = createArenaRoomSnapshot();
     return {
         session: {
             clientId: 'hunter-1',
@@ -101,17 +118,20 @@ function createArenaConnection(
         error: undefined,
         roomId: 'arena-1',
         rooms: [
-            {
-                roomId: 'arena-1',
-                groupId: 'arena-1',
-                name: 'Arena: Vector Circuit',
-            },
+            toRallarRoomSummary({
+                snapshot: arenaRoomSnapshot,
+                sessionId: 'session-1',
+                currentRoomRef: arenaRoomSnapshot.group,
+            }),
         ],
         directorStatus: {
             role: 'none',
             state: 'none',
             isDirector: false,
             isFresh: false,
+            active: false,
+            freshness: 'none',
+            nowEpochMs: Date.now(),
         },
         rtcLanes: [],
         directorAttempt: { status: 'idle' },

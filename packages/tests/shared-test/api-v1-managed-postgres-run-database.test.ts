@@ -66,8 +66,8 @@ describe('managed API-v1 PostgreSQL run database', () => {
   });
 
   it('drops the isolated database after the managed callback rejects', async () => {
-    const unsafe = vi.fn(() => Promise.resolve([]));
-    const end = vi.fn(() => Promise.resolve());
+    const unsafe = vi.fn((_query: string) => Promise.resolve([]));
+    const end = vi.fn((_options: { timeout: number }) => Promise.resolve());
     vi.mocked(postgres).mockReturnValue({ unsafe, end } as never);
 
     await expect(

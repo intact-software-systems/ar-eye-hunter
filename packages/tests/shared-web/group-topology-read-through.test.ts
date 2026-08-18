@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import {
@@ -10,6 +10,7 @@ import {
 } from '@shared/api/state-types.ts';
 import { findOverlayById, setOverlayById } from '@shared/repository/overlays-repository.ts';
 import { toOverlayInfoForSession } from '@shared/api/overlay-topology.ts';
+import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
@@ -32,7 +33,9 @@ describe('group topology read-through', () => {
   it('adopts the current server overlay for each joined group', async () => {
     const group = createGroupSnapshot('room-a', ['session-a', 'session-b']);
     const topology = createTopologySnapshot(group, { groupRevision: 2, presenceRevision: 2 }, 3);
-    const fetchMock = vi.fn(async () => jsonResponse(topologyView(group, topology)));
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
+      jsonResponse(topologyView(group, topology)),
+    );
     vi.stubGlobal('fetch', fetchMock);
     const manager = createWebRtcGroupManager();
 
@@ -141,7 +144,7 @@ function topologyView(
   };
 }
 
-function createWebRtcGroupManager() {
+function createWebRtcGroupManager(): WebRtcGroupManager {
   return {
     notifyClientPresenceChanged: vi.fn(async () => undefined),
     notifyOverlayTopologyChanged: vi.fn(async () => undefined),
@@ -172,22 +175,34 @@ function createGroupSnapshot(groupId: string, sessionIds: readonly string[]): Gr
       ownerPrincipalId,
     }),
     members: sessionIds.map((sessionId) => ({
+      applicationId: DEFAULT_STATE_APPLICATION_ID,
+      workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+      groupId,
       principalId: sessionId,
       role: 'member',
       status: 'active',
-      displayName: sessionId,
-      invitedBy: null,
-      joinedAtEpochMs: 1,
+      joined: auditStamp(1),
       updated: auditStamp(1),
+      left: null,
+      removed: null,
+      banned: null,
+      invitedByPrincipalId: null,
+      invitationExpiresAtEpochMs: null,
     })),
     activeSessions: sessionIds.map((sessionId) => ({
+      applicationId: DEFAULT_STATE_APPLICATION_ID,
+      workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+      groupId,
       sessionId,
       principalId: sessionId,
-      clientId: `client-${sessionId}`,
+      generationId: 'generation-1',
+      generationVersion: 1,
+      status: 'active',
+      disconnectedAtEpochMs: null,
+      disconnectReason: null,
       connectedAtEpochMs: 1,
       lastHeartbeatAtEpochMs: 1,
       expiresAtEpochMs: Date.now() + 120_000,
-      generationId: 'generation-1',
     })),
     memberCount: sessionIds.length,
     onlineMemberCount: sessionIds.length,
@@ -220,6 +235,12 @@ function createTopologySnapshot(
   };
 }
 
-function auditStamp(atEpochMs: number) {
-  return { by: 'test', atEpochMs } as never;
+function auditStamp(atEpochMs: number): AuditStamp {
+  return {
+    atEpochMs,
+    actor: { kind: 'principal', principalId: 'test' },
+    reason: null,
+    traceId: null,
+    requestId: null,
+  };
 }

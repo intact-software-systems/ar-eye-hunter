@@ -13,6 +13,8 @@ import {
     toArenaSnapshot,
 } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 import { useRallarArena, type ArenaConnection } from '../../../apps/ar-eye-hunter-v1/src/game/useRallarArena.ts';
+import type { ArenaRallarGameMatchHandle } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
+import type { RallarGameMatchStatus, RallarGamePeerReadiness } from '@shared-web/game/mod.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -28,11 +30,25 @@ const authListeners = new Set<(state: RallarAuthState) => void | Promise<void>>(
 const unsubscribe = vi.fn();
 const mockMatch = vi.hoisted(() => ({
     stop: vi.fn(),
-    status: vi.fn(() => ({ directorPeerId: undefined, directorIsFresh: false })),
+    status: vi.fn<ArenaRallarGameMatchHandle['status']>(() => ({
+        phase: 'connecting',
+        protocol: 'ar-eye-hunter.v1',
+        topicId: 'room.ar-eye-hunter.director',
+        directorPeerId: undefined,
+        directorIsFresh: false,
+        directorAuthority: 'none',
+        egress: { reliable: 'empty', realtime: 'empty' },
+        recovery: { status: 'idle' },
+        started: true,
+        stopped: false,
+        updatedAtEpochMs: 1,
+    })),
     diagnostics: vi.fn(() => ({
         generatedAtEpochMs: 1,
         phase: 'starting',
         directorIsFresh: false,
+        directorAuthority: 'none',
+        egress: { reliable: 'empty', realtime: 'empty' },
         recovery: { status: 'idle' },
         knownPeerIds: [],
         readyPeerIds: [],
@@ -42,30 +58,38 @@ const mockMatch = vi.hoisted(() => ({
         realtimeHealth: [],
         issues: [],
     })),
-    canAppointDirector: vi.fn(() => ({
+    canAppointDirector: vi.fn<ArenaRallarGameMatchHandle['canAppointDirector']>(() => ({
         allowed: true,
         status: 'allowed',
         policy: 'metadata-owner-admin-or-member-fallback',
     })),
     start: vi.fn(() => Promise.resolve()),
-    reportCapability: vi.fn(() => Promise.resolve({ status: 'sent' })),
-    appointIfElected: vi.fn(() => Promise.resolve({
-        status: 'not-elected',
-        election: {
-            candidates: [],
-            nowEpochMs: 1,
-            capabilityTtlMs: 10_000,
-        },
-        reason: 'The local peer is not the elected host.',
-    })),
+    reportCapability: vi.fn<ArenaRallarGameMatchHandle['reportCapability']>(() =>
+        Promise.resolve({ status: 'sent' })
+    ),
+    appointIfElected: vi.fn<ArenaRallarGameMatchHandle['appointIfElected']>(() =>
+        Promise.resolve({
+            status: 'not-elected',
+            election: {
+                candidates: [],
+                nowEpochMs: 1,
+                capabilityTtlMs: 10_000,
+            },
+            reason: 'The local peer is not the elected host.',
+        })
+    ),
     onStatus: vi.fn(() => vi.fn()),
-    waitForReadyLanes: vi.fn(() => Promise.resolve()),
+    waitForReadyLanes: vi.fn<ArenaRallarGameMatchHandle['waitForReadyLanes']>(() =>
+        Promise.resolve(emptyPeerReadiness())
+    ),
     publishEvent: vi.fn(),
     publishSnapshot: vi.fn(),
     sendIntent: vi.fn(),
     sendInput: vi.fn(),
     sendPresence: vi.fn(),
-    requestSync: vi.fn(() => Promise.resolve({ status: 'sent' })),
+    requestSync: vi.fn<ArenaRallarGameMatchHandle['requestSync']>(() =>
+        Promise.resolve({ status: 'sent' })
+    ),
 }));
 const mockRallar = vi.hoisted(() => ({
     auth: {
@@ -389,49 +413,7 @@ describe('useRallarArena auth lifecycle', () => {
                     acceptedAtEpochMs: 5_000,
                 },
             );
-            connectedConnection?.publishArenaSnapshot({
-                protocol: 'ar-eye-hunter.v1',
-                roomId: 'arena-1',
-                revision: 99,
-                generatedAtEpochMs: 5_000,
-                localPlayer: {
-                    sessionId: session.sessionId,
-                    username: session.username,
-                    color: '#00ffaa',
-                    position: [0, 0, 0],
-                    rotation: [0, 0, 0],
-                    velocity: [0, 0, 0],
-                    score: 0,
-                    combo: 0,
-                    seq: 1,
-                    sentAtEpochMs: 5_000,
-                },
-                combat: {
-                    energy: 100,
-                    maxEnergy: 100,
-                    shotReadyAtEpochMs: 0,
-                    dashReadyAtEpochMs: 0,
-                    slideReadyAtEpochMs: 0,
-                    overdrive: 0,
-                    overdriveReady: false,
-                    streak: 0,
-                    multiplier: 1,
-                },
-                targets: [],
-                events: [],
-                pickups: [],
-                players: [],
-                attacks: [],
-                wave: {
-                    wave: 1,
-                    phase: 'warmup',
-                    phaseStartedAtEpochMs: 0,
-                    phaseEndsAtEpochMs: 1_000,
-                    targetBudget: 0,
-                    hostileBudget: 0,
-                    pickupRewardBudget: 0,
-                },
-            });
+            connectedConnection?.publishArenaSnapshot(arenaSnapshot(99));
         });
 
         expect(mockMatch.publishEvent).not.toHaveBeenCalled();
@@ -565,12 +547,12 @@ describe('useRallarArena auth lifecycle', () => {
         await act(async () => {
             appointment.resolve({
                 status: 'appointed',
-                directorStatus: {
-                    role: 'director',
-                    state: 'fresh',
-                    isDirector: true,
-                    isFresh: true,
+                election: {
+                    candidates: [],
+                    nowEpochMs: 2,
+                    capabilityTtlMs: 10_000,
                 },
+                directorStatus: freshDirectorStatus(),
             });
             await appointment.promise;
         });
@@ -628,49 +610,7 @@ describe('useRallarArena auth lifecycle', () => {
 
         const signedOutConnection = current;
         await act(async () => {
-            signedOutConnection?.publishArenaSnapshot({
-                protocol: 'ar-eye-hunter.v1',
-                roomId: 'arena-1',
-                revision: 99,
-                generatedAtEpochMs: 5_000,
-                localPlayer: {
-                    sessionId: session.sessionId,
-                    username: session.username,
-                    color: '#00ffaa',
-                    position: [0, 0, 0],
-                    rotation: [0, 0, 0],
-                    velocity: [0, 0, 0],
-                    score: 0,
-                    combo: 0,
-                    seq: 1,
-                    sentAtEpochMs: 5_000,
-                },
-                combat: {
-                    energy: 100,
-                    maxEnergy: 100,
-                    shotReadyAtEpochMs: 0,
-                    dashReadyAtEpochMs: 0,
-                    slideReadyAtEpochMs: 0,
-                    overdrive: 0,
-                    overdriveReady: false,
-                    streak: 0,
-                    multiplier: 1,
-                },
-                targets: [],
-                events: [],
-                pickups: [],
-                players: [],
-                attacks: [],
-                wave: {
-                    wave: 1,
-                    phase: 'warmup',
-                    phaseStartedAtEpochMs: 0,
-                    phaseEndsAtEpochMs: 1_000,
-                    targetBudget: 0,
-                    hostileBudget: 0,
-                    pickupRewardBudget: 0,
-                },
-            });
+            signedOutConnection?.publishArenaSnapshot(arenaSnapshot(99));
         });
 
         expect(current?.connectionState).toBe('signed-out');
@@ -862,7 +802,7 @@ describe('useRallarArena auth lifecycle', () => {
     });
 
     it('requests solo arena sync immediately after director appointment without waiting for RTC lanes', async () => {
-        const laneWait = createDeferred<unknown>();
+        const laneWait = createDeferred<RallarGamePeerReadiness>();
         mockRallar.director.status.mockReturnValue(freshDirectorStatus());
         mockMatch.appointIfElected.mockResolvedValueOnce({
             status: 'appointed',
@@ -909,11 +849,7 @@ describe('useRallarArena auth lifecycle', () => {
         });
 
         await act(async () => {
-            laneWait.resolve({
-                status: 'empty',
-                readyPeerIds: [],
-                notReadyPeerIds: [],
-            });
+            laneWait.resolve(emptyPeerReadiness());
             await laneWait.promise;
         });
     });
@@ -973,10 +909,7 @@ describe('useRallarArena auth lifecycle', () => {
     it('still publishes the local director pose through Rallar Game presence', async () => {
         await renderHook();
         await waitForState(() => current?.connectionState === 'connected');
-        mockMatch.status.mockReturnValue({
-            directorPeerId: session.sessionId,
-            directorIsFresh: true,
-        });
+        mockMatch.status.mockReturnValue(localDirectorMatchStatus());
 
         await act(async () => {
             current?.sendPose({
@@ -1017,10 +950,7 @@ describe('useRallarArena auth lifecycle', () => {
     it('sends Rallar JSON-compatible pose envelopes when optional vitals are unset', async () => {
         await renderHook();
         await waitForState(() => current?.connectionState === 'connected');
-        mockMatch.status.mockReturnValue({
-            directorPeerId: session.sessionId,
-            directorIsFresh: true,
-        });
+        mockMatch.status.mockReturnValue(localDirectorMatchStatus());
 
         await act(async () => {
             current?.sendPose({
@@ -1186,6 +1116,38 @@ function arenaSnapshot(revision: number) {
             1_000 + revision,
         ),
         revision,
+    };
+}
+
+function localDirectorMatchStatus(): RallarGameMatchStatus {
+    return {
+        phase: 'active',
+        protocol: 'ar-eye-hunter.v1',
+        topicId: 'room.ar-eye-hunter.director',
+        roomId: 'arena-1',
+        localPeerId: session.sessionId,
+        directorPeerId: session.sessionId,
+        directorEpoch: 1,
+        directorIsFresh: true,
+        directorAuthority: 'active',
+        egress: { reliable: 'ready', realtime: 'empty' },
+        recovery: { status: 'idle' },
+        started: true,
+        stopped: false,
+        updatedAtEpochMs: 2,
+    };
+}
+
+function emptyPeerReadiness(): RallarGamePeerReadiness {
+    return {
+        status: 'empty',
+        laneIds: [],
+        readyPeerIds: [],
+        notReadyPeerIds: [],
+        missingPeerIds: [],
+        extraPeerIds: [],
+        observedCount: 0,
+        lanes: [],
     };
 }
 

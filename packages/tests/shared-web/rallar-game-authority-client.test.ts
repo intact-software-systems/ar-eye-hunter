@@ -14,7 +14,13 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
     RallarMessage,
     RallarMessageSelectorInput,
+    RallarRoomMessageChannelDefinition,
+    RallarRtcSendInput,
     RallarRtcStatus,
+    RallarTypedMessageSendOptions,
+    RallarTypedRtcSendOptions,
+    RallarTypedWsSendOptions,
+    RallarWsSendInput,
 } from '@shared-web/browser/rallar.ts';
 
 type Command = Readonly<{ action: string }>;
@@ -307,13 +313,13 @@ function createFakeRallar() {
         readyPeerIds: ['peer-b'],
         peers: [],
     };
-    const wsSend = vi.fn(async (input: unknown) => ({
+    const wsSend = vi.fn(async (input: RallarWsSendInput<unknown>) => ({
         transport: 'ws' as const,
         status: 'enqueued' as const,
         message: input,
         entries: [],
     }));
-    const rtcSend = vi.fn(async (input: unknown) => ({
+    const rtcSend = vi.fn(async (input: RallarRtcSendInput<unknown>) => ({
         transport: 'rtc' as const,
         status: 'enqueued' as const,
         message: input,
@@ -367,26 +373,31 @@ function createFakeRallar() {
                         return () => remove(rtcMessageHandlers, subscription);
                     },
                 },
-                room: (definition: Readonly<{ topicId?: string; typeId: string; roomId?: string; roomRef?: unknown }>) => ({
-                    send: async (payload: unknown, options: Record<string, unknown> = {}) =>
-                        await rtcSend({
-                            ...definition,
-                            ...options,
-                            payload,
-                        }),
-                    sendRtc: async (payload: unknown, options: Record<string, unknown> = {}) =>
-                        await rtcSend({
-                            ...definition,
-                            ...options,
-                            payload,
-                        }),
-                    sendWs: async (payload: unknown, options: Record<string, unknown> = {}) =>
-                        await wsSend({
-                            ...definition,
-                            ...options,
-                            payload,
-                            scope: options['scope'] ?? 'room',
-                        }),
+                room: (definition: RallarRoomMessageChannelDefinition) => ({
+                    send: async (
+                        payload: unknown,
+                        options: RallarTypedMessageSendOptions<unknown> = {},
+                    ) => {
+                        const input = { ...definition, ...options, payload };
+                        return await rtcSend(input);
+                    },
+                    sendRtc: async (
+                        payload: unknown,
+                        options: RallarTypedRtcSendOptions<unknown> = {},
+                    ) => await rtcSend({
+                        ...definition,
+                        ...options,
+                        payload,
+                    }),
+                    sendWs: async (
+                        payload: unknown,
+                        options: RallarTypedWsSendOptions<unknown> = {},
+                    ) => await wsSend({
+                        ...definition,
+                        ...options,
+                        payload,
+                        scope: options.scope ?? 'room',
+                    }),
                     onRtc: (
                         handler: (payload: unknown, message: RallarMessage<unknown>) => void | Promise<void>,
                     ) => {

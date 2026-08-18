@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { deriveApiV1StateWriteEvidence } from
     '@shared-test/black-box-runner/api-v1-state-write-evidence.ts';
+import type {
+    AuthoritativeReceiptEvidence,
+    PersistedCommandEvidence,
+} from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts';
 
 const commandId = 'topology-command-1';
 const effectId = `${commandId}:rtc-topology-recompute:1`;
@@ -174,34 +178,35 @@ describe('durable AppInbox result evidence', () => {
     });
 
     it('cross-checks an embedded receipt with authoritative persisted receipt truth', () => {
-        const authoritative = [{
+        const receipt: AuthoritativeReceiptEvidence = {
+            appInboxResourceId: commandId,
+            commandId,
+            commandHash,
+            outcome: 'applied',
+            outboxIds: [effectId],
+            identityKind: 'logical-msg-id',
+            topology: {
+                operation: 'putConfig', target: 'config', groupRef: topologyGroupRef,
+                acceptedVersion: 1, acceptedStorageRevision: 0,
+                acceptedCreatedAtEpochMs: 10, acceptedUpdatedAtEpochMs: 11,
+                acceptedExpiresAtEpochMs: null, acceptedConfig,
+            },
+        };
+        const authoritative: readonly PersistedCommandEvidence[] = [{
             appInboxResourceId: commandId,
             valid: true,
             commandType: 'TOPOLOGY_CONFIG_PUT',
             commandIds: [commandId],
-            receipt: {
-                appInboxResourceId: commandId,
-                commandId,
-                commandHash,
-                outcome: 'applied',
-                outboxIds: [effectId],
-                identityKind: 'logical-msg-id' as const,
-                topology: {
-                    operation: 'putConfig', target: 'config', groupRef: topologyGroupRef,
-                    acceptedVersion: 1, acceptedStorageRevision: 0,
-                    acceptedCreatedAtEpochMs: 10, acceptedUpdatedAtEpochMs: 11,
-                    acceptedExpiresAtEpochMs: null, acceptedConfig,
-                },
-            },
+            receipt,
         }];
         const valid = deriveApiV1StateWriteEvidence(
             spec, [command], [effect], [], undefined, authoritative,
         );
         expect(valid).toMatchObject({ atomicCompletionFailures: 0 });
 
-        const tampered = [{
+        const tampered: readonly PersistedCommandEvidence[] = [{
             ...authoritative[0],
-            receipt: { ...authoritative[0].receipt, outboxIds: ['invented-authoritative-id'] },
+            receipt: { ...receipt, outboxIds: ['invented-authoritative-id'] },
         }];
         expect(deriveApiV1StateWriteEvidence(
             spec, [command], [effect], [], undefined, tampered,
@@ -286,7 +291,7 @@ describe('durable AppInbox result evidence', () => {
     it('keeps a physical AppInbox key distinct from logical command and receipt identity', () => {
         const physicalResourceId = 'physical-topology-row-1';
         const physicalCommand = { ...command, ri_resource_id: physicalResourceId };
-        const authoritative = [{
+        const authoritative: readonly PersistedCommandEvidence[] = [{
             appInboxResourceId: physicalResourceId,
             valid: true,
             commandType: 'TOPOLOGY_CONFIG_PUT',
@@ -297,7 +302,7 @@ describe('durable AppInbox result evidence', () => {
                 commandHash,
                 outcome: 'applied',
                 outboxIds: [effectId],
-                identityKind: 'logical-msg-id' as const,
+                identityKind: 'logical-msg-id',
                 topology: {
                     operation: 'putConfig', target: 'config', groupRef: topologyGroupRef,
                     acceptedVersion: 1, acceptedStorageRevision: 0,

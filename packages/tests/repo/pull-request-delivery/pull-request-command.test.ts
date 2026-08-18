@@ -2,7 +2,38 @@ import { describe, expect, it } from 'vitest';
 
 import { runPullRequestDeliveryCommand } from '../../../../scripts/pull-request-delivery.mjs';
 
-const passingCheck = {
+interface PullRequestCheckRun {
+  readonly __typename: 'CheckRun';
+  readonly name: string;
+  readonly status: string;
+  readonly conclusion: string;
+  readonly startedAt?: string;
+  readonly completedAt?: string;
+  readonly detailsUrl: string;
+  readonly workflowName: string;
+}
+
+interface PullRequestAutoMergeRequest {
+  readonly enabledAt: string;
+  readonly mergeMethod: string;
+  readonly enabledBy: { readonly login: string };
+}
+
+interface PullRequestFixture {
+  readonly number: number;
+  readonly url: string;
+  readonly state: string;
+  readonly mergedAt: string | null;
+  readonly isDraft: boolean;
+  readonly baseRefName: string;
+  readonly mergeable: string;
+  readonly mergeStateStatus: string;
+  readonly statusCheckRollup: readonly PullRequestCheckRun[];
+  readonly reviewDecision: string;
+  readonly autoMergeRequest: PullRequestAutoMergeRequest | null;
+}
+
+const passingCheck: PullRequestCheckRun = {
   __typename: 'CheckRun',
   name: 'Branch Release Gate result',
   status: 'COMPLETED',
@@ -13,7 +44,7 @@ const passingCheck = {
   workflowName: 'Branch Release Gate',
 };
 
-const openPullRequest = {
+const openPullRequest: PullRequestFixture = {
   number: 222,
   url: 'https://github.com/example/repository/pull/222',
   state: 'OPEN',
@@ -390,7 +421,7 @@ interface GithubFixtureConfig {
 }
 
 function createGithubFixture(
-  pullRequests: readonly (typeof openPullRequest)[],
+  pullRequests: readonly PullRequestFixture[],
   config: GithubFixtureConfig = {},
 ): GithubFixture {
   const calls: GithubCall[] = [];
@@ -444,8 +475,8 @@ async function runCommand(arguments_: readonly string[], github: GithubFixture) 
   const errors: string[] = [];
   const action = await runPullRequestDeliveryCommand(arguments_, {
     execFile: github.execFile,
-    writeOutput: (line) => output.push(line),
-    writeError: (line) => errors.push(line),
+    writeOutput: (line: string) => output.push(line),
+    writeError: (line: string) => errors.push(line),
   });
 
   return { action, output, errors };

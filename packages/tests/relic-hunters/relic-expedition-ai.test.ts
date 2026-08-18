@@ -5,7 +5,6 @@ import {
 } from '@relic-hunters/mod.ts';
 import {
     isRallarAiProviderAllowedInProduction,
-    type RallarAiEvaluationCase,
     type RallarAiJsonProvider,
     type RallarAiJsonRequest,
     type RallarAiJsonResult,
@@ -203,7 +202,7 @@ describe('Relic expedition AI factory', () => {
             reason: 'ensure',
             seed: 'room-1:ensure:live-test',
             timeoutMs: 250,
-        }) as readonly RallarAiEvaluationCase<RelicExpeditionBlueprint>[];
+        });
         const liveProvider = createStaticBlueprintProvider(
             createProceduralRelicExpeditionBlueprint({
                 seed: 'room-1:ensure:live-test',

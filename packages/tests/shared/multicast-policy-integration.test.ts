@@ -9,7 +9,15 @@ import type {
 } from '@shared/api/group-types.ts';
 import { createTestGroup } from '@shared-test/create-test-group.ts';
 
-(globalThis as { Temporal?: typeof Temporal }).Temporal ??= Temporal;
+// TypeScript declares a native `globalThis.Temporal` whose shape differs from the polyfill's, so
+// the polyfill has to be installed through a property definition rather than a typed assignment.
+if (!('Temporal' in globalThis)) {
+    Object.defineProperty(globalThis, 'Temporal', {
+        configurable: true,
+        value: Temporal,
+        writable: true,
+    });
+}
 
 type SharedModule = typeof import('@shared/mod.ts');
 type SharedMessage = import('@shared/mod.ts').ALMessage;

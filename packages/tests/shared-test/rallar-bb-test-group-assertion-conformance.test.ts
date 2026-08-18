@@ -93,7 +93,7 @@ describe('rallar-bb-test group assertion conformance', () => {
 
     it('does not evaluate until every dispatched recipe result completed', () => {
         const manifest = {
-            schemaVersion: 1,
+            schemaVersion: 1 as const,
             distributedRunId: 'pending-run',
             group: {
                 applicationId: 'rallar-server',

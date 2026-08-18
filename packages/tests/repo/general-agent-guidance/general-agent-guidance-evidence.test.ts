@@ -337,7 +337,7 @@ interface EvidenceVariant {
   readonly inputBundleDigest: string;
 }
 
-interface EvidenceRun extends EvidenceVariant {
+interface EvidenceRun extends Omit<EvidenceVariant, 'id'> {
   status: string;
   variant: string;
   runId: string;

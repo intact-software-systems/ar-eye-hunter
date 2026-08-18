@@ -51,6 +51,9 @@ describe('AR Eye Hunter browser AI provider selection', () => {
         });
 
         expect(selection.status).toBe('ready');
+        if (selection.status !== 'ready') {
+            throw new Error('The browser AI selection did not become ready.');
+        }
         const result = await selection.provider.generateJson(request);
 
         expect(result.value).toEqual({ fallback: true });

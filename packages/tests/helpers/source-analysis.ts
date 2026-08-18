@@ -1,4 +1,4 @@
-import { parse } from '@babel/parser';
+import { parse, type ParserPlugin } from '@babel/parser';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
@@ -65,7 +65,7 @@ export function analyzeSource(source: string, filePath: string): SourceAnalysis 
 
     try {
         const extension = path.extname(filePath).toLowerCase();
-        const plugins: string[] = ['typescript', 'importAttributes'];
+        const plugins: ParserPlugin[] = ['typescript'];
         if (extension === '.tsx' || extension === '.jsx') {
             plugins.unshift('jsx');
         }

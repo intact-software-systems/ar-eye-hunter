@@ -6,6 +6,14 @@ import { describe, expect, it } from 'vitest';
 
 const repoRoot = path.resolve(__dirname, '../../../..');
 
+interface WorkflowStep {
+  readonly name?: string;
+  readonly uses?: string;
+  readonly run?: string;
+  readonly env?: Readonly<Record<string, string>>;
+  readonly with?: Readonly<Record<string, string>>;
+}
+
 describe('governance decision GitHub workflows', () => {
   it('keeps App credentials behind a trusted-main administrator preflight', () => {
     const workflow = readWorkflow('.github/workflows/governance-decision.yml');
@@ -25,7 +33,7 @@ describe('governance decision GitHub workflows', () => {
       if: "needs.preflight.outputs.mode == 'apply'",
       environment: 'governance-decisions-main',
     });
-    const applySteps = workflow.jobs.apply.steps as readonly Record<string, unknown>[];
+    const applySteps = workflow.jobs.apply.steps as readonly WorkflowStep[];
     const appTokenIndex = applySteps.findIndex(
       (step) => step.uses === 'actions/create-github-app-token@v2',
     );
@@ -77,6 +85,9 @@ describe('governance decision GitHub workflows', () => {
         GOVERNANCE_GATE_EVIDENCE_PATH: '${{ runner.temp }}/governance-gate-evidence.json',
       },
     });
+    if (!applyRun?.env) {
+      throw new Error('Expected the apply step to declare an env block');
+    }
     expect(applyRun.env.GH_TOKEN).toBe('${{ steps.app-token.outputs.token }}');
   });
 

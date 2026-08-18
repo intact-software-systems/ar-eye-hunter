@@ -54,7 +54,14 @@ describe('GitHub governance decision publication', () => {
         { path: 'governance/decisions/receipt.json', content: '{"receipt":true}\n' },
       ],
       deletions: ['plans/blocked-plan.md'],
-      writeCommit: (publication) => {
+      writeCommit: (publication: {
+        repository: string;
+        branchName: string;
+        expectedHeadOid: string;
+        message: string;
+        additions: readonly { path: string; contents: string }[];
+        deletions: readonly { path: string }[];
+      }) => {
         observed = publication;
         return { oid: '3'.repeat(40) };
       },
@@ -110,7 +117,7 @@ describe('GitHub governance decision publication', () => {
     expect(
       publishImmutableGitBlob({
         bytes,
-        writeBlob: (blob) => {
+        writeBlob: (blob: { content: string; encoding: 'base64' }) => {
           observed = blob;
           return { sha: '5'.repeat(40) };
         },

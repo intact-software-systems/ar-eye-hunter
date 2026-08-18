@@ -15,6 +15,7 @@ import {
 } from '@relic-hunters/mod.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { RallarWsSendInput } from '@shared-web/browser/rallar-messages-facade.ts';
 
 const rallarMock = vi.hoisted(() => ({
     session: undefined as AuthSession | undefined,
@@ -24,9 +25,9 @@ const rallarMock = vi.hoisted(() => ({
     wsMessageHandler: undefined as
         | ((message: {
             payload: unknown;
-            senderId?: string;
+            senderId: string;
             roomId?: string;
-            receivedAtEpochMs?: number;
+            receivedAtEpochMs: number;
         }) => void)
         | undefined,
     wsAiMessageHandler: undefined as
@@ -37,7 +38,7 @@ const rallarMock = vi.hoisted(() => ({
             receivedAtEpochMs: number;
         }) => void)
         | undefined,
-    wsSend: vi.fn(async () => ({
+    wsSend: vi.fn(async (input: RallarWsSendInput<Record<string, unknown>>) => ({
         transport: 'ws',
         status: 'queued',
         entries: [],
@@ -301,6 +302,9 @@ describe('Relic Hunters browser app', () => {
                     gameId: updated.gameId,
                     snapshot: updated,
                 },
+                senderId: 'bob-session',
+                roomId: 'room-1',
+                receivedAtEpochMs: Date.now(),
             });
         });
 
@@ -448,7 +452,7 @@ describe('Relic Hunters browser app', () => {
             aiAskButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         });
         await waitFor(() => rallarMock.wsSend.mock.calls.length > 0);
-        const sent = rallarMock.wsSend.mock.calls[0]?.[0] as { payload: Record<string, unknown> };
+        const sent = rallarMock.wsSend.mock.calls[0]?.[0];
         await act(async () => {
             rallarMock.wsAiMessageHandler?.({
                 payload: {

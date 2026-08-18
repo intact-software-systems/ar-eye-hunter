@@ -21,6 +21,9 @@ describe('governance decision authenticated admission', () => {
     const admissionMarker = evidence.workflowRuns[0].jobs[0].steps.find(
       (step) => step.name === 'Record authenticated governance admission',
     );
+    if (!admissionMarker) {
+      throw new Error('Fixture is missing the admission marker step.');
+    }
     admissionMarker.status = 'completed';
     admissionMarker.conclusion = 'skipped';
 
@@ -66,6 +69,13 @@ describe('governance decision authenticated admission', () => {
     'Verify an exact decision-only commit',
     'Resolve fail-closed governance classification',
   ])('rejects a missing, failed, or duplicate %s step', (stepName) => {
+    const duplicatedStep = successfulAdmissionEvidence().workflowRuns[0].jobs[0].steps.find(
+      (step) => step.name === stepName,
+    );
+    if (!duplicatedStep) {
+      throw new Error(`Fixture is missing the ${stepName} step.`);
+    }
+
     for (const steps of [
       successfulAdmissionEvidence().workflowRuns[0].jobs[0].steps.filter(
         (step) => step.name !== stepName,
@@ -73,12 +83,7 @@ describe('governance decision authenticated admission', () => {
       successfulAdmissionEvidence().workflowRuns[0].jobs[0].steps.map((step) =>
         step.name === stepName ? { ...step, conclusion: 'failure' } : step,
       ),
-      [
-        ...successfulAdmissionEvidence().workflowRuns[0].jobs[0].steps,
-        successfulAdmissionEvidence().workflowRuns[0].jobs[0].steps.find(
-          (step) => step.name === stepName,
-        ),
-      ],
+      [...successfulAdmissionEvidence().workflowRuns[0].jobs[0].steps, duplicatedStep],
     ]) {
       const evidence = successfulAdmissionEvidence();
       evidence.workflowRuns[0].jobs[0].steps = steps;
@@ -103,7 +108,39 @@ describe('governance decision authenticated admission', () => {
   });
 });
 
-function successfulAdmissionEvidence() {
+interface AdmissionJobStep {
+  name: string;
+  status: string;
+  conclusion: string | null;
+}
+
+interface AdmissionClassifierJob {
+  id: number;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  run_id: number;
+  run_attempt: number;
+  head_sha: string;
+  steps: AdmissionJobStep[];
+}
+
+interface AdmissionWorkflowRun {
+  id: number;
+  run_attempt: number;
+  event: string;
+  head_sha: string;
+  head_branch: string;
+  path: string;
+  status: string;
+  conclusion: string | null;
+}
+
+interface AdmissionEvidence {
+  workflowRuns: { run: AdmissionWorkflowRun; jobs: AdmissionClassifierJob[] }[];
+}
+
+function successfulAdmissionEvidence(): AdmissionEvidence {
   return {
     workflowRuns: [
       {

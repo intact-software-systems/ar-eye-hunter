@@ -12,7 +12,14 @@ import type {
     RallarDirectorRelayConfig,
     RallarDirectorRelayHandle,
     RallarDirectorStatus,
+    RallarRealtimeJsonSendInput,
+    RallarRealtimeSendResult,
+    RallarRoomRealtimeJsonDefaults,
+    RallarRoomRealtimeJsonSendOptions,
     RallarRoomRealtimeSendResult,
+    RallarRtcRoomLaneWaitOptions,
+    RallarRtcRoomLaneWaitResult,
+    RallarWsSendInput,
 } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -651,10 +658,10 @@ describe('Rallar Game match', () => {
         await match.start();
         match.stop();
         fake.createRelay.mockClear();
-        fake.relay.sendIntent.mockClear();
-        fake.relay.sendOutput.mockClear();
-        fake.relay.sendSnapshot.mockClear();
-        fake.relay.requestSync.mockClear();
+        vi.mocked(fake.relay.sendIntent).mockClear();
+        vi.mocked(fake.relay.sendOutput).mockClear();
+        vi.mocked(fake.relay.sendSnapshot).mockClear();
+        vi.mocked(fake.relay.requestSync).mockClear();
         fake.realtimeSendJson.mockClear();
         fake.wsSend.mockClear();
         fake.waitForRoomLane.mockClear();
@@ -829,7 +836,7 @@ function createFakeRallar(
         requestSync: vi.fn(async () => ({ status: 'sent' as const })),
         stop: vi.fn(),
     };
-    const wsSend = vi.fn(async (input: unknown) => ({
+    const wsSend = vi.fn(async (input: RallarWsSendInput<unknown>) => ({
         transport: 'ws' as const,
         status: 'enqueued' as const,
         message: input,
@@ -839,37 +846,37 @@ function createFakeRallar(
         relayConfig = config;
         return relay;
     });
-    const realtimeSendJson = vi.fn(async (input: { laneId: string; peerIds?: readonly string[] }) =>
-        (input.peerIds ?? ['peer-b']).map((peerId) => ({
-            peerId,
-            laneId: input.laneId,
-            result: {
-                status: 'sent' as const,
-                bufferedAmount: 0,
-            },
-        }))
+    const realtimeSendJson = vi.fn(
+        async (
+            input: RallarRealtimeJsonSendInput<unknown>,
+        ): Promise<readonly RallarRealtimeSendResult[]> =>
+            (input.peerIds ?? ['peer-b']).map((peerId) => ({
+                peerId,
+                laneId: input.laneId ?? 'realtime',
+                result: {
+                    status: 'sent' as const,
+                    bufferedAmount: 0,
+                },
+            })),
     );
     let roomRealtimeSendResult: RallarRoomRealtimeSendResult | undefined;
     const roomRealtimeSend = vi.fn(async (
-        defaults: Record<string, unknown>,
+        defaults: RallarRoomRealtimeJsonDefaults,
         data: unknown,
-        options: Record<string, unknown> = {},
+        options: RallarRoomRealtimeJsonSendOptions<unknown> = {},
     ): Promise<RallarRoomRealtimeSendResult> => {
         if (roomRealtimeSendResult) {
             return roomRealtimeSendResult;
         }
 
-        const results = await realtimeSendJson({
-            ...defaults,
-            ...options,
-            data,
-        } as { laneId: string; peerIds?: readonly string[] });
+        const input = { ...defaults, ...options, data };
+        const results = await realtimeSendJson(input);
         return {
             transport: 'rtc' as const,
             status: 'sent' as const,
-            laneId: String(defaults['laneId'] ?? 'realtime'),
-            roomId: defaults['roomId'] as string | undefined,
-            roomRef: defaults['roomRef'] as GroupRef | undefined,
+            laneId: defaults.laneId ?? 'realtime',
+            roomId: defaults.roomId,
+            roomRef: defaults.roomRef,
             peerIds: results.map((result) => result.peerId),
             desiredPeerIds: results.map((result) => result.peerId),
             results,
@@ -879,7 +886,11 @@ function createFakeRallar(
         directorStatus = createDirectorStatus('peer-a', true);
         return directorStatus;
     });
-    const waitForRoomLane = vi.fn(async (_room: unknown, laneId: string) => ({
+    const waitForRoomLane = vi.fn(async (
+        _room: string | GroupRef,
+        laneId: string,
+        _options?: RallarRtcRoomLaneWaitOptions,
+    ): Promise<RallarRtcRoomLaneWaitResult> => ({
         transport: 'rtc' as const,
         roomId: 'room-1',
         laneId,

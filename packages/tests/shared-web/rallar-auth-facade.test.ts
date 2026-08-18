@@ -1,26 +1,34 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import { createRallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
+import type { AuthSession, RegisterResponse } from '@shared/api/api-config.ts';
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import {
+    createRallarAuthFacade,
+    type RallarAuthChangeListener,
+    type RallarAuthFacade,
+} from '@shared-web/browser/rallar-auth-facade.ts';
 
 describe('Rallar auth facade factory', () => {
     it('delegates auth methods through injected operations', async () => {
         const session = createSession();
         const loginResponse = session;
-        const registerResponse = {
+        const registerResponse: RegisterResponse = {
             clientId: 'client-1',
             username: 'user-1',
+            displayName: null,
             registeredAtEpochMs: 1_000,
         };
-        const unsubscribe = vi.fn();
-        const listener = vi.fn();
+        const unsubscribe = vi.fn<RallarUnsubscribe>();
+        const listener = vi.fn<RallarAuthChangeListener>();
         const operations = {
-            login: vi.fn(async () => loginResponse),
-            register: vi.fn(async () => registerResponse),
-            registerAndLogin: vi.fn(async () => loginResponse),
-            logout: vi.fn(async () => undefined),
-            restore: vi.fn(() => session),
-            isLoggedIn: vi.fn(() => true),
-            onChange: vi.fn(() => unsubscribe),
+            login: vi.fn<RallarAuthFacade['login']>(async () => loginResponse),
+            register: vi.fn<RallarAuthFacade['register']>(async () => registerResponse),
+            registerAndLogin: vi.fn<RallarAuthFacade['registerAndLogin']>(async () =>
+                loginResponse
+            ),
+            logout: vi.fn<RallarAuthFacade['logout']>(async () => undefined),
+            restore: vi.fn<RallarAuthFacade['restore']>(() => session),
+            isLoggedIn: vi.fn<RallarAuthFacade['isLoggedIn']>(() => true),
+            onChange: vi.fn<RallarAuthFacade['onChange']>(() => unsubscribe),
         };
 
         const facade = createRallarAuthFacade(operations);

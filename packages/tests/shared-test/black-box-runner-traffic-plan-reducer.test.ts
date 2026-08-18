@@ -3,6 +3,10 @@ import {
     reduceBlackBoxTrafficPlanFailure,
 } from '../../shared-test/black-box-runner/traffic-plan-reducer.ts';
 
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function step(name: string, sequence?: number): Record<string, unknown> {
     return {
         name,
@@ -110,7 +114,11 @@ describe('black-box traffic-plan reducer', () => {
                 decisionCount: 2,
             },
         });
-        expect(result.summary.removed.operations).toEqual([
+        const removed = result.summary.removed;
+        if (!isJsonRecord(removed)) {
+            throw new Error('Reduction summary must expose a removed record.');
+        }
+        expect(removed.operations).toEqual([
             {
                 sequence: 4,
                 operation: 'operation-4',

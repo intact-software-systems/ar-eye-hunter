@@ -5,11 +5,25 @@ import { describe, expect, it } from 'vitest';
 
 const repoRoot = path.resolve(__dirname, '../../../..');
 
+interface WorkflowCallTrigger {
+  readonly inputs?: Readonly<Record<string, unknown>>;
+  readonly outputs?: Readonly<Record<string, unknown>>;
+}
+
+interface WorkflowDocument {
+  readonly on: Readonly<{ workflow_call: WorkflowCallTrigger }>;
+  readonly jobs: Readonly<Record<string, unknown>>;
+}
+
+function readWorkflow(workflowPath: string): WorkflowDocument {
+  return load(readFileSync(workflowPath, 'utf8')) as WorkflowDocument;
+}
+
 describe('governance gate workflow', () => {
   it('runs the canonical local gate in a bounded reusable workflow', () => {
     const workflowPath = path.join(repoRoot, '.github/workflows/governance-gate.yml');
 
-    const workflow = load(readFileSync(workflowPath, 'utf8'));
+    const workflow = readWorkflow(workflowPath);
 
     expect(workflow).toMatchObject({
       name: 'Governance Gate',
@@ -84,7 +98,7 @@ describe('governance gate workflow', () => {
   it('makes the broad branch release job depend on governance without copying checks', () => {
     const workflowPath = path.join(repoRoot, '.github/workflows/branch-release-gate.yml');
 
-    const workflow = load(readFileSync(workflowPath, 'utf8'));
+    const workflow = readWorkflow(workflowPath);
 
     expect(workflow).toMatchObject({
       jobs: {

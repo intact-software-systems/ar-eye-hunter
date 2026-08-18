@@ -14,6 +14,13 @@ import { toCanonicalJson } from '../../../../scripts/governance-decisions/canoni
 
 const expectedHeadOid = '1'.repeat(40);
 
+/** Mirrors `toStateChange` in `scripts/governance-decisions/governance-decision-receipt.mjs`. */
+interface GovernanceDecisionStateChange {
+  readonly path: string;
+  readonly before: { readonly blobOid: string; readonly sha256: string } | null;
+  readonly after: { readonly blobOid: string; readonly sha256: string } | null;
+}
+
 describe('governance decision contracts', () => {
   it('recursively sorts object keys, preserves array order, and emits no newline', () => {
     expect(toCanonicalJson({ z: [{ b: 2, a: 1 }, 3], a: { d: 4, c: 3 } })).toBe(
@@ -96,8 +103,8 @@ describe('governance decision contracts', () => {
     const reordered = {
       payload: {},
       target: {
-        planDigest: (ordinary.target as { planDigest: string }).planDigest,
-        planPath: (ordinary.target as { planPath: string }).planPath,
+        planDigest: ordinary.target.planDigest,
+        planPath: ordinary.target.planPath,
       },
       reason: ordinary.reason,
       force: ordinary.force,
@@ -164,7 +171,7 @@ describe('governance decision contracts', () => {
     expect(receipt.decisionId).toBe(computeGovernanceDecisionId(request));
     expect(receipt.requestDigest).toBe(receipt.decisionId);
     expect(receipt.bypassedInvariants).toEqual(['a-first', 'z-last']);
-    expect(receipt.stateChanges.map((change) => change.path)).toEqual([
+    expect(receipt.stateChanges.map((change: GovernanceDecisionStateChange) => change.path)).toEqual([
       'plans/README.md',
       'plans/example.md',
     ]);
@@ -256,7 +263,11 @@ describe('governance decision contracts', () => {
   });
 });
 
-function commonRequest(operation: string, target: object, payload: object) {
+function commonRequest<Target extends object, Payload extends object>(
+  operation: string,
+  target: Target,
+  payload: Payload,
+) {
   return {
     schemaVersion: 'governance-decision-request-v1',
     operation,

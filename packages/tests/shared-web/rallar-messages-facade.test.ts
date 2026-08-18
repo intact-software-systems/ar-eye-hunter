@@ -3,16 +3,23 @@ import { createRallarMessagesFacade } from '@shared-web/browser/rallar-messages-
 import type {
     RallarMessageHandler,
     RallarMessageSendResult,
-    RallarTypedMessageChannel,
 } from '@shared-web/browser/rallar.ts';
 
 describe('Rallar messages facade factory', () => {
     it('delegates message methods through injected operations', async () => {
         const rtcResult = { transport: 'rtc' } as RallarMessageSendResult;
         const wsResult = { transport: 'ws' } as RallarMessageSendResult;
-        const channel = {} as RallarTypedMessageChannel<{ ok: true }>;
         const rtcUnsubscribe = vi.fn();
         const wsUnsubscribe = vi.fn();
+        const createChannelStub = () => ({
+            send: vi.fn(async () => rtcResult),
+            sendRtc: vi.fn(async () => rtcResult),
+            sendWs: vi.fn(async () => wsResult),
+            onRtc: vi.fn(() => rtcUnsubscribe),
+            onWs: vi.fn(() => wsUnsubscribe),
+        });
+        const channel = createChannelStub();
+        const roomChannel = createChannelStub();
         const rtcHandler = vi.fn() as RallarMessageHandler<{ rtc: true }>;
         const wsHandler = vi.fn() as RallarMessageHandler<{ ws: true }>;
         const operations = {
@@ -25,6 +32,7 @@ describe('Rallar messages facade factory', () => {
                 onMessage: vi.fn(() => wsUnsubscribe),
             },
             channel: vi.fn(() => channel),
+            room: vi.fn(() => roomChannel),
         };
 
         const facade = createRallarMessagesFacade(operations);
