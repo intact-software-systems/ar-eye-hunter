@@ -1,207 +1,114 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 import {
     newALBroadcastMessage,
     newALMulticastMessage,
     newALRoute,
 } from '@shared/al-contracts/al-contract.ts';
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 
-const mocks = vi.hoisted(() => {
-    const session = {
-        clientId: 'principal-1',
-        sessionId: 'session-1',
-        username: 'principal-1',
-        accessToken: 'token-1',
-        expiresAtEpochMs: Date.now() + 60_000,
-    };
-    const webRtcConnectionService = {
-        peerIdsWithNoReconnectableLanes: vi.fn((): readonly string[] => []),
-        knownPeerIds: vi.fn((): readonly string[] => []),
-        activePeerIds: vi.fn((): readonly string[] => []),
-        readyPeerIdsForLane: vi.fn((_laneId?: string): readonly string[] => []),
-        ensurePeerConnectionStarted: vi.fn((_peerId: string) => ({
-            left: {
-                kind: 'connect-failed',
-                peerId: _peerId,
-                error: new Error('connect not mocked'),
-            },
-        })),
-        ensurePeerLaneOpen: vi.fn(async (peerId: string, laneId: string) => ({
-            status: 'connect-failed',
-            peerId,
-            laneId,
-            error: new Error('connect not mocked'),
-        })),
-        disconnectPeer: vi.fn(() => true),
-        onRtcPeerLifecycleDo: vi.fn(),
-        readPeer: vi.fn(),
-        removeRtcPeerLifecycleById: vi.fn(() => true),
-    };
-    webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(() =>
-        webRtcConnectionService
+type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
+type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
+type AuthModule = typeof import('@shared/api/auth.ts');
+type ClientStateSnapshotsRepositoryModule =
+    typeof import('@shared/repository/client-state-snapshots-repository.ts');
+type GroupStateSnapshotsRepositoryModule =
+    typeof import('@shared/repository/group-state-snapshots-repository.ts');
+
+const mocks = await vi.hoisted(async () => {
+    const { createApiMiddlewareTestDouble } = await import(
+        './api-middleware-test-double.ts'
     );
-    const ctx = {
-        session,
-        authFetch: vi.fn(),
-        middleware: {
-            qboxEngine: {
-                wake: vi.fn(),
-                stop: vi.fn(),
-            },
-            rtcRxStreamer: {
-                enqueueOutboxIfAbsent: vi.fn(async () => ({
-                    status: 'enqueued',
-                    entries: [],
-                })),
-                onInboxMessageDo: vi.fn(),
-                removeInboxMessageCallback: vi.fn(() => true),
-                stopAllHeartbeats: vi.fn(),
-            },
-            webRtcGroupManager: {},
-            webRtcConnectionService,
-            heartbeat: {
-                stop: vi.fn(),
-            },
-            webSocketQueueBox: {
-                enqueueOutboxIfAbsent: vi.fn(async () => ({
-                    status: 'enqueued',
-                    entries: [],
-                })),
-                readHealth: vi.fn(() => ({
-                    sessionId: session.sessionId,
-                    url: 'ws://localhost/ws',
-                    readyState: 'missing',
-                    isOpen: false,
-                    reconnecting: false,
-                    reconnectEnabled: false,
-                    reconnectAttempts: 0,
-                    maxReconnectAttempts: 12,
-                    reconnectExhausted: false,
-                })),
-                close: vi.fn(),
-                onAnyInboxMessageDo: vi.fn(),
-                removeAnyInboxMessageCallback: vi.fn(() => true),
-                socket: {
-                    close: vi.fn(),
-                    onWebsocketCallbacksDo: vi.fn(),
-                    removeWebsocketCallbackById: vi.fn(() => true),
-                },
-            },
-        },
-    } as unknown as ApiMiddleware;
+    const ctx = createApiMiddlewareTestDouble();
+    const clientRepositoryMissing = (): never => {
+        throw new Error(
+            'Repository not found: shared.repository.client-state-snapshots',
+        );
+    };
+    const groupRepositoryMissing = (): never => {
+        throw new Error(
+            'Repository not found: shared.repository.group-state-snapshots',
+        );
+    };
 
     return {
         ctx,
-        hydrateStateCaches: vi.fn(() => Promise.resolve()),
-        initMiddleware: vi.fn((_options?: unknown) => Promise.resolve(ctx)),
+        webRtcConnectionService: ctx.middleware.webRtcConnectionService,
+        clientRepositoryMissing,
+        groupRepositoryMissing,
+        hydrateStateCaches: vi.fn((): Promise<void> => Promise.resolve()),
+        initMiddleware: vi.fn(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn(() => false),
-        onStateCacheChange: vi.fn(() => vi.fn()),
-        readSession: vi.fn(() => session),
-        clientRepositoryMissing: vi.fn((_value?: unknown): unknown => {
-            throw new Error(
-                'Repository not found: shared.repository.client-state-snapshots',
-            );
-        }),
-        groupRepositoryMissing: vi.fn((_value?: unknown): unknown => {
-            throw new Error(
-                'Repository not found: shared.repository.group-state-snapshots',
-            );
-        }),
-        webRtcConnectionService,
+        onStateCacheChange: vi.fn((): (() => void) => vi.fn()),
+        readSession: vi.fn((): AuthSession | undefined => ctx.session),
+        findClientStateSnapshotByPrincipalId: vi.fn(
+            (_principalId: string): ClientSnapshot | undefined =>
+                clientRepositoryMissing(),
+        ),
+        getAllClientStateSnapshots: vi.fn(
+            (): ClientSnapshot[] => clientRepositoryMissing(),
+        ),
+        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn(
+            (_sessionId: string): GroupRef | undefined => groupRepositoryMissing(),
+        ),
+        findGroupStateSnapshotByRef: vi.fn(
+            (_ref: GroupRef): GroupSnapshot | undefined => groupRepositoryMissing(),
+        ),
+        getAllGroupStateSnapshots: vi.fn(
+            (): GroupSnapshot[] => groupRepositoryMissing(),
+        ),
     };
 });
 
-vi.mock('@shared-web/browser/app-context.ts', () => ({
+vi.mock(import('@shared-web/browser/app-context.ts'), (): Partial<AppContextModule> => ({
     clearMiddleware: vi.fn(),
     getMiddleware: vi.fn(() => mocks.ctx),
     initMiddleware: mocks.initMiddleware,
     isMiddlewareReady: mocks.isMiddlewareReady,
 }));
 
-vi.mock('@shared-web/browser/data-caches.ts', () => ({
+vi.mock(import('@shared-web/browser/data-caches.ts'), (): Partial<DataCachesModule> => ({
     hydrateStateCaches: mocks.hydrateStateCaches,
     onStateCacheChange: mocks.onStateCacheChange,
 }));
 
-vi.mock('@shared/api/auth.ts', () => ({
+vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
     clearSession: vi.fn(),
     isLoggedIn: vi.fn(() => true),
     readSession: mocks.readSession,
     writeSession: vi.fn(),
 }));
 
-vi.mock('@shared/repository/client-state-snapshots-repository.ts', () => ({
-    findClientStateSnapshotByPrincipalId: mocks.clientRepositoryMissing,
-    getAllClientStateSnapshots: mocks.clientRepositoryMissing,
-}));
+vi.mock(
+    import('@shared/repository/client-state-snapshots-repository.ts'),
+    (): Partial<ClientStateSnapshotsRepositoryModule> => ({
+        findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
+        getAllClientStateSnapshots: mocks.getAllClientStateSnapshots,
+    }),
+);
 
-vi.mock('@shared/repository/group-state-snapshots-repository.ts', () => ({
-    findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.groupRepositoryMissing,
-    findGroupStateSnapshotByRef: mocks.groupRepositoryMissing,
-    getAllGroupStateSnapshots: mocks.groupRepositoryMissing,
-}));
+vi.mock(
+    import('@shared/repository/group-state-snapshots-repository.ts'),
+    (): Partial<GroupStateSnapshotsRepositoryModule> => ({
+        findFirstGroupStateSnapshotRefSessionIdIsIn:
+            mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
+        findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
+        getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots,
+    }),
+);
 
 describe('Rallar typed message channel compatibility', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.clientRepositoryMissing.mockImplementation(() => {
-            throw new Error(
-                'Repository not found: shared.repository.client-state-snapshots',
-            );
-        });
-        mocks.groupRepositoryMissing.mockImplementation(() => {
-            throw new Error(
-                'Repository not found: shared.repository.group-state-snapshots',
-            );
-        });
+        resetRepositoryDoublesToMissing();
+        resetMiddlewareDoublesToDefaults();
         mocks.hydrateStateCaches.mockResolvedValue(undefined);
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
         mocks.isMiddlewareReady.mockReturnValue(false);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
-        mocks.webRtcConnectionService.ensurePeerConnectionStarted.mockImplementation(
-            (peerId: string) => ({
-                left: {
-                    kind: 'connect-failed',
-                    peerId,
-                    error: new Error('connect not mocked'),
-                },
-            }),
-        );
-        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
-            async (peerId: string, laneId: string) => ({
-                status: 'connect-failed',
-                peerId,
-                laneId,
-                error: new Error('connect not mocked'),
-            }),
-        );
-        mocks.webRtcConnectionService.onRtcPeerLifecycleDo.mockReturnValue(
-            mocks.webRtcConnectionService,
-        );
-        mocks.ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent.mockResolvedValue({
-            status: 'enqueued',
-            entries: [],
-        });
-        mocks.ctx.middleware.rtcRxStreamer.onInboxMessageDo.mockReturnValue(
-            mocks.ctx.middleware.rtcRxStreamer,
-        );
-        mocks.ctx.middleware.rtcRxStreamer.removeInboxMessageCallback
-            .mockReturnValue(true);
-        mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent.mockResolvedValue({
-            status: 'enqueued',
-            entries: [],
-        });
-        mocks.ctx.middleware.webSocketQueueBox.onAnyInboxMessageDo.mockReturnValue(
-            mocks.ctx.middleware.webSocketQueueBox,
-        );
-        mocks.ctx.middleware.webSocketQueueBox.removeAnyInboxMessageCallback
-            .mockReturnValue(true);
-        mocks.ctx.middleware.webSocketQueueBox.socket.onWebsocketCallbacksDo
-            .mockReturnValue(mocks.ctx.middleware.webSocketQueueBox.socket);
-        mocks.ctx.middleware.webSocketQueueBox.socket.removeWebsocketCallbackById
-            .mockReturnValue(true);
     });
 
     it('sends RTC and WS payloads through a typed message channel', async () => {
@@ -422,16 +329,16 @@ describe('Rallar typed message channel compatibility', () => {
         channel.onWs(onWs);
         await facade.connect();
 
-        const rtcCallback = mocks.ctx.middleware.rtcRxStreamer
-            .onInboxMessageDo.mock.calls.find(([typeId]) =>
-                typeId === 'chat.message.v1'
-            )?.[1];
-        const wsCallback = mocks.ctx.middleware.webSocketQueueBox
-            .onAnyInboxMessageDo.mock.calls.find(([callbackId]) =>
-                callbackId === 'rallar:ws:any-message'
-            )?.[1];
+        const rtcCallback = vi.mocked(
+            mocks.ctx.middleware.rtcRxStreamer.onInboxMessageDo,
+        ).mock.calls.find(([typeId]) => typeId === 'chat.message.v1')?.[1];
+        const wsCallback = vi.mocked(
+            mocks.ctx.middleware.webSocketQueueBox.onAnyInboxMessageDo,
+        ).mock.calls.find(([callbackId]) =>
+            callbackId === 'rallar:ws:any-message'
+        )?.[1];
 
-        await rtcCallback?.onMessage?.(
+        await rtcCallback?.onMessage(
             newALMulticastMessage(
                 'peer-1',
                 newALRoute('room.chat', 'match-1', 'rtc-message-1'),
@@ -445,8 +352,9 @@ describe('Rallar typed message channel compatibility', () => {
                     text: 'rtc',
                 },
             ),
+            toResourceEntry('chat.message.v1', { text: 'rtc' }),
         );
-        await wsCallback?.onMessage?.(
+        await wsCallback?.onMessage(
             newALBroadcastMessage(
                 'peer-1',
                 newALRoute('room.chat', 'match-1', 'ws-message-1'),
@@ -456,6 +364,7 @@ describe('Rallar typed message channel compatibility', () => {
                     text: 'ws',
                 },
             ),
+            toResourceEntry('chat.message.v1', { text: 'ws' }),
         );
 
         expect(onRtc).toHaveBeenCalledWith(
@@ -483,33 +392,56 @@ describe('Rallar typed message channel compatibility', () => {
     });
 });
 
+function resetRepositoryDoublesToMissing(): void {
+    mocks.findClientStateSnapshotByPrincipalId.mockImplementation(() =>
+        mocks.clientRepositoryMissing()
+    );
+    mocks.getAllClientStateSnapshots.mockImplementation(() =>
+        mocks.clientRepositoryMissing()
+    );
+    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(() =>
+        mocks.groupRepositoryMissing()
+    );
+    mocks.findGroupStateSnapshotByRef.mockImplementation(() =>
+        mocks.groupRepositoryMissing()
+    );
+    mocks.getAllGroupStateSnapshots.mockImplementation(() =>
+        mocks.groupRepositoryMissing()
+    );
+}
+
+function resetMiddlewareDoublesToDefaults(): void {
+    const { rtcRxStreamer, webRtcConnectionService, webSocketQueueBox } =
+        mocks.ctx.middleware;
+    vi.mocked(webRtcConnectionService.ensurePeerConnectionStarted).mockReset();
+    vi.mocked(webRtcConnectionService.ensurePeerLaneOpen).mockReset();
+    vi.mocked(webRtcConnectionService.onRtcPeerLifecycleDo).mockReset();
+    vi.mocked(rtcRxStreamer.enqueueOutboxIfAbsent).mockReset();
+    vi.mocked(rtcRxStreamer.onInboxMessageDo).mockReset();
+    vi.mocked(rtcRxStreamer.removeInboxMessageCallback).mockReset();
+    vi.mocked(webSocketQueueBox.enqueueOutboxIfAbsent).mockReset();
+    vi.mocked(webSocketQueueBox.onAnyInboxMessageDo).mockReset();
+    vi.mocked(webSocketQueueBox.removeAnyInboxMessageCallback).mockReset();
+    vi.mocked(webSocketQueueBox.socket.onWebsocketCallbacksDo).mockReset();
+    vi.mocked(webSocketQueueBox.socket.removeWebsocketCallbackById).mockReset();
+}
+
 function mockGroupSnapshot(snapshot: GroupSnapshot): void {
     mockGroupSnapshots([snapshot]);
 }
 
 function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
-    mocks.groupRepositoryMissing.mockImplementation((key?: unknown) => {
-        if (key === undefined) {
-            return [...snapshots];
-        }
-
-        if (isGroupRefLike(key)) {
-            return snapshots.find((snapshot) =>
-                snapshot.group.groupId === key.groupId &&
-                snapshot.group.applicationId === key.applicationId &&
-                (snapshot.group.workspaceId ?? '') === (key.workspaceId ?? '')
-            );
-        }
-
-        return snapshots.find((snapshot) => key === snapshot.group.groupId);
-    });
-}
-
-function isGroupRefLike(value: unknown): value is GroupSnapshot['group'] {
-    return typeof value === 'object' &&
-        value !== null &&
-        typeof (value as { groupId?: unknown }).groupId === 'string' &&
-        typeof (value as { applicationId?: unknown }).applicationId === 'string';
+    mocks.getAllGroupStateSnapshots.mockImplementation(() => [...snapshots]);
+    mocks.findGroupStateSnapshotByRef.mockImplementation((ref) =>
+        snapshots.find((snapshot) =>
+            snapshot.group.groupId === ref.groupId &&
+            snapshot.group.applicationId === ref.applicationId &&
+            (snapshot.group.workspaceId ?? '') === (ref.workspaceId ?? '')
+        )
+    );
+    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation((sessionId) =>
+        snapshots.find((snapshot) => sessionId === snapshot.group.groupId)?.group
+    );
 }
 
 function createGroupSnapshot(

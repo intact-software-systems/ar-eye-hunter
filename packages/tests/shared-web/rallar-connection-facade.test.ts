@@ -1,19 +1,29 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import { createRallarConnectionFacade } from '@shared-web/browser/rallar-connection-facade.ts';
+import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
+import {
+    createRallarConnectionFacade,
+    type CreateRallarConnectionFacadeOptions,
+    type RallarFlow,
+    type RallarFlowPolicies,
+} from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarSubscriptionScope } from '@shared-web/browser/rallar-shared-contracts.ts';
+import { createApiMiddlewareTestDouble } from './api-middleware-test-double.ts';
 
 describe('Rallar connection facade factory', () => {
     it('delegates connection and lifecycle methods through injected operations', async () => {
-        const middleware = createMiddleware();
         const session = createSession();
-        const subscriptionScope = {
-            add: vi.fn(),
+        const middleware = createApiMiddlewareTestDouble({ session });
+        const subscriptionScope: RallarSubscriptionScope = {
+            add: vi.fn((): RallarSubscriptionScope => subscriptionScope),
             unsubscribe: vi.fn(),
             size: vi.fn(() => 0),
         };
-        const flow = { run: vi.fn() };
-        const operations = {
+        // `flow` is generic per call, so the double builds a real orchestrator each time and
+        // records the instance; the delegation assertion below compares that exact instance.
+        const flowPolicies = vi.fn();
+        let lastFlow: object | undefined = undefined;
+        const operations: CreateRallarConnectionFacadeOptions = {
             configure: vi.fn(),
             setDefaults: vi.fn(),
             defaults: vi.fn(() => ({ applicationId: 'app-1' })),
@@ -28,7 +38,12 @@ describe('Rallar connection facade factory', () => {
             isConnected: vi.fn(() => true),
             session: vi.fn(() => session),
             subscriptions: vi.fn(() => subscriptionScope),
-            flow: vi.fn(() => flow),
+            flow: <K, V>(policies: RallarFlowPolicies<V> = {}): RallarFlow<K, V> => {
+                flowPolicies(policies);
+                const created = CommandsOrchestrator.withPolicies<K, V>(policies);
+                lastFlow = created;
+                return created;
+            },
         };
 
         const facade = createRallarConnectionFacade(operations);
@@ -51,17 +66,21 @@ describe('Rallar connection facade factory', () => {
         expect(facade.isConnected()).toBe(true);
         expect(facade.session()).toBe(session);
         expect(facade.subscriptions()).toBe(subscriptionScope);
-        expect(facade.flow({ command: { maxAttempts: 1 } })).toBe(flow);
-        expect(operations.configure).toHaveBeenCalledWith({
+        expect(facade.flow({ command: { maxAttempts: 1 } })).toBe(lastFlow);
+        expect(vi.mocked(operations.configure)).toHaveBeenCalledWith({
             apiBaseUrl: 'https://api.example.test',
         });
-        expect(operations.setDefaults).toHaveBeenCalledWith({
+        expect(vi.mocked(operations.setDefaults)).toHaveBeenCalledWith({
             applicationId: 'app-1',
         });
-        expect(operations.connect).toHaveBeenCalledWith({ timeoutMs: 50 });
-        expect(operations.start).toHaveBeenCalledWith({ connect: true });
-        expect(operations.disconnect).toHaveBeenCalledOnce();
-        expect(operations.flow).toHaveBeenCalledWith({
+        expect(vi.mocked(operations.connect)).toHaveBeenCalledWith({
+            timeoutMs: 50,
+        });
+        expect(vi.mocked(operations.start)).toHaveBeenCalledWith({
+            connect: true,
+        });
+        expect(vi.mocked(operations.disconnect)).toHaveBeenCalledOnce();
+        expect(flowPolicies).toHaveBeenCalledWith({
             command: { maxAttempts: 1 },
         });
     });
@@ -75,12 +94,4 @@ function createSession(): AuthSession {
         accessToken: 'token-1',
         expiresAtEpochMs: Date.now() + 60_000,
     };
-}
-
-function createMiddleware(): ApiMiddleware {
-    return {
-        session: createSession(),
-        authFetch: vi.fn(),
-        middleware: {},
-    } as unknown as ApiMiddleware;
 }

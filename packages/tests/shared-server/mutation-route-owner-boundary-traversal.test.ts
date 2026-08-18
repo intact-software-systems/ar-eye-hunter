@@ -92,13 +92,8 @@ function deadCorrectMutationMarker(): void {
   void deps.processClientAppInbox;
 }
 `;
-    const validateWithSources = validateMutationRouteInventory as unknown as (
-      inventory: typeof MUTATION_ROUTE_INVENTORY,
-      options: Readonly<{ sourceOverrides: ReadonlyMap<string, string> }>,
-    ) => readonly string[];
-
     expect(
-      validateWithSources(MUTATION_ROUTE_INVENTORY, {
+      validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {
         sourceOverrides: new Map([[first.sourcePath, rerouted]]),
       }),
     ).toEqual(
@@ -132,7 +127,7 @@ function deadCorrectMutationMarker(): void {
       const inventory = MUTATION_ROUTE_INVENTORY.map((entry, index) =>
         index === 0 ? mutation : entry,
       );
-      expect(validateMutationRouteInventory(inventory), mutation).not.toEqual([]);
+      expect(validateMutationRouteInventory(inventory), JSON.stringify(mutation)).not.toEqual([]);
     }
   });
 });

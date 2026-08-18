@@ -272,14 +272,7 @@ async function enqueueClientClose(
   service: AppClientInboxService,
   facts: AuthorisedWsCloseFacts,
 ): Promise<void> {
-  const close = service.enqueueAuthorisedWsClientDisconnect as unknown as (
-    input: Readonly<{
-      connection: ReturnType<typeof toAuthorisedWsClientConnectEnqueue>['data'];
-      disconnectedAtEpochMs: number;
-      reason: string;
-    }>,
-  ) => Promise<unknown>;
-  await close.call(service, {
+  await service.enqueueAuthorisedWsClientDisconnect({
     connection: toAuthorisedWsClientConnectEnqueue({
       authSession: facts.authSession,
       generationId: facts.generationId,
