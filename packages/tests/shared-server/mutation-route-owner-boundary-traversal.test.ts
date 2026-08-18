@@ -52,19 +52,19 @@ describe('Mutation route owner boundary traversal contracts', { timeout: 30_000 
   });
 
   it('always rejects incomplete and duplicate inventories', () => {
-    expect(validateMutationRouteInventory([])).toContain('Expected 50 entrypoints, found 0');
-    expect(validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY.slice(0, 49))).toContain(
-      'Expected 50 entrypoints, found 49',
+    expect(validateMutationRouteInventory([])).toContain('Expected 53 entrypoints, found 0');
+    expect(validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY.slice(0, 52))).toContain(
+      'Expected 53 entrypoints, found 52',
     );
     expect(
       validateMutationRouteInventory([
-        ...MUTATION_ROUTE_INVENTORY.slice(0, 49),
+        ...MUTATION_ROUTE_INVENTORY.slice(0, 52),
         MUTATION_ROUTE_INVENTORY[0]!,
       ]),
     ).toEqual(
       expect.arrayContaining([
         expect.stringContaining('Duplicate mutation route'),
-        'Inventory must cover all 46 AppInbox command types',
+        'Inventory must cover all 49 AppInbox command types',
       ]),
     );
   });

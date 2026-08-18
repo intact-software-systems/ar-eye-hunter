@@ -8,6 +8,7 @@ import type {
   DisconnectGroupPresenceSessionRequest,
   HeartbeatGroupPresenceSessionRequest,
   JoinGroupRequest,
+  MutationActorInput,
   RemoveGroupMemberRequest,
   RevokeGroupInviteRequest,
   RotateGroupJoinCodeRequest,
@@ -85,6 +86,30 @@ export type GroupStateRouteCommandInput =
       operation: 'appoint-group-director';
       groupId: string;
       request: GroupStateRouteRequestWithId<AppointGroupDirectorRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'start-group-establishment';
+      groupId: string;
+      request: GroupStateRouteRequestWithId<MutationActorInput>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'activate-group';
+      groupId: string;
+      request: GroupStateRouteRequestWithId<MutationActorInput>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'reopen-group-establishment';
+      groupId: string;
+      request: GroupStateRouteRequestWithId<MutationActorInput>;
     }>
   )
   | (

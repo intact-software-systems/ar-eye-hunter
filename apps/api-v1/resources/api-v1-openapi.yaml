@@ -1115,6 +1115,138 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/establish:
+    post:
+      tags: [Group State]
+      summary: Start group establishment
+      description: |
+        Moves formation intent from FORMING to ESTABLISHING and advances the
+        formation epoch.
+
+        Authorization follows the group's lifecycle policy: the establishment
+        initiator decides who may command transitions, with the manager derived
+        from the policy (creator or assigned list) until manager election is
+        available. The transition must be legal from the current lifecycle
+        state; anything else is a typed 403 denial.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupLifecycleTransitionRequest'
+      responses:
+        '200':
+          description: Updated group snapshot with the new lifecycle state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/activate:
+    post:
+      tags: [Group State]
+      summary: Activate the group
+      description: |
+        Moves formation intent from ESTABLISHING or RECONFIGURING to ACTIVE and
+        advances the formation epoch.
+
+        Authorization follows the group's lifecycle policy: the establishment
+        initiator decides who may command transitions, with the manager derived
+        from the policy (creator or assigned list) until manager election is
+        available. The transition must be legal from the current lifecycle
+        state; anything else is a typed 403 denial.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupLifecycleTransitionRequest'
+      responses:
+        '200':
+          description: Updated group snapshot with the new lifecycle state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/reopen:
+    post:
+      tags: [Group State]
+      summary: Reopen group establishment
+      description: |
+        Moves formation intent from ACTIVE to RECONFIGURING and advances the
+        formation epoch.
+
+        Authorization follows the group's lifecycle policy: the establishment
+        initiator decides who may command transitions, with the manager derived
+        from the policy (creator or assigned list) until manager election is
+        available. The transition must be legal from the current lifecycle
+        state; anything else is a typed 403 denial.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupLifecycleTransitionRequest'
+      responses:
+        '200':
+          description: Updated group snapshot with the new lifecycle state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events:
     get:
       tags: [Group State]
@@ -4889,6 +5021,16 @@ components:
           format: int64
           minimum: 1
           description: Optional heartbeat freshness TTL to store on the director appointment.
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    GroupLifecycleTransitionRequest:
+      type: object
+      properties:
         reason:
           type: string
         traceId:

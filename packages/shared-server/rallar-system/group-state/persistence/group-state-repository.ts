@@ -43,6 +43,12 @@ export function createTransactionBoundGroupStateRepository(
   });
 }
 
+// prettier-ignore
+import {
+  GroupLifecyclePolicyRepository,
+  type GroupLifecyclePolicyRead,
+} from './group-lifecycle-policy-repository.ts';
+
 export class GroupStateRepository extends GroupStateRepositoryReads {
   private readonly aggregate: GroupAggregateRepository;
   private readonly membership: GroupMembershipRepository;
@@ -54,6 +60,10 @@ export class GroupStateRepository extends GroupStateRepositoryReads {
     this.aggregate = new GroupAggregateRepository(repository, events);
     this.membership = new GroupMembershipRepository(repository);
     this.presence = new GroupPresenceRepository(repository);
+  }
+
+  async readLifecyclePolicy(ref: GroupRef): Promise<GroupLifecyclePolicyRead> {
+    return await new GroupLifecyclePolicyRepository(this.repository).readPolicy(ref);
   }
 
   async insertIdempotentGroupMutationReceipt(

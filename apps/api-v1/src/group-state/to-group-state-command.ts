@@ -25,6 +25,12 @@ export function toGroupStateCommand(
       return toUpdateGroupCommand(input);
     case 'appoint-group-director':
       return toAppointGroupDirectorCommand(input);
+    case 'start-group-establishment':
+      return toStartGroupEstablishmentCommand(input);
+    case 'activate-group':
+      return toActivateGroupCommand(input);
+    case 'reopen-group-establishment':
+      return toReopenGroupEstablishmentCommand(input);
     case 'join-group':
       return toJoinGroupCommand(input);
     case 'accept-group-invite':
@@ -106,6 +112,63 @@ function toAppointGroupDirectorCommand(
 
   return {
     type: AppInboxType.GROUP_DIRECTOR_APPOINT,
+    resourceId: request.requestId,
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    senderId: input.authSession.clientId,
+    data: {
+      scope: input.scope,
+      groupId: input.groupId,
+      request,
+    },
+  };
+}
+
+function toStartGroupEstablishmentCommand(
+  input: Extract<GroupStateRouteCommandInput, { operation: 'start-group-establishment' }>,
+): GroupStateCommand<typeof AppInboxType.GROUP_ESTABLISHMENT_START> {
+  const request = withActor(input);
+  validateGroupMutationRequest('startGroupEstablishment', request);
+
+  return {
+    type: AppInboxType.GROUP_ESTABLISHMENT_START,
+    resourceId: request.requestId,
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    senderId: input.authSession.clientId,
+    data: {
+      scope: input.scope,
+      groupId: input.groupId,
+      request,
+    },
+  };
+}
+
+function toActivateGroupCommand(
+  input: Extract<GroupStateRouteCommandInput, { operation: 'activate-group' }>,
+): GroupStateCommand<typeof AppInboxType.GROUP_ACTIVATE> {
+  const request = withActor(input);
+  validateGroupMutationRequest('activateGroup', request);
+
+  return {
+    type: AppInboxType.GROUP_ACTIVATE,
+    resourceId: request.requestId,
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    senderId: input.authSession.clientId,
+    data: {
+      scope: input.scope,
+      groupId: input.groupId,
+      request,
+    },
+  };
+}
+
+function toReopenGroupEstablishmentCommand(
+  input: Extract<GroupStateRouteCommandInput, { operation: 'reopen-group-establishment' }>,
+): GroupStateCommand<typeof AppInboxType.GROUP_ESTABLISHMENT_REOPEN> {
+  const request = withActor(input);
+  validateGroupMutationRequest('reopenGroupEstablishment', request);
+
+  return {
+    type: AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
     resourceId: request.requestId,
     contextId: toGroupAppInboxContextId(input.scope, input.groupId),
     senderId: input.authSession.clientId,

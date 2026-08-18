@@ -25,7 +25,13 @@ export function validateGroupMutationOperationInput({
 
 type AggregateOperation = Extract<
   GroupMutationCommand['operation'],
-  'createGroup' | 'updateGroup' | 'appointDirector' | 'rotateGroupJoinCode'
+  | 'createGroup'
+  | 'updateGroup'
+  | 'appointDirector'
+  | 'rotateGroupJoinCode'
+  | 'startGroupEstablishment'
+  | 'activateGroup'
+  | 'reopenGroupEstablishment'
 >;
 
 function validateAggregateMutationInput(
@@ -63,6 +69,13 @@ function validateAggregateMutationInput(
   }
   if (operation === 'appointDirector') {
     optionalPositiveInteger('heartbeatTtlMs');
+    return;
+  }
+  if (
+    operation === 'startGroupEstablishment' ||
+    operation === 'activateGroup' ||
+    operation === 'reopenGroupEstablishment'
+  ) {
     return;
   }
   optionalString('joinCode');
@@ -152,9 +165,15 @@ function validateMembershipMutationInput(
 function isAggregateOperation(
   operation: GroupMutationCommand['operation'],
 ): operation is AggregateOperation {
-  return ['createGroup', 'updateGroup', 'appointDirector', 'rotateGroupJoinCode'].includes(
-    operation,
-  );
+  return [
+    'createGroup',
+    'updateGroup',
+    'appointDirector',
+    'rotateGroupJoinCode',
+    'startGroupEstablishment',
+    'activateGroup',
+    'reopenGroupEstablishment',
+  ].includes(operation);
 }
 
 type PresenceOperation = 'connectPresence' | 'heartbeatPresence' | 'disconnectPresence';

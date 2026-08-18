@@ -15,6 +15,10 @@ import {
   validateGroupExpiredStateAuthority,
 } from '../../presence/group-expired-state-authority.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
+// prettier-ignore
+import {
+  isGroupLifecycleTransitionOperation,
+} from '../group-mutation-contracts.ts';
 import {
   resolveGroupMutationReadIdentities,
   type GroupMutationReadIdentities,
@@ -24,6 +28,7 @@ import {
   validateGroupMutationIdempotencyRecord,
 } from '../result-validation/validate-group-mutation-result.ts';
 import {
+  requireOneOf,
   assertExactKeys,
   assertRequiredKeys,
   requireJsonSafe,
@@ -69,6 +74,29 @@ export function validateGroupMutationRead(
   validateAdmissionReads({ read, command, ref, identities });
   validateAuthorityPresenceReads(read, ref);
   validateSummaryAndIdempotencyReads(read, command, ref);
+  validateLifecyclePolicyRead(read, command);
+}
+
+/**
+ * The policy read is loaded exactly for the lifecycle transition operations;
+ * anywhere else its presence would mean the read step loaded state the
+ * operation must not depend on.
+ */
+function validateLifecyclePolicyRead(read: GroupMutationRead, command: GroupMutationCommand): void {
+  if (isGroupLifecycleTransitionOperation(command.operation)) {
+    if (read.lifecyclePolicy === null) {
+      throw new TypeError('Group mutation read is missing the lifecycle policy read');
+    }
+    requireOneOf(
+      read.lifecyclePolicy.status,
+      ['absent', 'present', 'corrupt'],
+      'Group mutation lifecycle policy status',
+    );
+    return;
+  }
+  if (read.lifecyclePolicy !== null) {
+    throw new TypeError('Group mutation read must not carry a lifecycle policy for this operation');
+  }
 }
 
 const GROUP_MUTATION_READ_KEYS = [
@@ -91,6 +119,7 @@ const GROUP_MUTATION_READ_KEYS = [
   'authorityPresenceSessions',
   'authorityPresenceSessionEntries',
   'presenceSummary',
+  'lifecyclePolicy',
 ] as const;
 
 function validateReadShape(read: GroupMutationRead): void {
