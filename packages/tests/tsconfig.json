@@ -34,11 +34,18 @@
     },
     "types": [
       "node",
-      "vitest/globals"
-    ]
+      "vitest/globals",
+      "deno"
+    ],
+    "allowJs": true,
+    "checkJs": false
   },
   "include": [
     "**/*.ts",
     "**/*.d.ts"
+  ],
+  "exclude": [
+    "shared-test/scenario-black-box-rtc-config.test.ts",
+    "shared-test/execute-black-box-rtc-client-provider.test.ts"
   ]
 }

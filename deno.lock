@@ -3548,6 +3548,7 @@
         "npm:@babel/parser@^8.0.4",
         "npm:@electric-sql/pglite@0.5.4",
         "npm:@playwright/test@1.61.1",
+        "npm:@types/deno@^2.7.0",
         "npm:@vitest/ui@4.1.10",
         "npm:esbuild@~0.28.1",
         "npm:eslint@10.7.0",
