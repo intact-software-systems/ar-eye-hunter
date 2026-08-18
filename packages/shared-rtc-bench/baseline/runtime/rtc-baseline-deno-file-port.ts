@@ -1,5 +1,6 @@
-import type { RtcBaselineFilePort } from '../evidence/rtc-baseline-evidence-store.ts';
+import type { RtcBaselineFilePort } from '../evidence/rtc-baseline-file-port.ts';
 import type { RtcBaselineDenoPort } from './rtc-baseline-deno-port.ts';
+import { tryAcquireRtcBaselineDenoWriterLock } from './rtc-baseline-deno-writer-lock-port.ts';
 
 export function createRtcBaselineDenoFilePort(runtime: RtcBaselineDenoPort): RtcBaselineFilePort {
   return {
@@ -38,6 +39,7 @@ export function createRtcBaselineDenoFilePort(runtime: RtcBaselineDenoPort): Rtc
       }
       return 'other';
     },
+    tryAcquireExclusiveFileLock: (path) => tryAcquireRtcBaselineDenoWriterLock(runtime, path),
     async listDirectory(path) {
       const entries = [];
       for await (const entry of runtime.readDir(path)) {

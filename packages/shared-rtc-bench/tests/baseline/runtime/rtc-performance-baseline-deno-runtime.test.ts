@@ -100,6 +100,9 @@ function runtimeAdapters(
   fileOverrides: Partial<DenoRtcBaselineAdapters['filePort']>,
   sourceConfigHashing: DenoRtcBaselineAdapters['sourceConfigHashing'] = emptyHashes,
 ): DenoRtcBaselineAdapters {
+  let writerLockBytes: Uint8Array = new Uint8Array();
+  let writerLockCreated = true;
+  let writerLockHeld = false;
   const filePort: DenoRtcBaselineAdapters['filePort'] = {
     inspectPath: async () => null,
     createDirectory: async () => undefined,
@@ -108,10 +111,32 @@ function runtimeAdapters(
     removeFile: async () => undefined,
     removeDirectory: async () => undefined,
     listDirectory: async () => [],
+    async tryAcquireExclusiveFileLock() {
+      if (writerLockHeld) return null;
+      writerLockHeld = true;
+      const created = writerLockCreated;
+      writerLockCreated = false;
+      return {
+        created,
+        readBytes: async () => writerLockBytes,
+        writeBytes: async (bytes) => {
+          writerLockBytes = bytes;
+        },
+        release: async () => {
+          writerLockHeld = false;
+        },
+      };
+    },
     ...fileOverrides,
   };
   return {
     filePort,
+    writerLockRuntime: {
+      createOwnerToken: () => '00000000-0000-4000-8000-000000000001',
+      readOwnerIdentity: () => ({ hostname: 'runner-a', processId: 123 }),
+      now: () => new Date('2026-08-07T10:00:00.000Z'),
+      readProcessLiveness: async () => 'dead',
+    },
     git: {
       readHeadCommit: async () => ({ ok: true, value: 'a'.repeat(40) }),
       readHeadTree: async () => ({ ok: true, value: 'b'.repeat(40) }),
@@ -274,9 +299,9 @@ describe('RTC baseline Deno runtime composition', () => {
     const result = await runtime.initializeBaseline(manifest.request);
     expect(result).toEqual({ ok: true, value: undefined });
     expect(writes.map((write) => write.path).join('\n')).toBe(
-      `tmp/perf/rtc-baseline/${baselineId}/.writer.lock\ntmp/perf/rtc-baseline/${baselineId}/environment.json\ntmp/perf/rtc-baseline/${baselineId}/manifest.json`,
+      `tmp/perf/rtc-baseline/${baselineId}/environment.json\ntmp/perf/rtc-baseline/${baselineId}/manifest.json`,
     );
-    const environment = JSON.parse(writes[1]!.text);
+    const environment = JSON.parse(writes[0]!.text);
     expect(environment.observation.resolvedConfiguration[0]).toEqual({
       caseKey: {
         workloadId: 'RTC-B05',
@@ -288,7 +313,7 @@ describe('RTC baseline Deno runtime composition', () => {
       source: 'default',
     });
     expect(environment.observation.allowlistedEnvironment).toEqual({ DATABASE_URL: 'present' });
-    expect(writes[1]!.text).not.toContain('postgres://user:secret');
+    expect(writes[0]!.text).not.toContain('postgres://user:secret');
     sourceDigest = 'e';
     const { environmentId: _environmentId, sampleIds: _sampleIds, ...locator } = browserOuter;
     const mismatch =

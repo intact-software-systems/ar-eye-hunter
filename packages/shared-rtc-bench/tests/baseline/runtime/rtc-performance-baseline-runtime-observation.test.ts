@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, open, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -18,6 +18,7 @@ function readWorkerFlag(arguments_: readonly string[], name: string) {
 
 function createTemporaryFilePort(rootPath: string): DenoRtcBaselineAdapters['filePort'] {
   const toTemporaryPath = (path: string) => join(rootPath, path);
+  let writerLockHeld = false;
   return {
     inspectPath: async (path) => {
       try {
@@ -42,6 +43,37 @@ function createTemporaryFilePort(rootPath: string): DenoRtcBaselineAdapters['fil
         name: entry.name,
         kind: entry.isDirectory() ? ('directory' as const) : ('file' as const),
       })),
+    async tryAcquireExclusiveFileLock(path) {
+      if (writerLockHeld) return null;
+      let created = true;
+      let file;
+      try {
+        file = await open(toTemporaryPath(path), 'wx+');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        created = false;
+        file = await open(toTemporaryPath(path), 'r+');
+      }
+      writerLockHeld = true;
+      return {
+        created,
+        async readBytes() {
+          const { size } = await file.stat();
+          const bytes = new Uint8Array(size);
+          await file.read(bytes, 0, size, 0);
+          return bytes;
+        },
+        async writeBytes(bytes) {
+          await file.truncate(0);
+          await file.write(bytes, 0, bytes.length, 0);
+          await file.sync();
+        },
+        async release() {
+          writerLockHeld = false;
+          await file.close();
+        },
+      };
+    },
   };
 }
 
@@ -93,6 +125,12 @@ async function createRuntimeAdapters(): Promise<{
   const rootPath = await mkdtemp(join(tmpdir(), 'rtc-runtime-observation-'));
   const adapters: DenoRtcBaselineAdapters = {
     filePort: createTemporaryFilePort(rootPath),
+    writerLockRuntime: {
+      createOwnerToken: () => '00000000-0000-4000-8000-000000000001',
+      readOwnerIdentity: () => ({ hostname: 'runner-a', processId: 123 }),
+      now: () => new Date('2026-08-16T10:00:00.000Z'),
+      readProcessLiveness: async () => 'dead',
+    },
     git: {
       readHeadCommit: async () => ({ ok: true, value: 'a'.repeat(40) }),
       readHeadTree: async () => ({ ok: true, value: 'b'.repeat(40) }),

@@ -17,9 +17,13 @@ import { validateRtcBaselineReconciliation } from
   '../contracts/rtc-baseline-artifact-validation.ts';
 import {
   createRtcBaselineFileStore,
-  type RtcBaselineFilePort,
   type RtcBaselineFileStore,
 } from '../evidence/rtc-baseline-evidence-store.ts';
+import type { RtcBaselineFilePort } from '../evidence/rtc-baseline-file-port.ts';
+import {
+  RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS,
+  type RtcBaselineWriterLockRuntime,
+} from '../evidence/rtc-baseline-writer-lock.ts';
 import {
   createRtcBaselineRuntimeReconciler,
   type RtcBaselineCaptureObserver,
@@ -28,6 +32,7 @@ import {
 interface CreateRtcBaselineDenoEvidenceInput {
   readonly rootPath: string;
   readonly filePort: RtcBaselineFilePort;
+  readonly writerLockRuntime: RtcBaselineWriterLockRuntime;
   readonly observeRuntime: RtcBaselineCaptureObserver;
 }
 
@@ -47,6 +52,8 @@ export function createRtcBaselineDenoEvidence(
   const store = createRtcBaselineFileStore({
     rootPath: evidenceInput.rootPath,
     filePort: evidenceInput.filePort,
+    writerLockRuntime: evidenceInput.writerLockRuntime,
+    writerLockConfig: { staleAfterMs: RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS },
   });
   const readManifest = async (baselineId: string) => {
     const json = await store.readJson(baselineId, 'manifest.json');

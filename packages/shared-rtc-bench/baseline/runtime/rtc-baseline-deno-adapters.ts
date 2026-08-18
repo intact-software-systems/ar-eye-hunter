@@ -3,7 +3,8 @@ import type {
   RtcBaselineResult,
   RtcBaselineRuntimeObservationDto,
 } from '../contracts/rtc-baseline-contracts.ts';
-import type { RtcBaselineFilePort } from '../evidence/rtc-baseline-evidence-store.ts';
+import type { RtcBaselineFilePort } from '../evidence/rtc-baseline-file-port.ts';
+import type { RtcBaselineWriterLockRuntime } from '../evidence/rtc-baseline-writer-lock.ts';
 import { createRtcBaselineDenoFilePort } from './rtc-baseline-deno-file-port.ts';
 import type { RtcBaselineDenoPort } from './rtc-baseline-deno-port.ts';
 export type { RtcBaselineDenoPort } from './rtc-baseline-deno-port.ts';
@@ -22,6 +23,7 @@ interface ProcessPort {
 }
 export interface DenoRtcBaselineAdapters {
   filePort: RtcBaselineFilePort;
+  writerLockRuntime: RtcBaselineWriterLockRuntime;
   sha256(bytes: Uint8Array): Promise<string>;
   clock: { nowUtc(): string; monotonicNowMs(): number };
   environment: { readAllowlisted(names: readonly string[]): Readonly<Record<string, string>> };
@@ -113,6 +115,20 @@ export function createDenoRtcBaselineAdapters(
   }
 
   const filePort = createRtcBaselineDenoFilePort(runtime);
+  const writerLockRuntime: RtcBaselineWriterLockRuntime = {
+    createOwnerToken: () => runtime.randomUuid(),
+    readOwnerIdentity: () => ({ hostname: runtime.hostname(), processId: runtime.pid }),
+    now: () => runtime.now(),
+    async readProcessLiveness(processId) {
+      try {
+        runtime.kill(processId, 0);
+        return 'alive';
+      } catch (error) {
+        const NotFound = runtime.errors?.NotFound;
+        return NotFound && error instanceof NotFound ? 'dead' : 'unknown';
+      }
+    },
+  };
 
   async function sha256(bytes: Uint8Array) {
     const digestInput =
@@ -142,6 +158,7 @@ export function createDenoRtcBaselineAdapters(
 
   return {
     filePort,
+    writerLockRuntime,
     sha256,
     clock: {
       nowUtc: () => runtime.now().toISOString(),
