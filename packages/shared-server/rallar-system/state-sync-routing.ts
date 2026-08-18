@@ -16,6 +16,7 @@ import {
 } from './snapshot-presence.ts';
 import {
     parseStateSyncPayload,
+    readClientSnapshotStateSyncPayload,
     sameScope,
     type StateSyncScope,
 } from './state-sync/state-sync-payload.ts';
@@ -35,7 +36,15 @@ export function resolveStateSyncRecipients(
 ): readonly WsServerResolvedRecipient[] | undefined {
     const principalTarget = readALPrincipalBroadcastTarget(message);
     if (principalTarget) {
-        return resolvePrincipalRecipients(webSocketServer, principalTarget, options);
+        const payloadSnapshot = readClientSnapshotStateSyncPayload(message);
+        return resolvePrincipalRecipients(
+            webSocketServer,
+            {
+                principalRef: principalTarget,
+                payloadSnapshots: payloadSnapshot ? [payloadSnapshot] : [],
+            },
+            options,
+        );
     }
     const payload = parseStateSyncPayload(message);
     if (!payload) {
@@ -118,6 +127,16 @@ export function sendStateSyncMessage(
     return sent;
 }
 
+interface PrincipalRecipientTarget {
+    readonly principalRef: ClientPrincipalRef;
+    /**
+     * Authoritative client snapshots carried by the row itself. The mutation
+     * that produced the row may have committed on another server, so the
+     * local cache does not yet list the very session the snapshot announces.
+     */
+    readonly payloadSnapshots: readonly ClientSnapshot[];
+}
+
 /**
  * Scope 'principal' resolves at delivery time to the principal's own live
  * sessions plus live sessions of groups the principal is an active member of.
@@ -126,11 +145,15 @@ export function sendStateSyncMessage(
  */
 function resolvePrincipalRecipients(
     webSocketServer: JsonWebSocketServer,
-    principalRef: ClientPrincipalRef,
+    target: PrincipalRecipientTarget,
     options: StateSyncRoutingOptions,
 ): readonly WsServerResolvedRecipient[] {
-    const clientSnapshots = options.readClientSnapshots?.() ??
-        clientStateSnapshotsRepository.getAllClientStateSnapshots();
+    const principalRef = target.principalRef;
+    const clientSnapshots = [
+        ...(options.readClientSnapshots?.() ??
+            clientStateSnapshotsRepository.getAllClientStateSnapshots()),
+        ...target.payloadSnapshots,
+    ];
     const ownRecipients = clientSnapshots
         .filter((snapshot) =>
             sameScope(snapshot.principal, principalRef) &&
