@@ -4,6 +4,7 @@ import {
   parseRtcBaselineCommand,
   type RtcBaselineParsedCommand,
 } from './rtc-baseline-cli-grammar.ts';
+import { writeRtcBaselineCliOutput } from './write-rtc-baseline-cli-output.ts';
 import type { RtcBaselineEnvelope } from '../runtime/rtc-baseline-envelope.ts';
 
 interface CliInput {
@@ -21,10 +22,9 @@ function captureRequest(command: Extract<RtcBaselineParsedCommand, { kind: 'init
     environmentId: command.environmentId,
     retainedSampleMultiplier: command.retainedSampleMultiplier,
     repeatLink: null,
-    conditionalEnvironmentDecisions:
-      command.conditionalEnvironmentDecision === null
-        ? []
-        : [command.conditionalEnvironmentDecision],
+    conditionalEnvironmentDecisions: command.conditionalEnvironmentDecision === null
+      ? []
+      : [command.conditionalEnvironmentDecision],
     ...(command.repeatOf === null ? {} : { repeatOf: command.repeatOf }),
   };
 }
@@ -113,11 +113,15 @@ export async function runRtcBaselineCli(input: CliInput) {
       input.writeStdout(`${columns.join('\t')}\n`);
     }
   } else if (dispatched.kind === 'repeat-required') {
-    if (dispatched.result.value.workloadIds.length === 0) return 3;
+    if (dispatched.result.value.workloadIds.length === 0) {
+      return 3;
+    }
     input.writeStdout(`${[...dispatched.result.value.workloadIds].sort().join(',')}\n`);
   } else if (dispatched.kind === 'compare-paired') {
     input.writeStdout(`${JSON.stringify(dispatched.result.value)}\n`);
-    if (dispatched.result.value.outcome === 'inconclusive-still-noisy') return 2;
+    if (dispatched.result.value.outcome === 'inconclusive-still-noisy') {
+      return 2;
+    }
   }
   return 0;
 }
@@ -173,8 +177,8 @@ if (import.meta.main) {
   const code = await runRtcBaselineCli({
     args: deno.args,
     envelope: createDefaultRtcBaselineEnvelope(),
-    writeStdout: (value) => deno.stdout.write(new TextEncoder().encode(value)),
-    writeStderr: (value) => deno.stderr.write(new TextEncoder().encode(value)),
+    writeStdout: (value) => writeRtcBaselineCliOutput(deno.stdout, value),
+    writeStderr: (value) => writeRtcBaselineCliOutput(deno.stderr, value),
   });
   deno.exit(code);
 }
