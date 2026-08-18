@@ -7,6 +7,10 @@ import type {
   ValidateCrdtMutationInput,
 } from './crdt-mutation-contracts.ts';
 
+interface UntrustedCrdtRecord {
+  readonly [key: string]: object | string | number | boolean | null | undefined;
+}
+
 export function validateCrdtMutation(
   input: ValidateCrdtMutationInput,
 ): readonly CrdtMutationValidationIssue[] {
@@ -35,14 +39,18 @@ export function validateCrdtMutation(
     });
   }
   if (command.operation === 'compact' && computed.outcome === 'write') {
-    const result = computed.result;
+    const result = toRecord(computed.result);
     const resultSnapshot =
-      result.operation === 'compact' && result.status === 'accepted' ? result.snapshot : undefined;
+      result?.operation === 'compact' &&
+      result.status === 'accepted' &&
+      typeof result.snapshot === 'object'
+        ? result.snapshot
+        : null;
     if (
-      computed.snapshot?.metadata.reason !== command.reason ||
-      result.operation !== 'compact' ||
+      readSnapshotReason(computed.snapshot) !== command.reason ||
+      result?.operation !== 'compact' ||
       result.status !== 'accepted' ||
-      resultSnapshot?.metadata?.reason !== command.reason
+      readSnapshotReason(resultSnapshot) !== command.reason
     ) {
       issues.push({
         code: 'compact-reason-differs',
@@ -59,4 +67,17 @@ export function validateCrdtMutation(
     });
   }
   return issues;
+}
+
+function readSnapshotReason(snapshot: object | null | undefined): string | null {
+  const snapshotRecord = toRecord(snapshot);
+  const metadata =
+    snapshotRecord && typeof snapshotRecord.metadata === 'object'
+      ? toRecord(snapshotRecord.metadata)
+      : null;
+  return typeof metadata?.reason === 'string' ? metadata.reason : null;
+}
+
+function toRecord(value: object | null | undefined): UntrustedCrdtRecord | null {
+  return typeof value === 'object' && value !== null ? (value as UntrustedCrdtRecord) : null;
 }

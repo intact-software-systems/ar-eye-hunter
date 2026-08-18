@@ -910,8 +910,8 @@ Move the remaining inbox tests exactly:
 mkdir -p packages/tests/shared-server/crdt/inbox
 git mv packages/tests/shared-server/app-crdt-inbox-service.test.ts \
   packages/tests/shared-server/crdt/inbox/app-crdt-inbox-service.test.ts
-git mv packages/tests/shared-server/crdt-app-inbox-ingress-correction.test.ts \
-  packages/tests/shared-server/crdt/inbox/crdt-app-inbox-ingress.test.ts
+# Already moved early by Task 2:
+# packages/tests/shared-server/crdt/inbox/crdt-app-inbox-ingress.test.ts
 git mv packages/tests/shared-server/admin-prune-correction-4.test.ts \
   packages/tests/shared-server/admin-prune-retry-lifetime.test.ts
 ```
@@ -1644,8 +1644,8 @@ git commit -m "refactor(api-v1): colocate CRDT construction"
 mkdir -p apps/api-v1/test/crdt/routes
 git mv apps/api-v1/test/routes/crdt-admin-routes.test.ts \
   apps/api-v1/test/crdt/routes/crdt-admin-mutation-routing.test.ts
-git mv apps/api-v1/test/routes/crdt-admin-route-compat-correction.test.ts \
-  apps/api-v1/test/crdt/routes/crdt-admin-response-compatibility.test.ts
+# Already moved early by Task 2:
+# apps/api-v1/test/crdt/routes/crdt-admin-response-compatibility.test.ts
 git mv apps/api-v1/test/routes/crdt-admin-repository-health.test.ts \
   apps/api-v1/test/crdt/routes/crdt-admin-read-operations.test.ts
 git mv apps/api-v1/test/routes/crdt-catch-up-authorization.test.ts \
@@ -1746,10 +1746,9 @@ PGlite CRDT inventory and must not recreate historical correction-named paths.
 
 - Move: every `apps/api-v1/test/db/pglite-crdt-*.test.ts` to behavior-named files under
   `apps/api-v1/test/crdt/{configuration,inbox,persistence}/`
-- Move: `apps/api-v1/test/db/pglite-crdt-correction-3-fixtures.ts` to
-  `apps/api-v1/test/crdt/crdt-api-test-fixtures.ts`
-- Create from the two unrelated cases in `pglite-crdt-correction-3.test.ts`:
-  `apps/api-v1/test/db/pglite-admin-prune-cutoff-and-expiry.test.ts`
+- Consume: existing `apps/api-v1/test/crdt/crdt-api-test-fixtures.ts` and
+  `apps/api-v1/test/db/pglite-admin-prune-cutoff-and-expiry.test.ts`; Task 2 already completed the
+  correction-3 split and prune extraction.
 - Modify: current examples/docs that link to old CRDT owners
 - Modify: `docs/rallar-crdt-guide.md`
 - Modify: `docs/rallar-convergent-state-and-rtc-topology.md` when its current source map mentions
@@ -1857,12 +1856,7 @@ git add apps/api-v1/test/crdt \
 git add -u \
   apps/api-v1/test/db/pglite-crdt-app-inbox-production-correction-2.test.ts \
   apps/api-v1/test/db/pglite-crdt-app-inbox-transaction.test.ts \
-  apps/api-v1/test/db/pglite-crdt-correction-3-fixtures.ts \
-  apps/api-v1/test/db/pglite-crdt-correction-3.test.ts \
   apps/api-v1/test/db/pglite-crdt-policy-correction-4.test.ts \
-  apps/api-v1/test/db/pglite-crdt-public-reads-correction-4.test.ts \
-  apps/api-v1/test/db/pglite-crdt-snapshot-reason-correction-6.test.ts \
-  apps/api-v1/test/db/pglite-crdt-task9-correction.test.ts \
   apps/api-v1/test/db/pglite-crdt-ws-authority-correction-4.test.ts
 git commit -m "test(crdt): align consumers and navigation"
 ```

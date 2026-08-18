@@ -236,10 +236,7 @@ describe('CRDT mutation service', () => {
       ...computed,
       command: { ...command },
       expectedDocumentRevision: 99,
-      snapshot: {
-        ...computed.snapshot,
-        metadata: { ...computed.snapshot?.metadata, reason: 'wrong-reason' },
-      },
+      snapshot: {},
       result: { ...computed.result, snapshot: null, metadata: null },
     } as CrdtMutationComputed;
 
