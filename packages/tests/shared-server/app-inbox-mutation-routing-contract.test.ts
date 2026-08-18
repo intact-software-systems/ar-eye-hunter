@@ -344,6 +344,24 @@ it('ignores a command reassignment in a dead branch', () => {
   expect(validateWithOverride(CRDT_ADMIN_MUTATIONS, mutated)).toEqual([]);
 });
 
+it('rejects a later nested compact command shadowing the submitted lifecycle command', () => {
+  const source = readFileSync(CRDT_ADMIN_MUTATIONS, 'utf8');
+  const mutated = withLaterNestedCompactCommandShadow(source);
+
+  expect(validateWithOverride(CRDT_ADMIN_MUTATIONS, mutated)).toEqual(
+    expect.arrayContaining([
+      expect.stringContaining('CRDT_SNAPSHOT_COMPACT operation is not connected'),
+    ]),
+  );
+});
+
+it('accepts canonical command submission inside one nested lexical block', () => {
+  const source = readFileSync(CRDT_ADMIN_MUTATIONS, 'utf8');
+  const mutated = withNestedCanonicalCommandScope(source);
+
+  expect(validateWithOverride(CRDT_ADMIN_MUTATIONS, mutated)).toEqual([]);
+});
+
 it.each([
   ['/api/crdt/admin/documents/compact', AppInboxType.CRDT_SNAPSHOT_COMPACT, 'compact'],
   ['/api/admin/operations/crdt/compact', AppInboxType.CRDT_SNAPSHOT_COMPACT, 'compact'],
@@ -560,6 +578,42 @@ function withDeadLifecycleCommandReassignment(source: string): string {
       }
 ${submission}`;
   return replaceRequired(source, submission, replacement);
+}
+
+function withLaterNestedCompactCommandShadow(source: string): string {
+  const wrongSubmittedCommand = replaceRequired(
+    source,
+    '        ...mutation,\n        nowEpochMs: input.nowEpochMs,',
+    "        ...mutation,\n        operation: 'lifecycle',\n        nowEpochMs: input.nowEpochMs,",
+  );
+  const submission =
+    '      const completed = await input.appCrdtInboxService.' +
+    'writeCrdtCommandUntilCompletion(command);';
+  const replacement = `${submission}
+      {
+        const command = await createCrdtAdminCommand({
+          ...mutation,
+          operation: 'compact',
+          nowEpochMs: input.nowEpochMs,
+          createId: input.createId,
+          serviceId: input.serviceId,
+        });
+        void command;
+      }`;
+  return replaceRequired(wrongSubmittedCommand, submission, replacement);
+}
+
+function withNestedCanonicalCommandScope(source: string): string {
+  const opened = replaceRequired(
+    source,
+    '    writeCrdtAdminMutation: async (mutation) => {\n      const command',
+    '    writeCrdtAdminMutation: async (mutation) => {\n      {\n        const command',
+  );
+  return replaceRequired(
+    opened,
+    '      return toAdminPublicResult(result);\n    },',
+    '      return toAdminPublicResult(result);\n      }\n    },',
+  );
 }
 
 function withDeadCorrectCompactCommandCreation(source: string): string {

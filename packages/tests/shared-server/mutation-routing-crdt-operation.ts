@@ -41,6 +41,19 @@ interface LiveFunctionFacts {
   readonly writes: MutationRoutingAstNode[];
 }
 
+interface LexicalBinding {
+  readonly declaration: MutationRoutingAstNode;
+  readonly declarationStatement: MutationRoutingAstNode;
+}
+
+interface ImmutableSubmittedCommandInput {
+  readonly owner: MutationRoutingAstNode;
+  readonly facts: LiveFunctionFacts;
+  readonly binding: LexicalBinding;
+  readonly bindingName: string;
+  readonly submission: MutationRoutingAstNode;
+}
+
 interface LiveReturnCompletion {
   readonly kind: 'return';
   readonly value: MutationRoutingAstNode | undefined;
@@ -136,8 +149,8 @@ function hasExactAdminMutationSubmission(
   if (owners.length !== 1) {
     return false;
   }
-  const facts = readLiveFunctionFacts(owners[0]!);
-  const commandOperationByBinding = readCreatedCommandOperations(facts);
+  const owner = owners[0]!;
+  const facts = readLiveFunctionFacts(owner);
   const submissions = facts.calls.filter((call) =>
     isCallNamed(call, 'writeCrdtCommandUntilCompletion'),
   );
@@ -146,52 +159,99 @@ function hasExactAdminMutationSubmission(
   }
   const submission = submissions[0]!;
   const commandBinding = readName(unwrapExpression(asNodes(submission.arguments)[0]));
-  const submittedOperation = commandOperationByBinding.get(commandBinding);
+  const binding = readLexicalBinding(owner, submission, commandBinding);
+  if (!binding || !facts.declarations.includes(binding.declarationStatement)) {
+    return false;
+  }
+  const creation = unwrapExpression(asNode(binding.declaration.init));
+  if (!creation || !isCallNamed(creation, 'createCrdtAdminCommand')) {
+    return false;
+  }
+  const submittedOperation = readEffectiveOperation(asNodes(creation.arguments)[0]);
   return (
     [`literal:${operation}`, 'member:mutation.operation'].includes(submittedOperation ?? '') &&
-    isImmutableSubmittedCommand(facts, commandBinding, submission)
+    isImmutableSubmittedCommand({
+      owner,
+      facts,
+      binding,
+      bindingName: commandBinding,
+      submission,
+    })
   );
 }
 
-function readCreatedCommandOperations(facts: LiveFunctionFacts): ReadonlyMap<string, string> {
-  const operationByBinding = new Map<string, string>();
-  for (const declarationStatement of facts.declarations) {
-    if (declarationStatement.kind !== 'const') {
-      continue;
-    }
-    for (const declaration of asNodes(declarationStatement.declarations)) {
-      const binding = readName(asNode(declaration.id));
-      const creation = unwrapExpression(asNode(declaration.init));
-      if (!binding || !creation || !isCallNamed(creation, 'createCrdtAdminCommand')) {
-        continue;
-      }
-      const operation = readEffectiveOperation(asNodes(creation.arguments)[0]);
-      if (operation) {
-        operationByBinding.set(binding, operation);
-      }
+function readLexicalBinding(
+  owner: MutationRoutingAstNode,
+  reference: MutationRoutingAstNode,
+  bindingName: string,
+): LexicalBinding | undefined {
+  if (!bindingName) {
+    return undefined;
+  }
+  for (const scope of readContainingLexicalScopes(owner, reference)) {
+    const bindings = readScopeBindings(scope, bindingName);
+    if (bindings.length > 0) {
+      return bindings.length === 1 ? bindings[0] : undefined;
     }
   }
-  return operationByBinding;
+  return undefined;
 }
 
-function isImmutableSubmittedCommand(
-  facts: LiveFunctionFacts,
-  commandBinding: string,
-  submission: MutationRoutingAstNode,
-): boolean {
-  if (!commandBinding) {
+function readContainingLexicalScopes(
+  owner: MutationRoutingAstNode,
+  reference: MutationRoutingAstNode,
+): readonly MutationRoutingAstNode[] {
+  const referenceStart = readStart(reference);
+  const referenceEnd = readEnd(reference);
+  if (referenceStart === undefined || referenceEnd === undefined) {
+    return [];
+  }
+  return findAll(
+    owner,
+    (node) =>
+      node.type === 'BlockStatement' && containsSourceRange(node, referenceStart, referenceEnd),
+  ).toSorted((left, right) => sourceRangeSize(left) - sourceRangeSize(right));
+}
+
+function readScopeBindings(
+  scope: MutationRoutingAstNode,
+  bindingName: string,
+): readonly LexicalBinding[] {
+  const bindings: LexicalBinding[] = [];
+  for (const statement of asNodes(scope.body)) {
+    if (statement.type !== 'VariableDeclaration') {
+      continue;
+    }
+    for (const declaration of asNodes(statement.declarations)) {
+      if (readName(asNode(declaration.id)) === bindingName) {
+        bindings.push({ declaration, declarationStatement: statement });
+      }
+    }
+  }
+  return bindings;
+}
+
+function isImmutableSubmittedCommand(input: ImmutableSubmittedCommandInput): boolean {
+  const declarationStart = readStart(input.binding.declarationStatement);
+  const submissionStart = readStart(input.submission);
+  if (
+    input.binding.declarationStatement.kind !== 'const' ||
+    declarationStart === undefined ||
+    submissionStart === undefined ||
+    declarationStart >= submissionStart
+  ) {
     return false;
   }
-  const submissionStart = readStart(submission);
-  if (submissionStart === undefined) {
-    return false;
-  }
-  return !facts.writes.some((write) => {
-    if (readWrittenBinding(write) !== commandBinding) {
+  return !input.facts.writes.some((write) => {
+    if (readWrittenBinding(write) !== input.bindingName) {
       return false;
     }
     const writeStart = readStart(write);
-    return writeStart === undefined || writeStart < submissionStart;
+    if (writeStart !== undefined && writeStart >= submissionStart) {
+      return false;
+    }
+    const writtenBinding = readLexicalBinding(input.owner, write, input.bindingName);
+    return !writtenBinding || writtenBinding.declaration === input.binding.declaration;
   });
 }
 
@@ -624,6 +684,26 @@ function readBoolean(node: MutationRoutingAstNode | undefined): boolean | undefi
 
 function readStart(node: MutationRoutingAstNode): number | undefined {
   return typeof node.start === 'number' ? node.start : undefined;
+}
+
+function readEnd(node: MutationRoutingAstNode): number | undefined {
+  return typeof node.end === 'number' ? node.end : undefined;
+}
+
+function containsSourceRange(
+  node: MutationRoutingAstNode,
+  referenceStart: number,
+  referenceEnd: number,
+): boolean {
+  const start = readStart(node);
+  const end = readEnd(node);
+  return start !== undefined && end !== undefined && start <= referenceStart && end >= referenceEnd;
+}
+
+function sourceRangeSize(node: MutationRoutingAstNode): number {
+  const start = readStart(node);
+  const end = readEnd(node);
+  return start === undefined || end === undefined ? Number.POSITIVE_INFINITY : end - start;
 }
 
 function asNode(value: unknown): MutationRoutingAstNode | undefined {

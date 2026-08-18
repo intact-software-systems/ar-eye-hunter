@@ -33,7 +33,7 @@ also invalid, so this document cannot accumulate orphan approvals.
 
 ## Reviewed boundary groups
 
-The current 136 entries were reviewed by independently meaningful behavior,
+The current 138 entries were reviewed by independently meaningful behavior,
 not by vocabulary. The metadata below splits these groups further by exact
 executable assertion so a broad domain label cannot conceal unrelated evidence.
 
@@ -44,7 +44,7 @@ executable assertion so a broad domain label cannot conceal unrelated evidence.
 | Browser control protocol                         |       7 | Two approved assertions protect server import direction and shared-test monitor ownership.                       |
 | Auth compatibility                               |       3 | Wrapper mutations and the canonical-test inventory protect distinct compatibility edges.                         |
 | Repository style and release interfaces          |       2 | Automation consumes stable rule and release-gate mappings.                                                       |
-| AppInbox transport routing                       |      10 | Concrete route and command-binding mutations must fail before they bypass the canonical transaction owner.       |
+| AppInbox transport routing                       |      12 | Concrete route and command-binding mutations must fail before they bypass the canonical transaction owner.       |
 | Mutation-analysis implementation interface       |       3 | The audit must follow new files, re-exports, and type declarations fail-closed.                                  |
 | Mutation route and owner traversal               |      13 | Route, export, helper, and capability evasions must still resolve to AppInbox.                                   |
 | Group mutation construction                      |      14 | Missing, duplicate, reordered, conditional, or rebound owner calls must be rejected.                             |
@@ -242,6 +242,22 @@ moved or changed test.
       "summary": "A command reassignment in a literal-false branch does not alter the submitted command. Executable assertion: “ignores a command reassignment in a dead branch”.",
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#ignores a command reassignment in a dead branch",
       "coverageRelation": "The executable mutant places the lifecycle reassignment in a literal-false branch and requires the analyzer to retain the live compact binding without a false routing failure."
+    },
+    {
+      "id": "app-inbox-crdt-submitted-command-lexical-shadow",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "The submitted identifier resolves to its own preceding lexical declaration rather than a later nested shadow. Executable assertion: “rejects a later nested compact command shadowing the submitted lifecycle command”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a later nested compact command shadowing the submitted lifecycle command",
+      "coverageRelation": "The executable mutant submits a lifecycle command and later declares an unused nested compact command with the same name; the analyzer must retain the submitted binding’s wrong operation."
+    },
+    {
+      "id": "app-inbox-crdt-nested-command-scope",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "A canonical command and its submission may share one nested lexical block. Executable assertion: “accepts canonical command submission inside one nested lexical block”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#accepts canonical command submission inside one nested lexical block",
+      "coverageRelation": "The executable mutant nests the complete canonical command workflow in one block and requires lexical binding analysis to preserve the valid owner-to-submission path."
     },
     {
       "id": "app-inbox-mutation-routing--rejects-a-wrong-local-presence-route-constant",
@@ -1112,6 +1128,32 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "Places the lifecycle reassignment in a literal-false branch and requires the analyzer to preserve the live compact submission without a false finding.",
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#ignores a command reassignment in a dead branch"
+    },
+    {
+      "id": "test-structure-coupling-17dcc47cc79db4fd",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 348,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-submitted-command-lexical-shadow",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Submits a wrong lifecycle command, then declares an unused correct compact command with the same name in a later nested block, requiring exact lexical provenance instead of name-map overwrite.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a later nested compact command shadowing the submitted lifecycle command"
+    },
+    {
+      "id": "test-structure-coupling-0c7461932b8f8e31",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 359,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-nested-command-scope",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Wraps the canonical command creation and submission in one nested block, proving exact lexical binding does not reject a valid nested owner scope.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#accepts canonical command submission inside one nested lexical block"
     },
     {
       "id": "test-structure-coupling-18fc3cbf53d4a31b",
