@@ -75,7 +75,7 @@ export class InMemoryCrdtAppend<TPayload extends RallarCrdtOperationBatch, TValu
       });
     }
 
-    const state = this.documents.getOrCreate(input.update.document, this.config.now());
+    const state = this.documents.getOrCreate(input.update.document, () => this.config.now());
     const decision = computeInMemoryCrdtAppend({
       appendInput: input,
       state,
@@ -91,7 +91,7 @@ export class InMemoryCrdtAppend<TPayload extends RallarCrdtOperationBatch, TValu
       decision,
       acceptedAtEpochMs: input.trusted.acceptedAtEpochMs ?? this.config.now(),
     });
-    this.documents.set(accepted.nextState);
+    this.documents.set(accepted.nextState.metadata.documentKey, accepted.nextState);
     await this.config.hooks?.onAppendAccepted?.(accepted.record);
 
     return this.recordResult(startedAtEpochMs, accepted.result);

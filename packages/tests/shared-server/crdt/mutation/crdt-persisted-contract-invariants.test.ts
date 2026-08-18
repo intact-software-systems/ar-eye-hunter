@@ -13,7 +13,11 @@ import {
   DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
   retryAfterAttempt,
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  installRallarCrdtWsTopics,
+} from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 import {
   type DocumentRow,
   toMetadata,
@@ -24,9 +28,21 @@ import {
   createCrdtMutationCommand,
   decodeCrdtMutationCommand,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
-import { computeCrdtMutation } from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
-import { toCrdtAuditOutbox } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-outbox.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  decodeCrdtMutationResult,
+} from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  computeCrdtMutation,
+} from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  toCrdtAuditOutbox,
+} from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-outbox.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',

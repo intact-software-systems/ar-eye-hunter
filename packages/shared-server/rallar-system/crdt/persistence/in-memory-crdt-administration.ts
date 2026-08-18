@@ -108,7 +108,7 @@ export class InMemoryCrdtAdministration<TPayload extends RallarCrdtOperationBatc
       throw new Error('CRDT snapshot envelope failed validation.');
     }
 
-    const state = this.documents.getOrCreate(input.snapshot.document, this.config.now());
+    const state = this.documents.getOrCreate(input.snapshot.document, () => this.config.now());
     if (
       state.metadata.quota?.maxDocumentBytes !== undefined &&
       byteLengthOfRallarCrdtJson({
@@ -119,7 +119,7 @@ export class InMemoryCrdtAdministration<TPayload extends RallarCrdtOperationBatc
       throw new Error('CRDT snapshot exceeds the document-byte quota.');
     }
 
-    this.documents.set({
+    this.documents.set(state.metadata.documentKey, {
       ...state,
       metadata: {
         ...state.metadata,
@@ -146,7 +146,7 @@ export class InMemoryCrdtAdministration<TPayload extends RallarCrdtOperationBatc
   async updateDocumentLifecycle(
     input: RallarCrdtLifecycleInput,
   ): Promise<RallarCrdtDocumentMetadata> {
-    const state = this.documents.getOrCreate(input.document, this.config.now());
+    const state = this.documents.getOrCreate(input.document, () => this.config.now());
     const previousLifecycle = state.metadata.lifecycle;
     const changedAtEpochMs = input.changedAtEpochMs ?? this.config.now();
     const metadata: RallarCrdtDocumentMetadata = {
@@ -162,7 +162,7 @@ export class InMemoryCrdtAdministration<TPayload extends RallarCrdtOperationBatc
       quota: input.quota ?? state.metadata.quota,
       projectionIds: input.projectionIds ?? state.metadata.projectionIds,
     };
-    this.documents.set({ ...state, metadata });
+    this.documents.set(metadata.documentKey, { ...state, metadata });
 
     await this.config.hooks?.onLifecycleChanged?.(metadata);
     const auditKind = toLifecycleAuditKind(input.lifecycle, previousLifecycle);
@@ -204,7 +204,7 @@ export class InMemoryCrdtAdministration<TPayload extends RallarCrdtOperationBatc
     document: RallarCrdtDocumentRef,
     options: InMemoryCrdtAdministration.DebugExportOptions = {},
   ): Promise<RallarCrdtDebugBundle<TPayload>> {
-    const state = this.documents.getOrCreate(document, this.config.now());
+    const state = this.documents.getOrCreate(document, () => this.config.now());
     const redacted = options.redaction?.payloadsRedacted ?? false;
     this.recordAudit('export', state.metadata.documentKey, {
       reason: options.reason ?? 'operator-export',
@@ -251,17 +251,18 @@ export class InMemoryCrdtAdministration<TPayload extends RallarCrdtOperationBatc
       );
     }
 
-    const existing = this.documents.getByKey(bundle.documentKey);
+    const documentKey = requireBackupDocumentIdentity(bundle);
+    const existing = this.documents.getByKey(documentKey);
     if (existing && !options.overwrite) {
-      throw new Error(`CRDT document already exists: ${bundle.documentKey}`);
+      throw new Error(`CRDT document already exists: ${documentKey}`);
     }
 
-    this.documents.set({
+    this.documents.set(documentKey, {
       metadata: bundle.metadata,
       records: [...bundle.records],
       snapshot: bundle.snapshot as RallarCrdtSnapshotEnvelope<TValue> | undefined,
     });
-    this.recordAudit('restore', bundle.documentKey, {
+    this.recordAudit('restore', documentKey, {
       updateCount: bundle.records.length,
       overwrite: options.overwrite === true,
     });
@@ -342,4 +343,44 @@ function matchesDocumentListInput(
     (input.documentType === undefined || metadata.document.documentType === input.documentType) &&
     (input.lifecycle === undefined || metadata.lifecycle === input.lifecycle)
   );
+}
+
+function requireBackupDocumentIdentity<TPayload extends RallarCrdtOperationBatch>(
+  bundle: RallarCrdtBackupBundle<TPayload>,
+): string {
+  const documentKey = toRallarCrdtDocumentKey(bundle.document);
+  requireBackupIdentityKey(
+    toRallarCrdtDocumentKey(bundle.metadata.document),
+    '$.metadata.document',
+    documentKey,
+  );
+  requireBackupIdentityKey(bundle.metadata.documentKey, '$.metadata.documentKey', documentKey);
+  if (bundle.snapshot) {
+    requireBackupIdentityKey(
+      toRallarCrdtDocumentKey(bundle.snapshot.document),
+      '$.snapshot.document',
+      documentKey,
+    );
+  }
+  bundle.records.forEach((record) => {
+    const recordPath = `$.records.${record.update.updateId}`;
+    requireBackupIdentityKey(
+      toRallarCrdtDocumentKey(record.document),
+      `${recordPath}.document`,
+      documentKey,
+    );
+    requireBackupIdentityKey(record.documentKey, `${recordPath}.documentKey`, documentKey);
+    requireBackupIdentityKey(
+      toRallarCrdtDocumentKey(record.update.document),
+      `${recordPath}.update.document`,
+      documentKey,
+    );
+  });
+  return documentKey;
+}
+
+function requireBackupIdentityKey(actual: string, path: string, expected: string): void {
+  if (actual !== expected) {
+    throw new Error(`CRDT backup bundle identity mismatch at ${path}: expected ${expected}.`);
+  }
 }

@@ -22,8 +22,16 @@ import {
   type WsServerTargetResolver,
 } from '@shared/mod.ts';
 import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
-import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
-import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  InMemoryRallarCrdtLogRepository,
+} from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  installRallarCrdtWsTopics,
+} from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 
 const roomRef = {
   applicationId: 'rallar-test',
@@ -203,40 +211,43 @@ describe('installRallarCrdtWsTopics', () => {
     }
   });
 
-  it('rejects unsupported principal live fanout even when app CRDT documents are enabled', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    try {
-      const { facade, socket } = createFacade();
-      installRallarCrdtWsTopics(facade, {
-        allowAppDocuments: true,
-      });
-      const update = createUpdateEnvelope({
-        document: {
-          applicationId: 'rallar-test',
-          workspaceId: 'main',
-          scope: 'principal',
-          documentType: 'checklist',
-          documentId: 'principal-doc',
-          principalId: 'principal-1',
-        },
-      });
-      const message = newALBroadcastMessage(
-        'peer-1',
-        newALRoute(RALLAR_CRDT_APP_TOPIC_ID, 'rallar-test', update.updateId),
-        'all',
-        RALLAR_CRDT_UPDATE_TYPE_ID,
-        update,
-      );
+  it(
+    'rejects unsupported principal live fanout even when app CRDT ' + 'documents are enabled',
+    async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        const { facade, socket } = createFacade();
+        installRallarCrdtWsTopics(facade, {
+          allowAppDocuments: true,
+        });
+        const update = createUpdateEnvelope({
+          document: {
+            applicationId: 'rallar-test',
+            workspaceId: 'main',
+            scope: 'principal',
+            documentType: 'checklist',
+            documentId: 'principal-doc',
+            principalId: 'principal-1',
+          },
+        });
+        const message = newALBroadcastMessage(
+          'peer-1',
+          newALRoute(RALLAR_CRDT_APP_TOPIC_ID, 'rallar-test', update.updateId),
+          'all',
+          RALLAR_CRDT_UPDATE_TYPE_ID,
+          update,
+        );
 
-      await facade.handle(message);
+        await facade.handle(message);
 
-      expect(socket.sent).toHaveLength(1);
-      expect(socket.sent[0].connectionId).toBe('conn-1');
-      expect(socket.sent[0].data.payload.typeId).toBe(AL_CONTROL_NACK_TYPE_ID);
-    } finally {
-      warn.mockRestore();
-    }
-  });
+        expect(socket.sent).toHaveLength(1);
+        expect(socket.sent[0].connectionId).toBe('conn-1');
+        expect(socket.sent[0].data.payload.typeId).toBe(AL_CONTROL_NACK_TYPE_ID);
+      } finally {
+        warn.mockRestore();
+      }
+    },
+  );
 
   it('rejects oversized CRDT updates', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -313,45 +324,48 @@ describe('installRallarCrdtWsTopics', () => {
     }
   });
 
-  it('hands accepted updates to durable mutation ingress without direct append or fanout', async () => {
-    const { facade, socket } = createFacade({
-      authorizeRoomMessage: () => true,
-    });
-    const logRepository = new InMemoryRallarCrdtLogRepository({
-      now: () => 2_000,
-      serverId: 'server-1',
-    });
-    const accepted: unknown[] = [];
-    installRallarCrdtWsTopics(facade, {
-      logRepository,
-      mutationIngress: {
-        enqueueUpdate: (entry) => {
-          accepted.push(entry);
-          return Promise.resolve();
+  it(
+    'hands accepted updates to durable mutation ingress without direct append ' + 'or fanout',
+    async () => {
+      const { facade, socket } = createFacade({
+        authorizeRoomMessage: () => true,
+      });
+      const logRepository = new InMemoryRallarCrdtLogRepository({
+        now: () => 2_000,
+        serverId: 'server-1',
+      });
+      const accepted: unknown[] = [];
+      installRallarCrdtWsTopics(facade, {
+        logRepository,
+        mutationIngress: {
+          enqueueUpdate: (entry) => {
+            accepted.push(entry);
+            return Promise.resolve();
+          },
         },
-      },
-    });
-    const update = createUpdateEnvelope();
-    const message = newALBroadcastMessage(
-      'peer-1',
-      newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
-      'room',
-      RALLAR_CRDT_UPDATE_TYPE_ID,
-      update,
-      {
-        groupRef: roomRef,
-      },
-    );
+      });
+      const update = createUpdateEnvelope();
+      const message = newALBroadcastMessage(
+        'peer-1',
+        newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
+        'room',
+        RALLAR_CRDT_UPDATE_TYPE_ID,
+        update,
+        {
+          groupRef: roomRef,
+        },
+      );
 
-    await facade.handle(message);
+      await facade.handle(message);
 
-    expect(accepted).toHaveLength(1);
-    expect(accepted[0]).toMatchObject({ kind: 'update', envelope: update });
-    expect(socket.sent).toHaveLength(0);
-    expect(
-      (await logRepository.readDocumentMetadata(roomDocumentRef))?.updateCount,
-    ).toBeUndefined();
-  });
+      expect(accepted).toHaveLength(1);
+      expect(accepted[0]).toMatchObject({ kind: 'update', envelope: update });
+      expect(socket.sent).toHaveLength(0);
+      expect(
+        (await logRepository.readDocumentMetadata(roomDocumentRef))?.updateCount,
+      ).toBeUndefined();
+    },
+  );
 
   it('responds to durable WS catch-up requests from the append log', async () => {
     const { facade, socket } = createFacade({

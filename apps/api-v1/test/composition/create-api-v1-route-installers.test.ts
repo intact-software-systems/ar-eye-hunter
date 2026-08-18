@@ -1,13 +1,22 @@
 import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
-import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
-import type { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
+// deno-fmt-ignore
+import {
+  InMemoryRallarCrdtLogRepository,
+} from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
+// deno-fmt-ignore
+import type {
+  AuthUserRepository,
+} from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
 import type { ApiV1AdminServices } from '../../src/composition/create-api-v1-admin-services.ts';
-import type { ApiV1TopologyServices } from '../../src/composition/create-api-v1-topology-services.ts';
+// deno-fmt-ignore
+import type {
+  ApiV1TopologyServices,
+} from '../../src/composition/create-api-v1-topology-services.ts';
 import {
   createApiV1RouteInstallers,
   type CreateApiV1RouteInstallersInput,

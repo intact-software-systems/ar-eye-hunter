@@ -26,7 +26,7 @@ export class InMemoryCrdtDocumentStore<TPayload extends RallarCrdtOperationBatch
 
   getOrCreate(
     document: RallarCrdtDocumentRef,
-    createdAtEpochMs: number,
+    readCreatedAtEpochMs: () => number,
   ): InMemoryCrdtDocumentState<TPayload, TValue> {
     const documentKey = toRallarCrdtDocumentKey(document);
     const existing = this.documents.get(documentKey);
@@ -34,6 +34,7 @@ export class InMemoryCrdtDocumentStore<TPayload extends RallarCrdtOperationBatch
       return existing;
     }
 
+    const createdAtEpochMs = readCreatedAtEpochMs();
     const created: InMemoryCrdtDocumentState<TPayload, TValue> = {
       metadata: {
         document,
@@ -58,8 +59,8 @@ export class InMemoryCrdtDocumentStore<TPayload extends RallarCrdtOperationBatch
     return created;
   }
 
-  set(state: InMemoryCrdtDocumentState<TPayload, TValue>): void {
-    this.documents.set(state.metadata.documentKey, state);
+  set(documentKey: string, state: InMemoryCrdtDocumentState<TPayload, TValue>): void {
+    this.documents.set(documentKey, state);
   }
 
   entries(): IterableIterator<[string, InMemoryCrdtDocumentState<TPayload, TValue>]> {

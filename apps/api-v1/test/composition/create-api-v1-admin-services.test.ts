@@ -2,12 +2,24 @@ import assert from 'node:assert/strict';
 
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
+// deno-fmt-ignore
+import {
+  InMemoryRallarCrdtLogRepository,
+} from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/formation-metrics.ts';
-import type { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
-import type { AppAdminInboxService } from '@shared-server/rallar-system/services/AppAdminInboxService.ts';
-import type { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+// deno-fmt-ignore
+import type {
+  GroupTopologyManagementService,
+} from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+// deno-fmt-ignore
+import type {
+  AppAdminInboxService,
+} from '@shared-server/rallar-system/services/AppAdminInboxService.ts';
+// deno-fmt-ignore
+import type {
+  AppGroupInboxService,
+} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 
 import {
   createApiV1AdminServices,
@@ -66,38 +78,42 @@ Deno.test('admin services read current websocket status after construction', asy
   assert.equal(current.realtime.currentSessionOpen, true);
 });
 
-Deno.test('admin services propagate websocket status failures without an empty fallback', async () => {
-  const failure = new Error('websocket status failed');
-  const services = createApiV1AdminServices(
-    createInput(() => {
-      throw failure;
-    }),
-  );
+Deno.test(
+  'admin services propagate websocket status failures without an empty ' +
+    'fallback',
+  async () => {
+    const failure = new Error('websocket status failed');
+    const services = createApiV1AdminServices(
+      createInput(() => {
+        throw failure;
+      }),
+    );
 
-  assert.throws(
-    () => services.operations.readRealtime({ adminSession: ADMIN_SESSION }),
-    (error) => error === failure,
-  );
-  await assert.rejects(
-    () =>
-      services.support.explainClient({
-        adminSession: ADMIN_SESSION,
-        request: {
+    assert.throws(
+      () => services.operations.readRealtime({ adminSession: ADMIN_SESSION }),
+      (error) => error === failure,
+    );
+    await assert.rejects(
+      () =>
+        services.support.explainClient({
+          adminSession: ADMIN_SESSION,
+          request: {
+            scope: { applicationId: 'app', workspaceId: 'workspace' },
+            principalId: 'admin',
+          },
+        }),
+      (error) => error === failure,
+    );
+    await assert.rejects(
+      () =>
+        services.statistics.readMyRealtimeStatus({
+          authSession: ADMIN_SESSION,
           scope: { applicationId: 'app', workspaceId: 'workspace' },
-          principalId: 'admin',
-        },
-      }),
-    (error) => error === failure,
-  );
-  await assert.rejects(
-    () =>
-      services.statistics.readMyRealtimeStatus({
-        authSession: ADMIN_SESSION,
-        scope: { applicationId: 'app', workspaceId: 'workspace' },
-      }),
-    (error) => error === failure,
-  );
-});
+        }),
+      (error) => error === failure,
+    );
+  },
+);
 
 function createInput(
   readWebSocketStatus: CreateApiV1AdminServicesInput['readWebSocketStatus'],

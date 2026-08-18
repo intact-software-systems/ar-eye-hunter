@@ -20,19 +20,34 @@ import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
-import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
+// deno-fmt-ignore
+import {
+  installRallarCrdtWsTopics,
+} from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+// deno-fmt-ignore
+import {
+  ResourceInboxRepository,
+} from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+// deno-fmt-ignore
+import {
+  ResourceInboxResultsRepository,
+} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import {
   createAuthSessionRepository,
   createClientStateRepository,
 } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
-import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
+// deno-fmt-ignore
+import {
+  createCrdtWsMutationIngress,
+} from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
 
 import { toResilienceDto } from '../../../src/middleware-resilience.ts';
-import { createApiCrdtDocumentAuthorizer } from '../../../src/services/create-api-crdt-document-authorizer.ts';
+// deno-fmt-ignore
+import {
+  createApiCrdtDocumentAuthorizer,
+} from '../../../src/services/create-api-crdt-document-authorizer.ts';
 import { createApiCrdtInboxService } from '../../../src/services/create-api-crdt-inbox-service.ts';
 import {
   toPersistedAuthSessionFixture,
@@ -83,54 +98,58 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   documentId: 'document-1',
 };
 
-Deno.test('browser WS ingress resolves real auth identity and rereads revoke through PGlite AppInbox', async () => {
-  await withPGliteSql(async (sql) => {
-    const fixture = await createFixture(sql);
-    await fixture.addCurrentSession(SESSION_A);
-    await fixture.addCurrentSession(SESSION_B);
+Deno.test(
+  'browser WS ingress resolves real auth identity and rereads revoke through ' +
+    'PGlite AppInbox',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const fixture = await createFixture(sql);
+      await fixture.addCurrentSession(SESSION_A);
+      await fixture.addCurrentSession(SESSION_B);
 
-    await fixture.send(
-      SESSION_B,
-      message(SESSION_A, 'forged-transport', update('forged-update')),
-    );
-    assert.deepEqual(await readDurableEffects(sql), { mutations: 0, work: 0 });
+      await fixture.send(
+        SESSION_B,
+        message(SESSION_A, 'forged-transport', update('forged-update')),
+      );
+      assert.deepEqual(await readDurableEffects(sql), { mutations: 0, work: 0 });
 
-    await fixture.send(SESSION_A, message(SESSION_A, 'transport-1', update('update-1')));
-    await drain(fixture.service, sql, 1);
+      await fixture.send(SESSION_A, message(SESSION_A, 'transport-1', update('update-1')));
+      await drain(fixture.service, sql, 1);
 
-    const [persisted] = await sql<PersistedActorRow[]>`
+      const [persisted] = await sql<PersistedActorRow[]>`
             select actor_id, principal_id, session_id from crdt_updates
         `;
-    assert.deepEqual(persisted, {
-      actor_id: CLIENT_ID,
-      principal_id: USERNAME,
-      session_id: SESSION_A,
+      assert.deepEqual(persisted, {
+        actor_id: CLIENT_ID,
+        principal_id: USERNAME,
+        session_id: SESSION_A,
+      });
+
+      await fixture.send(SESSION_B, message(SESSION_B, 'transport-2', update('update-1')));
+      await drain(fixture.service, sql, 2);
+      const replayResults = await readResults(sql);
+      assert.deepEqual(
+        replayResults.map((result) => ({
+          commandId: result.commandId,
+          status: result.status,
+        })),
+        [
+          { commandId: 'update-1', status: 'accepted' },
+          { commandId: 'update-1', status: 'replay' },
+        ],
+      );
+
+      await fixture.send(SESSION_B, message(SESSION_B, 'transport-3', update('update-2')));
+      await fixture.revokeAuthSession(SESSION_B);
+      await drain(fixture.service, sql, 3);
+      const revoked = (await readResults(sql)).at(-1);
+      assert.equal(revoked?.status, 'rejected');
+      assert.match(String(revoked?.code), /authentication|authorization/);
+      const [count] = await sql<CountRow[]>`select count(*) as count from crdt_updates`;
+      assert.equal(Number(count?.count), 1);
     });
-
-    await fixture.send(SESSION_B, message(SESSION_B, 'transport-2', update('update-1')));
-    await drain(fixture.service, sql, 2);
-    const replayResults = await readResults(sql);
-    assert.deepEqual(
-      replayResults.map((result) => ({
-        commandId: result.commandId,
-        status: result.status,
-      })),
-      [
-        { commandId: 'update-1', status: 'accepted' },
-        { commandId: 'update-1', status: 'replay' },
-      ],
-    );
-
-    await fixture.send(SESSION_B, message(SESSION_B, 'transport-3', update('update-2')));
-    await fixture.revokeAuthSession(SESSION_B);
-    await drain(fixture.service, sql, 3);
-    const revoked = (await readResults(sql)).at(-1);
-    assert.equal(revoked?.status, 'rejected');
-    assert.match(String(revoked?.code), /authentication|authorization/);
-    const [count] = await sql<CountRow[]>`select count(*) as count from crdt_updates`;
-    assert.equal(Number(count?.count), 1);
-  });
-});
+  },
+);
 
 Deno.test('production app-scope authorization rejects a foreign application context', async () => {
   await withPGliteSql(async (sql) => {
