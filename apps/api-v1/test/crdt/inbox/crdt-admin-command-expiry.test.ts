@@ -86,3 +86,42 @@ Deno.test('CRDT admin commands retain the complete AppInbox retry horizon', asyn
     });
   }
 });
+
+Deno.test('CRDT admin lifecycle rejects its value before exact document validation', async () => {
+  let clockReads = 0;
+  let inboxWrites = 0;
+  const mutations = createCrdtAdminMutations({
+    appCrdtInboxService: {
+      writeCrdtCommandUntilCompletion: () => {
+        inboxWrites += 1;
+        throw new Error('invalid command must not reach AppInbox');
+      },
+    },
+    nowEpochMs: () => {
+      clockReads += 1;
+      return CAPTURED_AT_EPOCH_MS;
+    },
+    createId: () => 'invalid-lifecycle',
+    serviceId: 'server-1',
+  });
+
+  await assert.rejects(
+    mutations.writeCrdtAdminMutation({
+      operation: 'lifecycle',
+      adminSession: ADMIN_SESSION,
+      request: {
+        document: {
+          applicationId: 'app-1',
+          workspaceId: 'workspace-1',
+          scope: 'room',
+          documentType: 'checklist',
+          documentId: 'document-1',
+        },
+        lifecycle: 'destroy',
+      },
+    }),
+    (error) => error instanceof TypeError && error.message === 'CRDT lifecycle is invalid',
+  );
+  assert.equal(clockReads, 1);
+  assert.equal(inboxWrites, 0);
+});

@@ -77,7 +77,6 @@ interface CreateCrdtAdminCommandCommon {
 interface ToCrdtAdminCommandCommonInput {
   readonly mutation: CreateCrdtAdminCommandInput;
   readonly request: Record<string, unknown>;
-  readonly document: RallarCrdtDocumentRef;
   readonly capturedAtEpochMs: number;
 }
 
@@ -118,23 +117,22 @@ async function createCrdtAdminCommand(
   input: CreateCrdtAdminCommandInput,
 ): Promise<CrdtMutationCommand> {
   const request = requireRecord(input.request);
-  const document = decodeExactDocumentRef(request.document, 'CRDT command document');
+  if (!request.document || typeof request.document !== 'object') {
+    throw new TypeError('CRDT document is required');
+  }
   const capturedAtEpochMs = input.nowEpochMs();
-  const common = toCrdtAdminCommandCommon({
-    mutation: input,
-    request,
-    document,
-    capturedAtEpochMs,
-  });
 
   switch (input.operation) {
-    case 'rebuild-projection':
+    case 'rebuild-projection': {
+      const common = toCrdtAdminCommandCommon({ mutation: input, request, capturedAtEpochMs });
       return await createCrdtMutationCommand({
         ...common,
         operation: input.operation,
         projectionId: readString(request.projectionId) ?? 'default',
       });
+    }
     case 'compact': {
+      const common = toCrdtAdminCommandCommon({ mutation: input, request, capturedAtEpochMs });
       const snapshotId = readSnapshotId(request.snapshot) ?? input.createId();
       const snapshot = readSnapshot(request.snapshot);
       return await createCrdtMutationCommand({
@@ -145,11 +143,13 @@ async function createCrdtAdminCommand(
         reason: readString(request.reason) ?? 'api-v1-admin-compaction',
       });
     }
-    case 'lifecycle':
+    case 'lifecycle': {
+      const lifecycle = requireLifecycle(request.lifecycle);
+      const common = toCrdtAdminCommandCommon({ mutation: input, request, capturedAtEpochMs });
       return await createCrdtMutationCommand({
         ...common,
         operation: input.operation,
-        lifecycle: requireLifecycle(request.lifecycle),
+        lifecycle,
         retentionAction: toLifecycleAction({
           request,
           key: 'retention',
@@ -166,19 +166,23 @@ async function createCrdtAdminCommand(
           decode: decodeExactProjectionIds,
         }),
       });
-    case 'erase':
+    }
+    case 'erase': {
+      const common = toCrdtAdminCommandCommon({ mutation: input, request, capturedAtEpochMs });
       return await createCrdtMutationCommand({
         ...common,
         operation: input.operation,
         mode: request.mode === 'redact-payloads' ? 'redact-payloads' : 'destroy-document',
         reason: readString(request.reason) ?? 'api-v1-admin-erasure-workflow',
       });
+    }
   }
 }
 
 function toCrdtAdminCommandCommon(
   input: ToCrdtAdminCommandCommonInput,
 ): CreateCrdtAdminCommandCommon {
+  const document = decodeExactDocumentRef(input.request.document, 'CRDT command document');
   return {
     commandId: readString(input.request.requestId) ?? input.mutation.createId(),
     actor: {
@@ -189,12 +193,12 @@ function toCrdtAdminCommandCommon(
     },
     capturedAtEpochMs: input.capturedAtEpochMs,
     expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(input.capturedAtEpochMs),
-    document: input.document,
+    document,
     responseAudience: {
       kind: 'admin',
       senderSessionId: input.mutation.adminSession.sessionId,
       topicId: 'crdt.admin',
-      contextId: toRallarCrdtDocumentKey(input.document),
+      contextId: toRallarCrdtDocumentKey(document),
     },
   };
 }
