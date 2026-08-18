@@ -502,7 +502,8 @@ export class ResourceInboxRepository {
               and (
                   (ri_status = ${EntityStatus.RETRY} and next_ts <= (now() at time zone 'UTC'))
                   or
-                  (ri_status <> ${EntityStatus.RETRY} and start_ts is null and (next_ts is null or next_ts <= (now() at time zone 'UTC')))
+                  (ri_status <> ${EntityStatus.RETRY} and start_ts is null
+                      and (next_ts is null or next_ts <= (now() at time zone 'UTC')))
               )
             order by next_ts asc nulls first, ri_row_id asc
                 for update skip locked
@@ -635,7 +636,8 @@ export class ResourceInboxRepository {
               and (
                   (ri_status = ${EntityStatus.RETRY} and next_ts <= (now() at time zone 'UTC'))
                   or
-                  (ri_status <> ${EntityStatus.RETRY} and start_ts is null and (next_ts is null or next_ts <= (now() at time zone 'UTC')))
+                  (ri_status <> ${EntityStatus.RETRY} and start_ts is null
+                      and (next_ts is null or next_ts <= (now() at time zone 'UTC')))
               )
             limit 1
         `;

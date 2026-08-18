@@ -50,9 +50,7 @@ export interface ComputeFormationTimerEntryInput {
   readonly expireAtEpochMs: number;
 }
 
-export function computeFormationTimerEntry(
-  input: ComputeFormationTimerEntryInput,
-): ResourceEntry {
+export function computeFormationTimerEntry(input: ComputeFormationTimerEntryInput): ResourceEntry {
   const { work } = input;
   const contextId = groupStateGroupStorageKey(work.groupRef);
   // Queue resource ids cap at 36 chars and lose punctuation when rewritten, so
@@ -144,6 +142,13 @@ export function decodeFormationTimerWork(resource: string): GroupFormationTimerW
   };
 }
 
+export interface ComputeFormationTimerEntriesInput {
+  readonly command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation }>;
+  readonly next: Group;
+  readonly policy: GroupLifecyclePolicy;
+  readonly facts: GroupMutationFacts;
+}
+
 /**
  * The transitions arm the time leg themselves (plan refinement 2026-08-18):
  * entering an establishment phase schedules the deadline evaluation, and a
@@ -152,37 +157,36 @@ export function decodeFormationTimerWork(resource: string): GroupFormationTimerW
  * fires turns the entry into a stale drop.
  */
 export function computeFormationTimerEntries(
-  command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation }>,
-  next: Group,
-  policy: GroupLifecyclePolicy,
-  facts: GroupMutationFacts,
+  input: ComputeFormationTimerEntriesInput,
 ): readonly ResourceEntry[] {
-  const deadlineArmed = policy.activation.mode === 'deadline' ||
-    policy.activation.mode === 'threshold-or-deadline';
+  const { command, next, policy, facts } = input;
+  const deadlineArmed =
+    policy.activation.mode === 'deadline' || policy.activation.mode === 'threshold-or-deadline';
   const beginsEstablishment =
     command.operation === 'startGroupEstablishment' ||
     command.operation === 'reopenGroupEstablishment';
   if (beginsEstablishment && deadlineArmed) {
-    return [timerEntry('deadline', next, facts, facts.nowEpochMs + policy.activation.deadlineMs)];
+    return [timerEntry(input, 'deadline', facts.nowEpochMs + policy.activation.deadlineMs)];
   }
   const retryAllowed = next.formationAttemptCount < policy.activation.maxFormationAttempts;
   if (command.operation === 'failGroupFormation' && retryAllowed) {
-    return [timerEntry(
-      'retry',
-      next,
-      facts,
-      facts.nowEpochMs + computeFormationRetryBackoffMs(next.formationAttemptCount),
-    )];
+    return [
+      timerEntry(
+        input,
+        'retry',
+        facts.nowEpochMs + computeFormationRetryBackoffMs(next.formationAttemptCount),
+      ),
+    ];
   }
   return [];
 }
 
 function timerEntry(
+  input: ComputeFormationTimerEntriesInput,
   kind: 'deadline' | 'retry',
-  next: Group,
-  facts: GroupMutationFacts,
   notBeforeEpochMs: number,
 ): ResourceEntry {
+  const { next, facts } = input;
   return computeFormationTimerEntry({
     work: {
       kind,

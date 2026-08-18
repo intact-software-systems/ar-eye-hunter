@@ -76,23 +76,13 @@ function validateAggregateMutationInput(
     return;
   }
   if (operation === 'activateGroup') {
-    // This validator sees both raw requests and built commands. Requests never
-    // carry the criterion fields (the exact-key check excludes them), so
-    // absence, like null, means operator activation.
-    if (input.observedRate !== undefined) {
-      validateNullableUnitInterval(input.observedRate, 'Group activateGroup observedRate');
-    }
-    if (
-      input.degraded !== undefined &&
-      input.degraded !== null &&
-      typeof input.degraded !== 'boolean'
-    ) {
-      throw new TypeError('Group activateGroup degraded must be boolean or null');
-    }
+    validateActivateGroupInput(input);
     return;
   }
   if (operation === 'failGroupFormation') {
-    validateRequiredUnitInterval(input.observedRate, 'Group failGroupFormation observedRate');
+    if (!isUnitIntervalNumber(input.observedRate)) {
+      throw new TypeError('Group failGroupFormation observedRate must be within [0, 1]');
+    }
     return;
   }
   optionalString('joinCode');
@@ -202,13 +192,19 @@ function isPresenceOperation(
   return ['connectPresence', 'heartbeatPresence', 'disconnectPresence'].includes(operation);
 }
 
-function validateNullableUnitInterval(value: unknown, label: string): void {
-  if (value === null) return;
-  validateRequiredUnitInterval(value, label);
+// This validator sees both raw requests and built commands. Requests never
+// carry the criterion fields (the exact-key check excludes them), so absence,
+// like null, means operator activation.
+function validateActivateGroupInput(input: Record<string, unknown>): void {
+  const { observedRate, degraded } = input;
+  if (observedRate !== undefined && observedRate !== null && !isUnitIntervalNumber(observedRate)) {
+    throw new TypeError('Group activateGroup observedRate must be within [0, 1]');
+  }
+  if (degraded !== undefined && degraded !== null && typeof degraded !== 'boolean') {
+    throw new TypeError('Group activateGroup degraded must be boolean or null');
+  }
 }
 
-function validateRequiredUnitInterval(value: unknown, label: string): void {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
-    throw new TypeError(`${label} must be within [0, 1]`);
-  }
+function isUnitIntervalNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
 }

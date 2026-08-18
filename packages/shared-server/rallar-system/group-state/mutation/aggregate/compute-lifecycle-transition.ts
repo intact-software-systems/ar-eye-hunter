@@ -128,9 +128,10 @@ export function computeLifecycleTransition(
       : command.operation === 'failGroupFormation'
         ? null
         : stored.value.establishmentStartedAtEpochMs,
-    formationAttemptCount: command.operation === 'failGroupFormation'
-      ? stored.value.formationAttemptCount + 1
-      : stored.value.formationAttemptCount,
+    formationAttemptCount:
+      command.operation === 'failGroupFormation'
+        ? stored.value.formationAttemptCount + 1
+        : stored.value.formationAttemptCount,
     lastFormationOutcome: computeRecordedOutcome(command, stored.value, facts),
     snapshotVersion: stored.value.snapshotVersion + 1,
     updated: auditStamp(command, facts, command.input.actorPrincipalId ?? undefined),
@@ -150,6 +151,6 @@ export function computeLifecycleTransition(
     presenceAdmission: null,
     eventType: 'group-updated',
     presenceSummaryWork: 'enqueue',
-    extraOutboxEntries: computeFormationTimerEntries(command, next, policy, facts),
+    extraOutboxEntries: computeFormationTimerEntries({ command, next, policy, facts }),
   });
 }

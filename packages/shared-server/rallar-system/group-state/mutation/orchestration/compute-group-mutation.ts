@@ -149,7 +149,8 @@ export function validateFacts(facts: GroupMutationFacts): void {
   if (!/^sha256:[0-9a-f]{64}$/.test(facts.commandHash)) {
     throw new TypeError('Group mutation commandHash is invalid');
   }
-  if (!['none', 'expiry', 'session-cleanup', 'formation-criterion'].includes(facts.internalAuthority)) {
+  const internalAuthorityModes = ['none', 'expiry', 'session-cleanup', 'formation-criterion'];
+  if (!internalAuthorityModes.includes(facts.internalAuthority)) {
     throw new TypeError('Group mutation internal authority is invalid');
   }
   if (!['damped', 'legacy'].includes(facts.formationDamping)) {
@@ -168,10 +169,7 @@ function validateCapacityFacts(capacity: GroupMutationFacts['capacity']): void {
   const record = requireRecord(capacity, 'Group mutation capacity facts');
   assertExactKeys(record, ['defaultMaxMembers'], 'Group mutation capacity facts');
   if (record.defaultMaxMembers === null) return;
-  requirePositiveSafeInteger(
-    record.defaultMaxMembers,
-    'Group mutation capacity defaultMaxMembers',
-  );
+  requirePositiveSafeInteger(record.defaultMaxMembers, 'Group mutation capacity defaultMaxMembers');
 }
 
 function validateAuthenticatedAuthority(

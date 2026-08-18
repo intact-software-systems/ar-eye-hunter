@@ -55,13 +55,6 @@ export function toAggregateMutationCommand(
       return toUpdateCommand(descriptor, randomId);
     case 'appointDirector':
       return toDirectorCommand(descriptor, randomId);
-    case 'startGroupEstablishment':
-    case 'reopenGroupEstablishment':
-      return toLifecycleTransitionCommand(descriptor.operation, descriptor, randomId);
-    case 'activateGroup':
-      return toActivateCommand(descriptor, randomId);
-    case 'failGroupFormation':
-      return toFailFormationCommand(descriptor, randomId);
     case 'rotateGroupJoinCode':
       return toRotateCommand(descriptor, randomId);
     default:
@@ -175,54 +168,6 @@ function toDirectorCommand(
         request.heartbeatTtlMs ?? DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS,
       ),
       ...toGroupMutationActorInput(request),
-    },
-  };
-}
-
-function toLifecycleTransitionCommand(
-  operation: 'startGroupEstablishment' | 'reopenGroupEstablishment',
-  descriptor: GroupMutationDescriptor,
-  randomId: () => string,
-): GroupMutationCommand {
-  const request = descriptor.request as MutationActorInput;
-  return {
-    operation,
-    aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
-    ...toGroupMutationIdentity(request.requestId, randomId),
-    input: toGroupMutationActorInput(request),
-  };
-}
-
-function toActivateCommand(
-  descriptor: GroupMutationDescriptor,
-  randomId: () => string,
-): GroupMutationCommand {
-  const request = descriptor.request as MutationActorInput &
-    Readonly<{ observedRate?: number; degraded?: boolean }>;
-  return {
-    operation: 'activateGroup',
-    aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
-    ...toGroupMutationIdentity(request.requestId, randomId),
-    input: {
-      ...toGroupMutationActorInput(request),
-      observedRate: request.observedRate ?? null,
-      degraded: request.degraded ?? null,
-    },
-  };
-}
-
-function toFailFormationCommand(
-  descriptor: GroupMutationDescriptor,
-  randomId: () => string,
-): GroupMutationCommand {
-  const request = descriptor.request as MutationActorInput & Readonly<{ observedRate: number }>;
-  return {
-    operation: 'failGroupFormation',
-    aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
-    ...toGroupMutationIdentity(request.requestId, randomId),
-    input: {
-      ...toGroupMutationActorInput(request),
-      observedRate: request.observedRate,
     },
   };
 }

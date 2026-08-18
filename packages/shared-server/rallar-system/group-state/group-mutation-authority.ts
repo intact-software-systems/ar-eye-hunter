@@ -27,6 +27,7 @@ import {
   toAggregateMutationCommand,
   toMembershipMutationCommand,
 } from './group-mutation-command.ts';
+import { toLifecycleMutationCommand } from './to-lifecycle-mutation-command.ts';
 import { toPresenceMutationCommand } from './group-presence-mutation-command.ts';
 import {
   GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,
@@ -184,11 +185,13 @@ export function toDescriptorCommand(
     case 'createGroup':
     case 'updateGroup':
     case 'appointDirector':
+    case 'rotateGroupJoinCode':
+      return toAggregateMutationCommand(descriptor, randomId);
     case 'startGroupEstablishment':
     case 'activateGroup':
     case 'reopenGroupEstablishment':
-    case 'rotateGroupJoinCode':
-      return toAggregateMutationCommand(descriptor, randomId);
+    case 'failGroupFormation':
+      return toLifecycleMutationCommand(descriptor, randomId);
     case 'connectPresence':
     case 'heartbeatPresence':
     case 'disconnectPresence':

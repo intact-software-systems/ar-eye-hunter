@@ -375,15 +375,19 @@ function computeExpectedFormationTimerEntries(
   if (read.lifecyclePolicy.status === 'corrupt') {
     return [];
   }
-  const policy = read.lifecyclePolicy.status === 'present'
-    ? read.lifecyclePolicy.policy
-    : createDefaultGroupLifecyclePolicy();
-  return computeFormationTimerEntries(
-    command as Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation }>,
-    computed.guard.value as Group,
+  const policy =
+    read.lifecyclePolicy.status === 'present'
+      ? read.lifecyclePolicy.policy
+      : createDefaultGroupLifecyclePolicy();
+  return computeFormationTimerEntries({
+    command: command as Extract<
+      GroupMutationCommand,
+      { operation: GroupLifecycleTransitionOperation }
+    >,
+    next: computed.guard.value as Group,
     policy,
     facts,
-  );
+  });
 }
 
 function actorPrincipalId(actor: MutationActor): string | null {
