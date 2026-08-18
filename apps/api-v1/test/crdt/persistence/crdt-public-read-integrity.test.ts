@@ -6,8 +6,8 @@ import {
   type RallarCrdtSnapshotEnvelope,
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
-import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
-import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrdtMutationRepository.ts';
+import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
+import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
@@ -178,17 +178,15 @@ Deno.test('public CRDT integrity and export fail closed instead of reporting cor
 
 async function append(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]) {
   const repository = new PSqlCrdtMutationRepository(
-    sql,
-    () => Promise.resolve(true),
-    [{ documentType: 'checklist', rollout: 'production' }],
+    { sql, authorize: () => Promise.resolve(true) },
+    { policies: [{ documentType: 'checklist', rollout: 'production' }] },
   );
   const service = createCrdtMutationService({
     repository,
     createWriter: (transaction) =>
       new PSqlCrdtMutationRepository(
-        transaction,
-        () => Promise.resolve(true),
-        [{ documentType: 'checklist', rollout: 'production' }],
+        { sql: transaction, authorize: () => Promise.resolve(true) },
+        { policies: [{ documentType: 'checklist', rollout: 'production' }] },
       ),
     serviceId: 'server-1',
   });

@@ -86,6 +86,20 @@ side-effect boundary. Files that only rename or forward another capability are c
 
 ## Compatibility decision
 
+### Current repository-consumer ruling
+
+`@ar-eye-hunter/shared-server` is a private workspace package. Every supported consumer of its
+CRDT repository surface is in this repository and is migrated in the same change. A repository
+test or internally controlled type is evidence to update that consumer, not evidence of an
+external compatibility dependency.
+
+Consequently, `PSqlCrdtLogRepository` does not retain its six fail-closed direct-mutation methods
+or the open `[legacyOption: string]: unknown` options index. API-v1 and shared-server consumers use
+a named read/administration repository contract containing only the operations they invoke. The
+PostgreSQL repository implements that narrower contract, keeps its package-root class identity,
+and removes unused option fields. No production-legacy registry entry is created for either
+deleted shape.
+
 Existing package-root exports remain stable:
 
 - `installRallarCrdtWsTopics` and `validateRallarCrdtServerLiveEnvelope`;
@@ -93,8 +107,8 @@ Existing package-root exports remain stable:
   `RALLAR_CRDT_SERVER_DEFAULT_MAX_SYNC_BYTES` constants;
 - every type currently exported by `packages/shared-server/crdt/RallarCrdtServer.ts`;
 - `InMemoryRallarCrdtLogRepository` and its current options type;
-- `PSqlCrdtLogRepository` and its current options type;
-- their existing runtime behavior.
+- `PSqlCrdtLogRepository` and its explicitly named, in-repository options type;
+- their runtime identities and supported behavior.
 
 `packages/shared-server/mod.ts` changes its internal export paths to the canonical owners. Known
 repository consumers migrate from the old deep paths. The old
@@ -102,9 +116,9 @@ repository consumers migrate from the old deep paths. The old
 `packages/shared-server/rallar-system/services/crdt-*` paths are removed after migration; the design
 does not retain deep-path re-export shims, deprecated duplicates, or dual implementations.
 
-Repository searches currently show no package-level contract for those deep paths. Discovery of a
-verified external consumer that cannot use the package root is a new public compatibility decision
-and stops implementation for maintainer direction.
+Repository searches and the private package declaration establish that the repository contains the
+complete consumer set. If distribution policy changes later, that future public surface is a new
+design decision; it is not inferred from current internal tests or types.
 
 This decision does not authorize changes to REST paths, HTTP response shapes, OpenAPI contracts,
 WebSocket topic or payload contracts, AppInbox message types, queue keys, persisted schemas, CRDT
@@ -270,18 +284,12 @@ collision, switches the CRDT writer to the insert-only repository operation, and
 document/update/result/outbox attempt rolls back. It does not change the shared repository method
 or unrelated callers.
 
-`PSqlCrdtLogRepository` retains read and administration capabilities required by current consumers.
-Its unsupported direct mutation methods remain fail-closed only while the public shared CRDT
-repository contract requires them. The tiny rejection owner is consolidated if doing so makes that
-compatibility boundary more visible. Removing the methods or narrowing the shared public interface
-is a separate compatibility decision and is not part of this refactor.
-
-The approved retained boundary is recorded against the final `PSqlCrdtLogRepository` owner in the
-focused production-legacy registry. One class-symbol entry covers the fail-closed direct methods;
-one checker-owned `unclassified-symbol` entry covers the open public options index signature. Both
-name the package-root dependency and compatibility tests and define removal as a separately
-approved public-interface migration. The in-memory repository is the canonical supported
-implementation, not a legacy wrapper.
+`PSqlCrdtLogRepository` retains only the read and administration capabilities required by current
+in-repository consumers. A named read/administration contract replaces the broad mutable
+repository requirement at those consumer boundaries. The six unsupported direct mutation methods,
+their rejection helper, the open options index, and unused option fields are removed together with
+the internal tests that existed only to preserve them. The in-memory repository remains the
+canonical fully mutable implementation, not a compatibility wrapper.
 
 ### API-v1 CRDT
 
@@ -454,9 +462,10 @@ Closure includes:
 - explicit maintainer approval before retaining any affected public, persisted, protocol, or
   migration compatibility boundary.
 
-The runtime-rejecting direct PostgreSQL mutation surface is treated as a compatibility boundary,
-not silently deleted. Any other old-path or old-shape consumer found during closure is classified
-from executable evidence. A test that merely imports an old path does not establish a production
+The runtime-rejecting direct PostgreSQL mutation surface is deleted after every in-repository
+consumer is migrated to the named read/administration contract. Any other old-path or old-shape
+consumer found during closure is classified from executable evidence. A test that merely imports
+an old path or constructs a synthetic historical option does not establish a production
 requirement.
 
 ## Validation strategy

@@ -1,10 +1,20 @@
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrdtMutationRepository.ts';
-import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
-import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/AppInboxService.ts';
+// prettier-ignore
+import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/\
+psql-crdt-mutation-repository.ts';
+// prettier-ignore
+import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
+ResourceInboxRepository.ts';
+// prettier-ignore
+import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
+ResourceInboxResultsRepository.ts';
+// prettier-ignore
+import { AppCrdtInboxService } from '@shared-server/rallar-system/services/\
+AppCrdtInboxService.ts';
+// prettier-ignore
+import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/\
+AppInboxService.ts';
 import type * as Crdt from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import {
   createCrdtMutationService,
@@ -56,7 +66,10 @@ export function createApiCrdtInboxService(
   const policies = input.policies && input.policies.length > 0
     ? input.policies
     : [{ documentType: '*', rollout: 'disabled' as const }];
-  const repository = new PSqlCrdtMutationRepository(input.database, authorize, policies);
+  const repository = new PSqlCrdtMutationRepository(
+    { sql: input.database, authorize },
+    { policies },
+  );
   return new AppCrdtInboxService({
     inbox: input.inboxQueueReader,
     resourceInbox: input.resourceInboxRepository,
@@ -65,7 +78,7 @@ export function createApiCrdtInboxService(
     mutationService: createCrdtMutationService({
       repository,
       createWriter: (transaction: PSqlTransactionSql) =>
-        new PSqlCrdtMutationRepository(transaction, authorize, policies),
+        new PSqlCrdtMutationRepository({ sql: transaction, authorize }, { policies }),
       serviceId: input.serviceId,
     }),
     serviceId: input.serviceId,

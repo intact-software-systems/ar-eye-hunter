@@ -166,7 +166,7 @@ export * from './postgres/al-runtime/createPSqlALRuntimeStores.ts';
 export * from './postgres/al-runtime/PSqlInboundAdmissionBackend.ts';
 export * from './postgres/al-runtime/PSqlOutboundAdmissionBackend.ts';
 export * from './postgres/app-data/PSqlAppDataRepository.ts';
-export * from './postgres/crdt/PSqlCrdtLogRepository.ts';
+export * from './rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 export * from './postgres/queuebox/PSqlQueueBox.ts';
 export * from './postgres/queuebox/PSqlResultsQueueBox.ts';
 export * from './postgres/rallar-system/createStateRepositories.ts';

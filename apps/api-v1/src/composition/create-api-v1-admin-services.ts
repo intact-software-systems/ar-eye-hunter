@@ -1,4 +1,4 @@
-import type { RallarCrdtAdminLogRepository } from '@shared/crdt/mod.ts';
+import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 // prettier-ignore
 import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/\
@@ -56,7 +56,7 @@ export interface CreateApiV1AdminServicesInput {
   readonly resetRtcTopologyMetrics: () => void;
   readonly readGroupFormationMetrics: RallarGroupFormationMetricsRecorder['readMetrics'];
   readonly resetGroupFormationMetrics: RallarGroupFormationMetricsRecorder['resetMetrics'];
-  readonly crdtAdminRepository: RallarCrdtAdminLogRepository;
+  readonly crdtAdminRepository: RallarCrdtAdminReadRepository;
   readonly topologyManagement: GroupTopologyManagementService;
   readonly clientStateService: Pick<
     ClientStateService,

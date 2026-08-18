@@ -4,11 +4,7 @@ import {
   createRallarCrdtDebugBundle,
   evaluateRallarCrdtFeaturePolicy,
   fromRallarCrdtAppendCursor,
-  type RallarCrdtAdminLogRepository,
-  type RallarCrdtAppendBatchInput,
-  type RallarCrdtAppendBatchResult,
-  type RallarCrdtAppendResult,
-  type RallarCrdtAppendUpdateInput,
+  type RallarCrdtAdminReadRepository,
   type RallarCrdtAuditEventKind,
   type RallarCrdtAuditSink,
   type RallarCrdtBackupBundle,
@@ -20,22 +16,16 @@ import {
   type RallarCrdtDocumentTypePolicy,
   type RallarCrdtDurableUpdateRecord,
   type RallarCrdtIntegrityReport,
-  type RallarCrdtLifecycleInput,
   type RallarCrdtListDocumentsInput,
   type RallarCrdtListUpdatesInput,
-  type RallarCrdtMetricsSink,
   type RallarCrdtOperationBatch,
-  type RallarCrdtRestoreResult,
   type RallarCrdtSnapshotEnvelope,
   type RallarCrdtUpdatePage,
-  type RallarCrdtValidationOptions,
-  type RallarCrdtWriteSnapshotInput,
   toRallarCrdtAppendCursor,
   toRallarCrdtDocumentKey,
   verifyRallarCrdtDebugBundle,
 } from '@shared/crdt/mod.ts';
-import type { PSqlSql } from '../PostgresSqlClient.ts';
-import { rejectDirectCrdtMutation } from './psql-crdt-legacy-mutation.ts';
+import type { PSqlSql } from '../../../postgres/PostgresSqlClient.ts';
 import {
   type DocumentRow,
   type SnapshotRow,
@@ -48,18 +38,14 @@ import {
 
 export interface PSqlCrdtLogRepositoryOptions {
   readonly now?: () => number;
-  readonly serverId?: string;
-  readonly validation?: RallarCrdtValidationOptions;
   readonly policies?: readonly RallarCrdtDocumentTypePolicy[];
-  readonly metrics?: RallarCrdtMetricsSink;
   readonly audit?: RallarCrdtAuditSink;
-  readonly [legacyOption: string]: unknown;
 }
 
 export class PSqlCrdtLogRepository<
   TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
-  TValue = unknown,
-> implements RallarCrdtAdminLogRepository<TPayload, TValue> {
+  TValue = RallarCrdtSnapshotEnvelope['value'],
+> implements RallarCrdtAdminReadRepository<TPayload, TValue> {
   private readonly now: () => number;
   private readonly policies: readonly RallarCrdtDocumentTypePolicy[];
   private readonly audit?: RallarCrdtAuditSink;
@@ -73,16 +59,6 @@ export class PSqlCrdtLogRepository<
       ? options.policies
       : [{ documentType: '*', rollout: 'disabled' }];
     this.audit = options.audit;
-  }
-
-  append(_input: RallarCrdtAppendUpdateInput<TPayload>): Promise<RallarCrdtAppendResult<TPayload>> {
-    return rejectDirectCrdtMutation();
-  }
-
-  appendBatch(
-    _input: RallarCrdtAppendBatchInput<TPayload>,
-  ): Promise<RallarCrdtAppendBatchResult<TPayload>> {
-    return rejectDirectCrdtMutation();
   }
 
   async listAfter(input: RallarCrdtListUpdatesInput): Promise<RallarCrdtUpdatePage<TPayload>> {
@@ -159,18 +135,10 @@ export class PSqlCrdtLogRepository<
       : undefined;
   }
 
-  writeSnapshot(_input: RallarCrdtWriteSnapshotInput<TValue>): Promise<void> {
-    return rejectDirectCrdtMutation();
-  }
-
   async readDocumentMetadata(
     document: RallarCrdtDocumentRef,
   ): Promise<RallarCrdtDocumentMetadata | undefined> {
     return await readDocumentMetadataByKey(this.sql, toRallarCrdtDocumentKey(document), document);
-  }
-
-  updateDocumentLifecycle(_input: RallarCrdtLifecycleInput): Promise<RallarCrdtDocumentMetadata> {
-    return rejectDirectCrdtMutation();
   }
 
   async listDocuments(
@@ -278,28 +246,12 @@ export class PSqlCrdtLogRepository<
     });
   }
 
-  restoreBackupBundle(
-    _bundle: RallarCrdtBackupBundle<TPayload>,
-    _options: Readonly<{
-      overwrite?: boolean;
-    }> = {},
-  ): Promise<RallarCrdtRestoreResult> {
-    return rejectDirectCrdtMutation();
-  }
-
   async verifyIntegrity(document: RallarCrdtDocumentRef): Promise<RallarCrdtIntegrityReport> {
     return verifyRallarCrdtDebugBundle(
       await this.exportDebugBundle(document, {
         reason: 'integrity-check',
       }),
     );
-  }
-
-  rebuildProjection(
-    _document: RallarCrdtDocumentRef,
-    _projectionId = 'default',
-  ): Promise<RallarCrdtIntegrityReport> {
-    return rejectDirectCrdtMutation();
   }
 
   private async readAllRecords(

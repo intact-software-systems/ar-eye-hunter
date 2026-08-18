@@ -14,7 +14,7 @@ import {
 import { configureSharedGraphRepositories } from '@shared-graph/repository/configure-shared-graph-repositories.ts';
 import { Temporal } from '@js-temporal/polyfill';
 import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppDataRepository.ts';
-import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
+import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 import {
   ResourceInboxInvariantCorruptionError,
   ResourceInboxRepository,
@@ -94,14 +94,7 @@ import type {
   GroupRef,
   GroupSnapshot,
 } from '@shared/api/group-types.ts';
-import {
-  RALLAR_CRDT_OPERATION_VERSION,
-  RALLAR_CRDT_PROTOCOL_VERSION,
-  type RallarCrdtDocumentRef,
-  type RallarCrdtOperationBatch,
-  type RallarCrdtSnapshotEnvelope,
-  type RallarCrdtUpdateEnvelope,
-} from '@shared/crdt/mod.ts';
+import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import {
   EntityStatus,
   type ResourceEntry,
@@ -5134,49 +5127,9 @@ Deno.test('PSqlAppDataRepository runs against PGlite SQL adapter', async () => {
   });
 });
 
-Deno.test('PSqlCrdtLogRepository exposes reads but rejects direct mutations', async () => {
+Deno.test('PSqlCrdtLogRepository exposes supported CRDT reads', async () => {
   await withPGliteSql(async (sql) => {
     const repository = new PSqlCrdtLogRepository(sql);
-    const update = createCrdtUpdate('update-1');
-    const snapshot: RallarCrdtSnapshotEnvelope = {
-      protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
-      document: CRDT_DOCUMENT_REF,
-      snapshotId: 'snapshot-1',
-      schemaVersion: 1,
-      createdAtEpochMs: 2_500,
-      maxLamport: 1,
-      includedUpdateIds: [],
-      value: {},
-      metadata: { updateCount: 0 },
-    };
-
-    await assert.rejects(repository.append(toCrdtAppendInput(update)), /AppInbox|disabled/i);
-    await assert.rejects(
-      repository.appendBatch({
-        document: CRDT_DOCUMENT_REF,
-        updates: [toCrdtAppendInput(update)],
-      }),
-      /AppInbox|disabled/i,
-    );
-    await assert.rejects(
-      repository.writeSnapshot({
-        snapshot,
-        appendSequence: 0,
-      }),
-      /AppInbox|disabled/i,
-    );
-    await assert.rejects(
-      repository.updateDocumentLifecycle({
-        document: CRDT_DOCUMENT_REF,
-        lifecycle: 'archived',
-      }),
-      /AppInbox|disabled/i,
-    );
-    await assert.rejects(repository.restoreBackupBundle({} as never), /AppInbox|disabled/i);
-    await assert.rejects(
-      repository.rebuildProjection(CRDT_DOCUMENT_REF, 'checklist-summary'),
-      /AppInbox|disabled/i,
-    );
 
     assert.equal(await repository.readDocumentMetadata(CRDT_DOCUMENT_REF), undefined);
     assert.equal(await repository.readSnapshot(CRDT_DOCUMENT_REF), undefined);
@@ -5846,46 +5799,6 @@ const CRDT_DOCUMENT_REF: RallarCrdtDocumentRef = {
   documentId: 'room-1',
   roomRef: CRDT_ROOM_REF,
 };
-
-function toCrdtAppendInput(update: RallarCrdtUpdateEnvelope) {
-  return {
-    update,
-    trusted: {
-      authorizationScope: 'room' as const,
-      principalId: 'principal-a',
-      sessionId: 'session-a',
-    },
-  };
-}
-
-function createCrdtUpdate(updateId: string): RallarCrdtUpdateEnvelope {
-  return {
-    protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
-    document: CRDT_DOCUMENT_REF,
-    updateId,
-    replicaId: 'replica-a',
-    lamport: Number(updateId.split('-').at(-1) ?? 1),
-    parents: [],
-    schemaVersion: 1,
-    operationVersion: RALLAR_CRDT_OPERATION_VERSION,
-    createdAtEpochMs: 1_000,
-    payload: createCrdtBatch(`Title ${updateId}`),
-  };
-}
-
-function createCrdtBatch(title: string): RallarCrdtOperationBatch {
-  return {
-    kind: 'batch',
-    operations: [
-      {
-        kind: 'register.set',
-        path: ['title'],
-        policy: 'lww',
-        value: title,
-      },
-    ],
-  };
-}
 
 function createResourceEntry(
   resourceId: string,

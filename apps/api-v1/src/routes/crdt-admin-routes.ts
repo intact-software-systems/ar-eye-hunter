@@ -1,6 +1,6 @@
 import { type Context, Hono } from 'jsr:@hono/hono@4.11.9';
 import type {
-  RallarCrdtAdminLogRepository,
+  RallarCrdtAdminReadRepository,
   RallarCrdtAuditSink,
   RallarCrdtCatchUpRequestEnvelope,
   RallarCrdtCatchUpResponseEnvelope,
@@ -28,7 +28,7 @@ export type RallarCrdtAdminMutations = Readonly<{
 }>;
 
 export type RallarCrdtAdminRoutesOptions = Readonly<{
-  repository: RallarCrdtAdminLogRepository;
+  repository: RallarCrdtAdminReadRepository;
   mutations?: RallarCrdtAdminMutations;
   audit?: RallarCrdtAuditSink;
   now?: () => number;

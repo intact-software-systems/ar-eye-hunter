@@ -15,7 +15,7 @@ import {
   toRallarCrdtDocumentKey,
   validateRallarCrdtSnapshotEnvelope,
 } from '@shared/crdt/mod.ts';
-import type * as Crdt from '../../rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+import type * as Crdt from '../mutation/crdt-mutation-contracts.ts';
 import {
   decodeExactDocumentMetadata,
   decodeExactDocumentRef,
@@ -23,8 +23,8 @@ import {
   decodeExactRetentionPolicy,
   decodeExactSnapshotEnvelope,
   decodeExactTrustedAppendMetadata,
-} from '../../rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
-import * as CrdtUpdate from '../../rallar-system/crdt/mutation/decode-exact-update-envelope.ts';
+} from '../mutation/crdt-mutation-value-codec.ts';
+import * as CrdtUpdate from '../mutation/decode-exact-update-envelope.ts';
 
 export interface DocumentRow {
   readonly document_key: string;
@@ -240,7 +240,9 @@ export function toDate(epochMs: number | null): Date | null {
   return epochMs === null ? null : new Date(epochMs);
 }
 
-export function toJson(value: unknown): string | null {
+export function toJson(
+  value: RallarCrdtRetentionPolicy | RallarCrdtQuotaPolicy | null,
+): string | null {
   return value === null ? null : JSON.stringify(value);
 }
 
@@ -256,7 +258,7 @@ function fromJson<T>(value: string | null): T | null {
   return value === null ? null : (JSON.parse(value) as T);
 }
 
-function decodePolicy(decode: () => unknown): boolean {
+function decodePolicy(decode: () => RallarCrdtRetentionPolicy | RallarCrdtQuotaPolicy): boolean {
   try {
     decode();
     return true;

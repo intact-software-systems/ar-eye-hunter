@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { RallarCrdtAdminLogRepository } from '@shared/crdt/mod.ts';
+import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import type {
@@ -132,7 +132,7 @@ function createInput(): CreateApiV1SystemInstallersInput {
     serviceId: 'api-test',
     nowEpochMs: () => 1_000,
     topology: {} as ApiV1TopologyServices,
-    crdtLogRepository: {} as RallarCrdtAdminLogRepository,
+    crdtLogRepository: {} as RallarCrdtAdminReadRepository,
     crdtPolicies: undefined,
     globalGraphRecomputeLimit: undefined,
   };

@@ -4,7 +4,7 @@ import {
   type RallarCrdtDocumentRef,
   toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
-import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
+import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 import {
   readConfiguredCrdtPolicies,
 } from '../../src/services/create-api-mutation-inbox-factories.ts';

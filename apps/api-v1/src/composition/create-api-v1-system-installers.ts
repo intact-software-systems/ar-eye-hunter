@@ -1,5 +1,5 @@
 import type {
-  RallarCrdtAdminLogRepository,
+  RallarCrdtAdminReadRepository,
   RallarCrdtDocumentTypePolicy,
 } from '@shared/crdt/mod.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
@@ -28,7 +28,7 @@ export interface CreateApiV1SystemInstallersInput {
   readonly serviceId: string;
   readonly nowEpochMs: () => number;
   readonly topology: ApiV1TopologyServices;
-  readonly crdtLogRepository: RallarCrdtAdminLogRepository;
+  readonly crdtLogRepository: RallarCrdtAdminReadRepository;
   readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[] | undefined;
   readonly globalGraphRecomputeLimit: InitRallarSystemWsTopicsOptions['globalGraphRecomputeLimit'];
 }

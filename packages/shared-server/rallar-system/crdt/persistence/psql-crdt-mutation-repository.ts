@@ -7,8 +7,10 @@ import {
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { PSqlSql } from '../PostgresSqlClient.ts';
-import { ResourceInboxRepository } from '../resource-inbox/ResourceInboxRepository.ts';
+import type { PSqlSql } from '../../../postgres/PostgresSqlClient.ts';
+// prettier-ignore
+import { ResourceInboxRepository } from '../../../postgres/resource-inbox/\
+ResourceInboxRepository.ts';
 import {
   type CrdtCanonicalSnapshotEnvelope,
   type CrdtMutationCommand,
@@ -16,7 +18,7 @@ import {
   CrdtMutationConflictError,
   type CrdtMutationRead,
   type CrdtMutationRepository,
-} from '../../rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+} from '../mutation/crdt-mutation-contracts.ts';
 import {
   type DocumentRow,
   type SnapshotRow,
@@ -34,24 +36,33 @@ export interface CrdtMutationAuthorityDecision {
   readonly code: string;
 }
 
+export type ReadCrdtMutationAuthority = (
+  command: CrdtMutationCommand,
+) => Promise<boolean | CrdtMutationAuthorityDecision>;
+
+export namespace PSqlCrdtMutationRepository {
+  export interface Dependencies {
+    readonly sql: PSqlSql;
+    readonly authorize: ReadCrdtMutationAuthority;
+  }
+
+  export interface Config {
+    readonly policies: readonly RallarCrdtDocumentTypePolicy[];
+  }
+}
+
 export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
   private readonly sql: PSqlSql;
-  private readonly authorize: (
-    command: CrdtMutationCommand,
-  ) => Promise<boolean | CrdtMutationAuthorityDecision>;
+  private readonly authorize: ReadCrdtMutationAuthority;
   private readonly policies: readonly RallarCrdtDocumentTypePolicy[];
 
   constructor(
-    sql: PSqlSql,
-    authorize: (
-      command: CrdtMutationCommand,
-    ) => Promise<boolean | CrdtMutationAuthorityDecision> = () =>
-      Promise.resolve({ allowed: false, code: 'current-authority-reader-missing' }),
-    policies: readonly RallarCrdtDocumentTypePolicy[] = [],
+    dependencies: PSqlCrdtMutationRepository.Dependencies,
+    config: PSqlCrdtMutationRepository.Config,
   ) {
-    this.sql = sql;
-    this.authorize = authorize;
-    this.policies = policies;
+    this.sql = dependencies.sql;
+    this.authorize = dependencies.authorize;
+    this.policies = config.policies;
   }
 
   async readMutation(command: CrdtMutationCommand): Promise<CrdtMutationRead> {
@@ -72,7 +83,7 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
       ? toMetadata(beforeRows[0], command.documentKey, command.document)
       : null;
     const decodedRecords = records.map((row) => toRecord(row, command.document));
-    validateReadSet(document, decodedRecords, snapshots);
+    validateReadSet({ document, records: decodedRecords, snapshots });
     const existingRecord =
       command.operation === 'append'
         ? (decodedRecords.find((record) => record.update.updateId === command.update.updateId) ??
@@ -115,7 +126,9 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
             expectedLifecycle: computed.expectedDocumentLifecycle,
             expectedAppendSequence: computed.expectedAppendSequence,
           });
-    if (!guarded) throw new CrdtMutationConflictError(computed.documentKey);
+    if (!guarded) {
+      throw new CrdtMutationConflictError(computed.documentKey);
+    }
     if (computed.update && computed.append) {
       await insertUpdate({
         sql: this.sql,
@@ -136,7 +149,9 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
 
   async writeOutbox(entries: readonly ResourceEntry[]): Promise<void> {
     const outbox = new ResourceInboxRepository(this.sql);
-    for (const entry of entries) await outbox.writeIfAbsentOrMatch(entry);
+    for (const entry of entries) {
+      await outbox.write(entry);
+    }
   }
 }
 
@@ -190,11 +205,14 @@ function sameDocumentGuard(left: DocumentRow | undefined, right: DocumentRow | u
   );
 }
 
-function validateReadSet(
-  document: RallarCrdtDocumentMetadata | null,
-  records: readonly ReturnType<typeof toRecord>[],
-  snapshots: readonly SnapshotRow[],
-): void {
+interface ValidateReadSetInput {
+  readonly document: RallarCrdtDocumentMetadata | null;
+  readonly records: readonly ReturnType<typeof toRecord>[];
+  readonly snapshots: readonly SnapshotRow[];
+}
+
+function validateReadSet(input: ValidateReadSetInput): void {
+  const { document, records, snapshots } = input;
   if (!document) {
     if (records.length > 0 || snapshots.length > 0) {
       throw new TypeError('CRDT persisted read set has children without a document');
@@ -209,8 +227,9 @@ function validateReadSet(
     records.reduce((bytes, record) => bytes + byteLengthOfRallarCrdtJson(record.update), 0) !==
       document.storedUpdateBytes ||
     Number(snapshots[0]?.snapshot_count ?? 0) !== document.snapshotCount
-  )
+  ) {
     throw new TypeError('CRDT persisted read set differs from document counters');
+  }
 }
 
 async function readActorUpdatesInWindow(
@@ -265,7 +284,9 @@ interface UpdateDocumentInput {
 
 async function updateDocument(input: UpdateDocumentInput): Promise<boolean> {
   const { sql, metadata, expectedRevision, expectedLifecycle, expectedAppendSequence } = input;
-  if (expectedLifecycle === 'absent' || expectedAppendSequence === 'absent') return false;
+  if (expectedLifecycle === 'absent' || expectedAppendSequence === 'absent') {
+    return false;
+  }
   const rows = await sql<{ document_key: string }[]>`
         update crdt_documents
         set document_revision = ${metadata.documentRevision}, lifecycle = ${metadata.lifecycle},

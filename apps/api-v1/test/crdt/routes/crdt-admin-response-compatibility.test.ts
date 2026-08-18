@@ -8,8 +8,8 @@ import {
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
-import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrdtMutationRepository.ts';
+import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
+import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
@@ -40,11 +40,14 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
     const inbox = new InboxQueueReader(queue);
     const outbox = new OutboxQueueReader(queue);
     const mutationService = createCrdtMutationService({
-      repository: new PSqlCrdtMutationRepository(sql, () => Promise.resolve(true)),
+      repository: new PSqlCrdtMutationRepository(
+        { sql, authorize: () => Promise.resolve(true) },
+        { policies: [] },
+      ),
       createWriter: (transaction) =>
         new PSqlCrdtMutationRepository(
-          transaction,
-          () => Promise.resolve(true),
+          { sql: transaction, authorize: () => Promise.resolve(true) },
+          { policies: [] },
         ),
       serviceId: 'server-1',
     });

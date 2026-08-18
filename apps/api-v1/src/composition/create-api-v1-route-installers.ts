@@ -1,5 +1,5 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
-import type { RallarCrdtAdminLogRepository, RallarCrdtAuditSink } from '@shared/crdt/mod.ts';
+import type { RallarCrdtAdminReadRepository, RallarCrdtAuditSink } from '@shared/crdt/mod.ts';
 import type {
   RallarServerRouteInstaller,
 } from '@shared-server/rallar-facade/RallarServerApplication.ts';
@@ -39,7 +39,7 @@ export interface CreateApiV1RouteInstallersInput {
   readonly runtime: ApiV1Runtime;
   readonly topology: Pick<ApiV1TopologyServices, 'topologyManagement' | 'adminClientIds'>;
   readonly admin: ApiV1AdminServices;
-  readonly crdtLogRepository: RallarCrdtAdminLogRepository;
+  readonly crdtLogRepository: RallarCrdtAdminReadRepository;
   readonly crdtMutations: AppCrdtInboxService;
   readonly crdtAuditSink: RallarCrdtAuditSink | undefined;
   readonly authUserRepository: AuthUserRepository;

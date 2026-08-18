@@ -29,11 +29,12 @@ recipes, and the API-v1 state-write comparison harness.
 - The intended outcome is a behavior-preserving ownership refactor. The two already-classified
   behavior corrections are missing-audit-sink registration and accepting an identical existing
   final outbox row instead of rolling back on every collision.
-- Preserve the actual package-root CRDT surface: `installRallarCrdtWsTopics`,
+- Preserve the actual package-root CRDT runtime surface: `installRallarCrdtWsTopics`,
   `validateRallarCrdtServerLiveEnvelope`, both `RALLAR_CRDT_SERVER_DEFAULT_*` constants, every
   currently exported `RallarCrdtServer*` type, `InMemoryRallarCrdtLogRepository`,
-  `PSqlCrdtLogRepository`, and both repository options types. There is no exported
-  `RallarCrdtServer` class or value.
+  `PSqlCrdtLogRepository`, and both repository options type names. All supported consumers are in
+  this repository, so their compile-time contracts migrate with the implementation. There is no
+  exported `RallarCrdtServer` class or value.
 - Preserve REST paths, HTTP status and JSON shapes, OpenAPI contracts, WebSocket topics and payloads,
   AppInbox types and keys, command/result versions, persisted rows, document keys, policy defaults,
   optimistic guards, retry ownership, final outbox identities, and observable dependency ordering.
@@ -70,6 +71,17 @@ recipes, and the API-v1 state-write comparison harness.
   a separately reviewed optimization.
 - Run focused behavior tests before package, application, live database, black-box, performance, and
   repository-wide checks. Report every required check as passed, failed, or skipped.
+
+### Task 3 consumer ruling
+
+`@ar-eye-hunter/shared-server` is private and every supported consumer is in this repository.
+Internally controlled types and tests do not establish an external compatibility dependency. Task
+3 therefore migrates all repository consumers atomically, introduces a named read/administration
+contract, removes the six fail-closed PostgreSQL mutation methods and their rejection helper,
+removes the open options index and unused option fields, and creates no retained-legacy registry
+entry for those deleted shapes. The package-root `PSqlCrdtLogRepository` name and runtime identity
+remain stable. The final-outbox collision correction and all persisted/protocol contracts remain
+unchanged.
 
 ---
 
@@ -644,15 +656,15 @@ git add packages/shared-server/rallar-system/crdt/mutation \
 git commit -m "refactor(crdt): expose mutation decision phases"
 ```
 
-### Task 3: Move PostgreSQL Persistence And Preserve Public Repository Compatibility
+### Task 3: Move PostgreSQL Persistence And Narrow Repository Ownership
 
 **Files:**
 
 - Create: `packages/shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts`
 - Create: `packages/shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts`
 - Create: `packages/shared-server/rallar-system/crdt/persistence/crdt-mutation-row-codec.ts`
+- Modify: `packages/shared/crdt/crdt-hardening.ts`
 - Modify: `packages/shared-server/mod.ts`
-- Modify: `docs/production-legacy-exceptions.md`
 - Modify imports only: `apps/api-v1/src/composition/create-default-rallar-server.ts`
 - Modify imports only: `apps/api-v1/src/services/create-api-crdt-inbox-service.ts`
 - Modify imports only: the current transaction, correction-3, policy, public-read, snapshot-reason,
@@ -667,10 +679,10 @@ git commit -m "refactor(crdt): expose mutation decision phases"
 **Interfaces:**
 
 - Consumes: Task 1 repository contracts and Task 2 computed mutations.
-- Produces: canonical `PSqlCrdtMutationRepository`; package-root-compatible
-  `PSqlCrdtLogRepository`.
+- Produces: canonical `PSqlCrdtMutationRepository`; package-root-identical
+  `PSqlCrdtLogRepository`; named `RallarCrdtAdminReadRepository` consumer contract.
 
-- [ ] **Step 1: Add RED persistence and runtime-identity coverage**
+- [x] **Step 1: Add RED persistence and runtime-identity coverage**
 
 Add a package export test:
 
@@ -682,6 +694,11 @@ it('keeps the package CRDT log repository on its canonical owner', () => {
   expect(sharedServer.PSqlCrdtLogRepository).toBe(PSqlCrdtLogRepository);
 });
 ```
+
+Add compile-time and direct behavior coverage proving API/read consumers depend only on
+`RallarCrdtAdminReadRepository`. Do not construct an unknown historical option or assert that a
+removed mutation method exists; those would protect synthetic compatibility rather than a
+supported consumer behavior.
 
 Update the focused PGlite imports to the target paths and run:
 
@@ -700,7 +717,7 @@ the CRDT mutation attempt whose computed entry has the same key/content, and ass
 zero committed document/update/result changes. Run that one case against current main first.
 Expected RED: the current `writeIfAbsentOrMatch` path reports a match and lets the mutation commit.
 
-- [ ] **Step 2: Move the PostgreSQL owners**
+- [x] **Step 2: Move the PostgreSQL owners**
 
 ```bash
 mkdir -p packages/shared-server/rallar-system/crdt/persistence
@@ -712,33 +729,19 @@ git mv packages/shared-server/postgres/crdt/crdt-mutation-row-codec.ts \
   packages/shared-server/rallar-system/crdt/persistence/crdt-mutation-row-codec.ts
 ```
 
-Move the seven-line direct-mutation rejection into
-`psql-crdt-log-repository.ts`; delete `psql-crdt-legacy-mutation.ts`.
+Define `RallarCrdtAdminReadRepository` beside the shared CRDT administration contracts. It owns the
+read/admin methods used by API-v1 and shared-server administration: `listAfter`, `readSnapshot`,
+`readDocumentMetadata`, `listDocuments`, `exportDebugBundle`, `exportBackupBundle`, and
+`verifyIntegrity`. Migrate each in-repository read/admin consumer to that contract.
 
-The public repository interface still requires the PostgreSQL class to expose direct `append`,
-`appendBatch`, `writeSnapshot`, `updateDocumentLifecycle`, `restoreBackupBundle`, and
-`rebuildProjection` methods that fail closed in favor of AppInbox. The approved design retains that
-surface, and the approved public options type retains its open compatibility index signature.
-Record two exact final entries in `docs/production-legacy-exceptions.md`:
+Make `PSqlCrdtLogRepository` implement the narrow contract. Remove `append`, `appendBatch`,
+`writeSnapshot`, `updateDocumentLifecycle`, `restoreBackupBundle`, and `rebuildProjection`; delete
+`psql-crdt-legacy-mutation.ts`. Remove `[legacyOption: string]: unknown` plus option fields that the
+class does not read, and update every constructor call. Remove or replace tests whose only behavior
+was exercising the deleted rejection surface. Do not modify `docs/production-legacy-exceptions.md`:
+there is no retained PostgreSQL compatibility boundary.
 
-```text
-packages/shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts#PSqlCrdtLogRepository
-packages/shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts#unclassified-symbol
-```
-
-The class entry owns the fail-closed methods. The checker-owned `unclassified-symbol` entry owns
-the `[legacyOption: string]: unknown` line. Both entries include the package-root consumer
-dependency, unsafe interface break, one local rejection function or one index signature as
-minimization, compatibility tests, the shared-server CRDT maintainers as owner, and removal only
-through a separately approved public interface migration. Do not include delivery or approval
-metadata.
-
-Immediately before retaining and registering this exact implementation, show both final symbols,
-their minimized code, consumers, tests, unsafe-removal reasons, and registry text to the
-maintainer and obtain explicit current approval. Design approval selects the compatibility
-direction but does not substitute for this implementation-time retained-legacy review.
-
-- [ ] **Step 3: Make mutation repository dependencies required and named**
+- [x] **Step 3: Make mutation repository dependencies required and named**
 
 Use a type-only namespace immediately before the class:
 
@@ -771,7 +774,7 @@ Tests that need fail-closed behavior pass an authority returning
 `{ allowed: false, code: 'current-authority-reader-missing' }`; the constructor no longer invents
 that production dependency.
 
-- [ ] **Step 4: Preserve guarded write and corruption behavior**
+- [x] **Step 4: Preserve guarded write and corruption behavior**
 
 Keep the first write as the current conditional document insert/update. Preserve the order:
 
@@ -818,7 +821,7 @@ Change only the CRDT mutation repository's final outbox loop from
 callers. The new identical-collision test must turn GREEN and prove the preceding guarded document
 and update writes roll back with the collision.
 
-- [ ] **Step 5: Update the package root without a compatibility wrapper**
+- [x] **Step 5: Update the package root without a compatibility wrapper**
 
 Change the existing direct export to:
 
@@ -829,7 +832,7 @@ export * from './rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 Do not re-export `PSqlCrdtMutationRepository`; it remains an internal construction owner unless
 current package-root evidence proves otherwise.
 
-- [ ] **Step 6: Run GREEN and live persistence checks**
+- [x] **Step 6: Run GREEN and live persistence checks**
 
 ```bash
 npx vitest run packages/tests/shared-server/crdt/crdt-public-compatibility.test.ts
@@ -844,15 +847,15 @@ npm run check:repo-style -- --root packages/shared-server/rallar-system/crdt/per
 git diff --check
 ```
 
-Expected: package identity, PGlite atomicity/CAS/corruption tests, identical outbox collision
-rollback, typecheck, and diff checks pass.
+Expected: package identity, narrow consumer typing, PGlite atomicity/CAS/corruption tests,
+identical outbox collision rollback, typecheck, and diff checks pass.
 
-- [ ] **Step 7: Commit persistence ownership**
+- [x] **Step 7: Commit persistence ownership**
 
 ```bash
 git add packages/shared-server/rallar-system/crdt/persistence \
+  packages/shared/crdt/crdt-hardening.ts \
   packages/shared-server/mod.ts \
-  docs/production-legacy-exceptions.md \
   packages/tests/shared-server/crdt/crdt-public-compatibility.test.ts \
   packages/tests/shared-server/crdt/mutation/crdt-persisted-contract-invariants.test.ts \
   apps/api-v1/src/composition/create-default-rallar-server.ts \
@@ -1414,8 +1417,8 @@ shared inbox/mutation owners.
 - [ ] **Step 2: Complete production legacy review**
 
 Classify every affected candidate as `removed`, `minimized-boundary`, `resolved`, or `retained`.
-The only expected retained legacy entries are the fail-closed direct-mutation/options surface on
-`PSqlCrdtLogRepository` and the five-argument public realtime validator adapter.
+The PostgreSQL direct-mutation/options surface is expected `removed`; the only expected retained
+legacy entry is the five-argument public realtime validator adapter.
 `InMemoryRallarCrdtLogRepository` is the canonical public implementation, not legacy. Any
 additional retained candidate stops publication for explicit maintainer approval and registry
 work.
@@ -2023,7 +2026,8 @@ receipt, close a catalog entry, rebase, or create a post-merge governance commit
       decision implementation.
 - [ ] The mutation attempt visibly executes read, pure compute, pure validate, and transaction-bound
       write; AppInbox owns retry and transaction lifecycle.
-- [ ] Package-root CRDT exports have the same names, types, and runtime identities.
+- [ ] Package-root CRDT exports have the same names and runtime identities; repository types are
+      narrowed only after every in-repository consumer migrates in the same slice.
 - [ ] REST, WebSocket, queue, command/result, persisted, policy, retry, receipt, and final outbox
       contracts remain compatible.
 - [ ] Default production registers no audit handler without a sink; configured audit delivery is

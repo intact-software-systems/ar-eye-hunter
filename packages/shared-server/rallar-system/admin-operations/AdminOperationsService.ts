@@ -17,7 +17,7 @@ import type {
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { RallarGroupFormationMetrics } from '@shared/rtc/group-formation-metrics.ts';
 import {
-  type RallarCrdtAdminLogRepository,
+  type RallarCrdtAdminReadRepository,
   type RallarCrdtLifecycleInput,
 } from '@shared/crdt/mod.ts';
 import {
@@ -77,7 +77,7 @@ export type AdminOperationsServiceOptions = Readonly<{
   resetRtcTopologyMetrics?: () => void;
   readGroupFormationMetrics?: () => RallarGroupFormationMetrics;
   resetGroupFormationMetrics?: () => void;
-  crdtAdminRepository?: Partial<RallarCrdtAdminLogRepository>;
+  crdtAdminRepository?: Partial<RallarCrdtAdminReadRepository>;
   timing?: RallarTimingSink;
   mutationGateway: AdminOperationsMutationGateway;
 }>;
@@ -245,9 +245,7 @@ export class AdminOperationsService {
   async pruneExpired(
     input: AdminOperationsWriteInput<AdminPruneExpiredRequest>,
   ): Promise<AdminOperationResultResponse> {
-    return (await this.options.mutationGateway.pruneExpired(
-      input,
-    )) as AdminOperationResultResponse;
+    return (await this.options.mutationGateway.pruneExpired(input)) as AdminOperationResultResponse;
   }
 
   async verifyCrdtIntegrity(input: AdminOperationsWriteInput<unknown>): Promise<unknown> {
@@ -271,9 +269,9 @@ export class AdminOperationsService {
           reason: readReason(body, 'api-v1-admin-operations-debug-export'),
           redaction: redactPayloads
             ? {
-              payloadsRedacted: true,
-              reason: 'api-v1-admin-operations-redaction',
-            }
+                payloadsRedacted: true,
+                reason: 'api-v1-admin-operations-redaction',
+              }
             : { payloadsRedacted: false },
         },
       );
@@ -318,13 +316,7 @@ export class AdminOperationsService {
       );
       return result;
     } catch (error) {
-      recordRallarTiming(
-        this.options.timing,
-        timingInput,
-        'error',
-        nowMs() - startedAt,
-        error,
-      );
+      recordRallarTiming(this.options.timing, timingInput, 'error', nowMs() - startedAt, error);
       throw error;
     }
   }
@@ -371,15 +363,14 @@ export class AdminOperationsService {
     };
   }
 
-  private requireCrdtRepository<K extends keyof RallarCrdtAdminLogRepository>(
+  private requireCrdtRepository<K extends keyof RallarCrdtAdminReadRepository>(
     method: K,
-  ): Partial<RallarCrdtAdminLogRepository> & Pick<RallarCrdtAdminLogRepository, K> {
+  ): Partial<RallarCrdtAdminReadRepository> & Pick<RallarCrdtAdminReadRepository, K> {
     const repository = this.options.crdtAdminRepository;
     if (!repository || typeof repository[method] !== 'function') {
       throw new Error(`CRDT admin repository does not support ${String(method)}.`);
     }
-    return repository as
-      & Partial<RallarCrdtAdminLogRepository>
-      & Pick<RallarCrdtAdminLogRepository, K>;
+    return repository as Partial<RallarCrdtAdminReadRepository> &
+      Pick<RallarCrdtAdminReadRepository, K>;
   }
 }

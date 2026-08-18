@@ -5,7 +5,7 @@ import {
   type RallarCrdtDocumentRef,
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
-import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrdtMutationRepository.ts';
+import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
@@ -38,17 +38,15 @@ export function withCompetingWrite(
     if (compete) {
       compete = false;
       const repository = new PSqlCrdtMutationRepository(
-        database,
-        () => Promise.resolve(true),
-        [{ documentType: 'checklist', rollout: 'production' }],
+        { sql: database, authorize: () => Promise.resolve(true) },
+        { policies: [{ documentType: 'checklist', rollout: 'production' }] },
       );
       const service = createCrdtMutationService({
         repository,
         createWriter: (transaction) =>
           new PSqlCrdtMutationRepository(
-            transaction,
-            () => Promise.resolve(true),
-            [{ documentType: 'checklist', rollout: 'production' }],
+            { sql: transaction, authorize: () => Promise.resolve(true) },
+            { policies: [{ documentType: 'checklist', rollout: 'production' }] },
           ),
         serviceId: 'server-2',
       });
@@ -68,9 +66,8 @@ export function withCompetingWrite(
       assert.equal(computed.outcome, 'write');
       await database.begin(async (transaction) => {
         await new PSqlCrdtMutationRepository(
-          transaction,
-          () => Promise.resolve(true),
-          [{ documentType: 'checklist', rollout: 'production' }],
+          { sql: transaction, authorize: () => Promise.resolve(true) },
+          { policies: [{ documentType: 'checklist', rollout: 'production' }] },
         ).writeMutation(computed as never);
       });
       afterCompetingWrite();

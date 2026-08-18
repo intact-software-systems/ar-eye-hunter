@@ -3,7 +3,9 @@ import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppDataRepository.ts';
-import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
+// prettier-ignore
+import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/\
+psql-crdt-log-repository.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
   createAuthUserRepository,
@@ -87,7 +89,6 @@ export function createDefaultRallarServer(
   });
 
   const crdtLogRepository = new PSqlCrdtLogRepository(database, {
-    serverId: myServerId,
     policies: crdtPolicies,
   });
   const runtimeStateRepository = createRuntimeStateRepository(database);

@@ -19,7 +19,7 @@ import {
   toMetadata,
   toRecord,
   type UpdateRow,
-} from '@shared-server/postgres/crdt/crdt-mutation-row-codec.ts';
+} from '@shared-server/rallar-system/crdt/persistence/crdt-mutation-row-codec.ts';
 import {
   createCrdtMutationCommand,
   decodeCrdtMutationCommand,

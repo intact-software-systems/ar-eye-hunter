@@ -6,8 +6,7 @@ import {
   type RallarCrdtOperationBatch,
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
-import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
-import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrdtMutationRepository.ts';
+import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import {
   type CrdtMutationCommand,
@@ -25,9 +24,16 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
 };
 
-Deno.test('production CRDT mutation repository denies when no current-authority reader is configured', async () => {
+Deno.test('production CRDT mutation repository denies an explicit fail-closed authority decision', async () => {
   await withPGliteSql(async (sql) => {
-    const read = await new PSqlCrdtMutationRepository(sql).readMutation(
+    const read = await new PSqlCrdtMutationRepository(
+      {
+        sql,
+        authorize: () =>
+          Promise.resolve({ allowed: false, code: 'current-authority-reader-missing' }),
+      },
+      { policies: [] },
+    ).readMutation(
       await command('deny-default', 'deny-default', 1_000),
     );
     assert.equal(read.authorized, false);
@@ -69,7 +75,10 @@ Deno.test('CRDT persisted row decoding fails closed on physical/logical identity
       )
     `;
     await assert.rejects(
-      new PSqlCrdtMutationRepository(sql, () => Promise.resolve(true)).readMutation(input),
+      new PSqlCrdtMutationRepository(
+        { sql, authorize: () => Promise.resolve(true) },
+        { policies: [] },
+      ).readMutation(input),
       /document.*identity|corrupt/i,
     );
   });
@@ -236,23 +245,6 @@ Deno.test('CRDT read includes current actor-rate and snapshot-byte policy facts'
   });
 });
 
-Deno.test('legacy PostgreSQL CRDT public mutators fail closed outside AppInbox orchestration', async () => {
-  await withPGliteSql(async (sql) => {
-    const repository = new PSqlCrdtLogRepository(sql, { now: () => 1_000 });
-    await assert.rejects(
-      repository.append({
-        update: update('legacy-direct', 900),
-        trusted: { authorizationScope: 'room', acceptedAtEpochMs: 1_000 },
-      }),
-      /AppInbox|transaction-bound|disabled/i,
-    );
-    const [rows] = await sql<{ count: string | number }[]>`
-      select count(*) as count from crdt_updates
-    `;
-    assert.equal(Number(rows?.count), 0);
-  });
-});
-
 Deno.test('overlapping CRDT transaction writers keep one winner and no lost counter', async () => {
   await withPGliteSql(async (sql) => {
     const service = mutationService(sql);
@@ -285,15 +277,13 @@ Deno.test('overlapping CRDT transaction writers keep one winner and no lost coun
 function mutationService(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]) {
   return createCrdtMutationService({
     repository: new PSqlCrdtMutationRepository(
-      sql,
-      () => Promise.resolve(true),
-      [{ documentType: 'checklist', rollout: 'production' }],
+      { sql, authorize: () => Promise.resolve(true) },
+      { policies: [{ documentType: 'checklist', rollout: 'production' }] },
     ),
     createWriter: (transaction) =>
       new PSqlCrdtMutationRepository(
-        transaction,
-        () => Promise.resolve(true),
-        [{ documentType: 'checklist', rollout: 'production' }],
+        { sql: transaction, authorize: () => Promise.resolve(true) },
+        { policies: [{ documentType: 'checklist', rollout: 'production' }] },
       ),
     serviceId: 'server-1',
   });
