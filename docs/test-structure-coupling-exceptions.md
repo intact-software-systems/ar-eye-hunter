@@ -1052,10 +1052,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#selects auth ticket races by the redacted secret and exact durable digest"
     },
     {
-      "id": "test-structure-coupling-12e06bd7a1515caf",
+      "id": "test-structure-coupling-d145ea74b1cd174e",
       "path": "packages/tests/shared-server/mutation-boundary-capability-types.ts",
-      "line": 234,
-      "column": 19,
+      "line": 235,
+      "column": 5,
       "kind": "ast-inspection",
       "contract": "mutation-capability-type-interface",
       "disposition": "durable-boundary",
