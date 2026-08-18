@@ -7,12 +7,13 @@ import {
   createRtcBaselineConfinedPath,
   rtcBaselineUnconfinedPathFailure,
 } from './rtc-baseline-confined-path.ts';
+import { createRtcBaselineInitialization } from './create-rtc-baseline-initialization.ts';
+import { createRtcBaselineSummaryPublisher } from './create-rtc-baseline-summary-publisher.ts';
 import type { RtcBaselineFilePort } from './rtc-baseline-file-port.ts';
-import { createRtcBaselineInitialization } from './rtc-baseline-initialization.ts';
-import { createRtcBaselineSummaryPublisher } from './rtc-baseline-summary-publication.ts';
 import {
   createRtcBaselineWriterLock,
   type RtcBaselineWriterLockConfig,
+  type RtcBaselineWriterLockLease,
   type RtcBaselineWriterLockRuntime,
 } from './rtc-baseline-writer-lock.ts';
 
@@ -52,10 +53,6 @@ export interface RtcBaselineLockedWriter {
 type StoreVoidResult = Promise<RtcBaselineResult<void>>;
 type StoreFilesResult = Promise<RtcBaselineResult<readonly RtcBaselineStoredFile[]>>;
 
-function cleanMessage(error: unknown) {
-  return String(error).replace(/^Error: /, '');
-}
-
 export function createRtcBaselineFileStore(input: {
   readonly rootPath: string;
   readonly filePort: RtcBaselineFilePort;
@@ -72,7 +69,9 @@ export function createRtcBaselineFileStore(input: {
     config: writerLockConfig,
   });
 
-  async function acquireLock(baselineId: string) {
+  async function acquireLock(
+    baselineId: string,
+  ): Promise<RtcBaselineResult<RtcBaselineWriterLockLease>> {
     const inspected = await confinedPath.inspect(baselineId, '.writer.lock');
     return inspected.ok ? writerLock.acquire(inspected.value) : inspected;
   }
@@ -92,13 +91,14 @@ export function createRtcBaselineFileStore(input: {
     try {
       result = await operation(lockedWriter);
     } catch (error) {
+      const cause = error instanceof Error ? error : new Error(String(error));
       result = {
         ok: false,
         issues: [
           {
             path: '$.operation',
             code: 'operation-threw',
-            message: cleanMessage(error),
+            message: cause.message,
           },
         ],
       };

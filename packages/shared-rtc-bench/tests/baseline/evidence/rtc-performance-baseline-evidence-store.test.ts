@@ -15,6 +15,7 @@ import { join } from 'node:path';
 
 import { createRtcBaselineFileStore } from '../../../baseline/evidence/rtc-baseline-evidence-store.ts';
 import type { RtcBaselineFilePort } from '../../../baseline/evidence/rtc-baseline-file-port.ts';
+import { createRtcBaselineOwnedWriterLockMetadata } from '../../../baseline/evidence/rtc-baseline-writer-lock-metadata.ts';
 
 const unconfinedFailure = {
   ok: false,
@@ -288,6 +289,27 @@ function setWriterLockBytes(memory: ReturnType<typeof createMemoryPort>, value: 
 }
 
 describe('RTC baseline evidence store', () => {
+  it('projects owned writer-lock metadata onto the persisted schema', () => {
+    const widerInput = {
+      ownerToken,
+      hostname: 'runner-a',
+      processId: 123,
+      createdAtUtc: '2026-08-07T10:00:00.000Z',
+      schema: 'unsupported',
+      state: 'released',
+      unexpected: true,
+    };
+
+    expect(createRtcBaselineOwnedWriterLockMetadata(widerInput)).toEqual({
+      schema: 'rallar.rtc-baseline.writer-lock.v1',
+      state: 'owned',
+      ownerToken,
+      hostname: 'runner-a',
+      processId: 123,
+      createdAtUtc: '2026-08-07T10:00:00.000Z',
+    });
+  });
+
   it('persists token-scoped metadata through normal acquire and release', async () => {
     const memory = createMemoryPort();
     const writerLockRuntime = createWriterLockRuntime();
@@ -480,6 +502,44 @@ describe('RTC baseline evidence store', () => {
       message: 'Writer lock metadata is malformed or uses an unsupported schema.',
     },
     {
+      name: 'null metadata',
+      arrange(memory: ReturnType<typeof createMemoryPort>) {
+        setWriterLockBytes(memory, 'null');
+      },
+      processLiveness: 'dead' as const,
+      code: 'lock-metadata-invalid',
+      message: 'Writer lock metadata is malformed or uses an unsupported schema.',
+    },
+    {
+      name: 'array metadata',
+      arrange(memory: ReturnType<typeof createMemoryPort>) {
+        setWriterLockBytes(memory, '[]');
+      },
+      processLiveness: 'dead' as const,
+      code: 'lock-metadata-invalid',
+      message: 'Writer lock metadata is malformed or uses an unsupported schema.',
+    },
+    {
+      name: 'owned metadata with an unexpected field',
+      arrange(memory: ReturnType<typeof createMemoryPort>) {
+        setWriterLockBytes(
+          memory,
+          JSON.stringify({
+            schema: 'rallar.rtc-baseline.writer-lock.v1',
+            state: 'owned',
+            ownerToken: previousOwnerToken,
+            hostname: 'runner-a',
+            processId: 122,
+            createdAtUtc: '2026-08-07T09:00:00.000Z',
+            unexpected: true,
+          }),
+        );
+      },
+      processLiveness: 'dead' as const,
+      code: 'lock-metadata-invalid',
+      message: 'Writer lock metadata is malformed or uses an unsupported schema.',
+    },
+    {
       name: 'a remote host owner',
       arrange(memory: ReturnType<typeof createMemoryPort>) {
         setOwnedWriterLock(memory, {
@@ -562,13 +622,18 @@ describe('RTC baseline evidence store', () => {
       processLiveness,
     });
     const store = createMemoryStore(memory, runtime.runtime);
+    let operationInvoked = false;
 
     expect(
-      await store.withFinalizationLock(baselineId, async () => ({ ok: true, value: 1 })),
+      await store.withFinalizationLock(baselineId, async () => {
+        operationInvoked = true;
+        return { ok: true, value: 1 };
+      }),
     ).toEqual({
       ok: false,
       issues: [{ path: '$.lock', code, message }],
     });
+    expect(operationInvoked).toBe(false);
   });
 
   it('creates accepted-artifact parents while holding the initialization lock', async () => {

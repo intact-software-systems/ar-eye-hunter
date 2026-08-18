@@ -9,10 +9,16 @@ function failure(code: string, message: string): RtcBaselineResult<never> {
   return { ok: false, issues: [rtcBaselineIssue('$.summary', code, message)] };
 }
 
+type RtcBaselineSummaryPublisher = (
+  baselineId: string,
+  summaryBytes: Uint8Array,
+  checksumBytes: Uint8Array,
+) => Promise<RtcBaselineResult<void>>;
+
 export function createRtcBaselineSummaryPublisher(input: {
   readonly confinedPath: RtcBaselineConfinedPath;
   readonly filePort: RtcBaselineFilePort;
-}) {
+}): RtcBaselineSummaryPublisher {
   const { confinedPath, filePort } = input;
 
   return async function publishSummary(
@@ -51,6 +57,7 @@ export function createRtcBaselineSummaryPublisher(input: {
       await filePort.writeFileCreateNew(checksum.value, checksumBytes);
       return { ok: true, value: undefined };
     } catch (error) {
+      const cause = error instanceof Error ? error : new Error(String(error));
       try {
         if ((await filePort.inspectPath(summary.value))?.kind === 'file') {
           await filePort.removeFile(summary.value);
@@ -58,7 +65,7 @@ export function createRtcBaselineSummaryPublisher(input: {
       } catch {
         // Retry removes an orphaned summary before its next create-new write.
       }
-      return failure('write-failed', String(error).replace(/^Error: /, ''));
+      return failure('write-failed', cause.message);
     }
   };
 }

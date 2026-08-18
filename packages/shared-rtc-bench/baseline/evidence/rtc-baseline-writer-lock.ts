@@ -3,43 +3,17 @@ import type {
   RtcBaselineExclusiveFileLock,
   RtcBaselineFilePort,
 } from './rtc-baseline-file-port.ts';
-
-const schema = 'rallar.rtc-baseline.writer-lock.v1';
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+import {
+  createRtcBaselineOwnedWriterLockMetadata,
+  decodeRtcBaselineWriterLockMetadata,
+  encodeRtcBaselineWriterLockMetadata,
+  type RtcBaselineOwnedWriterLockMetadata,
+} from './rtc-baseline-writer-lock-metadata.ts';
 
 export const RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS = 300_000;
 
-interface OwnedMetadata {
-  readonly schema: typeof schema;
-  readonly state: 'owned';
-  readonly ownerToken: string;
-  readonly hostname: string;
-  readonly processId: number;
-  readonly createdAtUtc: string;
-}
-
-interface ReleasedMetadata {
-  readonly schema: typeof schema;
-  readonly state: 'released';
-  readonly ownerToken: string;
-  readonly hostname: string;
-  readonly processId: number;
-  readonly createdAtUtc: string;
-  readonly releasedAtUtc: string;
-}
-
-type Metadata = OwnedMetadata | ReleasedMetadata;
-
-interface OwnerFields {
-  readonly ownerToken: string;
-  readonly hostname: string;
-  readonly processId: number;
-  readonly createdAtUtc: string;
-}
-
 interface RecoveryFailureInput {
-  readonly metadata: OwnedMetadata;
+  readonly metadata: RtcBaselineOwnedWriterLockMetadata;
   readonly runtime: RtcBaselineWriterLockRuntime;
   readonly config: RtcBaselineWriterLockConfig;
   readonly now: Date;
@@ -67,84 +41,6 @@ export interface RtcBaselineWriterLock {
 
 function lockFailure(code: string, message: string): RtcBaselineResult<never> {
   return { ok: false, issues: [{ path: '$.lock', code, message }] };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isUtcTimestamp(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  const parsed = new Date(value);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
-}
-
-function hasOwnerFields(
-  value: Record<string, unknown>,
-): value is Record<string, unknown> & OwnerFields {
-  return (
-    typeof value.ownerToken === 'string' &&
-    value.ownerToken.length > 0 &&
-    typeof value.hostname === 'string' &&
-    value.hostname.length > 0 &&
-    Number.isSafeInteger(value.processId) &&
-    Number(value.processId) > 0 &&
-    isUtcTimestamp(value.createdAtUtc)
-  );
-}
-
-function hasOnlyKeys(value: Record<string, unknown>, expected: readonly string[]) {
-  const actual = Object.keys(value).sort();
-  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
-}
-
-function decodeMetadata(bytes: Uint8Array): Metadata | null {
-  let value: unknown;
-  try {
-    value = JSON.parse(decoder.decode(bytes));
-  } catch {
-    return null;
-  }
-  if (!isRecord(value) || value.schema !== schema || !hasOwnerFields(value)) return null;
-  if (value.state === 'owned') {
-    const keys = ['createdAtUtc', 'hostname', 'ownerToken', 'processId', 'schema', 'state'];
-    return hasOnlyKeys(value, keys)
-      ? {
-          schema,
-          state: 'owned',
-          ownerToken: value.ownerToken,
-          hostname: value.hostname,
-          processId: value.processId,
-          createdAtUtc: value.createdAtUtc,
-        }
-      : null;
-  }
-  if (value.state === 'released') {
-    const keys = [
-      'createdAtUtc',
-      'hostname',
-      'ownerToken',
-      'processId',
-      'releasedAtUtc',
-      'schema',
-      'state',
-    ];
-    if (!hasOnlyKeys(value, keys) || !isUtcTimestamp(value.releasedAtUtc)) return null;
-    return {
-      schema,
-      state: 'released',
-      ownerToken: value.ownerToken,
-      hostname: value.hostname,
-      processId: value.processId,
-      createdAtUtc: value.createdAtUtc,
-      releasedAtUtc: value.releasedAtUtc,
-    };
-  }
-  return null;
-}
-
-function encodeMetadata(metadata: Metadata) {
-  return encoder.encode(`${JSON.stringify(metadata)}\n`);
 }
 
 async function recoveryFailure(input: RecoveryFailureInput): Promise<RtcBaselineResult<void>> {
@@ -189,7 +85,8 @@ async function releaseAdvisoryLock(lock: RtcBaselineExclusiveFileLock) {
     await lock.release();
     return null;
   } catch (error) {
-    return lockFailure('lock-release-failed', String(error).replace(/^Error: /, ''));
+    const cause = error instanceof Error ? error : new Error(String(error));
+    return lockFailure('lock-release-failed', cause.message);
   }
 }
 
@@ -212,7 +109,8 @@ export function createRtcBaselineWriterLock(input: {
     try {
       advisoryLock = await filePort.tryAcquireExclusiveFileLock(path);
     } catch (error) {
-      return lockFailure('lock-acquire-failed', String(error).replace(/^Error: /, ''));
+      const cause = error instanceof Error ? error : new Error(String(error));
+      return lockFailure('lock-acquire-failed', cause.message);
     }
     if (advisoryLock === null) {
       return lockFailure('lock-conflict', 'Another RTC baseline writer currently holds the lock.');
@@ -222,7 +120,7 @@ export function createRtcBaselineWriterLock(input: {
       const now = runtime.now();
       const identity = runtime.readOwnerIdentity();
       if (!advisoryLock.created) {
-        const existing = decodeMetadata(await advisoryLock.readBytes());
+        const existing = decodeRtcBaselineWriterLockMetadata(await advisoryLock.readBytes());
         if (existing === null) {
           return stopAcquisition(
             advisoryLock,
@@ -246,15 +144,13 @@ export function createRtcBaselineWriterLock(input: {
         }
       }
 
-      const ownedMetadata: OwnedMetadata = {
-        schema,
-        state: 'owned',
+      const ownedMetadata = createRtcBaselineOwnedWriterLockMetadata({
         ownerToken: runtime.createOwnerToken(),
         hostname: identity.hostname,
         processId: identity.processId,
         createdAtUtc: now.toISOString(),
-      };
-      await advisoryLock.writeBytes(encodeMetadata(ownedMetadata));
+      });
+      await advisoryLock.writeBytes(encodeRtcBaselineWriterLockMetadata(ownedMetadata));
 
       return {
         ok: true,
@@ -262,7 +158,7 @@ export function createRtcBaselineWriterLock(input: {
           async release() {
             let result: RtcBaselineResult<void> = { ok: true, value: undefined };
             try {
-              const current = decodeMetadata(await advisoryLock.readBytes());
+              const current = decodeRtcBaselineWriterLockMetadata(await advisoryLock.readBytes());
               if (
                 current === null ||
                 current.state !== 'owned' ||
@@ -274,7 +170,7 @@ export function createRtcBaselineWriterLock(input: {
                 );
               } else {
                 await advisoryLock.writeBytes(
-                  encodeMetadata({
+                  encodeRtcBaselineWriterLockMetadata({
                     ...current,
                     state: 'released',
                     releasedAtUtc: runtime.now().toISOString(),
@@ -282,7 +178,8 @@ export function createRtcBaselineWriterLock(input: {
                 );
               }
             } catch (error) {
-              result = lockFailure('lock-release-failed', String(error).replace(/^Error: /, ''));
+              const cause = error instanceof Error ? error : new Error(String(error));
+              result = lockFailure('lock-release-failed', cause.message);
             }
             const advisoryRelease = await releaseAdvisoryLock(advisoryLock);
             return advisoryRelease ?? result;
@@ -290,9 +187,10 @@ export function createRtcBaselineWriterLock(input: {
         },
       };
     } catch (error) {
+      const cause = error instanceof Error ? error : new Error(String(error));
       return stopAcquisition(
         advisoryLock,
-        lockFailure('lock-acquire-failed', String(error).replace(/^Error: /, '')),
+        lockFailure('lock-acquire-failed', cause.message),
       );
     }
   }

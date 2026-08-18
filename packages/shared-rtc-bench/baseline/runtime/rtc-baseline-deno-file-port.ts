@@ -1,6 +1,8 @@
 import type { RtcBaselineFilePort } from '../evidence/rtc-baseline-file-port.ts';
 import type { RtcBaselineDenoPort } from './rtc-baseline-deno-port.ts';
-import { tryAcquireRtcBaselineDenoWriterLock } from './rtc-baseline-deno-writer-lock-port.ts';
+import {
+  tryAcquireRtcBaselineDenoWriterLock,
+} from './try-acquire-rtc-baseline-deno-writer-lock.ts';
 
 export function createRtcBaselineDenoFilePort(runtime: RtcBaselineDenoPort): RtcBaselineFilePort {
   return {

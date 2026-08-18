@@ -25,10 +25,10 @@ export interface RtcBaselineArtifactFiles {
   ): Promise<RtcBaselineResult<readonly RtcBaselineStoredFile[]>>;
 }
 
-function failure(path: string, code: string, error: unknown) {
+function failure(path: string, code: string, message: string): RtcBaselineResult<never> {
   return {
     ok: false as const,
-    issues: [rtcBaselineIssue(path, code, String(error).replace(/^Error: /, ''))],
+    issues: [rtcBaselineIssue(path, code, message)],
   };
 }
 
@@ -54,17 +54,22 @@ export function createRtcBaselineArtifactFiles(input: {
       );
       return { ok: true, value: undefined };
     } catch (error) {
-      return failure(`$.${relativePath}`, 'write-failed', error);
+      const cause = error instanceof Error ? error : new Error(String(error));
+      return failure(`$.${relativePath}`, 'write-failed', cause.message);
     }
   }
 
-  async function readBytes(baselineId: string, relativePath: string) {
+  async function readBytes(
+    baselineId: string,
+    relativePath: string,
+  ): Promise<RtcBaselineResult<Uint8Array>> {
     const inspected = await confinedPath.inspect(baselineId, relativePath);
     if (!inspected.ok) return inspected;
     try {
       return { ok: true as const, value: await filePort.readFile(inspected.value) };
     } catch (error) {
-      return failure(`$.${relativePath}`, 'read-failed', error);
+      const cause = error instanceof Error ? error : new Error(String(error));
+      return failure(`$.${relativePath}`, 'read-failed', cause.message);
     }
   }
 
@@ -77,11 +82,15 @@ export function createRtcBaselineArtifactFiles(input: {
     try {
       return { ok: true, value: JSON.parse(decoder.decode(bytes.value)) };
     } catch (error) {
-      return failure(`$.${relativePath}`, 'malformed-json', error);
+      const cause = error instanceof Error ? error : new Error(String(error));
+      return failure(`$.${relativePath}`, 'malformed-json', cause.message);
     }
   }
 
-  async function listArtifacts(baselineId: string, relativePath: string) {
+  async function listArtifacts(
+    baselineId: string,
+    relativePath: string,
+  ): Promise<RtcBaselineResult<readonly RtcBaselineStoredFile[]>> {
     const inspected = await confinedPath.inspect(baselineId, relativePath);
     if (!inspected.ok) return inspected;
     try {
@@ -114,7 +123,8 @@ export function createRtcBaselineArtifactFiles(input: {
       const visited = await visit(relativePath, inspected.value);
       return visited.ok ? { ok: true as const, value: found } : visited;
     } catch (error) {
-      return failure(`$.${relativePath}`, 'list-failed', error);
+      const cause = error instanceof Error ? error : new Error(String(error));
+      return failure(`$.${relativePath}`, 'list-failed', cause.message);
     }
   }
 

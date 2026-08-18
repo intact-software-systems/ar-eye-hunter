@@ -1,11 +1,15 @@
-import { rtcBaselineIssue, type RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
+import {
+  rtcBaselineIssue,
+  type RtcBaselineIssueDto,
+  type RtcBaselineResult,
+} from '../contracts/rtc-baseline-contracts.ts';
 import {
   rtcBaselineUnconfinedPathFailure,
   type RtcBaselineConfinedPath,
 } from './rtc-baseline-confined-path.ts';
-import { reserveRtcBaselineDirectory } from './rtc-baseline-directory-reservation.ts';
 import type { RtcBaselineFilePort } from './rtc-baseline-file-port.ts';
 import type { RtcBaselineWriterLockLease } from './rtc-baseline-writer-lock.ts';
+import { reserveRtcBaselineDirectory } from './reserve-rtc-baseline-directory.ts';
 
 interface RtcBaselineInitialization {
   initialize(
@@ -15,8 +19,9 @@ interface RtcBaselineInitialization {
   ): Promise<RtcBaselineResult<void>>;
 }
 
-function cleanMessage(error: unknown) {
-  return String(error).replace(/^Error: /, '');
+interface RtcBaselineInitialArtifactsWritten {
+  readonly issue: RtcBaselineIssueDto | null;
+  readonly written: readonly string[];
 }
 
 export function createRtcBaselineInitialization(input: {
@@ -32,18 +37,15 @@ export function createRtcBaselineInitialization(input: {
     path: string,
     files: Readonly<Record<string, Uint8Array>>,
     directoryPaths: readonly string[],
-  ) {
+  ): Promise<RtcBaselineInitialArtifactsWritten> {
     const written: string[] = [];
     for (const relativePath of directoryPaths) {
       try {
         await filePort.createDirectory(`${path}/${relativePath}`, { recursive: true });
       } catch (error) {
+        const cause = error instanceof Error ? error : new Error(String(error));
         return {
-          issue: rtcBaselineIssue(
-            `$.${relativePath}`,
-            'directory-create-failed',
-            cleanMessage(error),
-          ),
+          issue: rtcBaselineIssue(`$.${relativePath}`, 'directory-create-failed', cause.message),
           written,
         };
       }
@@ -53,8 +55,9 @@ export function createRtcBaselineInitialization(input: {
         await filePort.writeFileCreateNew(`${path}/${relativePath}`, bytes);
         written.push(`${path}/${relativePath}`);
       } catch (error) {
+        const cause = error instanceof Error ? error : new Error(String(error));
         return {
-          issue: rtcBaselineIssue(`$.${relativePath}`, 'write-failed', cleanMessage(error)),
+          issue: rtcBaselineIssue(`$.${relativePath}`, 'write-failed', cause.message),
           written,
         };
       }
@@ -62,13 +65,16 @@ export function createRtcBaselineInitialization(input: {
     return { issue: null, written };
   }
 
-  async function removeWrittenArtifacts(paths: readonly string[]) {
-    const issues = [];
+  async function removeWrittenArtifacts(
+    paths: readonly string[],
+  ): Promise<readonly RtcBaselineIssueDto[]> {
+    const issues: RtcBaselineIssueDto[] = [];
     for (const path of paths) {
       try {
         await filePort.removeFile(path);
       } catch (error) {
-        issues.push(rtcBaselineIssue('$.baseline', 'cleanup-failed', cleanMessage(error)));
+        const cause = error instanceof Error ? error : new Error(String(error));
+        issues.push(rtcBaselineIssue('$.baseline', 'cleanup-failed', cause.message));
       }
     }
     return issues;
