@@ -76,8 +76,17 @@ function validateAggregateMutationInput(
     return;
   }
   if (operation === 'activateGroup') {
-    validateNullableUnitInterval(input.observedRate, 'Group activateGroup observedRate');
-    if (input.degraded !== null && typeof input.degraded !== 'boolean') {
+    // This validator sees both raw requests and built commands. Requests never
+    // carry the criterion fields (the exact-key check excludes them), so
+    // absence, like null, means operator activation.
+    if (input.observedRate !== undefined) {
+      validateNullableUnitInterval(input.observedRate, 'Group activateGroup observedRate');
+    }
+    if (
+      input.degraded !== undefined &&
+      input.degraded !== null &&
+      typeof input.degraded !== 'boolean'
+    ) {
       throw new TypeError('Group activateGroup degraded must be boolean or null');
     }
     return;
