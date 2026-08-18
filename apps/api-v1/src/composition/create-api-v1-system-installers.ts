@@ -4,9 +4,11 @@ import type {
 } from '@shared/crdt/mod.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import {
-  installRallarCrdtWsTopics,
   type RallarCrdtServerMutationIngress,
-} from '@shared-server/crdt/RallarCrdtServer.ts';
+} from '@shared-server/rallar-system/crdt/realtime/rallar-crdt-server-contracts.ts';
+import {
+  installRallarCrdtWsTopics,
+} from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type { RallarServerSystemInstallers } from '@shared-server/rallar-facade/RallarServer.ts';
 import {

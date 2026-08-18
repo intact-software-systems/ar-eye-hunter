@@ -83,7 +83,7 @@ HTTP\tDELETE ${TOPOLOGY_ROUTE}/override\tTOPOLOGY_OVERRIDE_DELETE\tt\t/topology/
 HTTP\tPOST ${TOPOLOGY_ROUTE}/reconfigure\tTOPOLOGY_RECONFIGURE\tt\t/topology/reconfigure\tt\tAppInboxType.TOPOLOGY_RECONFIGURE\tT\tTopologyAppInboxHandler.processMutation\tG\tG
 HTTP\tPOST /api/admin/operations/topology/recompute\tTOPOLOGY_RECONFIGURE\tad\t'/api/admin/operations/topology/recompute'\tag\tprocessAuthenticatedEntryUntilCompletionResult\tT\tTopologyAppInboxHandler.processMutation\tG\tG
 WS_INBOX\ttopic rallar/rtt\tRTC_RTT_SUBMIT\ts\tAppTopics.rtt\ts\tenqueueRtcRttMutation\tR\tRtcRttAppInboxHandler.processMutation\tG\tG
-WS_INBOX\ttopic rallar/crdt/update\tCRDT_UPDATE_APPEND\td\tkind === 'update'\td\tmutationIngress.enqueueUpdate\tD\tAppCrdtInboxService.processCommand
+WS_INBOX\ttopic rallar/crdt/update\tCRDT_UPDATE_APPEND\td\taccepted.kind === 'update'\td\tmutationIngress.enqueueUpdate\tD\tAppCrdtInboxService.processCommand
 HTTP\tPOST /api/crdt/admin/documents/rebuild-projection\tCRDT_PROJECTION_REBUILD\tcr\t'/api/crdt/admin/documents/rebuild-projection'\tcm\twriteCrdtCommandUntilCompletion\tD\tAppCrdtInboxService.processCommand\tD\tD\trebuild-projection
 HTTP\tPOST /api/crdt/admin/documents/compact\tCRDT_SNAPSHOT_COMPACT\tcr\t'/api/crdt/admin/documents/compact'\tcm\twriteCrdtCommandUntilCompletion\tD\tAppCrdtInboxService.processCommand\tD\tD\tcompact
 HTTP\tPOST /api/admin/operations/crdt/compact\tCRDT_SNAPSHOT_COMPACT\tad\t'/api/admin/operations/crdt/compact'\tag\twriteCrdtAdminMutation\tD\tAppCrdtInboxService.processCommand\tD\tD\tcompact

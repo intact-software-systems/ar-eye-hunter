@@ -110,6 +110,13 @@ Existing package-root exports remain stable:
 - `PSqlCrdtLogRepository` and its explicitly named, in-repository options type;
 - their runtime identities and supported behavior.
 
+The public `validateRallarCrdtServerLiveEnvelope` symbol keeps its package-root export and runtime
+identity, but Task 5 migrates its compile-time contract from five positional arguments to one
+`ValidateRallarCrdtServerLiveEnvelopeInput`. Every supported consumer is in this repository and is
+migrated atomically, so the former positional shape is not retained as an overload, adapter, alias,
+or production-legacy entry. Internal tests and controlled types are consumers to update, not an
+external compatibility dependency.
+
 `packages/shared-server/mod.ts` changes its internal export paths to the canonical owners. Known
 repository consumers migrate from the old deep paths. The old
 `packages/shared-server/crdt/`, `packages/shared-server/postgres/crdt/`, and
@@ -192,11 +199,9 @@ WebSocket-to-AppInbox ingress adapter depends only on shared-server contracts an
 inbox boundary. API-specific session construction and authorization stay in
 `apps/api-v1/src/crdt/`.
 
-The public validator's existing five positional arguments are preserved as an approved thin
-compatibility adapter over a named-input pure validator. Its final path and symbol receive a focused
-production-legacy registry entry with the package-root dependency, direct semantic tests, and a
-separately approved public API migration as the removal condition. Internal realtime functions do
-not copy that signature.
+The public validator uses one named input and keeps its existing symbol and package-root runtime
+identity. All in-repository callers migrate in the same slice. No positional compatibility adapter,
+overload, alias, or production-legacy registry entry remains.
 
 The construction contract requires the durable ingress before topic installation. There is no
 setter, late binding, optional production default, or callback that becomes valid after

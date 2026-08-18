@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   AL_CONTROL_NACK_TYPE_ID,
+  type EncodedJsonWebSocketMessage,
   type ALMessage,
   InMemoryQueueBox,
+  JsonWebSocketServer,
   newALBroadcastMessage,
   newALRoute,
   RALLAR_CRDT_APP_TOPIC_ID,
@@ -19,9 +21,9 @@ import {
   WsQueueBoxServerService,
   type WsServerTargetResolver,
 } from '@shared/mod.ts';
-import { InMemoryRallarCrdtLogRepository } from '@shared-server/crdt/InMemoryRallarCrdtLogRepository.ts';
-import { installRallarCrdtWsTopics } from '@shared-server/crdt/RallarCrdtServer.ts';
 import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
+import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
+import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 
 const roomRef = {
   applicationId: 'rallar-test',
@@ -54,6 +56,8 @@ describe('installRallarCrdtWsTopics', () => {
     const { facade, socket, outbox } = createFacade({
       authorizeRoomMessage: () => true,
     });
+    const enqueueOutbox = vi.spyOn(outbox, 'enqueue');
+    const enqueueOutboxIfAbsent = vi.spyOn(outbox, 'enqueueIfAbsent');
     installRallarCrdtWsTopics(facade, {
       allowedDocumentTypes: ['checklist'],
       onAcceptedEnvelope: accepted,
@@ -87,20 +91,19 @@ describe('installRallarCrdtWsTopics', () => {
         }),
       }),
     );
-    expect(enqueueUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'update',
-      envelope: update,
-    }));
+    expect(enqueueUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'update',
+        envelope: update,
+      }),
+    );
     expect(socket.sent).toEqual([]);
-    expect(
-      (outbox as unknown as { data: ReadonlyMap<unknown, unknown> }).data.size,
-    ).toBe(0);
+    expect(enqueueOutbox).not.toHaveBeenCalled();
+    expect(enqueueOutboxIfAbsent).not.toHaveBeenCalled();
   });
 
   it('rejects schema-invalid room updates before fanout', async () => {
-    const warn = vi
-      .spyOn(console, 'warn')
-      .mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
       const { facade, socket } = createFacade({
         authorizeRoomMessage: () => true,
@@ -113,11 +116,7 @@ describe('installRallarCrdtWsTopics', () => {
       });
       const message = newALBroadcastMessage(
         'peer-1',
-        newALRoute(
-          RALLAR_CRDT_ROOM_TOPIC_ID,
-          'room-1',
-          update.updateId,
-        ),
+        newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
         'room',
         RALLAR_CRDT_UPDATE_TYPE_ID,
         update,
@@ -130,18 +129,14 @@ describe('installRallarCrdtWsTopics', () => {
 
       expect(socket.sent).toHaveLength(1);
       expect(socket.sent[0].connectionId).toBe('conn-1');
-      expect(socket.sent[0].data.payload.typeId).toBe(
-        AL_CONTROL_NACK_TYPE_ID,
-      );
+      expect(socket.sent[0].data.payload.typeId).toBe(AL_CONTROL_NACK_TYPE_ID);
     } finally {
       warn.mockRestore();
     }
   });
 
   it('rejects unauthorized room CRDT updates through the existing room authorizer', async () => {
-    const warn = vi
-      .spyOn(console, 'warn')
-      .mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
       const { facade, socket } = createFacade({
         authorizeRoomMessage: () => false,
@@ -150,11 +145,7 @@ describe('installRallarCrdtWsTopics', () => {
       const update = createUpdateEnvelope();
       const message = newALBroadcastMessage(
         'peer-1',
-        newALRoute(
-          RALLAR_CRDT_ROOM_TOPIC_ID,
-          'room-1',
-          update.updateId,
-        ),
+        newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
         'room',
         RALLAR_CRDT_UPDATE_TYPE_ID,
         update,
@@ -167,18 +158,14 @@ describe('installRallarCrdtWsTopics', () => {
 
       expect(socket.sent).toHaveLength(1);
       expect(socket.sent[0].connectionId).toBe('conn-1');
-      expect(socket.sent[0].data.payload.typeId).toBe(
-        AL_CONTROL_NACK_TYPE_ID,
-      );
+      expect(socket.sent[0].data.payload.typeId).toBe(AL_CONTROL_NACK_TYPE_ID);
     } finally {
       warn.mockRestore();
     }
   });
 
   it('rejects policy-disabled live room updates before fanout', async () => {
-    const warn = vi
-      .spyOn(console, 'warn')
-      .mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
       const { facade, socket } = createFacade({
         authorizeRoomMessage: () => true,
@@ -197,11 +184,7 @@ describe('installRallarCrdtWsTopics', () => {
       const update = createUpdateEnvelope();
       const message = newALBroadcastMessage(
         'peer-1',
-        newALRoute(
-          RALLAR_CRDT_ROOM_TOPIC_ID,
-          'room-1',
-          update.updateId,
-        ),
+        newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
         'room',
         RALLAR_CRDT_UPDATE_TYPE_ID,
         update,
@@ -214,18 +197,14 @@ describe('installRallarCrdtWsTopics', () => {
 
       expect(socket.sent).toHaveLength(1);
       expect(socket.sent[0].connectionId).toBe('conn-1');
-      expect(socket.sent[0].data.payload.typeId).toBe(
-        AL_CONTROL_NACK_TYPE_ID,
-      );
+      expect(socket.sent[0].data.payload.typeId).toBe(AL_CONTROL_NACK_TYPE_ID);
     } finally {
       warn.mockRestore();
     }
   });
 
   it('rejects unsupported principal live fanout even when app CRDT documents are enabled', async () => {
-    const warn = vi
-      .spyOn(console, 'warn')
-      .mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
       const { facade, socket } = createFacade();
       installRallarCrdtWsTopics(facade, {
@@ -243,11 +222,7 @@ describe('installRallarCrdtWsTopics', () => {
       });
       const message = newALBroadcastMessage(
         'peer-1',
-        newALRoute(
-          RALLAR_CRDT_APP_TOPIC_ID,
-          'rallar-test',
-          update.updateId,
-        ),
+        newALRoute(RALLAR_CRDT_APP_TOPIC_ID, 'rallar-test', update.updateId),
         'all',
         RALLAR_CRDT_UPDATE_TYPE_ID,
         update,
@@ -257,18 +232,14 @@ describe('installRallarCrdtWsTopics', () => {
 
       expect(socket.sent).toHaveLength(1);
       expect(socket.sent[0].connectionId).toBe('conn-1');
-      expect(socket.sent[0].data.payload.typeId).toBe(
-        AL_CONTROL_NACK_TYPE_ID,
-      );
+      expect(socket.sent[0].data.payload.typeId).toBe(AL_CONTROL_NACK_TYPE_ID);
     } finally {
       warn.mockRestore();
     }
   });
 
   it('rejects oversized CRDT updates', async () => {
-    const warn = vi
-      .spyOn(console, 'warn')
-      .mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
       const { facade, socket } = createFacade({
         authorizeRoomMessage: () => true,
@@ -279,11 +250,7 @@ describe('installRallarCrdtWsTopics', () => {
       const update = createUpdateEnvelope();
       const message = newALBroadcastMessage(
         'peer-1',
-        newALRoute(
-          RALLAR_CRDT_ROOM_TOPIC_ID,
-          'room-1',
-          update.updateId,
-        ),
+        newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
         'room',
         RALLAR_CRDT_UPDATE_TYPE_ID,
         update,
@@ -296,18 +263,14 @@ describe('installRallarCrdtWsTopics', () => {
 
       expect(socket.sent).toHaveLength(1);
       expect(socket.sent[0].connectionId).toBe('conn-1');
-      expect(socket.sent[0].data.payload.typeId).toBe(
-        AL_CONTROL_NACK_TYPE_ID,
-      );
+      expect(socket.sent[0].data.payload.typeId).toBe(AL_CONTROL_NACK_TYPE_ID);
     } finally {
       warn.mockRestore();
     }
   });
 
   it('rejects Buffer-shaped raw binary payloads inside CRDT operations', async () => {
-    const warn = vi
-      .spyOn(console, 'warn')
-      .mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
       const { facade, socket } = createFacade({
         authorizeRoomMessage: () => true,
@@ -331,11 +294,7 @@ describe('installRallarCrdtWsTopics', () => {
       });
       const message = newALBroadcastMessage(
         'peer-1',
-        newALRoute(
-          RALLAR_CRDT_ROOM_TOPIC_ID,
-          'room-1',
-          update.updateId,
-        ),
+        newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
         'room',
         RALLAR_CRDT_UPDATE_TYPE_ID,
         update,
@@ -348,9 +307,7 @@ describe('installRallarCrdtWsTopics', () => {
 
       expect(socket.sent).toHaveLength(1);
       expect(socket.sent[0].connectionId).toBe('conn-1');
-      expect(socket.sent[0].data.payload.typeId).toBe(
-        AL_CONTROL_NACK_TYPE_ID,
-      );
+      expect(socket.sent[0].data.payload.typeId).toBe(AL_CONTROL_NACK_TYPE_ID);
     } finally {
       warn.mockRestore();
     }
@@ -392,8 +349,7 @@ describe('installRallarCrdtWsTopics', () => {
     expect(accepted[0]).toMatchObject({ kind: 'update', envelope: update });
     expect(socket.sent).toHaveLength(0);
     expect(
-      (await logRepository.readDocumentMetadata(roomDocumentRef))
-        ?.updateCount,
+      (await logRepository.readDocumentMetadata(roomDocumentRef))?.updateCount,
     ).toBeUndefined();
   });
 
@@ -446,11 +402,7 @@ describe('installRallarCrdtWsTopics', () => {
     };
     const message = newALBroadcastMessage(
       'peer-1',
-      newALRoute(
-        RALLAR_CRDT_ROOM_TOPIC_ID,
-        'room-1',
-        request.requestId,
-      ),
+      newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', request.requestId),
       'room',
       RALLAR_CRDT_CATCH_UP_REQUEST_TYPE_ID,
       request,
@@ -462,18 +414,14 @@ describe('installRallarCrdtWsTopics', () => {
     await facade.handle(message);
 
     const responseMessage = socket.sent.find(
-      (entry) =>
-        entry.data.payload.typeId ===
-          RALLAR_CRDT_CATCH_UP_RESPONSE_TYPE_ID,
+      (entry) => entry.data.payload.typeId === RALLAR_CRDT_CATCH_UP_RESPONSE_TYPE_ID,
     );
     expect(responseMessage?.connectionId).toBe('conn-1');
     const response = JSON.parse(
       responseMessage?.data.payload.resource ?? '{}',
     ) as RallarCrdtCatchUpResponseEnvelope;
     expect(response.requestId).toBe('catch-up-1');
-    expect(response.page.records.map((record) => record.update.updateId)).toEqual(
-      ['update-2'],
-    );
+    expect(response.page.records.map((record) => record.update.updateId)).toEqual(['update-2']);
     expect(response.page.lastSequence).toBe(2);
   });
 
@@ -499,11 +447,7 @@ describe('installRallarCrdtWsTopics', () => {
     });
     const message = newALBroadcastMessage(
       'peer-1',
-      newALRoute(
-        RALLAR_CRDT_APP_TOPIC_ID,
-        'rallar-test',
-        update.updateId,
-      ),
+      newALRoute(RALLAR_CRDT_APP_TOPIC_ID, 'rallar-test', update.updateId),
       'all',
       RALLAR_CRDT_UPDATE_TYPE_ID,
       update,
@@ -515,8 +459,7 @@ describe('installRallarCrdtWsTopics', () => {
     expect(accepted[0]).toMatchObject({ kind: 'update', envelope: update });
     expect(socket.sent).toHaveLength(0);
     expect(
-      (await logRepository.readDocumentMetadata(principalDocumentRef))
-        ?.updateCount,
+      (await logRepository.readDocumentMetadata(principalDocumentRef))?.updateCount,
     ).toBeUndefined();
   });
 
@@ -561,21 +504,13 @@ describe('installRallarCrdtWsTopics', () => {
   });
 });
 
-function createFacade(
-  options?: ConstructorParameters<typeof RallarServerWsFacade>[1],
-) {
-  const socket = createFakeWsServer();
+function createFacade(options?: ConstructorParameters<typeof RallarServerWsFacade>[1]) {
+  const socket = new RecordingJsonWebSocketServer();
   const inbox = new InMemoryQueueBox(new Map());
   const outbox = new InMemoryQueueBox(new Map());
-  const service = new WsQueueBoxServerService(
-    inbox,
-    outbox,
-    socket as never,
-    'server-1',
-    {
-      targetResolver: createTargetResolver(),
-    },
-  );
+  const service = new WsQueueBoxServerService(inbox, outbox, socket, 'server-1', {
+    targetResolver: createTargetResolver(),
+  });
   const facade = new RallarServerWsFacade(service, options);
 
   return {
@@ -587,34 +522,15 @@ function createFacade(
   };
 }
 
-function createFakeWsServer() {
-  const sent: Array<{ connectionId: string; data: ALMessage }> = [];
+class RecordingJsonWebSocketServer extends JsonWebSocketServer {
+  readonly sent: Array<{ connectionId: string; data: ALMessage }> = [];
 
-  return {
-    sent,
-    connections: new Map<string, { id: string; isOpen: boolean }>(),
-    onMessageDo() {
-      return this;
-    },
-    send(connectionId: string, data: ALMessage) {
-      this.sendEncoded(connectionId, this.encode(data));
-    },
-    encode(data: ALMessage) {
-      return {
-        text: JSON.stringify(data),
-        data,
-      };
-    },
-    sendEncoded(
-      connectionId: string,
-      encoded: Readonly<{ text: string; data?: ALMessage }>,
-    ) {
-      sent.push({
-        connectionId,
-        data: encoded.data ?? JSON.parse(encoded.text) as ALMessage,
-      });
-    },
-  };
+  override sendEncoded(connectionId: string, encoded: EncodedJsonWebSocketMessage): void {
+    this.sent.push({
+      connectionId,
+      data: JSON.parse(encoded.text) as ALMessage,
+    });
+  }
 }
 
 function createTargetResolver(): WsServerTargetResolver {
@@ -635,11 +551,11 @@ function createTargetResolver(): WsServerTargetResolver {
       const connectionId = connectionIdByPeerId[peerId];
       return connectionId
         ? [
-          {
-            peerId,
-            connectionId,
-          },
-        ]
+            {
+              peerId,
+              connectionId,
+            },
+          ]
         : [];
     },
     resolveGroupRecipients: () => toRecipients(),

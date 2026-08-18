@@ -21,7 +21,7 @@ import {
   type RallarCrdtUpdateEnvelope,
   toRallarCrdtAppendCursor,
 } from '@shared/mod.ts';
-import { InMemoryRallarCrdtLogRepository } from '@shared-server/crdt/InMemoryRallarCrdtLogRepository.ts';
+import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 
 const roomRef = {
   applicationId: 'rallar-test',
@@ -42,12 +42,8 @@ describe('Rallar CRDT durable log contracts', () => {
   it('exposes stable append and catch-up envelopes', () => {
     const update = createUpdateEnvelope('update-1');
 
-    expect(RALLAR_CRDT_APPEND_REQUEST_TYPE_ID).toBe(
-      'rallar.crdt.append-request.v1',
-    );
-    expect(RALLAR_CRDT_CATCH_UP_REQUEST_TYPE_ID).toBe(
-      'rallar.crdt.catch-up-request.v1',
-    );
+    expect(RALLAR_CRDT_APPEND_REQUEST_TYPE_ID).toBe('rallar.crdt.append-request.v1');
+    expect(RALLAR_CRDT_CATCH_UP_REQUEST_TYPE_ID).toBe('rallar.crdt.catch-up-request.v1');
     expect(
       createRallarCrdtAppendRequestEnvelope({
         requestId: 'append-1',
@@ -92,16 +88,14 @@ describe('InMemoryRallarCrdtLogRepository', () => {
 
     expect(isRallarCrdtAppendAccepted(accepted)).toBe(true);
     expect(isRallarCrdtAppendDuplicate(duplicate)).toBe(true);
-    expect(accepted.status === 'accepted' && accepted.append).toMatchObject(
-      {
-        appendSequence: 1,
-        acceptedAtEpochMs: 2_000,
-        principalId: 'principal-a',
-        sessionId: 'session-a',
-        serverId: 'server-a',
-        authorizationScope: 'room',
-      },
-    );
+    expect(accepted.status === 'accepted' && accepted.append).toMatchObject({
+      appendSequence: 1,
+      acceptedAtEpochMs: 2_000,
+      principalId: 'principal-a',
+      sessionId: 'session-a',
+      serverId: 'server-a',
+      authorizationScope: 'room',
+    });
     expect(duplicate.status === 'duplicate' && duplicate.append).toEqual(
       accepted.status === 'accepted' && accepted.append,
     );
@@ -129,24 +123,15 @@ describe('InMemoryRallarCrdtLogRepository', () => {
     await restored.restoreBackupBundle(backup!, {
       overwrite: true,
     });
-    const restoredRecord = (
-      await restored.listAfter({ document: documentRef })
-    ).records[0];
+    const restoredRecord = (await restored.listAfter({ document: documentRef })).records[0];
 
     expect(isRallarCrdtAppendAccepted(accepted)).toBe(true);
     expect(isRallarCrdtAppendDuplicate(duplicate)).toBe(true);
-    expect(isRallarCrdtEncryptedOperationBatch(encrypted.payload)).toBe(
-      true,
-    );
+    expect(isRallarCrdtEncryptedOperationBatch(encrypted.payload)).toBe(true);
     expect(JSON.stringify(backup)).not.toContain('Sensitive durable title');
     expect(restoredRecord?.update.payload).toEqual(encrypted.payload);
     expect(
-      (
-        await decryptRallarCrdtUpdateEnvelope(
-          restoredRecord!.update,
-          keyring,
-        )
-      ).payload.operations,
+      (await decryptRallarCrdtUpdateEnvelope(restoredRecord!.update, keyring)).payload.operations,
     ).toEqual([
       {
         kind: 'register.set',
@@ -176,7 +161,7 @@ describe('InMemoryRallarCrdtLogRepository', () => {
       createRallarCrdtCompactedSnapshot({
         document: documentRef,
         records: backup!.records,
-      })
+      }),
     ).toThrow(/encrypted CRDT logs/);
   });
 
@@ -193,24 +178,16 @@ describe('InMemoryRallarCrdtLogRepository', () => {
     const rejected = await repository.append(toAppendInput(tampered));
 
     expect(isRallarCrdtAppendRejected(rejected)).toBe(true);
-    expect(rejected.status === 'rejected' && rejected.code).toBe(
-      'duplicate-hash-mismatch',
-    );
+    expect(rejected.status === 'rejected' && rejected.code).toBe('duplicate-hash-mismatch');
   });
 
   it('serves catch-up pages by append sequence and cursor', async () => {
     const repository = new InMemoryRallarCrdtLogRepository({
       now: fixedNow(2_000),
     });
-    await repository.append(
-      toAppendInput(createUpdateEnvelope('update-1')),
-    );
-    await repository.append(
-      toAppendInput(createUpdateEnvelope('update-2')),
-    );
-    await repository.append(
-      toAppendInput(createUpdateEnvelope('update-3')),
-    );
+    await repository.append(toAppendInput(createUpdateEnvelope('update-1')));
+    await repository.append(toAppendInput(createUpdateEnvelope('update-2')));
+    await repository.append(toAppendInput(createUpdateEnvelope('update-3')));
 
     const firstPage = await repository.listAfter({
       document: documentRef,
@@ -222,18 +199,17 @@ describe('InMemoryRallarCrdtLogRepository', () => {
       limit: 2,
     });
 
-    expect(
-      firstPage.records.map((record) => record.update.updateId),
-    ).toEqual(['update-1', 'update-2']);
+    expect(firstPage.records.map((record) => record.update.updateId)).toEqual([
+      'update-1',
+      'update-2',
+    ]);
     expect(firstPage).toMatchObject({
       firstSequence: 1,
       lastSequence: 2,
       nextCursor: 'seq:2',
       hasMore: true,
     });
-    expect(
-      secondPage.records.map((record) => record.update.updateId),
-    ).toEqual(['update-3']);
+    expect(secondPage.records.map((record) => record.update.updateId)).toEqual(['update-3']);
     expect(secondPage.hasMore).toBe(false);
   });
 
@@ -241,9 +217,7 @@ describe('InMemoryRallarCrdtLogRepository', () => {
     const repository = new InMemoryRallarCrdtLogRepository({
       now: fixedNow(2_000),
     });
-    await repository.append(
-      toAppendInput(createUpdateEnvelope('update-1')),
-    );
+    await repository.append(toAppendInput(createUpdateEnvelope('update-1')));
     const snapshot: RallarCrdtSnapshotEnvelope = {
       protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
       document: documentRef,
@@ -293,14 +267,10 @@ describe('InMemoryRallarCrdtLogRepository', () => {
       projectionIds: ['checklist-summary'],
     });
 
-    const rejected = await repository.append(
-      toAppendInput(createUpdateEnvelope('update-1')),
-    );
+    const rejected = await repository.append(toAppendInput(createUpdateEnvelope('update-1')));
 
     expect(isRallarCrdtAppendRejected(rejected)).toBe(true);
-    expect(rejected.status === 'rejected' && rejected.code).toBe(
-      'document-archived',
-    );
+    expect(rejected.status === 'rejected' && rejected.code).toBe('document-archived');
     expect(lifecycleHook).toHaveBeenCalledWith(
       expect.objectContaining({
         lifecycle: 'archived',
@@ -334,14 +304,10 @@ describe('InMemoryRallarCrdtLogRepository', () => {
       ],
     });
 
-    const rejected = await repository.append(
-      toAppendInput(createUpdateEnvelope('update-1')),
-    );
+    const rejected = await repository.append(toAppendInput(createUpdateEnvelope('update-1')));
 
     expect(isRallarCrdtAppendRejected(rejected)).toBe(true);
-    expect(rejected.status === 'rejected' && rejected.code).toBe(
-      'feature-disabled',
-    );
+    expect(rejected.status === 'rejected' && rejected.code).toBe('feature-disabled');
     expect(metrics.count('crdt.server.append.ms')).toBe(1);
     expect(metrics.count('crdt.server.append.rejected.count')).toBe(1);
     expect(audit.count('reject')).toBe(1);
@@ -361,31 +327,19 @@ describe('InMemoryRallarCrdtLogRepository', () => {
       },
     });
 
-    expect(
-      (
-        await repository.append(
-          toAppendInput(createUpdateEnvelope('update-1')),
-        )
-      ).status,
-    ).toBe('accepted');
-    const rateLimited = await repository.append(
-      toAppendInput(createUpdateEnvelope('update-2')),
+    expect((await repository.append(toAppendInput(createUpdateEnvelope('update-1')))).status).toBe(
+      'accepted',
     );
-    expect(rateLimited.status === 'rejected' && rateLimited.code).toBe(
-      'rate-limited',
-    );
+    const rateLimited = await repository.append(toAppendInput(createUpdateEnvelope('update-2')));
+    expect(rateLimited.status === 'rejected' && rateLimited.code).toBe('rate-limited');
 
     await repository.updateDocumentLifecycle({
       document: documentRef,
       lifecycle: 'quarantined',
     });
-    const quarantined = await repository.append(
-      toAppendInput(createUpdateEnvelope('update-3')),
-    );
+    const quarantined = await repository.append(toAppendInput(createUpdateEnvelope('update-3')));
 
-    expect(quarantined.status === 'rejected' && quarantined.code).toBe(
-      'document-quarantined',
-    );
+    expect(quarantined.status === 'rejected' && quarantined.code).toBe('document-quarantined');
     expect(audit.count('append')).toBe(1);
     expect(audit.count('reject')).toBe(2);
     expect(audit.count('quarantine')).toBe(1);
@@ -403,13 +357,9 @@ describe('InMemoryRallarCrdtLogRepository', () => {
       },
     });
 
-    const rejected = await repository.append(
-      toAppendInput(createUpdateEnvelope('too-large-1')),
-    );
+    const rejected = await repository.append(toAppendInput(createUpdateEnvelope('too-large-1')));
 
-    expect(rejected.status === 'rejected' && rejected.code).toBe(
-      'quota-exceeded',
-    );
+    expect(rejected.status === 'rejected' && rejected.code).toBe('quota-exceeded');
   });
 
   it('lists admin status, exports debug bundles, restores backups, and rebuilds projections', async () => {
@@ -422,9 +372,7 @@ describe('InMemoryRallarCrdtLogRepository', () => {
         rebuild: rebuildHook,
       },
     });
-    await repository.append(
-      toAppendInput(createUpdateEnvelope('update-1')),
-    );
+    await repository.append(toAppendInput(createUpdateEnvelope('update-1')));
 
     const list = await repository.listDocuments({
       documentType: 'checklist',
@@ -433,10 +381,7 @@ describe('InMemoryRallarCrdtLogRepository', () => {
       reason: 'test-export',
     });
     const backup = await repository.exportBackupBundle(documentRef);
-    const rebuildReport = await repository.rebuildProjection(
-      documentRef,
-      'checklist-summary',
-    );
+    const rebuildReport = await repository.rebuildProjection(documentRef, 'checklist-summary');
     await repository.writeSnapshot({
       snapshot: {
         protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
@@ -475,9 +420,7 @@ describe('InMemoryRallarCrdtLogRepository', () => {
       firstAppendSequence: 1,
       lastAppendSequence: 1,
     });
-    expect(
-      (await restored.listAfter({ document: documentRef })).records,
-    ).toHaveLength(1);
+    expect((await restored.listAfter({ document: documentRef })).records).toHaveLength(1);
     expect(audit.count('append')).toBe(1);
     expect(audit.count('export')).toBeGreaterThanOrEqual(2);
     expect(audit.count('backup')).toBeGreaterThanOrEqual(1);
@@ -491,9 +434,7 @@ describe('InMemoryRallarCrdtLogRepository', () => {
       now: fixedNow(2_000),
     });
     for (let index = 1; index <= 25; index += 1) {
-      await repository.append(
-        toAppendInput(createUpdateEnvelope(`large-${index}`)),
-      );
+      await repository.append(toAppendInput(createUpdateEnvelope(`large-${index}`)));
     }
 
     const seen: string[] = [];

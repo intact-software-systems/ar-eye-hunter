@@ -149,7 +149,7 @@ function mutationBoundaryFiles(): readonly string[] {
     'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts',
     'packages/shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts',
     'apps/api-v1/src/services/request-auth-service.ts',
-    'packages/shared-server/crdt/RallarCrdtServer.ts',
+    'packages/shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts',
     'packages/shared-server/rallar-system/ws-system-topics.ts',
     'packages/shared-server/rallar-system/rtc-topology/topic/init-rtc-rtt-topic.ts',
     'packages/shared-server/rallar-system/ws-rtc-topology-runtime.ts',

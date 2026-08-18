@@ -20,7 +20,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
-import { installRallarCrdtWsTopics } from '@shared-server/crdt/RallarCrdtServer.ts';
+import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';

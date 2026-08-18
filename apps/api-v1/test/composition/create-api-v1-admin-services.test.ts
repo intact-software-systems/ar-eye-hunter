@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import { InMemoryRallarCrdtLogRepository } from '@shared-server/crdt/InMemoryRallarCrdtLogRepository.ts';
+import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/formation-metrics.ts';
 import type { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';

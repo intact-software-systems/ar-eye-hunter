@@ -1,4 +1,4 @@
-import type { RallarCrdtServerMutationIngress } from '../../../crdt/RallarCrdtServer.ts';
+import type { RallarCrdtServerMutationIngress } from '../realtime/rallar-crdt-server-contracts.ts';
 
 import type { AppCrdtInboxService } from './app-crdt-inbox-service.ts';
 

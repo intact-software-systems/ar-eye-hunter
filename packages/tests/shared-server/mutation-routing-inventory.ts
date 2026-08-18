@@ -272,12 +272,12 @@ function hasDirectExactMarker(program: AstNode, marker: string): boolean {
   }
   const quoted = marker.match(/^'([^']+)'$/);
   if (quoted) return readString(program) === quoted[1];
-  const comparison = marker.match(/^(\w+) === '([^']+)'$/);
+  const comparison = marker.match(/^([\w.]+) === '([^']+)'$/);
   if (comparison) {
     return (
       program.type === 'BinaryExpression' &&
       program.operator === '===' &&
-      readIdentifier(asNode(program.left)) === comparison[1] &&
+      readMemberPath(asNode(program.left)) === comparison[1] &&
       readString(asNode(program.right)) === comparison[2]
     );
   }

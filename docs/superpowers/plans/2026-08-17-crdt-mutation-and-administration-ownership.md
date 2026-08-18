@@ -48,9 +48,10 @@ recipes, and the API-v1 state-write comparison harness.
 - Use one canonical type name. Do not introduce rename aliases, import renames, runtime namespaces,
   enums, double assertions, test-only production exports, hidden defaults, service locators, setter
   injection, or forward-captured callbacks.
-- Internal functions accept at most three positional parameters. The exact existing five-argument
-  public `validateRallarCrdtServerLiveEnvelope` signature is the one approved exception: keep it as
-  a thin package compatibility adapter over a named-input validator and register it durably.
+- Functions accept at most three positional parameters. Task 5 migrates every in-repository
+  `validateRallarCrdtServerLiveEnvelope` consumer to one
+  `ValidateRallarCrdtServerLiveEnvelopeInput`; no positional adapter or retained-legacy entry
+  remains. The public symbol name and package-root runtime identity stay stable.
   Classes in `packages/**` use an adjacent type-only same-name namespace when several contracts
   belong to the class. Deno-owned API code keeps flat feature-prefixed contracts.
 - Every changed human-authored file is reviewed and remediated in full.
@@ -1223,7 +1224,6 @@ git commit -m "fix(crdt): make audit delivery construction explicit"
 - Create: `packages/shared-server/rallar-system/crdt/README.md`
 - Modify: `plans/repo-style-lineages/crdt-ownership.json`
 - Modify: `packages/shared-server/mod.ts`
-- Modify: `docs/production-legacy-exceptions.md`
 - Modify: `apps/api-v1/src/composition/create-api-v1-system-installers.ts`
 - Modify imports: `apps/api-v1/test/composition/create-api-v1-admin-services.test.ts`
 - Modify imports: `apps/api-v1/test/composition/create-api-v1-route-installers.test.ts`
@@ -1263,18 +1263,13 @@ topic definition, authorization invocation, accepted-envelope handling, and catc
 `install-rallar-crdt-ws-topics.ts`. Move live update validation and catch-up request/response
 validation to their named validators.
 
-Keep the current five-argument `validateRallarCrdtServerLiveEnvelope` export as a thin adapter that
-immediately creates one `ValidateRallarCrdtServerLiveEnvelopeInput` and calls the pure named-input
-validator. Record
-`packages/shared-server/rallar-system/crdt/realtime/validate-rallar-crdt-server-live-envelope.ts#validateRallarCrdtServerLiveEnvelope`
-in `docs/production-legacy-exceptions.md` with package-root consumers, unsafe signature break,
-one-hop minimization, direct validator and package-identity tests, shared-server CRDT maintainers,
-and a separately approved public API migration as its removal condition.
-
-Immediately before retaining and registering the adapter, present its final implementation and
-exact registry text for explicit current maintainer approval. If approval is withheld, stop for a
-public API migration decision; do not hide the signature with a rest tuple, overload trick, static
-style disposition, or compatibility alias.
+Keep the public `validateRallarCrdtServerLiveEnvelope` symbol and package-root runtime identity, but
+make its only call shape one `ValidateRallarCrdtServerLiveEnvelopeInput`. Migrate every supported
+caller and compile-time assertion in this repository in the same task. The workspace package is
+private and the repository contains the complete supported consumer set, so tests and internal
+types are migration targets rather than reasons to retain the five-argument shape. Do not add an
+overload, rest tuple, positional adapter, compatibility alias, static disposition, or
+production-legacy registry entry.
 
 Preserve this registration/runtime sequence:
 
@@ -1459,7 +1454,6 @@ findings have explicit keep/split/move/consolidate judgments.
 ```bash
 git add packages/shared-server/rallar-system/crdt \
   packages/shared-server/mod.ts \
-  docs/production-legacy-exceptions.md \
   plans/repo-style-lineages/crdt-ownership.json \
   packages/tests/shared-server/crdt \
   packages/tests/shared-server/mutation-boundary-analysis.ts \
@@ -1507,11 +1501,10 @@ shared inbox/mutation owners.
 - [ ] **Step 2: Complete production legacy review**
 
 Classify every affected candidate as `removed`, `minimized-boundary`, `resolved`, or `retained`.
-The PostgreSQL direct-mutation/options surface is expected `removed`; the only expected retained
-legacy entry is the five-argument public realtime validator adapter.
-`InMemoryRallarCrdtLogRepository` is the canonical public implementation, not legacy. Any
-additional retained candidate stops publication for explicit maintainer approval and registry
-work.
+The PostgreSQL direct-mutation/options surface and five-argument realtime-validator shape are
+expected `removed`. `InMemoryRallarCrdtLogRepository` and the named-input public validator are
+canonical public implementations, not legacy. Any retained candidate stops publication for
+explicit maintainer approval and registry work.
 
 - [ ] **Step 3: Run Slice 1 validation**
 
@@ -1570,8 +1563,7 @@ git add packages/shared-server/rallar-system/crdt \
   packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts \
   apps/api-v1/src/crdt \
   apps/api-v1/src/composition \
-  apps/api-v1/src/services/create-api-admin-mutation-gateway.ts \
-  docs/production-legacy-exceptions.md
+  apps/api-v1/src/services/create-api-admin-mutation-gateway.ts
 git commit -m "fix(crdt): close core ownership review"
 ```
 

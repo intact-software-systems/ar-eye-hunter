@@ -13,7 +13,7 @@ import {
   DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
   retryAfterAttempt,
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { installRallarCrdtWsTopics } from '@shared-server/crdt/RallarCrdtServer.ts';
+import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 import {
   type DocumentRow,
   toMetadata,

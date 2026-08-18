@@ -12,6 +12,33 @@
         "packages/shared-server/rallar-system/crdt/inbox/register-crdt-audit-delivery.ts",
         "apps/api-v1/src/crdt/create-crdt-admin-mutations.ts"
       ]
+    },
+    {
+      "mergeBase": "22bb4919c92f96d785ff65d7f308a6d2fd3318e7",
+      "source": {
+        "path": "packages/shared-server/crdt/RallarCrdtServer.ts",
+        "blob": "a79908adf2425460ee1292453a990418aadee0cd"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/crdt/realtime/rallar-crdt-server-contracts.ts",
+        "packages/shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts",
+        "packages/shared-server/rallar-system/crdt/realtime/validate-rallar-crdt-server-live-envelope.ts",
+        "packages/shared-server/rallar-system/crdt/realtime/validate-rallar-crdt-catch-up-envelope.ts"
+      ]
+    },
+    {
+      "mergeBase": "22bb4919c92f96d785ff65d7f308a6d2fd3318e7",
+      "source": {
+        "path": "packages/shared-server/crdt/InMemoryRallarCrdtLogRepository.ts",
+        "blob": "8bb63b7b59b4616f43aee77584ed52edbf88727a"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/crdt/persistence/in-memory-crdt-document-store.ts",
+        "packages/shared-server/rallar-system/crdt/persistence/compute-in-memory-crdt-append.ts",
+        "packages/shared-server/rallar-system/crdt/persistence/in-memory-crdt-append.ts",
+        "packages/shared-server/rallar-system/crdt/persistence/in-memory-crdt-administration.ts",
+        "packages/shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts"
+      ]
     }
   ]
 }
