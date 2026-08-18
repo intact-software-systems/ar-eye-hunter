@@ -106,6 +106,71 @@ describe('group lifecycle transition computation', () => {
     expect(computed.outcome).toBe('rejected');
   });
 
+  it('fails formation with criterion authority: outcome, attempts, epoch, anchor', () => {
+    const computed = computeGroupMutation({
+      command: criterionCommand('failGroupFormation', { observedRate: 0.3 }),
+      read: criterionRead({
+        lifecycleState: 'establishing',
+        formationEpoch: 2,
+        establishmentStartedAtEpochMs: 1_500,
+        formationAttemptCount: 1,
+      }),
+      facts: criterionFacts(),
+    });
+    expect(computed.outcome).toBe('write');
+    if (computed.outcome !== 'write') return;
+    const written = computed.guard.value as Group;
+    expect(written.lifecycleState).toBe('forming');
+    expect(written.formationEpoch).toBe(3);
+    expect(written.formationAttemptCount).toBe(2);
+    expect(written.establishmentStartedAtEpochMs).toBe(null);
+    expect(written.lastFormationOutcome).toEqual({
+      outcome: 'below-floor',
+      observedRate: 0.3,
+      atEpochMs: 2_000,
+      formationEpoch: 2,
+    });
+  });
+
+  it('rejects principal-commanded formation failure', () => {
+    expect(() =>
+      computeGroupMutation({
+        command: transitionCommand('failGroupFormation' as never),
+        read: transitionRead({ lifecycleState: 'establishing', formationEpoch: 1 }),
+        facts: transitionFacts(),
+      }),
+    ).toThrowError(/criterion-commanded only/);
+  });
+
+  it('records the criterion outcome on internal activation', () => {
+    for (const [degraded, outcome] of [
+      [false, 'activated'],
+      [true, 'activated-degraded'],
+    ] as const) {
+      const computed = computeGroupMutation({
+        command: criterionCommand('activateGroup', { observedRate: 0.97, degraded }),
+        read: criterionRead({ lifecycleState: 'establishing', formationEpoch: 1 }),
+        facts: criterionFacts(),
+      });
+      expect(computed.outcome).toBe('write');
+      if (computed.outcome !== 'write') continue;
+      const written = computed.guard.value as Group;
+      expect(written.lifecycleState).toBe('active');
+      expect(written.lastFormationOutcome).toMatchObject({ outcome, observedRate: 0.97 });
+    }
+  });
+
+  it('leaves the recorded outcome untouched on manual activation', () => {
+    const computed = computeGroupMutation({
+      command: transitionCommand('activateGroup'),
+      read: transitionRead({ lifecycleState: 'establishing', formationEpoch: 1 }),
+      facts: transitionFacts(),
+    });
+    expect(computed.outcome).toBe('write');
+    if (computed.outcome !== 'write') return;
+    expect((computed.guard.value as Group).lastFormationOutcome).toBe(null);
+  });
+
   it('treats an absent policy as the optimistic preset', () => {
     // optimistic is any-member initiated, so a plain member may command.
     const computed = computeGroupMutation({
@@ -134,8 +199,47 @@ function transitionCommand(
       actorSessionId: `${actorPrincipalId}-session`,
       reason: null,
       traceId: null,
+      ...(operation === 'activateGroup' ? { observedRate: null, degraded: null } : {}),
     },
   } as GroupMutationCommand;
+}
+
+function criterionRead(
+  groupOverrides: Partial<Group>,
+): GroupMutationRead {
+  return {
+    ...transitionRead(groupOverrides),
+    actorMember: null,
+    actorMemberEntry: null,
+  } as GroupMutationRead;
+}
+
+function criterionCommand(
+  operation: 'activateGroup' | 'failGroupFormation',
+  extras: Readonly<{ observedRate: number; degraded?: boolean }>,
+): GroupMutationCommand {
+  return {
+    operation,
+    aggregateRef: groupRef('pure-room'),
+    commandId: 'criterion-command',
+    requestId: 'criterion-command',
+    input: {
+      actorPrincipalId: null,
+      actorSessionId: null,
+      reason: null,
+      traceId: null,
+      observedRate: extras.observedRate,
+      ...(operation === 'activateGroup' ? { degraded: extras.degraded ?? false } : {}),
+    },
+  } as GroupMutationCommand;
+}
+
+function criterionFacts(): GroupMutationFacts {
+  return {
+    ...transitionFacts(),
+    internalAuthority: 'formation-criterion',
+    authenticatedAuthority: null,
+  };
 }
 
 interface TransitionReadOptions {

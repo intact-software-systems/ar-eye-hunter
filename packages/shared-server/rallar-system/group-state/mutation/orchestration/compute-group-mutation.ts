@@ -66,6 +66,7 @@ export function computeGroupMutation(
     case 'startGroupEstablishment':
     case 'activateGroup':
     case 'reopenGroupEstablishment':
+    case 'failGroupFormation':
       return computeLifecycleTransition(command, read, facts);
     case 'joinGroup':
     case 'acceptGroupInvite':
@@ -148,7 +149,7 @@ export function validateFacts(facts: GroupMutationFacts): void {
   if (!/^sha256:[0-9a-f]{64}$/.test(facts.commandHash)) {
     throw new TypeError('Group mutation commandHash is invalid');
   }
-  if (!['none', 'expiry', 'session-cleanup'].includes(facts.internalAuthority)) {
+  if (!['none', 'expiry', 'session-cleanup', 'formation-criterion'].includes(facts.internalAuthority)) {
     throw new TypeError('Group mutation internal authority is invalid');
   }
   if (!['damped', 'legacy'].includes(facts.formationDamping)) {
@@ -219,7 +220,14 @@ export function validateTrustedAuthorityMode(
     if (authority !== null) {
       throw new TypeError('Internal group mutation cannot use authenticated authority facts');
     }
-    if (command.operation !== 'disconnectPresence') {
+    if (facts.internalAuthority === 'formation-criterion') {
+      if (command.operation !== 'activateGroup' && command.operation !== 'failGroupFormation') {
+        throw new TypeError('Formation-criterion authority is limited to criterion transitions');
+      }
+      if (command.input.observedRate === null) {
+        throw new TypeError('Criterion transitions must carry the observed rate');
+      }
+    } else if (command.operation !== 'disconnectPresence') {
       throw new TypeError('Internal group authority is limited to presence maintenance');
     }
     if (command.input.actorPrincipalId !== null || command.input.actorSessionId !== null) {

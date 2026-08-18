@@ -87,8 +87,23 @@ export type GroupMutationCommand =
       }>)
   | (GroupMutationCommandBase &
       Readonly<{
-        operation: 'startGroupEstablishment' | 'activateGroup' | 'reopenGroupEstablishment';
+        operation: 'startGroupEstablishment' | 'reopenGroupEstablishment';
         input: NullableActorInput;
+      }>)
+  | (GroupMutationCommandBase &
+      Readonly<{
+        operation: 'activateGroup';
+        input: NullableActorInput &
+          Readonly<{
+            /** Null on operator commands; the criterion's rate when internal. */
+            observedRate: number | null;
+            degraded: boolean | null;
+          }>;
+      }>)
+  | (GroupMutationCommandBase &
+      Readonly<{
+        operation: 'failGroupFormation';
+        input: NullableActorInput & Readonly<{ observedRate: number }>;
       }>)
   | (GroupMutationCommandBase &
       Readonly<{
@@ -248,7 +263,7 @@ export type GroupMutationFacts = Readonly<{
   attemptCount: number;
   resolvedJoinCode: string | null;
   joinCodeVerifier: string | null;
-  internalAuthority: 'none' | 'expiry' | 'session-cleanup';
+  internalAuthority: 'none' | 'expiry' | 'session-cleanup' | 'formation-criterion';
   formationDamping: 'damped' | 'legacy';
   /**
    * Operational capacity defaults captured at preparation time; absent when
@@ -329,7 +344,7 @@ export type GroupMutationComputedWrite = Extract<GroupMutationComputed, { outcom
 
 export type GroupLifecycleTransitionOperation = Extract<
   GroupMutationCommand['operation'],
-  'startGroupEstablishment' | 'activateGroup' | 'reopenGroupEstablishment'
+  'startGroupEstablishment' | 'activateGroup' | 'reopenGroupEstablishment' | 'failGroupFormation'
 >;
 
 export function isGroupLifecycleTransitionOperation(
@@ -338,7 +353,8 @@ export function isGroupLifecycleTransitionOperation(
   return (
     operation === 'startGroupEstablishment' ||
     operation === 'activateGroup' ||
-    operation === 'reopenGroupEstablishment'
+    operation === 'reopenGroupEstablishment' ||
+    operation === 'failGroupFormation'
   );
 }
 

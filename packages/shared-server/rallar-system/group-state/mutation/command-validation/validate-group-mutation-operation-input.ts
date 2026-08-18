@@ -32,6 +32,7 @@ type AggregateOperation = Extract<
   | 'startGroupEstablishment'
   | 'activateGroup'
   | 'reopenGroupEstablishment'
+  | 'failGroupFormation'
 >;
 
 function validateAggregateMutationInput(
@@ -71,11 +72,18 @@ function validateAggregateMutationInput(
     optionalPositiveInteger('heartbeatTtlMs');
     return;
   }
-  if (
-    operation === 'startGroupEstablishment' ||
-    operation === 'activateGroup' ||
-    operation === 'reopenGroupEstablishment'
-  ) {
+  if (operation === 'startGroupEstablishment' || operation === 'reopenGroupEstablishment') {
+    return;
+  }
+  if (operation === 'activateGroup') {
+    validateNullableUnitInterval(input.observedRate, 'Group activateGroup observedRate');
+    if (input.degraded !== null && typeof input.degraded !== 'boolean') {
+      throw new TypeError('Group activateGroup degraded must be boolean or null');
+    }
+    return;
+  }
+  if (operation === 'failGroupFormation') {
+    validateRequiredUnitInterval(input.observedRate, 'Group failGroupFormation observedRate');
     return;
   }
   optionalString('joinCode');
@@ -173,6 +181,7 @@ function isAggregateOperation(
     'startGroupEstablishment',
     'activateGroup',
     'reopenGroupEstablishment',
+    'failGroupFormation',
   ].includes(operation);
 }
 
@@ -182,4 +191,15 @@ function isPresenceOperation(
   operation: GroupMutationCommand['operation'],
 ): operation is PresenceOperation {
   return ['connectPresence', 'heartbeatPresence', 'disconnectPresence'].includes(operation);
+}
+
+function validateNullableUnitInterval(value: unknown, label: string): void {
+  if (value === null) return;
+  validateRequiredUnitInterval(value, label);
+}
+
+function validateRequiredUnitInterval(value: unknown, label: string): void {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+    throw new TypeError(`${label} must be within [0, 1]`);
+  }
 }

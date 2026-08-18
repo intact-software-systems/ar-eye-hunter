@@ -4,7 +4,8 @@ import type { GroupPolicyDenied } from '../group-policy-types.ts';
 export type GroupLifecycleTransition =
     | 'start-establishment'
     | 'activate'
-    | 'reopen-establishment';
+    | 'reopen-establishment'
+    | 'fail-formation';
 
 export type GroupLifecycleTransitionOutcome =
     | Readonly<{
@@ -20,12 +21,14 @@ const TRANSITION_SOURCES: Readonly<
     'start-establishment': ['forming'],
     'activate': ['establishing', 'reconfiguring'],
     'reopen-establishment': ['active'],
+    'fail-formation': ['establishing', 'reconfiguring'],
 };
 
 const TRANSITION_TARGETS: Readonly<Record<GroupLifecycleTransition, GroupLifecycleState>> = {
     'start-establishment': 'establishing',
     'activate': 'active',
     'reopen-establishment': 'reconfiguring',
+    'fail-formation': 'forming',
 };
 
 /**

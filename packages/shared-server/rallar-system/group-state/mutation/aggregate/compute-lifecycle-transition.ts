@@ -12,6 +12,7 @@ import {
   canCommandGroupLifecycleTransition,
   GroupPolicyDeniedError,
 } from '../../../group-policy.ts';
+import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
 import type {
   GroupLifecycleTransitionOperation,
   GroupMutationCommand,
@@ -35,7 +36,32 @@ const LIFECYCLE_TRANSITION_BY_OPERATION = {
   startGroupEstablishment: 'start-establishment',
   activateGroup: 'activate',
   reopenGroupEstablishment: 'reopen-establishment',
+  failGroupFormation: 'fail-formation',
 } as const satisfies Record<GroupLifecycleTransitionOperation, GroupLifecycleTransition>;
+
+function computeRecordedOutcome(
+  command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation }>,
+  stored: Group,
+  facts: GroupMutationFacts,
+): Group['lastFormationOutcome'] {
+  if (command.operation === 'failGroupFormation') {
+    return {
+      outcome: 'below-floor',
+      observedRate: command.input.observedRate,
+      atEpochMs: facts.nowEpochMs,
+      formationEpoch: stored.formationEpoch,
+    };
+  }
+  if (command.operation === 'activateGroup' && command.input.observedRate !== null) {
+    return {
+      outcome: command.input.degraded === true ? 'activated-degraded' : 'activated',
+      observedRate: command.input.observedRate,
+      atEpochMs: facts.nowEpochMs,
+      formationEpoch: stored.formationEpoch,
+    };
+  }
+  return stored.lastFormationOutcome;
+}
 
 export function computeLifecycleTransition(
   command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation }>,
@@ -61,17 +87,25 @@ export function computeLifecycleTransition(
       ? read.lifecyclePolicy.policy
       : createDefaultGroupLifecyclePolicy();
   const transition = LIFECYCLE_TRANSITION_BY_OPERATION[command.operation];
-  assertAllowed(
-    canCommandGroupLifecycleTransition({
-      snapshot: toPolicySnapshot(read, facts.nowEpochMs),
-      actor: {
-        principalId: command.input.actorPrincipalId ?? undefined,
-        sessionId: command.input.actorSessionId ?? undefined,
-      },
-      policy,
-      transition,
-    }),
-  );
+  if (facts.internalAuthority === 'formation-criterion') {
+    // The criterion evaluator petitions with service authority; the state
+    // machine below is the only check that applies. Principals never carry
+    // this authority mode (validateTrustedAuthorityMode enforces it).
+  } else if (command.operation === 'failGroupFormation') {
+    throw new GroupMutationRejectedError('Formation failure is criterion-commanded only');
+  } else {
+    assertAllowed(
+      canCommandGroupLifecycleTransition({
+        snapshot: toPolicySnapshot(read, facts.nowEpochMs),
+        actor: {
+          principalId: command.input.actorPrincipalId ?? undefined,
+          sessionId: command.input.actorSessionId ?? undefined,
+        },
+        policy,
+        transition,
+      }),
+    );
+  }
   const outcome = computeGroupLifecycleTransition({
     transition,
     lifecycleState: stored.value.lifecycleState,
@@ -87,7 +121,13 @@ export function computeLifecycleTransition(
     formationEpoch: outcome.nextFormationEpoch,
     establishmentStartedAtEpochMs: beginsEstablishment
       ? facts.nowEpochMs
-      : stored.value.establishmentStartedAtEpochMs,
+      : command.operation === 'failGroupFormation'
+        ? null
+        : stored.value.establishmentStartedAtEpochMs,
+    formationAttemptCount: command.operation === 'failGroupFormation'
+      ? stored.value.formationAttemptCount + 1
+      : stored.value.formationAttemptCount,
+    lastFormationOutcome: computeRecordedOutcome(command, stored.value, facts),
     snapshotVersion: stored.value.snapshotVersion + 1,
     updated: auditStamp(command, facts, command.input.actorPrincipalId ?? undefined),
   };
