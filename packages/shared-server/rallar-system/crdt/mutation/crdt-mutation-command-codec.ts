@@ -19,7 +19,7 @@ import {
   requireOneOf,
   requireRecord,
   requireString,
-} from './exact-object-codec.ts';
+} from '../../services/exact-object-codec.ts';
 import { decodeExactUpdateEnvelope } from './crdt-update-exact-codec.ts';
 import type {
   CrdtMutationCommand,
@@ -28,27 +28,13 @@ import type {
 import {
   requireCrdtCanonicalSnapshotReason,
   toCrdtCanonicalSnapshotEnvelope,
-} from './crdt-compact-snapshot.ts';
-
-export {
-  decodeExactDocumentMetadata,
-  decodeExactDocumentRef,
-  decodeExactProjectionIds,
-  decodeExactQuotaPolicy,
-  decodeExactRetentionPolicy,
-  decodeExactSnapshotEnvelope,
-  decodeExactTrustedAppendMetadata,
-  decodeExactValidationResult,
-  decodeExactUpdateEnvelope,
-};
-export { decodeCrdtMutationResult } from './crdt-mutation-result-codec.ts';
+} from '../../services/crdt-compact-snapshot.ts';
 
 export async function createCrdtMutationCommand(
   input: CreateCrdtMutationCommandInput,
 ): Promise<CrdtMutationCommand> {
-  const canonicalInput = input.operation === 'compact'
-    ? toCanonicalCompactCommandInput(input)
-    : input;
+  const canonicalInput =
+    input.operation === 'compact' ? toCanonicalCompactCommandInput(input) : input;
   const stable = {
     ...canonicalInput,
     deliveryId: canonicalInput.deliveryId ?? canonicalInput.commandId,
@@ -65,25 +51,19 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
   const command = requireRecord(value, 'CRDT mutation command');
   const operation = requireOneOf(
     command.operation,
-    [
-      'append',
-      'rebuild-projection',
-      'compact',
-      'lifecycle',
-      'erase',
-    ] as const,
+    ['append', 'rebuild-projection', 'compact', 'lifecycle', 'erase'] as const,
     'CRDT mutation operation',
   );
   const allowed = commonCommandKeys.concat(
     operation === 'append'
       ? ['update', 'authorizationScope']
       : operation === 'rebuild-projection'
-      ? ['projectionId']
-      : operation === 'compact'
-      ? ['snapshotId', 'snapshot', 'reason']
-      : operation === 'lifecycle'
-      ? ['lifecycle', 'retentionAction', 'quotaAction', 'projectionIdsAction']
-      : ['mode', 'reason'],
+        ? ['projectionId']
+        : operation === 'compact'
+          ? ['snapshotId', 'snapshot', 'reason']
+          : operation === 'lifecycle'
+            ? ['lifecycle', 'retentionAction', 'quotaAction', 'projectionIdsAction']
+            : ['mode', 'reason'],
   );
   requireExactKeys(command, allowed, 'CRDT mutation command');
   if (command.version !== 1) throw new TypeError('CRDT mutation version is invalid');
@@ -139,18 +119,15 @@ function validateOperationFields(
     requireString(command.projectionId, 'projectionId');
   } else if (operation === 'compact') {
     requireString(command.snapshotId, 'snapshotId');
-    const snapshot = command.snapshot === null
-      ? null
-      : decodeExactSnapshotEnvelope(command.snapshot);
+    const snapshot =
+      command.snapshot === null ? null : decodeExactSnapshotEnvelope(command.snapshot);
     if (
       snapshot !== null &&
       toRallarCrdtDocumentKey(snapshot.document) !== toRallarCrdtDocumentKey(document)
     ) {
       throw new TypeError('CRDT compact snapshot document differs from command document');
     }
-    if (
-      snapshot !== null && snapshot.snapshotId !== command.snapshotId
-    ) {
+    if (snapshot !== null && snapshot.snapshotId !== command.snapshotId) {
       throw new TypeError('CRDT compact snapshot ID differs from command input');
     }
     requireCrdtCanonicalSnapshotReason(command.reason);
@@ -181,9 +158,10 @@ function toCanonicalCompactCommandInput(
   requireString(input.reason, 'reason');
   return {
     ...input,
-    snapshot: input.snapshot === null
-      ? null
-      : toCrdtCanonicalSnapshotEnvelope(input.snapshot, input.reason),
+    snapshot:
+      input.snapshot === null
+        ? null
+        : toCrdtCanonicalSnapshotEnvelope(input.snapshot, input.reason),
   };
 }
 

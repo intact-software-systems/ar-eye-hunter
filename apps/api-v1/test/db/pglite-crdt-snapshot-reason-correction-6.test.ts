@@ -10,10 +10,8 @@ import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogR
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import {
-  createCrdtMutationCommand,
-  decodeCrdtMutationResult,
-} from '@shared-server/rallar-system/services/crdt-mutations.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-result-codec.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
@@ -117,18 +115,21 @@ Deno.test('custom compact reason replaces snapshot input reason before command h
   assert.equal(command.operation, 'compact');
   assert.equal(command.snapshot?.metadata.reason, 'operator-approved-compaction');
   assert.equal(inputSnapshot.metadata.reason, 'stale-caller-reason');
-  await assert.rejects(createCrdtMutationCommand({
-    operation: 'compact',
-    commandId: 'blank-reason-command',
-    actor: actor(),
-    capturedAtEpochMs: 2_000,
-    expireAtEpochMs: 62_000,
-    document: DOCUMENT,
-    responseAudience: audience(),
-    snapshotId: inputSnapshot.snapshotId,
-    snapshot: inputSnapshot,
-    reason: '   ',
-  }), /reason|whitespace/i);
+  await assert.rejects(
+    createCrdtMutationCommand({
+      operation: 'compact',
+      commandId: 'blank-reason-command',
+      actor: actor(),
+      capturedAtEpochMs: 2_000,
+      expireAtEpochMs: 62_000,
+      document: DOCUMENT,
+      responseAudience: audience(),
+      snapshotId: inputSnapshot.snapshotId,
+      snapshot: inputSnapshot,
+      reason: '   ',
+    }),
+    /reason|whitespace/i,
+  );
 });
 
 function createService(sql: PGliteSql, now: number) {
@@ -141,12 +142,13 @@ function createService(sql: PGliteSql, now: number) {
     serviceId: 'server-1',
     options: { nowEpochMs: () => now },
     currentAuthority: {
-      readSession: (sessionId) => Promise.resolve({
-        clientId: 'client-1',
-        username: 'client-1',
-        sessionId,
-        expiresAtEpochMs: now + 60_000,
-      }),
+      readSession: (sessionId) =>
+        Promise.resolve({
+          clientId: 'client-1',
+          username: 'client-1',
+          sessionId,
+          expiresAtEpochMs: now + 60_000,
+        }),
       authorizeDocument: () => Promise.resolve({ allowed: true, code: 'allowed' }),
       adminClientIds: ['client-1'],
     },

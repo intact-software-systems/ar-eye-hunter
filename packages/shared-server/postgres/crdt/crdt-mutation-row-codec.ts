@@ -15,7 +15,7 @@ import {
   toRallarCrdtDocumentKey,
   validateRallarCrdtSnapshotEnvelope,
 } from '@shared/crdt/mod.ts';
-import type { CrdtMutationCommand } from '../../rallar-system/services/crdt-mutation-contracts.ts';
+import type * as CrdtMutationContracts from '../../rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import {
   decodeExactDocumentMetadata,
   decodeExactDocumentRef,
@@ -23,8 +23,8 @@ import {
   decodeExactRetentionPolicy,
   decodeExactSnapshotEnvelope,
   decodeExactTrustedAppendMetadata,
-  decodeExactUpdateEnvelope,
-} from '../../rallar-system/services/crdt-mutation-codec.ts';
+} from '../../rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
+import { decodeExactUpdateEnvelope } from '../../rallar-system/crdt/mutation/crdt-update-exact-codec.ts';
 
 export type DocumentRow = Readonly<{
   document_key: string;
@@ -85,12 +85,16 @@ export function toMetadata(
   const archivedAtEpochMs = toEpoch(row.archived_at_ts);
   const destroyedAtEpochMs = toEpoch(row.destroyed_at_ts);
   if (
-    row.document_key !== expectedDocumentKey || logicalKey !== row.document_key ||
-    expectedKey !== row.document_key || row.application_id !== document.applicationId ||
+    row.document_key !== expectedDocumentKey ||
+    logicalKey !== row.document_key ||
+    expectedKey !== row.document_key ||
+    row.application_id !== document.applicationId ||
     row.workspace_id !== (document.workspaceId ?? null) ||
-    row.document_scope !== document.scope || row.document_type !== document.documentType ||
+    row.document_scope !== document.scope ||
+    row.document_type !== document.documentType ||
     row.document_id !== document.documentId
-  ) throw new TypeError('CRDT persisted document identity is corrupt');
+  )
+    throw new TypeError('CRDT persisted document identity is corrupt');
   const counters = [
     row.document_revision,
     row.last_append_sequence,
@@ -106,14 +110,19 @@ export function toMetadata(
   const projectionIds = fromJson<readonly string[]>(row.projection_ids) ?? [];
   if (
     !counters.every((counter) => Number.isSafeInteger(counter) && counter >= 0) ||
-    counters[0] < 1 || !['active', 'archived', 'destroyed', 'quarantined'].includes(lifecycle) ||
-    !Number.isSafeInteger(createdAtEpochMs) || !Number.isSafeInteger(updatedAtEpochMs) ||
-    createdAtEpochMs < 0 || updatedAtEpochMs < createdAtEpochMs ||
+    counters[0] < 1 ||
+    !['active', 'archived', 'destroyed', 'quarantined'].includes(lifecycle) ||
+    !Number.isSafeInteger(createdAtEpochMs) ||
+    !Number.isSafeInteger(updatedAtEpochMs) ||
+    createdAtEpochMs < 0 ||
+    updatedAtEpochMs < createdAtEpochMs ||
     (retention !== null && !decodePolicy(() => decodeExactRetentionPolicy(retention))) ||
     (quota !== null && !decodePolicy(() => decodeExactQuotaPolicy(quota))) ||
-    !Array.isArray(projectionIds) || projectionIds.some((id) => typeof id !== 'string' || !id) ||
+    !Array.isArray(projectionIds) ||
+    projectionIds.some((id) => typeof id !== 'string' || !id) ||
     new Set(projectionIds).size !== projectionIds.length
-  ) throw new TypeError('CRDT persisted document metadata is corrupt');
+  )
+    throw new TypeError('CRDT persisted document metadata is corrupt');
   return decodeExactDocumentMetadata({
     document,
     documentKey: row.document_key,
@@ -153,12 +162,17 @@ export function toRecord<TPayload extends RallarCrdtOperationBatch>(
     row.update_id !== update.updateId ||
     toRallarCrdtDocumentKey(update.document) !== expectedKey ||
     hashRallarCrdtUpdateEnvelope(update) !== row.accepted_update_hash ||
-    row.actor_id === null || row.principal_id === null ||
-    row.session_id === null || row.server_id === null ||
-    !Number.isSafeInteger(appendSequence) || appendSequence <= 0 ||
-    !Number.isSafeInteger(acceptedAtEpochMs) || acceptedAtEpochMs < 0 ||
+    row.actor_id === null ||
+    row.principal_id === null ||
+    row.session_id === null ||
+    row.server_id === null ||
+    !Number.isSafeInteger(appendSequence) ||
+    appendSequence <= 0 ||
+    !Number.isSafeInteger(acceptedAtEpochMs) ||
+    acceptedAtEpochMs < 0 ||
     row.authorization_scope !== document.scope
-  ) throw new TypeError('CRDT persisted update identity is corrupt');
+  )
+    throw new TypeError('CRDT persisted update identity is corrupt');
   const append = decodeExactTrustedAppendMetadata({
     appendSequence,
     acceptedAtEpochMs,
@@ -192,26 +206,29 @@ export function toSnapshot(
     Number(row.append_sequence) < 0 ||
     Number(row.append_sequence) > lastAppendSequence ||
     new Date(row.created_at_ts).getTime() !== snapshot.createdAtEpochMs ||
-    (typeof row.reason !== 'string' || row.reason.length === 0) ||
+    typeof row.reason !== 'string' ||
+    row.reason.length === 0 ||
     row.reason !== expectedReason ||
     toRallarCrdtDocumentKey(snapshot.document) !== expectedDocumentKey ||
     toRallarCrdtDocumentKey(expectedDocument) !== expectedDocumentKey ||
     !validateRallarCrdtSnapshotEnvelope(snapshot).valid
-  ) throw new TypeError('CRDT persisted snapshot identity is corrupt');
+  )
+    throw new TypeError('CRDT persisted snapshot identity is corrupt');
   return snapshot;
 }
 
 export function toFeatureDecision(
-  command: CrdtMutationCommand,
+  command: CrdtMutationContracts.CrdtMutationCommand,
   policies: readonly RallarCrdtDocumentTypePolicy[],
 ): RallarCrdtFeatureDecision {
   return evaluateRallarCrdtFeaturePolicy({
     document: command.document,
-    operation: command.operation === 'append'
-      ? 'durable-append'
-      : command.operation === 'rebuild-projection'
-      ? 'projection-rebuild'
-      : 'admin-export',
+    operation:
+      command.operation === 'append'
+        ? 'durable-append'
+        : command.operation === 'rebuild-projection'
+          ? 'projection-rebuild'
+          : 'admin-export',
     policies,
   });
 }
@@ -233,7 +250,7 @@ function toEpoch(value: Date | string | null): number | null {
 }
 
 function fromJson<T>(value: string | null): T | null {
-  return value === null ? null : JSON.parse(value) as T;
+  return value === null ? null : (JSON.parse(value) as T);
 }
 
 function decodePolicy(decode: () => unknown): boolean {

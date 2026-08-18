@@ -13,7 +13,7 @@ const GROUP_TYPES =
   'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 const AUTH_OWNER = 'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 const CRDT_OWNER = 'packages/shared-server/rallar-system/services/AppCrdtInboxService.ts';
-const CRDT_TYPES = 'packages/shared-server/rallar-system/services/crdt-mutation-contracts.ts';
+const CRDT_TYPES = 'packages/shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 const CLIENT_OWNER =
   'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 

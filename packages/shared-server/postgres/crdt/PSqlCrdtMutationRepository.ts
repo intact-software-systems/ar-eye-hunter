@@ -16,7 +16,7 @@ import {
   CrdtMutationConflictError,
   type CrdtMutationRead,
   type CrdtMutationRepository,
-} from '../../rallar-system/services/crdt-mutation-contracts.ts';
+} from '../../rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import {
   type DocumentRow,
   type SnapshotRow,
@@ -37,8 +37,8 @@ export type CrdtMutationAuthorityDecision = Readonly<{
 export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
   private readonly sql: PSqlSql;
   private readonly authorize: (
-      command: CrdtMutationCommand,
-    ) => Promise<boolean | CrdtMutationAuthorityDecision>;
+    command: CrdtMutationCommand,
+  ) => Promise<boolean | CrdtMutationAuthorityDecision>;
   private readonly policies: readonly RallarCrdtDocumentTypePolicy[];
 
   constructor(
@@ -73,20 +73,23 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
       : null;
     const decodedRecords = records.map((row) => toRecord(row, command.document));
     validateReadSet(document, decodedRecords, snapshots);
-    const existingRecord = command.operation === 'append'
-      ? decodedRecords.find((record) => record.update.updateId === command.update.updateId) ?? null
-      : null;
+    const existingRecord =
+      command.operation === 'append'
+        ? (decodedRecords.find((record) => record.update.updateId === command.update.updateId) ??
+          null)
+        : null;
     const snapshot = snapshots[0]
       ? toSnapshot(
-        snapshots[0],
-        command.documentKey,
-        command.document,
-        document?.lastAppendSequence ?? 0,
-      )
+          snapshots[0],
+          command.documentKey,
+          command.document,
+          document?.lastAppendSequence ?? 0,
+        )
       : null;
-    const authorityDecision = typeof authority === 'boolean'
-      ? { allowed: authority, code: authority ? 'allowed' : 'authorization-denied' }
-      : authority;
+    const authorityDecision =
+      typeof authority === 'boolean'
+        ? { allowed: authority, code: authority ? 'allowed' : 'authorization-denied' }
+        : authority;
     return {
       document,
       existingUpdate: existingRecord?.update ?? null,
@@ -102,15 +105,16 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
   }
 
   async writeMutation(computed: CrdtMutationComputedWrite): Promise<void> {
-    const guarded = computed.expectedDocumentRevision === 'absent'
-      ? await insertDocument(this.sql, computed.document)
-      : await updateDocument(
-        this.sql,
-        computed.document,
-        computed.expectedDocumentRevision,
-        computed.expectedDocumentLifecycle,
-        computed.expectedAppendSequence,
-      );
+    const guarded =
+      computed.expectedDocumentRevision === 'absent'
+        ? await insertDocument(this.sql, computed.document)
+        : await updateDocument(
+            this.sql,
+            computed.document,
+            computed.expectedDocumentRevision,
+            computed.expectedDocumentLifecycle,
+            computed.expectedAppendSequence,
+          );
     if (!guarded) throw new CrdtMutationConflictError(computed.documentKey);
     if (computed.update && computed.append) {
       await insertUpdate(this.sql, computed.documentKey, computed.update, computed.append);
@@ -170,13 +174,15 @@ async function readSnapshot(sql: PSqlSql, documentKey: string): Promise<Snapshot
 
 function sameDocumentGuard(left: DocumentRow | undefined, right: DocumentRow | undefined): boolean {
   if (!left || !right) return left === right;
-  return left.document_key === right.document_key &&
+  return (
+    left.document_key === right.document_key &&
     Number(left.document_revision) === Number(right.document_revision) &&
     left.lifecycle === right.lifecycle &&
     Number(left.last_append_sequence) === Number(right.last_append_sequence) &&
     Number(left.update_count) === Number(right.update_count) &&
     Number(left.snapshot_count) === Number(right.snapshot_count) &&
-    Number(left.stored_update_bytes) === Number(right.stored_update_bytes);
+    Number(left.stored_update_bytes) === Number(right.stored_update_bytes)
+  );
 }
 
 function validateReadSet(
@@ -198,7 +204,8 @@ function validateReadSet(
     records.reduce((bytes, record) => bytes + byteLengthOfRallarCrdtJson(record.update), 0) !==
       document.storedUpdateBytes ||
     Number(snapshots[0]?.snapshot_count ?? 0) !== document.snapshotCount
-  ) throw new TypeError('CRDT persisted read set differs from document counters');
+  )
+    throw new TypeError('CRDT persisted read set differs from document counters');
 }
 
 async function readActorUpdatesInWindow(

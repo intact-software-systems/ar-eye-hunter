@@ -1,9 +1,9 @@
-import { decodeCrdtMutationResult } from './crdt-mutation-codec.ts';
+import { decodeCrdtMutationResult } from '../crdt/mutation/crdt-mutation-result-codec.ts';
 import type {
   CrdtMutationCommand,
   CrdtMutationComputed,
   CrdtMutationRead,
-} from './crdt-mutation-contracts.ts';
+} from '../crdt/mutation/crdt-mutation-contracts.ts';
 
 export function validateCrdtMutation(
   command: CrdtMutationCommand,
@@ -14,12 +14,14 @@ export function validateCrdtMutation(
     computed.commandId !== command.commandId ||
     computed.commandHash !== command.commandHash ||
     computed.documentKey !== command.documentKey
-  ) throw new TypeError('CRDT computed identity differs from command');
+  )
+    throw new TypeError('CRDT computed identity differs from command');
   if (
     computed.outcome === 'write' &&
     read.document &&
     computed.expectedDocumentRevision !== read.document.documentRevision
-  ) throw new TypeError('CRDT computed predecessor differs from read document');
+  )
+    throw new TypeError('CRDT computed predecessor differs from read document');
   if (command.operation === 'compact' && computed.outcome === 'write') {
     const result = computed.result;
     if (
@@ -27,7 +29,8 @@ export function validateCrdtMutation(
       result.operation !== 'compact' ||
       result.status !== 'accepted' ||
       result.snapshot.metadata.reason !== command.reason
-    ) throw new TypeError('CRDT compact reason differs across command and computed result');
+    )
+      throw new TypeError('CRDT compact reason differs across command and computed result');
   }
   decodeCrdtMutationResult(computed.result);
 }

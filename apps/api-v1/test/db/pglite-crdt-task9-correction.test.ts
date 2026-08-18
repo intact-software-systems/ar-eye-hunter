@@ -8,12 +8,12 @@ import {
 } from '@shared/crdt/mod.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
 import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrdtMutationRepository.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
 import {
   type CrdtMutationCommand,
   CrdtMutationConflictError,
-  createCrdtMutationCommand,
-  createCrdtMutationService,
-} from '@shared-server/rallar-system/services/crdt-mutations.ts';
+} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {

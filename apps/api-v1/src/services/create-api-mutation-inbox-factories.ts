@@ -3,6 +3,7 @@ import type {
   RallarCrdtInboxServiceFactory,
 } from '@shared-server/rallar-system/middleware/rallar-middleware-options.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type * as CrdtMutationContracts from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/AppInboxService.ts';
@@ -28,7 +29,7 @@ export type CurrentMutationAuthority = Readonly<{
     | undefined
   >;
   authorizeDocument(
-    command: import('@shared-server/rallar-system/services/crdt-mutations.ts').CrdtMutationCommand,
+    command: CrdtMutationContracts.CrdtMutationCommand,
     session: CurrentMutationSession,
   ): Promise<Readonly<{ allowed: boolean; code: string }>>;
   adminClientIds: readonly string[];

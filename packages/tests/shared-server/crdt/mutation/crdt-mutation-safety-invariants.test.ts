@@ -6,10 +6,8 @@ import {
   type RallarCrdtDocumentRef,
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
-import {
-  createCrdtMutationCommand,
-  decodeCrdtMutationResult,
-} from '@shared-server/rallar-system/services/crdt-mutations.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-result-codec.ts';
 import { computeCrdtMutation } from '@shared-server/rallar-system/services/crdt-mutation-compute.ts';
 import { toCrdtAuditOutbox } from '@shared-server/rallar-system/services/crdt-mutation-outbox.ts';
 
@@ -35,7 +33,7 @@ describe('Task 9 correction 2 exact contracts and fanout', () => {
         appendSequence: null,
         code: 'authorization-denied',
         metadata: { lifecycle: 'active' },
-      })
+      }),
     ).toThrow(/status|metadata|rejected|result/i);
   });
 
@@ -75,24 +73,28 @@ describe('Task 9 correction 2 exact contracts and fanout', () => {
         },
       },
     });
-    const computed = computeCrdtMutation(command, {
-      document: null,
-      existingUpdate: null,
-      existingAppend: null,
-      records: [],
-      snapshot: null,
-      authorized: true,
-      authorizationCode: 'allowed',
-      actorUpdatesInWindow: 0,
-      storedSnapshotBytes: 0,
-      featureDecision: {
-        allowed: true,
-        code: 'allowed',
-        reason: 'enabled',
-        rollout: 'production',
-        retryable: false,
+    const computed = computeCrdtMutation(
+      command,
+      {
+        document: null,
+        existingUpdate: null,
+        existingAppend: null,
+        records: [],
+        snapshot: null,
+        authorized: true,
+        authorizationCode: 'allowed',
+        actorUpdatesInWindow: 0,
+        storedSnapshotBytes: 0,
+        featureDecision: {
+          allowed: true,
+          code: 'allowed',
+          reason: 'enabled',
+          rollout: 'production',
+          retryable: false,
+        },
       },
-    }, 'server-1');
+      'server-1',
+    );
     const fanout = JSON.parse(computed.outboxEntries[1]!.resource);
     expect(fanout.targets).toEqual({
       mode: 'unicast',
@@ -133,41 +135,51 @@ describe('Task 9 correction 2 exact contracts and fanout', () => {
       responseAudience: audience(),
       projectionId: 'projection-1',
     });
-    const computed = computeCrdtMutation(command, {
-      ...read(),
-      records: [{
-        document: DOCUMENT,
-        documentKey: command.documentKey,
-        update,
-        append: {
-          appendSequence: 2,
-          acceptedAtEpochMs: 1_000,
-          actorId: 'actor-1',
-          principalId: 'principal-1',
-          sessionId: 'session-1',
-          serverId: 'server-1',
-          authorizationScope: 'principal',
-          acceptedUpdateHash: `${hashRallarCrdtUpdateEnvelope(update)}-corrupt`,
-        },
-      }],
-    }, 'server-1');
+    const computed = computeCrdtMutation(
+      command,
+      {
+        ...read(),
+        records: [
+          {
+            document: DOCUMENT,
+            documentKey: command.documentKey,
+            update,
+            append: {
+              appendSequence: 2,
+              acceptedAtEpochMs: 1_000,
+              actorId: 'actor-1',
+              principalId: 'principal-1',
+              sessionId: 'session-1',
+              serverId: 'server-1',
+              authorizationScope: 'principal',
+              acceptedUpdateHash: `${hashRallarCrdtUpdateEnvelope(update)}-corrupt`,
+            },
+          },
+        ],
+      },
+      'server-1',
+    );
     expect(computed).toMatchObject({ outcome: 'rejected', code: 'integrity-invalid' });
   });
 
   it('normalizes durable audit queue keys for long external identities', () => {
-    const entry = toCrdtAuditOutbox({
-      kind: 'erase',
-      atEpochMs: 1_000,
-      documentKey: 'document-key',
-      principalId: 'principal-1',
-      reason: 'privacy',
-      metadata: { mode: 'destroy-document' },
-    }, {
-      commandId: `request-${'x'.repeat(100)}`,
-      capturedAtEpochMs: 1_000,
-      expireAtEpochMs: 61_000,
-      documentKey: `document-${'y'.repeat(100)}`,
-    }, 'server-1');
+    const entry = toCrdtAuditOutbox(
+      {
+        kind: 'erase',
+        atEpochMs: 1_000,
+        documentKey: 'document-key',
+        principalId: 'principal-1',
+        reason: 'privacy',
+        metadata: { mode: 'destroy-document' },
+      },
+      {
+        commandId: `request-${'x'.repeat(100)}`,
+        capturedAtEpochMs: 1_000,
+        expireAtEpochMs: 61_000,
+        documentKey: `document-${'y'.repeat(100)}`,
+      },
+      'server-1',
+    );
 
     expect(entry.key.resourceId.length).toBeLessThanOrEqual(36);
     expect(entry.key.contextId.length).toBeLessThanOrEqual(35);
@@ -243,12 +255,14 @@ describe('Task 9 correction 2 exact contracts and fanout', () => {
       createdAtEpochMs: 1_000,
       payload: {
         kind: 'batch' as const,
-        operations: [{
-          kind: 'register.set' as const,
-          path: ['title'],
-          policy: 'lww' as const,
-          value: updateId,
-        }],
+        operations: [
+          {
+            kind: 'register.set' as const,
+            path: ['title'],
+            policy: 'lww' as const,
+            value: updateId,
+          },
+        ],
       },
     };
   }

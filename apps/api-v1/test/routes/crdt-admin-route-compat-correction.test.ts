@@ -13,10 +13,8 @@ import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrd
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
-import {
-  createCrdtMutationCommand,
-  createCrdtMutationService,
-} from '@shared-server/rallar-system/services/crdt-mutations.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { toResilienceDto } from '../../src/middleware-resilience.ts';

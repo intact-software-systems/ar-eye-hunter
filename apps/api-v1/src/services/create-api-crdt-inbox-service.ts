@@ -5,10 +5,8 @@ import type { ResourceInboxRepository } from '@shared-server/postgres/resource-i
 import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
 import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import {
-  type CrdtMutationCommand,
-  createCrdtMutationService,
-} from '@shared-server/rallar-system/services/crdt-mutations.ts';
+import type * as CrdtMutationContracts from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
@@ -29,7 +27,7 @@ export function createApiCrdtInboxService(
     wakeQueueEngine?: () => void;
   }>,
 ): AppCrdtInboxService {
-  const authorize = async (command: CrdtMutationCommand) => {
+  const authorize = async (command: CrdtMutationContracts.CrdtMutationCommand) => {
     const session = await input.currentAuthority?.readSession(command.actor.sessionId);
     const nowEpochMs = input.options?.nowEpochMs?.() ?? Date.now();
     if (!session) return { allowed: false, code: 'authentication-missing' };

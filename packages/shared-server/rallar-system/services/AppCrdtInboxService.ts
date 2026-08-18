@@ -1,6 +1,5 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
-  type RallarCrdtAuditEvent,
   type RallarCrdtAuditSink,
   type RallarCrdtDocumentLifecycleState,
   type RallarCrdtDocumentRef,
@@ -27,11 +26,14 @@ import {
   type CrdtMutationCommand,
   type CrdtMutationResponseAudience,
   type CrdtMutationResult,
-  type CrdtMutationService,
+} from '../crdt/mutation/crdt-mutation-contracts.ts';
+import {
   createCrdtMutationCommand,
   decodeCrdtMutationCommand,
-  decodeCrdtMutationResult,
-} from './crdt-mutations.ts';
+} from '../crdt/mutation/crdt-mutation-command-codec.ts';
+import { decodeCrdtMutationResult } from '../crdt/mutation/crdt-mutation-result-codec.ts';
+import { decodeCrdtAuditEvent } from '../crdt/mutation/crdt-mutation-value-codec.ts';
+import type { CrdtMutationService } from './crdt-mutations.ts';
 import type { RallarTimingSink } from './timing.ts';
 import { CRDT_AUDIT_APP_OUTBOX_TYPE } from './crdt-mutation-outbox.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
@@ -43,11 +45,7 @@ import {
 
 export const CRDT_APP_INBOX_TOPIC = 'app-inbox.crdt-state';
 
-export type CrdtAdminMutationOperation =
-  | 'rebuild-projection'
-  | 'compact'
-  | 'lifecycle'
-  | 'erase';
+export type CrdtAdminMutationOperation = 'rebuild-projection' | 'compact' | 'lifecycle' | 'erase';
 
 export class AppCrdtInboxService extends AppInboxService {
   private audit: RallarCrdtAuditSink | undefined;
@@ -211,7 +209,8 @@ export class AppCrdtInboxService extends AppInboxService {
       toCrdtAppInboxType(command) !== context.enqueue.type ||
       expectedKey.resourceId !== context.entry.key.resourceId ||
       expectedKey.contextId !== context.entry.key.contextId
-    ) throw new TypeError('CRDT AppInbox command identity differs from queue key');
+    )
+      throw new TypeError('CRDT AppInbox command identity differs from queue key');
     const read = await this.mutationService.read(command);
     const computed = this.mutationService.compute(command, read);
     this.mutationService.validate(command, read, computed);
@@ -258,9 +257,8 @@ export class AppCrdtInboxService extends AppInboxService {
       });
     }
     if (operation === 'compact') {
-      const snapshot = request.snapshot === undefined
-        ? null
-        : request.snapshot as RallarCrdtSnapshotEnvelope;
+      const snapshot =
+        request.snapshot === undefined ? null : (request.snapshot as RallarCrdtSnapshotEnvelope);
       return await createCrdtMutationCommand({
         ...common,
         operation,
@@ -365,28 +363,14 @@ function toAdminMutationError(code: string | null): Error {
   const status = code?.startsWith('authentication-')
     ? 401
     : code === 'document-not-found'
-    ? 404
-    : code?.startsWith('authorization-') || code === 'feature-disabled'
-    ? 403
-    : 409;
+      ? 404
+      : code?.startsWith('authorization-') || code === 'feature-disabled'
+        ? 403
+        : 409;
   return Object.assign(new Error(`CRDT admin mutation rejected: ${code ?? 'unknown'}`), {
     code: code ?? 'crdt-admin-mutation-rejected',
     status,
   });
-}
-
-function decodeCrdtAuditEvent(value: unknown): RallarCrdtAuditEvent {
-  const event = requireRecord(value);
-  const expected = ['kind', 'atEpochMs', 'documentKey', 'principalId', 'reason', 'metadata'];
-  if (
-    Object.keys(event).sort().join('\0') !== expected.sort().join('\0') ||
-    !['erase', 'redact'].includes(String(event.kind)) ||
-    !Number.isSafeInteger(event.atEpochMs) || Number(event.atEpochMs) < 0 ||
-    [event.documentKey, event.principalId, event.reason].some((field) =>
-      typeof field !== 'string' || field.length === 0
-    ) || !event.metadata || typeof event.metadata !== 'object' || Array.isArray(event.metadata)
-  ) throw new TypeError('CRDT audit outbox event is invalid');
-  return event as unknown as RallarCrdtAuditEvent;
 }
 
 function requireLifecycle(value: unknown): RallarCrdtDocumentLifecycleState {

@@ -7,13 +7,13 @@ import {
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
 import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrdtMutationRepository.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
 import {
-  CrdtMutationConflictError,
-  createCrdtMutationCommand,
-  createCrdtMutationService,
   type CrdtMutationCommand,
+  CrdtMutationConflictError,
   type CrdtMutationRepository,
-} from '@shared-server/rallar-system/services/crdt-mutations.ts';
+} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -34,10 +34,11 @@ Deno.test('CRDT mutation CAS commits state and logical WS outbox atomically', as
     const repository = new PSqlCrdtMutationRepository(sql, () => Promise.resolve(true));
     const service = createCrdtMutationService({
       repository,
-      createWriter: (transaction) => new PSqlCrdtMutationRepository(
-        transaction,
-        () => Promise.resolve(true),
-      ),
+      createWriter: (transaction) =>
+        new PSqlCrdtMutationRepository(
+          transaction,
+          () => Promise.resolve(true),
+        ),
       serviceId: 'server-1',
     });
     const first = await command('command-1', 'update-1', 1_000);
@@ -99,12 +100,22 @@ Deno.test('CRDT mutation rolls metadata and update back when outbox write fails'
       sql.begin(async (transaction) => await failingService.write(transaction, computed)),
       /injected outbox failure/,
     );
-    assert.equal(Number((await sql<{ count: string }[]>`
+    assert.equal(
+      Number(
+        (await sql<{ count: string }[]>`
       select count(*) as count from crdt_documents
-    `)[0]?.count), 0);
-    assert.equal(Number((await sql<{ count: string }[]>`
+    `)[0]?.count,
+      ),
+      0,
+    );
+    assert.equal(
+      Number(
+        (await sql<{ count: string }[]>`
       select count(*) as count from crdt_updates
-    `)[0]?.count), 0);
+    `)[0]?.count,
+      ),
+      0,
+    );
   });
 });
 

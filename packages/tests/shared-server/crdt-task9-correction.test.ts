@@ -14,9 +14,9 @@ import {
   type CrdtMutationComputed,
   type CrdtMutationRead,
   type CrdtMutationRepository,
-  createCrdtMutationCommand,
-  createCrdtMutationService,
-} from '@shared-server/rallar-system/services/crdt-mutations.ts';
+} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
@@ -34,12 +34,14 @@ describe('Task 9 CRDT correction contracts', () => {
     const acceptedWire = outboxPayload(accepted, 'reply');
 
     expect(accepted.outboxEntries).toHaveLength(2);
-    expect(acceptedWire.results).toEqual([{
-      status: 'accepted',
-      update: command.update,
-      append: accepted.append,
-      document: accepted.document,
-    }]);
+    expect(acceptedWire.results).toEqual([
+      {
+        status: 'accepted',
+        update: command.update,
+        append: accepted.append,
+        document: accepted.document,
+      },
+    ]);
 
     const replay = compute(
       command,
@@ -67,16 +69,15 @@ describe('Task 9 CRDT correction contracts', () => {
   });
 
   it('rejects unknown fields in incoming update and generated WS payloads', async () => {
-    await expect(appendCommand({ ...update('unknown'), unexpected: true } as never))
-      .rejects.toThrow(/update|field/i);
+    await expect(
+      appendCommand({ ...update('unknown'), unexpected: true } as never),
+    ).rejects.toThrow(/update|field/i);
     const accepted = compute(await appendCommand(update('wire')), read());
     const wire = outboxMessage(accepted, 'reply');
     expect(Object.keys(wire).sort()).toEqual(
       ['audit', 'constraints', 'id', 'payload', 'route', 'targets'].sort(),
     );
-    expect(Object.keys(wire.payload).sort()).toEqual(
-      ['contentType', 'resource', 'typeId'].sort(),
-    );
+    expect(Object.keys(wire.payload).sort()).toEqual(['contentType', 'resource', 'typeId'].sort());
   });
 
   it('includes snapshot bytes and actor rate facts in append policy', async () => {
@@ -100,13 +101,15 @@ describe('Task 9 CRDT correction contracts', () => {
 
   it('rejects a compact snapshot for a different physical document', async () => {
     const other = { ...DOCUMENT, documentId: 'other-document' };
-    await expect(createCrdtMutationCommand({
-      ...adminBase('compact'),
-      operation: 'compact',
-      snapshotId: 'wrong-snapshot',
-      snapshot: snapshotFor(other, 'wrong-snapshot', {}),
-      reason: 'compact',
-    })).rejects.toThrow(/snapshot.*document/i);
+    await expect(
+      createCrdtMutationCommand({
+        ...adminBase('compact'),
+        operation: 'compact',
+        snapshotId: 'wrong-snapshot',
+        snapshot: snapshotFor(other, 'wrong-snapshot', {}),
+        reason: 'compact',
+      }),
+    ).rejects.toThrow(/snapshot.*document/i);
   });
 
   it('preserves exact compact, lifecycle, rebuild, and erase results', async () => {
@@ -322,7 +325,7 @@ function metadata(overrides: Partial<RallarCrdtDocumentMetadata> = {}): RallarCr
 
 function outboxMessage(computed: CrdtMutationComputed, effect: string) {
   const entry = computed.outboxEntries.find((candidate) =>
-    candidate.key.resourceId.endsWith(`:${effect}`)
+    candidate.key.resourceId.endsWith(`:${effect}`),
   );
   if (!entry) throw new Error(`Missing ${effect} outbox entry`);
   return JSON.parse(entry.resource);

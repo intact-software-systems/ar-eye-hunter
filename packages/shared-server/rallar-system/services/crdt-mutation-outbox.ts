@@ -9,11 +9,11 @@ import {
 } from '@shared/crdt/mod.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
-    DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS,
-    RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS,
+  DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS,
+  RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS,
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from './app-inbox-queue-key.ts';
-import type { CrdtAppendCommand } from './crdt-mutation-contracts.ts';
+import type { CrdtAppendCommand } from '../crdt/mutation/crdt-mutation-contracts.ts';
 
 export function toAppendOutbox(
   command: CrdtAppendCommand,
@@ -29,16 +29,7 @@ export function toAppendOutbox(
     results: [response],
   });
   return fanout
-    ? [
-      reply,
-      toWsOutbox(
-        command,
-        serviceId,
-        'fanout',
-        RALLAR_CRDT_UPDATE_TYPE_ID,
-        command.update,
-      ),
-    ]
+    ? [reply, toWsOutbox(command, serviceId, 'fanout', RALLAR_CRDT_UPDATE_TYPE_ID, command.update)]
     : [reply];
 }
 
@@ -50,16 +41,17 @@ export function toCrdtAuditOutbox(
   command:
     | CrdtAppendCommand
     | Readonly<{
-      commandId: string;
-      capturedAtEpochMs: number;
-      expireAtEpochMs: number;
-      documentKey: string;
-    }>,
+        commandId: string;
+        capturedAtEpochMs: number;
+        expireAtEpochMs: number;
+        documentKey: string;
+      }>,
   serviceId: string,
 ): ResourceEntry {
   const auditExpireAtEpochMs = Math.max(
     command.expireAtEpochMs,
-    command.capturedAtEpochMs + DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS +
+    command.capturedAtEpochMs +
+      DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS +
       RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS,
   );
   const route = toAppQueueKey({
@@ -131,9 +123,8 @@ function toTargets(command: CrdtAppendCommand, effect: 'reply' | 'fanout') {
   if (effect === 'reply' || command.responseAudience.kind === 'principal') {
     return {
       mode: 'unicast' as const,
-      toPeerId: effect === 'reply'
-        ? command.responseAudience.senderSessionId
-        : command.actor.principalId,
+      toPeerId:
+        effect === 'reply' ? command.responseAudience.senderSessionId : command.actor.principalId,
     };
   }
   if (command.responseAudience.kind === 'room' && command.document.roomRef) {

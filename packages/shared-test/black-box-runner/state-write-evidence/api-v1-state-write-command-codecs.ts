@@ -10,7 +10,7 @@ import { decodeAuthMutationCommand }
   from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-command.ts';
 // prettier-ignore
 import { decodeCrdtMutationCommand }
-  from '@shared-server/rallar-system/services/crdt-mutation-codec.ts';
+  from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 
 export function readExactStandaloneCommandIds(
   type: AppInboxType,
