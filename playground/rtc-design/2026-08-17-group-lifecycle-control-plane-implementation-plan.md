@@ -167,10 +167,15 @@ Intent is authoritative; this observation feeds the criterion and nothing else.
 
 ### Slice 4 — Manager role
 
-`ManagerPolicy` (`selection`, `count`, `succession`), building on the existing
-`GROUP_DIRECTOR_APPOINT` command and payload contracts rather than new trust machinery. Election uses
-the existing `rendezvous-score.ts` primitive, pinned to the formation epoch (correction 4). Zero-manager
-fallback is explicit: manager absence blocks only manager-assigned actions, never group safety.
+`ManagerPolicy` (`selection`, `count`, `succession`). Election uses the existing
+`rendezvous-score.ts` primitive, pinned to the formation epoch (correction 4). Zero-manager fallback
+is explicit: manager absence blocks only manager-assigned actions, never group safety.
+
+#### Decision taken during slice 4 planning (2026-08-18)
+
+| # | Decision |
+| --- | --- |
+| 4.1 | **Aggregate-recorded election; authority stays pure** (option A of `2026-08-18-manager-role-basis-analysis.md`). Epoch-advancing transitions record the electorate on the aggregate beside `formationEpoch`; manager resolution is a pure function over (policy, recorded electorate, epoch, live member statuses) — rendezvous ranking keyed on the epoch, still-active filter, first `count`, with succession `next-by-selection` filtering before taking and `none` taking before filtering. Departure needs zero extra writes. The plan's original "build on `GROUP_DIRECTOR_APPOINT`" sentence is amended: the aggregate-state *pattern* is what survives; the session-scoped, heartbeat-leased, claim-based semantics deliberately do not, because manager liveness is membership, not heartbeats. The director remains the browser work delegate. |
 
 This slice also switches the shipped presets' manager dimension on: every preset currently ships
 `selection: 'none'` (deliberate — decision 2.2's honest unavailability applied to defaults), so
