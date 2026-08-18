@@ -12,12 +12,17 @@ import { decodeAuthMutationCommand }
 import { decodeCrdtMutationCommand }
   from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 
+export interface ExactStandaloneCommandIdsInput {
+  readonly type: AppInboxType;
+  readonly data: unknown;
+  readonly authority: unknown;
+  readonly fallback: string;
+}
+
 export function readExactStandaloneCommandIds(
-  type: AppInboxType,
-  data: unknown,
-  authority: unknown,
-  fallback: string,
+  input: ExactStandaloneCommandIdsInput,
 ): readonly string[] {
+  const { type, data, authority, fallback } = input;
   if (type.startsWith('AUTH_')) {
     const command = decodeAuthMutationCommand(data);
     if (command.kind !== authKind(type)) throw new TypeError('auth command kind differs from type');

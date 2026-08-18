@@ -24,6 +24,14 @@ export interface ApiCrdtDocumentAuthorizerOptions {
   readonly nowEpochMs: () => number;
 }
 
+interface CurrentClientDocumentAuthorizationInput {
+  readonly options: ApiCrdtDocumentAuthorizerOptions;
+  readonly applicationId: string;
+  readonly workspaceId: string | undefined;
+  readonly principalId: string;
+  readonly sessionId: string;
+}
+
 export function createApiCrdtDocumentAuthorizer(
   options: ApiCrdtDocumentAuthorizerOptions,
 ): CurrentMutationAuthority['authorizeDocument'] {
@@ -72,22 +80,10 @@ export async function authorizeCrdtDocumentAccess(
   }
   if (document.scope === 'principal') {
     if (document.principalId !== actorPrincipalId) return denied();
-    return await authorizeCurrentClientDocument(
-      options,
-      document.applicationId,
-      document.workspaceId,
-      document.principalId,
-      sessionId,
-    );
+    return await authorizeCurrentClientDocument({ options, applicationId: document.applicationId, workspaceId: document.workspaceId, principalId: document.principalId, sessionId });
   }
   if (document.scope === 'app') {
-    return await authorizeCurrentClientDocument(
-      options,
-      document.applicationId,
-      document.workspaceId,
-      actorPrincipalId,
-      sessionId,
-    );
+    return await authorizeCurrentClientDocument({ options, applicationId: document.applicationId, workspaceId: document.workspaceId, principalId: actorPrincipalId, sessionId });
   }
   return denied();
 }
@@ -169,12 +165,9 @@ function denied(): Readonly<{ allowed: false; code: 'authorization-scope-denied'
 }
 
 async function authorizeCurrentClientDocument(
-  options: ApiCrdtDocumentAuthorizerOptions,
-  applicationId: string,
-  workspaceId: string | undefined,
-  principalId: string,
-  sessionId: string,
+  input: CurrentClientDocumentAuthorizationInput,
 ): Promise<ReturnType<typeof allowed> | ReturnType<typeof denied>> {
+  const { options, applicationId, workspaceId, principalId, sessionId } = input;
   const snapshot = await options.readClientSnapshot({
     applicationId,
     workspaceId: workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,

@@ -79,12 +79,12 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
           null)
         : null;
     const snapshot = snapshots[0]
-      ? toSnapshot(
-          snapshots[0],
-          command.documentKey,
-          command.document,
-          document?.lastAppendSequence ?? 0,
-        )
+      ? toSnapshot({
+          row: snapshots[0],
+          expectedDocumentKey: command.documentKey,
+          expectedDocument: command.document,
+          lastAppendSequence: document?.lastAppendSequence ?? 0,
+        })
       : null;
     const authorityDecision =
       typeof authority === 'boolean'
@@ -108,24 +108,29 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
     const guarded =
       computed.expectedDocumentRevision === 'absent'
         ? await insertDocument(this.sql, computed.document)
-        : await updateDocument(
-            this.sql,
-            computed.document,
-            computed.expectedDocumentRevision,
-            computed.expectedDocumentLifecycle,
-            computed.expectedAppendSequence,
-          );
+        : await updateDocument({
+            sql: this.sql,
+            metadata: computed.document,
+            expectedRevision: computed.expectedDocumentRevision,
+            expectedLifecycle: computed.expectedDocumentLifecycle,
+            expectedAppendSequence: computed.expectedAppendSequence,
+          });
     if (!guarded) throw new CrdtMutationConflictError(computed.documentKey);
     if (computed.update && computed.append) {
-      await insertUpdate(this.sql, computed.documentKey, computed.update, computed.append);
+      await insertUpdate({
+        sql: this.sql,
+        documentKey: computed.documentKey,
+        update: computed.update,
+        append: computed.append,
+      });
     }
     if (computed.snapshot) {
-      await insertSnapshot(
-        this.sql,
-        computed.documentKey,
-        computed.snapshot,
-        computed.document.lastAppendSequence,
-      );
+      await insertSnapshot({
+        sql: this.sql,
+        documentKey: computed.documentKey,
+        snapshot: computed.snapshot,
+        appendSequence: computed.document.lastAppendSequence,
+      });
     }
   }
 
@@ -250,13 +255,16 @@ async function insertDocument(
   return rows.length === 1;
 }
 
-async function updateDocument(
-  sql: PSqlSql,
-  metadata: RallarCrdtDocumentMetadata,
-  expectedRevision: number,
-  expectedLifecycle: RallarCrdtDocumentLifecycleState | 'absent',
-  expectedAppendSequence: number | 'absent',
-): Promise<boolean> {
+interface UpdateDocumentInput {
+  readonly sql: PSqlSql;
+  readonly metadata: RallarCrdtDocumentMetadata;
+  readonly expectedRevision: number;
+  readonly expectedLifecycle: RallarCrdtDocumentLifecycleState | 'absent';
+  readonly expectedAppendSequence: number | 'absent';
+}
+
+async function updateDocument(input: UpdateDocumentInput): Promise<boolean> {
+  const { sql, metadata, expectedRevision, expectedLifecycle, expectedAppendSequence } = input;
   if (expectedLifecycle === 'absent' || expectedAppendSequence === 'absent') return false;
   const rows = await sql<{ document_key: string }[]>`
         update crdt_documents
@@ -279,12 +287,15 @@ async function updateDocument(
   return rows.length === 1;
 }
 
-async function insertUpdate(
-  sql: PSqlSql,
-  documentKey: string,
-  update: RallarCrdtUpdateEnvelope,
-  append: RallarCrdtTrustedAppendMetadata,
-): Promise<void> {
+interface InsertUpdateInput {
+  readonly sql: PSqlSql;
+  readonly documentKey: string;
+  readonly update: RallarCrdtUpdateEnvelope;
+  readonly append: RallarCrdtTrustedAppendMetadata;
+}
+
+async function insertUpdate(input: InsertUpdateInput): Promise<void> {
+  const { sql, documentKey, update, append } = input;
   await sql`
         insert into crdt_updates (
             document_key, append_sequence, update_id, update_envelope,
@@ -299,12 +310,15 @@ async function insertUpdate(
     `;
 }
 
-async function insertSnapshot(
-  sql: PSqlSql,
-  documentKey: string,
-  snapshot: CrdtCanonicalSnapshotEnvelope,
-  appendSequence: number,
-): Promise<void> {
+interface InsertSnapshotInput {
+  readonly sql: PSqlSql;
+  readonly documentKey: string;
+  readonly snapshot: CrdtCanonicalSnapshotEnvelope;
+  readonly appendSequence: number;
+}
+
+async function insertSnapshot(input: InsertSnapshotInput): Promise<void> {
+  const { sql, documentKey, snapshot, appendSequence } = input;
   await sql`
         insert into crdt_snapshots (
             document_key, snapshot_id, append_sequence, snapshot_envelope,

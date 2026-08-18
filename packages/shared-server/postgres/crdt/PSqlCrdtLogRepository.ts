@@ -159,12 +159,12 @@ export class PSqlCrdtLogRepository<
       throw new TypeError('CRDT persisted snapshot count differs from document');
     }
     return rows[0]
-      ? toSnapshot(
-        rows[0],
-        documentKey,
-        document,
-        metadata.lastAppendSequence,
-      ) as RallarCrdtSnapshotEnvelope<TValue>
+      ? toSnapshot({
+        row: rows[0],
+        expectedDocumentKey: documentKey,
+        expectedDocument: document,
+        lastAppendSequence: metadata.lastAppendSequence,
+      }) as RallarCrdtSnapshotEnvelope<TValue>
       : undefined;
   }
 

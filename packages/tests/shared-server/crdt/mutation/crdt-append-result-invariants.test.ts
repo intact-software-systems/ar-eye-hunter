@@ -225,18 +225,18 @@ function appCrdt(): AppCrdtInboxService {
     writeMutation: () => Promise.reject(new Error('not processed')),
     writeOutbox: () => Promise.reject(new Error('not processed')),
   };
-  return new AppCrdtInboxService(
-    new InboxQueueReader(new InMemoryQueueBox()),
-    {} as never,
-    {} as never,
-    {} as never,
-    createCrdtMutationService({
+  return new AppCrdtInboxService({
+    inbox: new InboxQueueReader(new InMemoryQueueBox()),
+    resourceInbox: {} as never,
+    resourceInboxResults: {} as never,
+    database: {} as never,
+    mutationService: createCrdtMutationService({
       repository,
       createWriter: () => repository,
       serviceId: 'server-1',
     }),
-    'server-1',
-  );
+    serviceId: 'server-1',
+  });
 }
 
 function actor() {

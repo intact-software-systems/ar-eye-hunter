@@ -191,12 +191,15 @@ export function toRecord<TPayload extends RallarCrdtOperationBatch>(
   };
 }
 
-export function toSnapshot(
-  row: SnapshotRow,
-  expectedDocumentKey: string,
-  expectedDocument: RallarCrdtDocumentRef,
-  lastAppendSequence: number,
-): RallarCrdtSnapshotEnvelope {
+export interface SnapshotDecodingInput {
+  readonly row: SnapshotRow;
+  readonly expectedDocumentKey: string;
+  readonly expectedDocument: RallarCrdtDocumentRef;
+  readonly lastAppendSequence: number;
+}
+
+export function toSnapshot(input: SnapshotDecodingInput): RallarCrdtSnapshotEnvelope {
+  const { row, expectedDocumentKey, expectedDocument, lastAppendSequence } = input;
   const snapshot = decodeExactSnapshotEnvelope(JSON.parse(row.snapshot_envelope));
   const expectedReason = snapshot.metadata.reason ?? 'legacy-import';
   if (

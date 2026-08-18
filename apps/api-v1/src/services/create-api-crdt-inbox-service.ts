@@ -53,21 +53,21 @@ export function createApiCrdtInboxService(
     ? input.policies
     : [{ documentType: '*', rollout: 'disabled' as const }];
   const repository = new PSqlCrdtMutationRepository(input.database, authorize, policies);
-  return new AppCrdtInboxService(
-    input.inboxQueueReader,
-    input.resourceInboxRepository,
-    input.resourceInboxResultsRepository,
-    input.database,
-    createCrdtMutationService({
+  return new AppCrdtInboxService({
+    inbox: input.inboxQueueReader,
+    resourceInbox: input.resourceInboxRepository,
+    resourceInboxResults: input.resourceInboxResultsRepository,
+    database: input.database,
+    mutationService: createCrdtMutationService({
       repository,
       createWriter: (transaction: PSqlTransactionSql) =>
         new PSqlCrdtMutationRepository(transaction, authorize, policies),
       serviceId: input.serviceId,
     }),
-    input.serviceId,
-    input.timing,
-    input.options,
-    {
+    serviceId: input.serviceId,
+    timing: input.timing,
+    options: input.options,
+    effects: {
       outboxQueueReader: input.outboxQueueReader,
       wakeQueueEngine: input.wakeQueueEngine,
       resolveCurrentSession: async (sessionId, atEpochMs) => {
@@ -87,5 +87,5 @@ export function createApiCrdtInboxService(
         return session;
       },
     },
-  );
+  });
 }

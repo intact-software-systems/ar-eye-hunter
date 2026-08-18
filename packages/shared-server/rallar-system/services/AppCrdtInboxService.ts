@@ -47,6 +47,23 @@ export const CRDT_APP_INBOX_TOPIC = 'app-inbox.crdt-state';
 
 export type CrdtAdminMutationOperation = 'rebuild-projection' | 'compact' | 'lifecycle' | 'erase';
 
+export interface AppCrdtInboxServiceInput {
+  readonly inbox: InboxQueueReader;
+  readonly resourceInbox: ResourceInboxRepository;
+  readonly resourceInboxResults: ResourceInboxResultsRepository;
+  readonly database: PSqlSql;
+  readonly mutationService: CrdtMutationService;
+  readonly serviceId: string;
+  readonly timing?: RallarTimingSink;
+  readonly options?: AppInboxServiceOptions;
+  readonly effects?: Readonly<{
+    audit?: RallarCrdtAuditSink;
+    outboxQueueReader?: OutboxQueueReader;
+    wakeQueueEngine?: () => void;
+    resolveCurrentSession?: ResolveCurrentCrdtMutationSession;
+  }>;
+}
+
 export class AppCrdtInboxService extends AppInboxService {
   private audit: RallarCrdtAuditSink | undefined;
   private readonly wakeQueueEngine: (() => void) | undefined;
@@ -54,22 +71,18 @@ export class AppCrdtInboxService extends AppInboxService {
 
   public readonly mutationService: CrdtMutationService;
 
-  constructor(
-    inbox: InboxQueueReader,
-    resourceInbox: ResourceInboxRepository,
-    resourceInboxResults: ResourceInboxResultsRepository,
-    database: PSqlSql,
-    mutationService: CrdtMutationService,
-    serviceId: string,
-    timing?: RallarTimingSink,
-    options?: AppInboxServiceOptions,
-    effects: Readonly<{
-      audit?: RallarCrdtAuditSink;
-      outboxQueueReader?: OutboxQueueReader;
-      wakeQueueEngine?: () => void;
-      resolveCurrentSession?: ResolveCurrentCrdtMutationSession;
-    }> = {},
-  ) {
+  constructor(input: AppCrdtInboxServiceInput) {
+    const {
+      inbox,
+      resourceInbox,
+      resourceInboxResults,
+      database,
+      mutationService,
+      serviceId,
+      timing,
+      options,
+    } = input;
+    const effects = input.effects ?? {};
     super(
       inbox,
       resourceInbox,

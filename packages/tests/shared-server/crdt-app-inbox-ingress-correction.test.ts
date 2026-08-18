@@ -28,8 +28,9 @@ describe('Task 9 CRDT production AppInbox ingress', () => {
     const service = appCrdt(reader);
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
-      await expect(service.createAndEnqueueAppend(input(update('update-1'), 1_000)))
-        .rejects.toThrow('injected durable enqueue failure');
+      await expect(
+        service.createAndEnqueueAppend(input(update('update-1'), 1_000)),
+      ).rejects.toThrow('injected durable enqueue failure');
     } finally {
       error.mockRestore();
     }
@@ -89,18 +90,18 @@ function appCrdt(inbox: InboxQueueReader): AppCrdtInboxService {
     writeMutation: () => Promise.reject(new Error('not processed')),
     writeOutbox: () => Promise.reject(new Error('not processed')),
   };
-  return new AppCrdtInboxService(
+  return new AppCrdtInboxService({
     inbox,
-    {} as never,
-    {} as never,
-    {} as never,
-    createCrdtMutationService({
+    resourceInbox: {} as never,
+    resourceInboxResults: {} as never,
+    database: {} as never,
+    mutationService: createCrdtMutationService({
       repository,
       createWriter: () => repository,
       serviceId: 'server-1',
     }),
-    'server-1',
-  );
+    serviceId: 'server-1',
+  });
 }
 
 function input(
