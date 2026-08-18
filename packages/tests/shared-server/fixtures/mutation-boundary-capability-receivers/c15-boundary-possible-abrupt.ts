@@ -43,6 +43,6 @@ export function mutateAfterPossibleThrow(
     }
     /* falls through */
     case 'write':
-      void repository.deletePrincipal({} as never);
+      void repository.deletePrincipal({} as never, 0);
   }
 }

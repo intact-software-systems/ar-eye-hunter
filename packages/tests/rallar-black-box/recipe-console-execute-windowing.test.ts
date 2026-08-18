@@ -204,7 +204,7 @@ describe('Recipe Console Execute pressure windows', () => {
 
     it('recovers focused window content when an update drops below the control budget', async () => {
         function list(items: readonly string[]) {
-            return createElement(ExecuteWindowedList, {
+            return createElement(ExecuteWindowedList<string>, {
                 contentId: 'execute-focus-window',
                 contextKey: 'stable-context',
                 itemKey: item => item,

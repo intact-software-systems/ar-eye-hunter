@@ -20,11 +20,17 @@ import {
   toAuthorisedWsClientConnectEnqueue,
 } from
 '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
+// prettier-ignore
 import {
-  type ClientMutationWritten,
-  type ClientStateWritten,
   createClientStateService,
-} from '@shared-server/rallar-system/client-state/client-state-service.ts';
+} from
+'@shared-server/rallar-system/client-state/client-state-service.ts';
+// prettier-ignore
+import type {
+  ClientMutationWritten,
+  ClientStateWritten,
+} from
+'@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import {

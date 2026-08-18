@@ -42,6 +42,7 @@ async function runScenario(
   let generatedId = 0;
   const service = createTestGroupStateService({
     runtimeRepository: runtime,
+    formationDamping: 'damped',
     createGroupStateEventStore: () => eventStore,
     now: () => nowEpochMs,
     randomId: () => `equivalence-id-${++generatedId}`,

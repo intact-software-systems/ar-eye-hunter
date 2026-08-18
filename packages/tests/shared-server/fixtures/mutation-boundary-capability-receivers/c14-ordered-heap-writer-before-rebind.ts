@@ -3,7 +3,9 @@ import type { ClientStateRepository } from '@shared-server/mod.ts';
 export function invokeWriterBeforeLaterRebind(
   repository: ClientStateRepository,
 ): void {
-  let invoke = repository.readSnapshot;
+  let invoke:
+    | ClientStateRepository['insertPrincipal']
+    | ClientStateRepository['readSnapshot'] = repository.readSnapshot;
   const writers = {
     run: () => {
       invoke = repository.insertPrincipal;

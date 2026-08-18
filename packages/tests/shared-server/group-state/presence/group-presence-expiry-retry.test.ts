@@ -31,6 +31,7 @@ describe('group presence expiry retry', () => {
     const runtime = createTestGroupStateRuntime({
       runtimeRepository,
       syncPublisher: publisher,
+      formationDamping: 'damped',
       now: () => now,
       serviceId: 'group-service',
     });

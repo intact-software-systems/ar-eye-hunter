@@ -58,6 +58,7 @@ function emptyRtcState(): RallarBlackBoxTestState {
         commandHistory: [],
         events: [],
         failures: [],
+        resultCache: {},
     };
 }
 

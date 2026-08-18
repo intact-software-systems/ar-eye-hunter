@@ -5,6 +5,7 @@ import {
     distributedArtifactSnapshotsFromFiles,
     inventoryDistributedRunTuningKnobs,
     type DistributedRunArtifactFiles,
+    type DistributedRunPerformanceAnalysis,
     type RallarBlackBoxDistributedRunManifest,
 } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 
@@ -55,6 +56,18 @@ function distributedRun(overrides: Record<string, unknown> = {}) {
         rollup: { state: 'passed', ok: true, failures: [], summary: { blockingFailures: 0 } },
         ...overrides,
     };
+}
+
+function analyzedPerformance(
+    artifactFiles: DistributedRunArtifactFiles,
+): DistributedRunPerformanceAnalysis {
+    const performance = analyzeDistributedRunArtifactFiles({
+        files: artifactFiles,
+    }).performance;
+    if (!performance) {
+        throw new Error('artifact analysis returned no performance section');
+    }
+    return performance;
 }
 
 describe('distributed recipe tuning Task 2 hardening', () => {
@@ -145,9 +158,9 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             kind: 'result', protocolVersion: 1, runId: 'manifest-control',
             agentId: 'agent-a', commandId: 'stream-a', ok: true, result: summary,
         };
-        const performance = analyzeDistributedRunArtifactFiles({
-            files: files(distributedRun(), [exported], [envelope]),
-        }).performance;
+        const performance = analyzedPerformance(
+            files(distributedRun(), [exported], [envelope]),
+        );
 
         expect(performance.streamTiming).toMatchObject({
             streamCount: 1, plannedFrames: 3, completedFrames: 2,
@@ -162,9 +175,9 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             result: { commandId: 'stream-a' },
         };
 
-        const performance = analyzeDistributedRunArtifactFiles({
-            files: files(distributedRun(), [partial]),
-        }).performance;
+        const performance = analyzedPerformance(
+            files(distributedRun(), [partial]),
+        );
 
         expect(performance.streamTiming).toBeUndefined();
     });
@@ -176,9 +189,9 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             result: { commandId: 'stream-a', plannedFrames: 10, completedFrames: 2 },
         };
 
-        const performance = analyzeDistributedRunArtifactFiles({
-            files: files(distributedRun(), [partial]),
-        }).performance;
+        const performance = analyzedPerformance(
+            files(distributedRun(), [partial]),
+        );
 
         expect(performance.streamTiming).toBeUndefined();
     });
@@ -203,9 +216,9 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             },
         };
 
-        const performance = analyzeDistributedRunArtifactFiles({
-            files: files(distributedRun(), [sampled]),
-        }).performance;
+        const performance = analyzedPerformance(
+            files(distributedRun(), [sampled]),
+        );
 
         expect(performance.streamTiming).toMatchObject({
             streamCount: 1, plannedFrames: 100, completedFrames: 99,

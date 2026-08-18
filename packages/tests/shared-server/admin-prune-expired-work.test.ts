@@ -15,6 +15,7 @@ import {
   createAdminPruneAggregate,
   toAdminPruneAggregateEntry,
 } from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
+import type { AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/admin-prune-work-codec.ts';
 
 const NOW = 1_700_000_000_000;
 
@@ -331,17 +332,18 @@ class MemoryPruneRepository implements AdminPruneExpiredRepository {
   }
 }
 
-function createReservedEntry(work: unknown, _resourceId = 'prune-work-1'): ResourceEntry {
-  const normalized = {
-    ...(work as Record<string, unknown>),
+function createReservedEntry(
+  work: Omit<AdminPrunePageWork, 'requestedBy' | 'requestedSessionId'>,
+  _resourceId = 'prune-work-1',
+): ResourceEntry {
+  const normalized: AdminPrunePageWork = {
+    ...work,
     requestedBy: 'admin-1',
     requestedSessionId: 'session-1',
   };
-  const jobId = String(normalized.jobId);
-  const computedResourceId = `${jobId}:${String(normalized.category)}:${String(
-    normalized.pageIndex,
-  )}`;
-  const expireAtEpochMs = Number(normalized.expireAtEpochMs);
+  const jobId = normalized.jobId;
+  const computedResourceId = `${jobId}:${normalized.category}:${normalized.pageIndex}`;
+  const expireAtEpochMs = normalized.expireAtEpochMs;
   const createdTs = Temporal.Instant.fromEpochMilliseconds(NOW)
     .toZonedDateTimeISO('UTC')
     .toPlainDateTime();

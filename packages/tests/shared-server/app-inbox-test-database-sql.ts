@@ -36,7 +36,9 @@ export function createAppInboxTestTransactionSql(
   return transaction;
 }
 
-async function executeAppInboxTestSql(input: AppInboxTestSqlExecution): Promise<unknown[]> {
+async function executeAppInboxTestSql(
+  input: AppInboxTestSqlExecution,
+): Promise<readonly unknown[]> {
   const runtimeStateResult = await executeRuntimeStateSql(input);
   if (runtimeStateResult) return runtimeStateResult;
   const eventResult = await executeStateEventSql(input);
@@ -50,7 +52,7 @@ async function executeAppInboxTestSql(input: AppInboxTestSqlExecution): Promise<
 
 async function executeRuntimeStateSql(
   input: AppInboxTestSqlExecution,
-): Promise<unknown[] | undefined> {
+): Promise<readonly unknown[] | undefined> {
   const writeResult = await executeRuntimeStateWriteSql(input);
   if (writeResult) return writeResult;
   const conditionalMutation = await tryExecuteRuntimeStateConditionalMutation(

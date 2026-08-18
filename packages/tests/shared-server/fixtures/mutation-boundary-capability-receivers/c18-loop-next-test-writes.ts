@@ -29,5 +29,5 @@ export function mutateAfterCandidateSpecificFalse(
     if (chooseExit) active = false;
     else active = true;
   }
-  void repository.deletePrincipal({} as never);
+  void repository.deletePrincipal({} as never, 0);
 }

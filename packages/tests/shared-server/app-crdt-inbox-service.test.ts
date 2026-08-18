@@ -8,6 +8,7 @@ import {
     decodeCrdtMutationCommand,
     decodeCrdtMutationResult,
     type CrdtMutationComputed,
+    type CrdtMutationRead,
     type CrdtMutationRepository,
 } from '@shared-server/rallar-system/services/crdt-mutations.ts';
 import {
@@ -269,7 +270,7 @@ class MemoryCrdtMutationRepository implements CrdtMutationRepository {
     failNextConflict = false;
     readonly transaction = (() => undefined) as never;
 
-    readMutation() {
+    readMutation(): Promise<CrdtMutationRead> {
         this.readCalls += 1;
         return Promise.resolve({
             document: this.metadata,
@@ -295,7 +296,9 @@ class MemoryCrdtMutationRepository implements CrdtMutationRepository {
         }
         if (computed.outcome === 'write') {
             this.metadata = computed.document;
-            if (computed.operation === 'append') this.updates.push(computed.update);
+            if (computed.operation === 'append' && computed.update) {
+                this.updates.push(computed.update);
+            }
         }
         return Promise.resolve();
     }

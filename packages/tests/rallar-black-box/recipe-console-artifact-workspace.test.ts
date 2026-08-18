@@ -250,7 +250,7 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
             artifactSchemaVersion: 2,
             distributedRunId: 'distributed-import',
         });
-        expect(workspace.analysis.parseWarnings).toEqual(expect.arrayContaining([
+        expect(workspace.analysis?.parseWarnings).toEqual(expect.arrayContaining([
             expect.objectContaining({ fileName: 'events.jsonl', lineNumber: 2 }),
             expect.objectContaining({ fileName: 'failures.json' }),
         ]));

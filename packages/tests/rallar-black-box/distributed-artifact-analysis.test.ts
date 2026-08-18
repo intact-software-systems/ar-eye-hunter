@@ -14,6 +14,9 @@ import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import type {
+    ControlResultEnvelope,
+} from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import {
     analyzeDistributedRunArtifactDirectory,
 } from '../../../apps/rallar-black-box/scripts/analyze-distributed-run-artifacts.ts';
@@ -49,6 +52,30 @@ function streamResult(
     };
 }
 
+function controlStreamResult(
+    identity: string,
+    summary: Record<string, unknown>,
+): ControlResultEnvelope {
+    return {
+        kind: 'result',
+        protocolVersion: 1,
+        runId: 'run-stream-equivalence',
+        agentId: 'shared-agent',
+        commandId: identity,
+        ok: true,
+        result: {
+            commandId: identity,
+            kind: 'rtc.stream',
+            status: 'ok',
+            ok: true,
+            startedAtEpochMs: 0,
+            endedAtEpochMs: 1,
+            durationMs: 1,
+            value: summary,
+        },
+    };
+}
+
 function nestedStreamResult(
     outerIdentity: string,
     nestedIdentity: string,
@@ -64,7 +91,7 @@ function nestedStreamResult(
 }
 
 function deriveStreamCandidatePerformance(input: Readonly<{
-    controlResults?: readonly Record<string, unknown>[];
+    controlResults?: readonly ControlResultEnvelope[];
     artifactResults?: readonly Record<string, unknown>[];
     onStreamSampleIndexTelemetry?: (telemetry: StreamSampleIndexTelemetry) => void;
 }>) {
@@ -75,9 +102,9 @@ function deriveStreamCandidatePerformance(input: Readonly<{
             manifest: {
                 distributedRunId: 'dist-stream-equivalence',
                 controlRunId: 'run-stream-equivalence',
-                group: { groupId: 'bb-group' },
+                group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'bb-group' },
                 recipes: [],
-                targetPolicy: { mode: 'agent-ids', agentIds: ['shared-agent'] },
+                targetPolicy: { mode: 'selected-agents', agentIds: ['shared-agent'] },
             },
             state: 'passed',
             createdAtEpochMs: 0,
@@ -93,24 +120,40 @@ function deriveStreamCandidatePerformance(input: Readonly<{
                     readyParticipants: 1,
                     passedParticipants: 1,
                     failedParticipants: 0,
-                    timedOutParticipants: 0,
-                    cancelledParticipants: 0,
-                    pendingParticipants: 0,
+                    recipes: 0,
+                    requiredRecipes: 0,
+                    passedRecipes: 0,
+                    failedRecipes: 0,
+                    groupAssertions: 0,
+                    passedGroupAssertions: 0,
+                    failedGroupAssertions: 0,
                     blockingFailures: 0,
                 },
                 failures: [],
             },
-        },
+        } satisfies ControlDistributedRunSnapshot,
         controlRun: {
             runId: 'run-stream-equivalence',
-            agents: [{ agentId: 'shared-agent', connected: true }],
+            createdAtEpochMs: 0,
+            updatedAtEpochMs: 1,
+            agents: [{
+                runId: 'run-stream-equivalence',
+                agentId: 'shared-agent',
+                connected: true,
+                connectionSequence: 1,
+                reconnectCount: 0,
+                receivedResultCount: 0,
+                receivedEventCount: 0,
+                completedCommandIds: [],
+                resumeCompletedCommandIds: [],
+            }],
             commands: [],
             results: input.controlResults ?? [],
             events: [],
             stats: [],
             reports: [],
             heartbeats: [],
-        },
+        } satisfies ControlRunSnapshot,
         artifactResults: input.artifactResults ?? [],
         artifactEvents: [],
         onStreamSampleIndexTelemetry: input.onStreamSampleIndexTelemetry,
@@ -154,9 +197,9 @@ describe('Hetzner distributed run artifact analysis', () => {
                 manifest: {
                     distributedRunId: 'dist-large-performance',
                     controlRunId: 'run-large-performance',
-                    group: { groupId: 'bb-group' },
+                    group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'bb-group' },
                     recipes: [],
-                    targetPolicy: { mode: 'agent-ids', agentIds: ['agent-large'] },
+                    targetPolicy: { mode: 'selected-agents', agentIds: ['agent-large'] },
                 },
                 state: 'passed',
                 createdAtEpochMs: 0,
@@ -176,6 +219,9 @@ describe('Hetzner distributed run artifact analysis', () => {
                         requiredRecipes: 0,
                         passedRecipes: 0,
                         failedRecipes: 0,
+                        groupAssertions: 0,
+                        passedGroupAssertions: 0,
+                        failedGroupAssertions: 0,
                         blockingFailures: 0,
                     },
                     failures: [],
@@ -899,14 +945,14 @@ describe('Hetzner distributed run artifact analysis', () => {
             },
             {
                 name: 'cross-source nonnested identities match equal fingerprints',
-                controlResults: [streamResult('control-identity', sameFingerprint)],
+                controlResults: [controlStreamResult('control-identity', sameFingerprint)],
                 artifactResults: [streamResult('artifact-identity', sameFingerprint)],
                 expectedStreamCount: 1,
                 expectedPlannedFrames: 1,
             },
             {
                 name: 'cross-source nonnested identities retain different fingerprints',
-                controlResults: [streamResult('control-identity', sameFingerprint)],
+                controlResults: [controlStreamResult('control-identity', sameFingerprint)],
                 artifactResults: [streamResult('artifact-identity', differentFingerprint)],
                 expectedStreamCount: 2,
                 expectedPlannedFrames: 3,
@@ -991,8 +1037,8 @@ describe('Hetzner distributed run artifact analysis', () => {
 
         const performance = deriveStreamCandidatePerformance({
             controlResults: [
-                streamResult('identity-a', lowA),
-                streamResult('identity-b', lowB),
+                controlStreamResult('identity-a', lowA),
+                controlStreamResult('identity-b', lowB),
             ],
             artifactResults: [
                 streamResult('identity-a', highA),
@@ -1050,7 +1096,7 @@ describe('Hetzner distributed run artifact analysis', () => {
         const laterFingerprint = completeStreamSummary(2, 'later-fingerprint');
 
         const performance = deriveStreamCandidatePerformance({
-            controlResults: [streamResult('canonical-identity', firstFingerprint)],
+            controlResults: [controlStreamResult('canonical-identity', firstFingerprint)],
             artifactResults: [
                 streamResult('replacement-identity', firstFingerprint),
                 streamResult('canonical-identity', laterFingerprint),

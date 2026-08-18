@@ -169,6 +169,9 @@ describe('RTC topology APP_OUTBOX work', () => {
     });
     const handler = createRtcTopologyWorkHandler({
       runtime,
+      database: createAppInboxTestDatabase(queue, {
+        replace: async (entry) => entry,
+      }),
       topologyPlanning: topologyManagement.planningService,
       executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
     });
@@ -204,6 +207,9 @@ describe('RTC topology APP_OUTBOX work', () => {
     });
     const handler = createRtcTopologyWorkHandler({
       runtime,
+      database: createAppInboxTestDatabase(queue, {
+        replace: async (entry) => entry,
+      }),
       topologyPlanning: topologyManagement.planningService,
       executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
     });
@@ -252,6 +258,9 @@ describe('RTC topology APP_OUTBOX work', () => {
     });
     const handler = createRtcTopologyWorkHandler({
       runtime,
+      database: createAppInboxTestDatabase(queue, {
+        replace: async (entry) => entry,
+      }),
       topologyPlanning: topologyManagement.planningService,
       executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
     });
@@ -381,6 +390,9 @@ describe('RTC topology APP_OUTBOX work', () => {
     );
     const handler = createRtcTopologyWorkHandler({
       runtime,
+      database: createAppInboxTestDatabase(queue, {
+        replace: async (entry) => entry,
+      }),
       topologyPlanning: topologyManagement.planningService,
       executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
     });
@@ -429,6 +441,9 @@ describe('RTC topology APP_OUTBOX work', () => {
     );
     const handler = createRtcTopologyWorkHandler({
       runtime,
+      database: createAppInboxTestDatabase(queue, {
+        replace: async (entry) => entry,
+      }),
       topologyPlanning: topologyManagement.planningService,
       executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
     });
@@ -480,6 +495,9 @@ describe('RTC topology APP_OUTBOX work', () => {
     );
     const handler = createRtcTopologyWorkHandler({
       runtime,
+      database: createAppInboxTestDatabase(queue, {
+        replace: async (entry) => entry,
+      }),
       topologyPlanning: topologyManagement.planningService,
       executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
     });

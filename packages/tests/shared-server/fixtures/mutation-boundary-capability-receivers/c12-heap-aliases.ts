@@ -22,5 +22,5 @@ export function mutateHeapAliases(repository: ClientStateRepository): void {
   const objectAlias = holder;
   holder.run = writeUpdate;
   objectAlias.run();
-  void invoke({} as never, 0);
+  void invoke({} as never);
 }

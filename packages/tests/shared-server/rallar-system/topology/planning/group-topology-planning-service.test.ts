@@ -5,6 +5,7 @@ import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-life
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 import {
   createTopologyTestGroupRef,
@@ -36,7 +37,18 @@ describe('GroupTopologyPlanningService', () => {
     const group = createTopologyTestGroupSnapshot();
     const inactive = {
       ...group,
-      group: { ...group.group, status: 'archived' as const },
+      group: createTestGroup({
+        ...group.group,
+        status: 'archived',
+        archived: {
+          atEpochMs: 1_500,
+          actor: { kind: 'principal', principalId: 'owner' },
+          reason: null,
+          traceId: null,
+          requestId: null,
+        },
+        deleted: null,
+      }),
     };
     const service = createPlanningService({ group: inactive });
 
@@ -155,7 +167,6 @@ function createPlanningService(input: {
     readRttMeasurements: async () => [],
     topologyMode: 'local',
     queryService: {
-      findCurrentGroupSnapshot: async () => input.group,
       readConfig: async () => input.config ?? resolveGroupTopologyConfig({}),
       readResolvedTopologyConfig: async () => input.config ?? resolveGroupTopologyConfig({}),
     },

@@ -4,6 +4,10 @@ import {
   GROUP_TOPOLOGY_CONFLICT_REASON,
   GROUP_TOPOLOGY_CONFLICT_REASON_SCHEMA,
 } from '../../../scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs';
+// prettier-ignore
+import type {
+  StateWriteBenchmarkRegressionReason,
+} from '../../../scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts';
 
 const APPROVED_PR_C_BASE_COMMIT = '39ad65b499c4bf944acfe48446ad1c334d97d37d';
 const CANDIDATE_COMMIT = '74a62eb22583216e8c6651de069209d7e1a8ca67';
@@ -23,7 +27,7 @@ describe('API-v1 state-write topology regression reasons', { timeout: 30_000 }, 
     expect(
       bench.parseBenchmarkOptions(['--regression-reasons-file=tmp/perf/topology-reasons.json']),
     ).toMatchObject({ regressionReasonsFile: 'tmp/perf/topology-reasons.json' });
-    const createArtifact = (regressionReasons: readonly unknown[]) =>
+    const createArtifact = (regressionReasons: readonly StateWriteBenchmarkRegressionReason[]) =>
       artifactOwner.createStateWriteBenchmarkArtifact({
         generatedAt: '2026-08-09T00:00:00.000Z',
         gitIdentity: CANDIDATE_IDENTITY,

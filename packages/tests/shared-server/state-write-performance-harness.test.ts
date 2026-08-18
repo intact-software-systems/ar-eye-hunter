@@ -8,7 +8,10 @@ import {
   createStateWritePerformanceArtifact,
   refreshStateWritePerformanceWorkload,
 } from './state-write-performance-artifact-fixture.ts';
-import { swapCompleteDurableResults } from './state-write-performance-result-fixture.ts';
+import {
+  binding,
+  swapCompleteDurableResults,
+} from './state-write-performance-result-fixture.ts';
 
 describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () => {
   it('accepts a complete AppInbox/ResourceInbox artifact for both comparison roles', () => {
@@ -318,6 +321,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             receiptIds: ['topology-command'],
             outboxIds: [topologyRecord.outboxId],
             identityKind: 'logical-msg-id',
+            resultBindings: [binding(topologyCommand, 'command')],
           },
         ],
         [topologyRecord],

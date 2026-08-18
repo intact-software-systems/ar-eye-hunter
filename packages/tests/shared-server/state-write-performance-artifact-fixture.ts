@@ -14,6 +14,13 @@ const MUTATION_MIX = [
   'topology-source',
 ] as const;
 
+type StateWriteMutationKind = (typeof MUTATION_MIX)[number];
+
+interface StateWritePerformanceCommand {
+  readonly commandId: string;
+  readonly kind: StateWriteMutationKind;
+}
+
 interface StateWritePerformanceArtifactOverrides {
   readonly artifactId?: string;
   readonly generatedAt?: string;
@@ -148,7 +155,7 @@ function createAttemptObservations(evidence: any): any[] {
   );
 }
 
-function createFinalEvidence(commands: any[]): any {
+function createFinalEvidence(commands: readonly StateWritePerformanceCommand[]): any {
   const appInbox = commands.flatMap((command) =>
     operationIds(command).map((operationId) => ({
       commandId: command.commandId,

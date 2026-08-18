@@ -41,7 +41,7 @@ describe('room-scope broadcast delivery of group-state delta envelopes', () => {
     });
     expect(() => validateGroupStateDeltaEnvelope(envelope)).not.toThrow();
 
-    const recipients = resolver.resolveBroadcastRecipients(
+    const recipients = resolver.resolveBroadcastRecipients?.(
       'room',
       toRoomEnvelopeMessage(envelope),
     );
@@ -59,7 +59,7 @@ describe('room-scope broadcast delivery of group-state delta envelopes', () => {
       now: () => DELTA_ENVELOPE_FIXTURE_NOW,
     });
 
-    const recipients = resolver.resolveBroadcastRecipients(
+    const recipients = resolver.resolveBroadcastRecipients?.(
       'room',
       toRoomEnvelopeMessage(
         createDeltaEnvelopeFixture({
@@ -79,7 +79,7 @@ describe('room-scope broadcast delivery of group-state delta envelopes', () => {
       now: () => DELTA_ENVELOPE_FIXTURE_NOW,
     });
 
-    const recipients = resolver.resolveBroadcastRecipients(
+    const recipients = resolver.resolveBroadcastRecipients?.(
       'room',
       toRoomEnvelopeMessage(
         createDeltaEnvelopeFixture({
@@ -99,7 +99,7 @@ describe('room-scope broadcast delivery of group-state delta envelopes', () => {
       now: () => DELTA_ENVELOPE_FIXTURE_NOW,
     });
 
-    const recipients = resolver.resolveBroadcastRecipients(
+    const recipients = resolver.resolveBroadcastRecipients?.(
       'room',
       newALBroadcastMessage(
         'rallar-server',
@@ -130,7 +130,7 @@ describe('room-scope broadcast delivery of group-state delta envelopes', () => {
       groupId: 'other-room',
     });
 
-    const recipients = resolver.resolveBroadcastRecipients(
+    const recipients = resolver.resolveBroadcastRecipients?.(
       'room',
       newALBroadcastMessage(
         'rallar-server',

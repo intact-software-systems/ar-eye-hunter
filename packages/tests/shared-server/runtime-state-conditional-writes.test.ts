@@ -602,7 +602,7 @@ class ExposedRuntimeStateJsonStore extends RuntimeStateJsonStore {
         return this.deleteValueIfRevision(namespace, key, expectedRevision);
     }
 
-    protected override async waitForRuntimeStateWriteRetry(
+    protected async waitForRuntimeStateWriteRetry(
         attempt: 0 | 1 | 2,
     ): Promise<number> {
         this.retryAttempts.push(attempt);

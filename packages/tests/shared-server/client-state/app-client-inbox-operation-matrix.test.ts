@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type {
   ClientInstanceUpsertAppInboxPayload,
@@ -286,11 +287,11 @@ function disconnectSession(harness: MutationProcessingHarness) {
 }
 
 interface MutationProcessingResults {
-  readonly principal: ClientStateWritten;
-  readonly instance: ClientStateWritten;
-  readonly connected: ClientStateWritten;
-  readonly heartbeat: ClientStateWritten;
-  readonly disconnected: ClientStateWritten;
+  readonly principal: Either<string, ClientStateWritten>;
+  readonly instance: Either<string, ClientStateWritten>;
+  readonly connected: Either<string, ClientStateWritten>;
+  readonly heartbeat: Either<string, ClientStateWritten>;
+  readonly disconnected: Either<string, ClientStateWritten>;
 }
 
 function expectMutationProcessingResults(

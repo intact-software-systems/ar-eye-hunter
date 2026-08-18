@@ -463,12 +463,18 @@ describe('AdminSupportService', () => {
     const metadata: RallarCrdtDocumentMetadata = {
       document,
       documentKey: 'crdt:map:doc-1',
+      documentRevision: 4,
       lifecycle: 'active',
       createdAtEpochMs: NOW_EPOCH_MS - 10_000,
       updatedAtEpochMs: NOW_EPOCH_MS - 1_000,
+      archivedAtEpochMs: null,
+      destroyedAtEpochMs: null,
       lastAppendSequence: 4,
       updateCount: 4,
       snapshotCount: 1,
+      storedUpdateBytes: 2_048,
+      retention: null,
+      quota: null,
       projectionIds: ['summary'],
     };
     const service = createService({
@@ -527,6 +533,10 @@ describe('AdminSupportService', () => {
               append: {
                 appendSequence: 1,
                 acceptedAtEpochMs: NOW_EPOCH_MS - 2_000,
+                actorId: 'client-1',
+                principalId: 'player-1',
+                sessionId: 'session-1',
+                serverId: 'test-server',
                 authorizationScope: 'room',
                 acceptedUpdateHash: 'hash-1',
               },

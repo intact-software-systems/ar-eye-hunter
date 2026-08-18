@@ -18,6 +18,7 @@ import type { RecipeConsoleControlSelection } from
 import type { RecipeConsoleUrlState } from
     '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import type {
+    AnalyzeEvidenceWindowProjection,
     AnalyzeWorkerRequest,
     AnalyzeWorkerResponse,
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-contract.ts';
@@ -186,7 +187,7 @@ describe('Recipe Console rendered Analyze worker lifetime', () => {
             ...props,
             urlState: {
                 ...urlState('tune', 'dist-a'),
-                timingMetric: 'p95',
+                timingMetric: 'command-duration',
             },
         });
         await vi.waitFor(() => {
@@ -276,7 +277,7 @@ describe('Recipe Console rendered Analyze worker lifetime', () => {
         expect(retainedArtifact?.distributedRunId).toBe('dist-a');
         expect(worker.requestTypes().filter(type => type === 'search')).toEqual([]);
 
-        for (const view of ['execute', 'monitor', 'history'] as const) {
+        for (const view of ['execute', 'monitor', 'fleet', 'advanced'] as const) {
             await render({
                 ...props,
                 urlState: {
@@ -853,7 +854,7 @@ function distributedRun(
     return {
         distributedRunId,
         controlRunId,
-        state: 'completed',
+        state: 'passed',
         createdAtEpochMs: 1,
         updatedAtEpochMs,
         targetAgentIds: [],
@@ -861,17 +862,31 @@ function distributedRun(
             schemaVersion: 1,
             distributedRunId,
             controlRunId,
-            group: { groupId: 'ci-analyze' },
+            group: {
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                groupId: 'ci-analyze',
+            },
             recipes: [],
-            targetPolicy: {},
+            targetPolicy: { mode: 'all-online-group-members' },
         },
         commandLinks: [],
-        rollup: {
-            state: 'completed',
-            ok: true,
-            summary: { blockingFailures: 0 },
-            failures: [],
+        rollup: createPassedRollup(),
+    };
+}
+
+function createPassedRollup(): ControlDistributedRunSnapshot['rollup'] {
+    return {
+        state: 'passed',
+        ok: true,
+        summary: {
+            participants: 0, requiredParticipants: 0, readyParticipants: 0,
+            passedParticipants: 0, failedParticipants: 0,
+            recipes: 0, requiredRecipes: 0, passedRecipes: 0, failedRecipes: 0,
+            groupAssertions: 0, passedGroupAssertions: 0, failedGroupAssertions: 0,
+            blockingFailures: 0,
         },
+        failures: [],
     };
 }
 
@@ -957,7 +972,7 @@ function completeResponse(
 
 function searchResponse(
     request: Extract<AnalyzeWorkerRequest, { type: 'search' }>,
-    window: ReturnType<typeof emptyWindow> & Readonly<{ nextCursor?: string }>,
+    window: AnalyzeEvidenceWindowProjection,
 ): Extract<AnalyzeWorkerResponse, { type: 'search-complete' }> {
     return {
         type: 'search-complete',
@@ -971,9 +986,7 @@ function searchResponse(
 
 function windowResponse(
     request: Extract<AnalyzeWorkerRequest, { type: 'window' }>,
-    window: ReturnType<typeof emptyWindow> & Readonly<{
-        entries?: readonly ReturnType<typeof evidenceEntry>[];
-    }>,
+    window: AnalyzeEvidenceWindowProjection,
 ): Extract<AnalyzeWorkerResponse, { type: 'window-complete' }> {
     return {
         type: 'window-complete',
@@ -1020,7 +1033,7 @@ function tuneResponse(
                 },
                 recipeIds: { entries: [], total: 0, omitted: 0 },
                 targetPolicy: {
-                    mode: 'explicit-agents',
+                    mode: 'selected-agents',
                     configuredAgentCount: 0,
                     configuredRoleCount: 0,
                 },
@@ -1038,19 +1051,12 @@ function tuneResponse(
             distributedRun: {
                 distributedRunId: 'dist-a',
                 controlRunId: 'control-a',
-                state: 'completed' as const,
+                state: 'passed' as const,
                 startedAtEpochMs: undefined,
                 completedAtEpochMs: undefined,
                 updatedAtEpochMs: 1,
                 targetAgentIds: { entries: [], total: 0, omitted: 0 },
-                rollup: {
-                    expectedAgentCount: 0,
-                    stagedAgentCount: 0,
-                    startedAgentCount: 0,
-                    completedAgentCount: 0,
-                    failedAgentCount: 0,
-                    failures: [],
-                },
+                rollup: createPassedRollup(),
             },
             analysis,
             receivedMessageDeltas: { entries: [], total: 0, omitted: 0 },
@@ -1059,7 +1065,7 @@ function tuneResponse(
     };
 }
 
-function emptyWindow() {
+function emptyWindow(): AnalyzeEvidenceWindowProjection {
     return {
         entries: [],
         rangeStart: 0,
@@ -1075,7 +1081,7 @@ function emptyWindow() {
         },
         totalMatchesIsComplete: true,
         windowSize: 64,
-    } as const;
+    };
 }
 
 function telemetry() {

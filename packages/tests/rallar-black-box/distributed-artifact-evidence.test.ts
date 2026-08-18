@@ -401,7 +401,7 @@ describe('distributed artifact evidence index', () => {
             (value?.length ?? 0) <= 24
         )).toBe(true);
         expect(details?.code).not.toContain('TOO_DEEP');
-        expect(details?.stack.length).toBeLessThanOrEqual(48);
+        expect(details?.stack?.length).toBeLessThanOrEqual(48);
         expect(details?.stack).toContain('\n');
     });
 

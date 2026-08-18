@@ -192,7 +192,7 @@ function resolveStoredSequence(
   const lastIndex = indexes.length ? Math.max(...indexes) : -1;
   const slots = Array.from({ length: lastIndex + 1 }, (_, index) => {
     const member = collection.members.get(String(index));
-    return member ? exactArgumentSlot(member) : absentArgumentSlot();
+    return member ? exactArgumentSlot(member) : absentArgumentSlot<CallableResolution>();
   });
   return {
     slots,

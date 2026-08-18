@@ -53,7 +53,10 @@ function query(input: Readonly<{
         snapshot: input.snapshot,
         completeness: input.completeness,
         provenance: input.source
-            ? { distributedRunsSource: input.source }
+            ? {
+                distributedRunsSource: input.source,
+                runEvidence: { detailedRunIds: [], indexOnlyRunIds: [] },
+            }
             : undefined,
         receivedAtEpochMs: input.snapshot ? 1_000 : undefined,
         isRefreshing: false,

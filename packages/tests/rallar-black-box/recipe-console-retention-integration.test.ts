@@ -89,7 +89,10 @@ function query(
         authorization,
         snapshot: { runs: [], distributedRuns: [] },
         completeness: 'complete',
-        provenance: { distributedRunsSource: 'root-snapshot' },
+        provenance: {
+            distributedRunsSource: 'root-snapshot',
+            runEvidence: { detailedRunIds: [], indexOnlyRunIds: [] },
+        },
         receivedAtEpochMs: 1_000,
         isRefreshing: false,
     };

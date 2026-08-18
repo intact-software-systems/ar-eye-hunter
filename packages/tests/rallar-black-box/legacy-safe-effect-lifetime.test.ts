@@ -3,6 +3,10 @@
 import { act, createElement, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    resolveRallarBlackBoxBootstrapConfig,
+    type RallarBlackBoxBootstrapConfig,
+} from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
 import { DistributedRecipesPanel } from '../../../apps/rallar-black-box/src/legacy/runner/distributed-recipes/DistributedRecipesPanel.tsx';
 import { RunManagerPanel } from '../../../apps/rallar-black-box/src/legacy/runner/run-manager/RunManagerPanel.tsx';
@@ -69,7 +73,7 @@ describe('legacy safe-surface effect lifetime', () => {
         await act(async () => {
             root.render(createElement(RunManagerPanel, {
                 state: baseState(),
-                bootstrap: { controlUrl: 'ws://control.test/control' },
+                bootstrap: bootstrapConfig(),
                 control: controlSnapshot('control-a'),
             }));
             await Promise.resolve();
@@ -107,10 +111,7 @@ describe('legacy safe-surface effect lifetime', () => {
         await act(async () => {
             root.render(createElement(DistributedRecipesPanel, {
                 state: baseState(),
-                bootstrap: {
-                    controlUrl: 'ws://control.test/control',
-                    providerMode: 'simulated',
-                },
+                bootstrap: bootstrapConfig(),
                 control: controlSnapshot('control-a'),
                 globalValues: {
                     apiBaseUrl: 'http://api.test',
@@ -154,10 +155,7 @@ describe('legacy safe-surface effect lifetime', () => {
         await act(async () => {
             root.render(createElement(RunnerRecipesPanel, {
                 state: baseState(),
-                bootstrap: {
-                    controlUrl: 'ws://control.test/control',
-                    providerMode: 'simulated',
-                },
+                bootstrap: bootstrapConfig(),
                 control: controlSnapshot('control-a'),
                 globalValues: globalValues(),
                 busy: false,
@@ -198,7 +196,7 @@ describe('legacy safe-surface effect lifetime', () => {
         await act(async () => {
             root.render(createElement(RunnerRunsPanel, {
                 state: baseState(),
-                bootstrap: { controlUrl: 'ws://control.test/control' },
+                bootstrap: bootstrapConfig(),
                 control: controlSnapshot('control-a'),
             }));
             await Promise.resolve();
@@ -247,7 +245,7 @@ describe('legacy safe-surface effect lifetime', () => {
                 undefined,
                 createElement(RunnerRunsPanel, {
                     state: baseState(),
-                    bootstrap: { controlUrl: 'ws://control.test/control' },
+                    bootstrap: bootstrapConfig(),
                     control: controlSnapshot('control-a'),
                 }),
             ));
@@ -267,7 +265,7 @@ describe('legacy safe-surface effect lifetime', () => {
             'Run Manager',
             () => createElement(RunManagerPanel, {
                 state: baseState(),
-                bootstrap: { controlUrl: 'ws://control.test/control' },
+                bootstrap: bootstrapConfig(),
                 control: controlSnapshot('control-a'),
             }),
             '/runs/control-a',
@@ -276,10 +274,7 @@ describe('legacy safe-surface effect lifetime', () => {
             'Distributed Recipes',
             () => createElement(DistributedRecipesPanel, {
                 state: baseState(),
-                bootstrap: {
-                    controlUrl: 'ws://control.test/control',
-                    providerMode: 'simulated',
-                },
+                bootstrap: bootstrapConfig(),
                 control: controlSnapshot('control-a'),
                 globalValues: globalValues(),
             }),
@@ -289,10 +284,7 @@ describe('legacy safe-surface effect lifetime', () => {
             'Recipes',
             () => createElement(RunnerRecipesPanel, {
                 state: baseState(),
-                bootstrap: {
-                    controlUrl: 'ws://control.test/control',
-                    providerMode: 'simulated',
-                },
+                bootstrap: bootstrapConfig(),
                 control: controlSnapshot('control-a'),
                 globalValues: globalValues(),
                 busy: false,
@@ -305,7 +297,7 @@ describe('legacy safe-surface effect lifetime', () => {
         [
             'Fleet',
             () => createElement(RunnerFleetPanel, {
-                bootstrap: { controlUrl: 'ws://control.test/control' },
+                bootstrap: bootstrapConfig(),
                 control: controlSnapshot('control-a'),
                 globalValues: globalValues(),
             }),
@@ -387,7 +379,7 @@ describe('legacy safe-surface effect lifetime', () => {
         await act(async () => {
             root.render(createElement(RunnerRunsPanel, {
                 state: baseState(),
-                bootstrap: { controlUrl: 'ws://control.test/control' },
+                bootstrap: bootstrapConfig(),
                 control: controlSnapshot('control-a'),
             }));
             await flushAsyncWork();
@@ -438,7 +430,7 @@ describe('legacy safe-surface effect lifetime', () => {
 
         await act(async () => {
             root.render(createElement(RunnerFleetPanel, {
-                bootstrap: { controlUrl: 'ws://control.test/control' },
+                bootstrap: bootstrapConfig(),
                 control: controlSnapshot('control-a'),
                 globalValues: globalValues(),
             }));
@@ -484,9 +476,17 @@ function baseState(): RallarBlackBoxTestState {
     };
 }
 
+function bootstrapConfig(): RallarBlackBoxBootstrapConfig {
+    return resolveRallarBlackBoxBootstrapConfig(
+        '?controlUrl=ws%3A%2F%2Fcontrol.test%2Fcontrol&provider=simulated',
+        {},
+        '',
+    );
+}
+
 function controlSnapshot(runId: string) {
     return {
-        state: 'connected',
+        state: 'registered',
         url: 'ws://control.test/control',
         runId,
         reconnectAttempt: 0,

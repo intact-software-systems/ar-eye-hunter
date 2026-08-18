@@ -225,14 +225,16 @@ describe('Recipe Console Analyze worker runtime', () => {
         const fixture = createRecipeConsoleScaleFixture({ eventCount: 6, resultCount: 3 });
         const distributedRunId = `distributed-${'界'.repeat(600)}`;
         const controlRunId = `control-${'é'.repeat(600)}`;
-        const files = Object.fromEntries(Object.entries(fixture.files).map(
-            ([name, content]) => [
-                name,
-                content
-                    .replaceAll('recipe-console-scale-distributed-run', distributedRunId)
-                    .replaceAll('recipe-console-scale-control-run', controlRunId),
-            ],
-        ));
+        const files = Object.fromEntries(
+            Object.entries(fixture.files).map(
+                ([name, content]): [string, string | undefined] => [
+                    name,
+                    content
+                        ?.replaceAll('recipe-console-scale-distributed-run', distributedRunId)
+                        .replaceAll('recipe-console-scale-control-run', controlRunId),
+                ],
+            ),
+        );
         const envelope = {
             artifactSchemaVersion: 2,
             distributedRunId,

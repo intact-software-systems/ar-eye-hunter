@@ -42,8 +42,10 @@ describe('client mutation result validation', () => {
         read: emptyRead(command),
       }),
     );
-    const malformed = structuredClone(computed);
-    malformed.receipt.commandHash = 'not-a-hash';
+    const malformed = {
+      ...structuredClone(computed),
+      receipt: { ...computed.receipt, commandHash: 'not-a-hash' },
+    };
 
     expect(() => validateClientMutationResult(malformed)).toThrowError(
       new ClientMutationRejectedError(

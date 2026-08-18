@@ -6,6 +6,7 @@ describe('GroupStateService retry ownership', () => {
   it('exposes single-attempt phases and leaves complete retries to AppGroupInbox', () => {
     const service = createGroupStateRuntime({
       runtimeRepository: new FakeRuntimeStateRepository(),
+      formationDamping: 'damped',
       authSessionRepository: { findBySessionId: () => Promise.resolve(undefined) },
       serviceId: 'single-attempt-group-service',
     }).service;

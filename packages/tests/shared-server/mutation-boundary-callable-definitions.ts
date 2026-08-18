@@ -23,7 +23,7 @@ export function discoverLocalCallables(
     if (node.type === 'VariableDeclarator') {
       const reference = access.expressionKey(node.id);
       const init = unwrap(asNode(node.init));
-      if (isFunction(init)) {
+      if (init && isFunction(init)) {
         recordFunction(init, reference, readPosition(node), parentFunctionKey, definitions, access);
       } else if (init?.type === 'ObjectExpression') {
         recordObjectFunctions(
@@ -88,7 +88,7 @@ function recordObjectFunctions(
   for (const property of asNodes(object.properties)) {
     const name = access.propertyName(property.key, property.computed === true);
     const value = property.type === 'ObjectMethod' ? property : unwrap(asNode(property.value));
-    if (!name || !isFunction(value)) continue;
+    if (!name || !value || !isFunction(value)) continue;
     recordFunction(
       value,
       `${reference}.${name}`,
@@ -122,7 +122,7 @@ function recordFunction(
   });
 }
 
-function isFunction(node: AstNode | undefined): node is AstNode {
+function isFunction(node: AstNode | undefined): boolean {
   return !!node && [
     'ArrowFunctionExpression',
     'FunctionDeclaration',

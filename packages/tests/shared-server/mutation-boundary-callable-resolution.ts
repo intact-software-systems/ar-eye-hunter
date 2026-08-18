@@ -281,7 +281,12 @@ function resolveReferences(
   for (const definition of context.byReference.get(key) ?? []) {
     const availableAt = definition.references.get(key) ?? Number.MAX_SAFE_INTEGER;
     if (availableAt <= position) {
-      targets.set(definition.functionKey, { conditional: false, definition });
+      targets.set(definition.functionKey, {
+        boundArguments: [],
+        boundUnknown: false,
+        conditional: false,
+        definition,
+      });
     }
   }
   return resolutionFromTargets(targets, false);
@@ -369,7 +374,7 @@ function emptyResolution(localProvenance: boolean): CallableResolution {
   };
 }
 
-function isFunction(node: AstNode | undefined): node is AstNode {
+function isFunction(node: AstNode | undefined): boolean {
   return (
     !!node &&
     [

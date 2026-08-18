@@ -10,6 +10,9 @@ import {
 import {
   type ClientStateService,
   type ClientStateWritten,
+} from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+// prettier-ignore
+import {
   createClientStateService,
 } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 // prettier-ignore

@@ -4,7 +4,11 @@ import { ClientMutationRejectedError } from '@shared-server/rallar-system/client
 import { validateClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts';
 import { validateClientMutationRequest } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import type { ClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import type {
+  ClientMutationCommand,
+  ClientMutationFacts,
+  ClientMutationRead,
+} from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import {
   ClientMutationRejectedError as LegacyClientMutationRejectedError,
@@ -17,7 +21,6 @@ import {
   emptyClientMutationRead,
   validAuthority,
   validAuthoritySession,
-  validFacts,
 } from './client-mutation-validation-test-fixtures.ts';
 
 describe('client mutation validation', () => {
@@ -164,7 +167,7 @@ function expectRejected(action: () => void, message: string): void {
   }
 }
 
-function validFacts() {
+function validFacts(): ClientMutationFacts {
   return {
     nowEpochMs: 1_000,
     serviceId: 'client-state',

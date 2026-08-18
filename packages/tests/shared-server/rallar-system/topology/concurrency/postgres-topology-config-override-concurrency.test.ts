@@ -114,6 +114,9 @@ async function expectMixedTopologyOutcome(outcome: MixedTopologyOutcomeInput): P
     version: 1,
     requestId: configInput.request.requestId,
   });
+  if (!durable) {
+    throw new Error('Mixed topology workers did not persist a durable topology config');
+  }
 
   if (overrideOutput.status === 'rejected') {
     await expectConfigWinnerOutcome({ ...outcome, repository, durable, temporary });

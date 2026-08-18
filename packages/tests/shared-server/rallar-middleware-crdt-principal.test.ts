@@ -7,13 +7,7 @@ describe('CRDT principal post-commit routing', () => {
     const now = 10_000;
     const server = new JsonWebSocketServer();
     for (const sessionId of ['session-a', 'session-b']) {
-      server.addConnection(
-        new ConnectionContext(sessionId, {
-          readyState: WebSocket.OPEN,
-          addEventListener: () => undefined,
-          send: () => undefined,
-        } as WebSocket),
-      );
+      server.addConnection(new ConnectionContext(sessionId, openTestSocket()));
     }
     const session = {
       sessionId: 'session-a',
@@ -121,13 +115,7 @@ function principalResolver(input: Readonly<{
   const now = 10_000;
   const server = new JsonWebSocketServer();
   for (const connectionId of input.openConnectionIds) {
-    server.addConnection(
-      new ConnectionContext(connectionId, {
-        readyState: WebSocket.OPEN,
-        addEventListener: () => undefined,
-        send: () => undefined,
-      } as WebSocket),
-    );
+    server.addConnection(new ConnectionContext(connectionId, openTestSocket()));
   }
   const session = {
     sessionId: 'session-a',
@@ -169,6 +157,16 @@ function principalResolver(input: Readonly<{
     now: () => now,
   });
   return { resolver };
+}
+
+function openTestSocket(): WebSocket {
+  const socket: Pick<WebSocket, 'readyState' | 'addEventListener' | 'send'> = {
+    readyState: WebSocket.OPEN,
+    addEventListener: () => undefined,
+    send: () => undefined,
+  };
+
+  return socket as WebSocket;
 }
 
 function principalMessage(workspaceId: string | undefined) {

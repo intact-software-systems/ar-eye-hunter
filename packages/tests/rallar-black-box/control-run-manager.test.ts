@@ -35,6 +35,8 @@ import {
     controlResponseDocumentText,
 } from '../../../apps/rallar-black-box/src/control-response-document.ts';
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
+import type { RallarBlackBoxDistributedRunManifest } from
+    '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 
 const runSnapshot: ControlRunSnapshot = {
     runId: 'run-1',
@@ -338,32 +340,33 @@ describe('rallar-black-box control run manager', () => {
 
     it('calls distributed-run lifecycle endpoints', async () => {
         const requests: Array<{ url: string; init?: RequestInit }> = [];
+        const manifest: RallarBlackBoxDistributedRunManifest = {
+            schemaVersion: 1,
+            distributedRunId: 'dist-1',
+            controlRunId: 'run-1',
+            group: {
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                groupId: 'bb-group',
+            },
+            recipes: [
+                {
+                    recipeId: 'health-only',
+                    recipe: {
+                        recipeId: 'health-only',
+                        commands: [{ kind: 'health' }],
+                    },
+                },
+            ],
+            targetPolicy: {
+                mode: 'selected-agents',
+                agentIds: ['agent-a'],
+            },
+        };
         const distributedRun = {
             distributedRunId: 'dist-1',
             controlRunId: 'run-1',
-            manifest: {
-                schemaVersion: 1,
-                distributedRunId: 'dist-1',
-                controlRunId: 'run-1',
-                group: {
-                    applicationId: 'rallar-server',
-                    workspaceId: 'default',
-                    groupId: 'bb-group',
-                },
-                recipes: [
-                    {
-                        recipeId: 'health-only',
-                        recipe: {
-                            recipeId: 'health-only',
-                            commands: [{ kind: 'health' }],
-                        },
-                    },
-                ],
-                targetPolicy: {
-                    mode: 'selected-agents',
-                    agentIds: ['agent-a'],
-                },
-            },
+            manifest,
             state: 'draft',
             createdAtEpochMs: 1_000,
             updatedAtEpochMs: 1_000,

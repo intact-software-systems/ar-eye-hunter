@@ -151,6 +151,7 @@ function expectCorruptReadAndComputedRejection(): void {
             ? null
             : (storedEntry(computed.instance.value) as never),
         session: storedEntry(corruptSession) as never,
+        expiredSessionEntry: null,
         snapshot: computed.snapshot,
         receiptEvent: null,
       },

@@ -112,10 +112,10 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
       scope: SCOPE,
       groupId,
-      request: { directorPrincipalId: 'director', ...actor, requestId: 'appoint-director' },
+      request: { ...actor, requestId: 'appoint-director' },
     },
     'appointDirector',
-    { directorPrincipalId: 'director', ...actor, requestId: 'appoint-director' },
+    { ...actor, requestId: 'appoint-director' },
   ),
   descriptorCase(
     'join',
@@ -156,10 +156,10 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
       scope: SCOPE,
       groupId,
-      request: { inviteCode: 'invite-code', ...actor, requestId: 'invite-accept' },
+      request: { ...actor, requestId: 'invite-accept' },
     },
     'acceptGroupInvite',
-    { inviteCode: 'invite-code', ...actor, requestId: 'invite-accept' },
+    { ...actor, requestId: 'invite-accept' },
   ),
   descriptorCase(
     'rotate-join-code',

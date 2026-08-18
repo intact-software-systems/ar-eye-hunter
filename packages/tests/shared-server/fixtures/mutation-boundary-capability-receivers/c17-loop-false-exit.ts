@@ -4,5 +4,5 @@ export function mutateAfterExactFalseLoop(repository: ClientStateRepository): vo
   while (false) {
     void repository.updatePrincipal({} as never, 0);
   }
-  void repository.deletePrincipal({} as never);
+  void repository.deletePrincipal({} as never, 0);
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { isIdempotentHandlerFinalizedRelease } from '@shared/queuebox/QueueBoxTypes.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -10,6 +11,7 @@ import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxSe
 import {
   COALESCED_APP_OUTBOX_WORK_FIELD,
   type CoalescedAppOutboxWorkData,
+  type CoalescedAppOutboxWorkEnvelope,
 } from '@shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts';
 import {
   computeCoalescedRtcTopologyGroupRevisionWork,
@@ -20,6 +22,7 @@ import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/
 import { computeRtcTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/rtc-topology-input-fingerprint.ts';
 import {
   parsePersistedRtcTopologyALMessage,
+  type PersistedRtcTopologyWork,
   readRtcTopologyWorkEnvelope,
   toRtcTopologyExecutionId,
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-work-codec.ts';
@@ -100,7 +103,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
     });
 
     expect(second.expectedEntry).toBe(first.entry);
-    const envelope = readPersistedEnvelope(second.entry);
+    const envelope = readPersistedGroupRevisionEnvelope(second.entry);
     expect(envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD]).toMatchObject({
       generation: 2,
       dueAtEpochMs: BASE_EPOCH_MS + 200 + DEBOUNCE_MS,
@@ -238,7 +241,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
       previousEntry: completed,
     });
 
-    const envelope = readPersistedEnvelope(revived.entry);
+    const envelope = readPersistedGroupRevisionEnvelope(revived.entry);
     expect(envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD]).toMatchObject({
       generation: 2,
       dueAtEpochMs: BASE_EPOCH_MS + 60_000 + DEBOUNCE_MS,
@@ -271,11 +274,11 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
     });
 
     const stateRevision = toGroupSnapshotStateRevision(4, 5);
-    const successorEnvelope = readPersistedEnvelope(blocked.successorEntry);
+    const successorEnvelope = readPersistedGroupRevisionEnvelope(blocked.successorEntry);
     expect(successorEnvelope.resourceId).toBe(`${OVERLAY_ID}:group-revision:r${stateRevision}`);
     expect(successorEnvelope.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation).toBe(1);
     expect(successorEnvelope.data.sourceGroupStateRevision).toBe(stateRevision);
-    const mainEnvelope = readPersistedEnvelope(blocked.entry);
+    const mainEnvelope = readPersistedGroupRevisionEnvelope(blocked.entry);
     expect(mainEnvelope.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation).toBe(2);
   });
 
@@ -312,6 +315,25 @@ function readPersistedEnvelope(entry: ResourceEntry) {
   );
 }
 
+function readPersistedGroupRevisionEnvelope(
+  entry: ResourceEntry,
+): CoalescedAppOutboxWorkEnvelope<RtcTopologyGroupRevisionWork> {
+  const envelope = readPersistedEnvelope(entry);
+  const work = envelope.data;
+  if (!isCoalescedGroupRevisionWork(work)) {
+    throw new TypeError(
+      `Persisted entry is not coalesced group-revision work: ${envelope.resourceId}`,
+    );
+  }
+  return { ...envelope, data: work };
+}
+
+function isCoalescedGroupRevisionWork(
+  work: PersistedRtcTopologyWork,
+): work is CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork> {
+  return work.kind === 'group-revision' && work[COALESCED_APP_OUTBOX_WORK_FIELD] !== undefined;
+}
+
 function createCoalescedData(
   groupSnapshot: GroupSnapshot,
   requestedAtEpochMs: number,
@@ -322,7 +344,7 @@ function createCoalescedData(
     groupSnapshot,
     sourceGroupStateRevision: groupSnapshot.stateRevision,
     requestedAtEpochMs,
-    requestOptions: {},
+    requestOptions: toCanonicalGroupTopologyConfigPatch({}),
     publish: true,
     [COALESCED_APP_OUTBOX_WORK_FIELD]: {
       generation: 1,

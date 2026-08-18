@@ -3,6 +3,10 @@ import { describe, expect, it } from 'vitest';
 
 import { GroupTopologyConfigMutationService } from '@shared-server/rallar-system/topology/config/group-topology-config-mutation-service.ts';
 import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+
+import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';
 
 const GROUP_REF = {
   applicationId: 'topology-app',
@@ -73,8 +77,11 @@ describe('group topology config mutation transaction shell', () => {
 });
 
 function createService(): GroupTopologyConfigMutationService {
+  const runtimeRepository = new FakeRuntimeStateRepository();
   return new GroupTopologyConfigMutationService({
     readiness: { ensure: async () => undefined },
+    configRepository: new GroupTopologyConfigRepository(runtimeRepository),
+    groupStateRepository: new GroupStateRepository(runtimeRepository),
     nowEpochMs: () => 20_000,
     isPlatformAdmin: () => false,
   });

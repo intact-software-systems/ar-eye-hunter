@@ -34,6 +34,23 @@ const ENVIRONMENT = (
   'postflight_automatic_maintenance_count=0;'
 ).replaceAll(';', '\n');
 
+/** Manifest position record emitted by createManifest in the api-v1 state-write pooler. */
+interface PooledManifestPosition {
+  readonly position: number;
+  readonly role: 'approved-base' | 'candidate';
+  readonly sourceName: string;
+  readonly artifactSha256: string;
+  readonly gitCommit: string;
+  readonly generatedAt: string;
+}
+
+/** Mutable copy of a source-position descriptor, mutated into invalid shapes by the guard cases. */
+interface MutableSourcePositionDescriptor {
+  key: string;
+  position: number;
+  role: string;
+}
+
 describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () => {
   it('pools A-B-B-A sources into validated 18-run artifacts without losing raw samples', () => {
     const input = createPoolingInput();
@@ -43,16 +60,25 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () =
     expect(validateStateWriteArtifact(pooled.candidate)).toEqual([]);
     expect(pooled.approvedBase.measurement.measuredRuns).toBe(18);
     expect(pooled.candidate.measurement.measuredRuns).toBe(18);
-    expect(pooled.manifest.positions.map(({ position, role }) => ({ position, role }))).toEqual([
+    expect(
+      pooled.manifest.positions.map(({ position, role }: PooledManifestPosition) => ({
+        position,
+        role,
+      })),
+    ).toEqual([
       { position: 1, role: 'approved-base' },
       { position: 2, role: 'candidate' },
       { position: 3, role: 'candidate' },
       { position: 4, role: 'approved-base' },
     ]);
     expect(pooled.manifest.environmentSha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(new Set(pooled.manifest.positions.map((position) => position.artifactSha256)).size).toBe(
-      4,
-    );
+    expect(
+      new Set(
+        pooled.manifest.positions.map(
+          (position: PooledManifestPosition) => position.artifactSha256,
+        ),
+      ).size,
+    ).toBe(4);
 
     const sources = parseSources(input);
     expectSamplesPreserved(
@@ -73,7 +99,9 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () =
   it('fails closed for every malformed explicit-position descriptor family', () => {
     for (const [expected, mutate] of explicitPositionFailures()) {
       const input = createPoolingInput();
-      const descriptors: any[] = structuredClone(LEGACY_SOURCE_POSITIONS);
+      const descriptors: MutableSourcePositionDescriptor[] = structuredClone([
+        ...LEGACY_SOURCE_POSITIONS,
+      ]);
       mutate({ descriptors, input });
       expect(() => poolApiV1StateWriteResultsForPositions(input, descriptors)).toThrow(expected);
     }

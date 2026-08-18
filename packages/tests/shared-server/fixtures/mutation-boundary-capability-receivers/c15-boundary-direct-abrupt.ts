@@ -1,7 +1,8 @@
 import type { ClientStateRepository } from '@shared-server/mod.ts';
 
 export function ignoreDirectBreak(repository: ClientStateRepository): void {
-  switch ('read') {
+  const mode: string = 'read';
+  switch (mode) {
     case 'read':
       break;
     case 'write':
@@ -10,7 +11,8 @@ export function ignoreDirectBreak(repository: ClientStateRepository): void {
 }
 
 export function ignoreDirectReturn(repository: ClientStateRepository): void {
-  switch ('read') {
+  const mode: string = 'read';
+  switch (mode) {
     case 'read':
       return;
     case 'write':
@@ -19,10 +21,11 @@ export function ignoreDirectReturn(repository: ClientStateRepository): void {
 }
 
 export function ignoreDirectThrow(repository: ClientStateRepository): void {
-  switch ('read') {
+  const mode: string = 'read';
+  switch (mode) {
     case 'read':
       throw new Error('stop');
     case 'write':
-      void repository.deletePrincipal({} as never);
+      void repository.deletePrincipal({} as never, 0);
   }
 }

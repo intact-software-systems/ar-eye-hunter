@@ -179,6 +179,7 @@ describe("Postgres presence expiry concurrency", () => {
         await seedConnectedClientSession(setupSql, scope, sessionRef, atEpochMs);
         const setup = createTestGroupStateRuntime({
           runtimeRepository: toRuntimeRepository(setupSql),
+          formationDamping: "damped",
           createGroupStateEventStore: createGroupStateEventRepository,
           syncPublisher: createPublisher(),
           now: () => atEpochMs,
@@ -462,6 +463,7 @@ describe("Postgres presence expiry concurrency", () => {
       try {
         const setup = createTestGroupStateRuntime({
           runtimeRepository: toRuntimeRepository(setupSql),
+          formationDamping: "damped",
           createGroupStateEventStore: createGroupStateEventRepository,
           syncPublisher: createPublisher(),
           now: () => atEpochMs,
@@ -536,6 +538,7 @@ describe("Postgres presence expiry concurrency", () => {
       try {
         const setup = createTestGroupStateRuntime({
           runtimeRepository: toRuntimeRepository(setupSql),
+          formationDamping: "damped",
           createGroupStateEventStore: createGroupStateEventRepository,
           syncPublisher: createPublisher(),
           now: () => atEpochMs,
@@ -1239,6 +1242,7 @@ async function seedExpiredGroupPresenceSession(
 ): Promise<void> {
   const service = createTestGroupStateRuntime({
     runtimeRepository: toRuntimeRepository(sql),
+    formationDamping: "damped",
     createGroupStateEventStore: createGroupStateEventRepository,
     syncPublisher: createPublisher(),
     now: () => atEpochMs - 10_000,
@@ -1328,6 +1332,7 @@ function createPostgresGroupRuntime(
       barrierNamespace,
       applicationId,
     ),
+    formationDamping: "damped",
     createGroupStateEventStore: createGroupStateEventRepository,
     syncPublisher: createPublisher(),
     now: () => atEpochMs,

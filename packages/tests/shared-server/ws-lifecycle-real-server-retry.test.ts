@@ -9,11 +9,6 @@ import {
 } from '@shared/websocket/JsonWebSocketServer.ts';
 import { initWsLifecycle } from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
 
-interface LifecycleRuntime {
-  getPendingCloseCount(): number;
-  stop(): void;
-}
-
 describe('real websocket close lifecycle retry ownership', () => {
   it('ignores an old in-flight failure after a newer generation succeeds', async () => {
     const server = new JsonWebSocketServer();
@@ -56,7 +51,7 @@ describe('real websocket close lifecycle retry ownership', () => {
             };
           },
         },
-      } as never) as unknown as LifecycleRuntime;
+      });
       server.addConnection(server.createConnectionContext(
         'session-1',
         oldSocket as never,
@@ -136,7 +131,7 @@ describe('real websocket close lifecycle retry ownership', () => {
             return () => undefined;
           },
         },
-      } as never) as unknown as LifecycleRuntime;
+      });
       server.addConnection(connection);
 
       socket.dispatchClose();
@@ -195,7 +190,7 @@ describe('real websocket close lifecycle retry ownership', () => {
         delaysMs: [1],
         schedule: () => () => undefined,
       },
-    } as never);
+    });
     server.addConnection(server.createConnectionContext(
       'session-1',
       oldSocket as never,
@@ -250,7 +245,7 @@ async function flushAsyncEvents(): Promise<void> {
 }
 
 class CloseSocket {
-  readyState = WebSocket.OPEN;
+  readyState: number = WebSocket.OPEN;
   private readonly listeners = new Map<string, Array<(event: Event) => void>>();
 
   addEventListener(type: string, listener: (event: Event) => void): void {

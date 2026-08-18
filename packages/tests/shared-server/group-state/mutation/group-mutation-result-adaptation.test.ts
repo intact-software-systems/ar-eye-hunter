@@ -29,6 +29,7 @@ describe('group mutation result adaptation', () => {
     };
     const runtime = createTestGroupStateRuntime({
       runtimeRepository,
+      formationDamping: 'damped',
       createGroupStateEventStore,
       now: () => 1_000,
       randomId: () => 'result-adapter-id',

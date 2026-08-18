@@ -3,7 +3,7 @@ import type { ClientStateRepository } from '@shared-server/mod.ts';
 export function mutateLaterFallthroughCase(
   repository: ClientStateRepository,
 ): void {
-  switch ('read') {
+  switch (true ? 'read' : 'write') {
     case 'read':
       void repository.readSnapshot;
       /* falls through */
@@ -21,7 +21,7 @@ export function mutateDefaultAfterMatch(
       void repository.readSnapshot;
       /* falls through */
     default:
-      void repository.updatePrincipal({} as never);
+      void repository.updatePrincipal({} as never, 0);
       break;
   }
 }
@@ -29,11 +29,11 @@ export function mutateDefaultAfterMatch(
 export function mutateNoMatchDefault(
   repository: ClientStateRepository,
 ): void {
-  switch ('missing') {
+  switch (true ? 'missing' : 'read') {
     case 'read':
       void repository.readSnapshot;
       break;
     default:
-      void repository.deletePrincipal({} as never);
+      void repository.deletePrincipal({} as never, 0);
   }
 }

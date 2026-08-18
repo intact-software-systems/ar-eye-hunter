@@ -49,7 +49,11 @@ import {
     GroupWritten,
     type GroupJoinCodeWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import {
+    hashAuthSecret,
+    type IssuedAuthSession,
+    type PersistedAuthSession,
+} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { toResultsDomain } from '@shared-server/postgres/resource-inbox/repository-utils.ts';
@@ -81,7 +85,10 @@ function createGroupStateService(
     const service = createProductionGroupStateService({
         ...dependencies,
         authSessionRepository: {
-            findBySessionId: (sessionId) => Promise.resolve(sessions.get(sessionId)),
+            findBySessionId: async (sessionId) => {
+                const issued = sessions.get(sessionId);
+                return issued ? await toPersistedTestAuthSession(issued) : undefined;
+            },
         },
     });
     TEST_AUTHORITIES.set(service, (input) => {
@@ -90,6 +97,19 @@ function createGroupStateService(
         return authority;
     });
     return service;
+}
+
+async function toPersistedTestAuthSession(
+    session: IssuedAuthSession,
+): Promise<PersistedAuthSession> {
+    return {
+        clientId: session.clientId,
+        username: session.username,
+        sessionId: session.sessionId,
+        accessTokenDigest: await hashAuthSecret(session.accessToken),
+        issuedAtEpochMs: session.issuedAtEpochMs,
+        expiresAtEpochMs: session.expiresAtEpochMs,
+    };
 }
 
 function toTestAuthority(input: AppInboxEnqueueInput<unknown>): IssuedAuthSession {
@@ -816,7 +836,7 @@ async function readEntries(queue: InMemoryQueueBox): Promise<ResourceEntry[]> {
 }
 
 function activeEntries(entries: ResourceEntry[]): ResourceEntry[] {
-    const activeStatuses = new Set([
+    const activeStatuses = new Set<EntityStatus>([
         EntityStatus.NEW,
         EntityStatus.RESERVED,
         EntityStatus.RETRY,

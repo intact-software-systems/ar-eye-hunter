@@ -231,11 +231,14 @@ function loadModule(
   if (!resolved) return undefined;
   const cached = modules.get(resolved);
   if (cached) return cached;
-  const program = parse(readFileSync(resolved, 'utf8'), {
-    sourceType: 'module',
-    sourceFilename: resolved,
-    plugins: ['typescript', 'importAttributes'],
-  }).program as AstNode;
+  const program = asNode(
+    parse(readFileSync(resolved, 'utf8'), {
+      sourceType: 'module',
+      sourceFilename: resolved,
+      plugins: ['typescript'],
+    }).program,
+  );
+  if (!program) return undefined;
   const module = readModuleTypes(program, resolved);
   modules.set(resolved, module);
   return module;

@@ -150,6 +150,9 @@ function distributedRun(input: Readonly<{
                 requiredRecipes: 1,
                 passedRecipes: state === 'passed' ? 1 : 0,
                 failedRecipes: state === 'failed' ? 1 : 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: failure.length,
             },
         },
@@ -180,7 +183,13 @@ function query(input: Readonly<{
         } : {}),
         completeness: input.completeness,
         provenance: input.source
-            ? { distributedRunsSource: input.source }
+            ? {
+                distributedRunsSource: input.source,
+                runEvidence: {
+                    detailedRunIds: (input.runs ?? []).map(run => run.runId),
+                    indexOnlyRunIds: [],
+                },
+            }
             : undefined,
         receivedAtEpochMs: includeSnapshot ? 5_000 : undefined,
         isRefreshing: false,

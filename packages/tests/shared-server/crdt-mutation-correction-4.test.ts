@@ -22,6 +22,10 @@ import {
     decodeCrdtMutationResult,
 } from '@shared-server/rallar-system/services/crdt-mutations.ts';
 import { computeCrdtMutation } from '@shared-server/rallar-system/services/crdt-mutation-compute.ts';
+import type {
+    CrdtAppendMutationResult,
+    CrdtMutationResult,
+} from '@shared-server/rallar-system/services/crdt-mutation-contracts.ts';
 import { appendRejectionReason } from '@shared-server/rallar-system/services/crdt-append-rejection.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -125,7 +129,7 @@ describe('Task 9 correction 4 mutation contracts', () => {
         ] as const;
         for (const expected of producerCases) {
             const computed = computeCrdtMutation(command, expected.read, 'server-1');
-            expect(computed.result.appendResult).toMatchObject({
+            expect(requireAppendResult(computed.result)).toMatchObject({
                 code: expected.code,
                 retryable: expected.retryable,
             });
@@ -137,7 +141,7 @@ describe('Task 9 correction 4 mutation contracts', () => {
             authorized: false,
             authorizationCode: 'authorization-denied',
         }, 'server-1');
-        const appendResult = rejected.result.appendResult as Record<string, unknown>;
+        const appendResult = requireAppendResult(rejected.result);
         for (const code of appendRejectionCodes()) {
             const retryable = code === 'storage-failed' || code === 'rate-limited';
             expect(() => decodeCrdtMutationResult({
@@ -203,6 +207,15 @@ describe('Task 9 correction 4 mutation contracts', () => {
         }
     });
 });
+
+function requireAppendResult(
+    result: CrdtMutationResult,
+): CrdtAppendMutationResult['appendResult'] {
+    if (result.operation !== 'append') {
+        throw new Error(`Expected an append mutation result, received ${result.operation}`);
+    }
+    return result.appendResult;
+}
 
 function appCrdt(): AppCrdtInboxService {
     const repository = {

@@ -23,7 +23,9 @@ function lifecycleModule(
         const LifecycleLeaf = () => {
             useEffect(() => {
                 lifecycle.events.push(`mount:${component}`);
-                return () => lifecycle.events.push(`unmount:${component}`);
+                return () => {
+                    lifecycle.events.push(`unmount:${component}`);
+                };
             }, []);
             return createElement('div', { 'data-legacy-leaf': component }, component);
         };

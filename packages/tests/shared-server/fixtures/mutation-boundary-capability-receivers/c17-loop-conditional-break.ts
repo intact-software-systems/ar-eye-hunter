@@ -7,5 +7,5 @@ export function mutateAfterConditionalBreak(
   for (;;) {
     if (stop) break;
   }
-  void repository.deletePrincipal({} as never);
+  void repository.deletePrincipal({} as never, 0);
 }

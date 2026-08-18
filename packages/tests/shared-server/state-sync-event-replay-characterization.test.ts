@@ -23,7 +23,6 @@ describe('state sync event replay characterization', () => {
         const service = createGroupStateService({
             runtimeRepository,
             formationDamping: 'damped',
-            syncPublisher: createPublisher(),
             now: () => now,
             serviceId: 'group-service',
         });
@@ -63,7 +62,6 @@ describe('state sync event replay characterization', () => {
         let now = 1_000;
         const service = createClientStateService({
             runtimeRepository,
-            formationDamping: 'damped',
             syncPublisher: createPublisher(),
             now: () => now,
             serviceId: 'client-service',

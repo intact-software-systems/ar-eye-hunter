@@ -10,6 +10,8 @@ import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-stat
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { createTestGroup } from '@shared-test/create-test-group.ts';
 
+import type { PersistedAppInboxAttempt } from '../../../fixtures/postgres-app-inbox-worker-runtime.ts';
+
 export type PostgresSql = PSqlSql & Readonly<{ end(): Promise<void> }>;
 
 export interface TopologyWorkerBarrier {
@@ -64,13 +66,7 @@ export interface TopologyWorkerTrace {
   readonly backendPid: number;
   readonly barrierWaitCount: number;
   readonly topologyReadBarrierPrimitive?: 'readRuntimeStateBatch' | null;
-  readonly attempts?: readonly Readonly<{
-    resourceId: string;
-    attempt: number;
-    classification: string;
-    status: string;
-    retryDelayMs: number;
-  }>[];
+  readonly attempts?: readonly PersistedAppInboxAttempt[];
 }
 
 const ROOT_DENO_CONFIG_PATH = fileURLToPath(

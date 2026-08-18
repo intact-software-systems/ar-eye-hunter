@@ -2,6 +2,13 @@ import {
   PRODUCTION_STATE_WRITE_MUTATION_CONTRACT,
 } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
 
+type StateWriteMutationKind = keyof typeof PRODUCTION_STATE_WRITE_MUTATION_CONTRACT;
+
+export interface StateWriteFixtureCommand {
+  readonly kind: StateWriteMutationKind;
+  readonly commandId: string;
+}
+
 export function binding(command: any, operationId: string): any {
   const topology = command.kind === 'topology-source';
   const receiptId = command.kind === 'profile-instance'
@@ -118,7 +125,7 @@ function topologyConfig(): any {
   };
 }
 
-export function effectIds(command: any): string[] {
+export function effectIds(command: StateWriteFixtureCommand): string[] {
   if (command.kind === 'topology-source') {
     return [`${command.commandId}:rtc-topology-recompute:group-revision:group=1;presence=0`];
   }

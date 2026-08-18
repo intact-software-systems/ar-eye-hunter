@@ -1,9 +1,13 @@
 import type { ClientStateRepository } from '@shared-server/mod.ts';
 
 export class ConstructorReceiver {
-  constructor(private readonly repository: ClientStateRepository) {}
+  readonly #repository: ClientStateRepository;
+
+  constructor(repository: ClientStateRepository) {
+    this.#repository = repository;
+  }
 
   mutate(): void {
-    void this.repository.insertPrincipal({} as never);
+    void this.#repository.insertPrincipal({} as never);
   }
 }

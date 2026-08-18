@@ -5,7 +5,9 @@ declare const enabled: boolean;
 export function ignoreReaderBeforeLaterWriterRebind(
   repository: ClientStateRepository,
 ): void {
-  let invoke = repository.readSnapshot;
+  let invoke:
+    | ClientStateRepository['insertPrincipal']
+    | ClientStateRepository['readSnapshot'] = repository.readSnapshot;
   const readers = {
     run: () => {
       invoke = repository.readSnapshot;
@@ -27,7 +29,9 @@ export function ignoreReaderBeforeLaterWriterRebind(
 export function ignoreWriterOverwrittenOnEveryBranch(
   repository: ClientStateRepository,
 ): void {
-  let invoke = repository.readSnapshot;
+  let invoke:
+    | ClientStateRepository['insertPrincipal']
+    | ClientStateRepository['readSnapshot'] = repository.readSnapshot;
   const writer = {
     run: () => {
       invoke = repository.insertPrincipal;

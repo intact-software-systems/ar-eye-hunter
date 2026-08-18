@@ -20,7 +20,7 @@ export function ignoreAfterDoContinue(repository: ClientStateRepository): void {
     continue;
   } while (true);
   // deno-lint-ignore no-unreachable -- This is the analyzer boundary under test.
-  void repository.deletePrincipal({} as never);
+  void repository.deletePrincipal({} as never, 0);
 }
 
 export function ignoreAfterWhile(repository: ClientStateRepository): void {

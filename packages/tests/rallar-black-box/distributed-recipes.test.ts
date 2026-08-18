@@ -51,7 +51,10 @@ import {
     selectRallarBlackBoxCommandHistory,
     validateDistributedRunManifest,
 } from '../../shared-test/rallar-bb-test/mod.ts';
-import type { RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/types.ts';
+import type {
+    RallarBlackBoxTestCrdtOpenCommand,
+    RallarBlackBoxTestRecipe,
+} from '../../shared-test/rallar-bb-test/types.ts';
 import {
     DISTRIBUTED_RECIPE_CATALOG,
     configuredDistributedRecipeCatalogItem,
@@ -202,6 +205,9 @@ const distributedRun: ControlDistributedRunSnapshot = {
             requiredRecipes: 1,
             passedRecipes: 0,
             failedRecipes: 1,
+            groupAssertions: 0,
+            passedGroupAssertions: 0,
+            failedGroupAssertions: 0,
             blockingFailures: 1,
         },
         failures: [{
@@ -1440,23 +1446,23 @@ describe('distributed recipes helpers', () => {
                 },
             }],
         };
+        const wsCrdtOpen: RallarBlackBoxTestCrdtOpenCommand = {
+            kind: 'crdt.open',
+            commandId: 'open-ws-document',
+            handle: 'document',
+            name: 'document',
+            transport: 'ws',
+        };
         const wsRecipe: RallarBlackBoxTestRecipe = {
             schemaVersion: 1,
             recipeId: 'crdt-ws-only',
-            commands: [{
-                kind: 'crdt.open',
-                commandId: 'open-ws-document',
-                handle: 'document',
-                name: 'document',
-                transport: 'ws',
-            }],
+            commands: [wsCrdtOpen],
         };
         const rtcRecipe: RallarBlackBoxTestRecipe = {
             ...wsRecipe,
             recipeId: 'crdt-rtc-only',
             commands: [{
-                ...wsRecipe.commands[0],
-                kind: 'crdt.open',
+                ...wsCrdtOpen,
                 transport: 'rtc',
             }],
         };
@@ -2394,7 +2400,7 @@ describe('distributed recipes helpers', () => {
         const cleanControlRun: ControlRunSnapshot = {
             ...distributedControlRun,
             results: distributedControlRun.results.map(result =>
-                result.commandId === 'start-b'
+                result.commandId === 'start-b' && result.result
                     ? {
                         ...result,
                         ok: true,
@@ -2610,9 +2616,9 @@ describe('distributed recipes helpers', () => {
                 commandId: 'rtc-realtime-position-stream',
                 eventId: 'stream-failed',
                 atEpochMs: 3_000,
-                topic: 'rallar.bb.rtc.stream_failed',
-                severity: 'error',
                 payload: {
+                    topic: 'rallar.bb.rtc.stream_failed',
+                    severity: 'error',
                     commandId: 'rtc-realtime-position-stream',
                     plannedFrames: 25,
                     completedFrames: 23,
@@ -2660,18 +2666,12 @@ describe('distributed recipes helpers', () => {
                 commandId: 'api-submit',
                 recipeId: 'health-only',
                 queuedAtEpochMs: 1_510,
-                completedAtEpochMs: 1_620,
-                ok: false,
-                error: {
-                    code: 'HTTP_REQUEST_FAILED',
-                    message: 'Request already in-flight for this user.',
-                },
             }],
             rollup: {
                 ...distributedRun.rollup,
                 failures: [{
-                    kind: 'command',
-                    key: 'api-submit',
+                    kind: 'recipe',
+                    key: 'health-only',
                     state: 'failed',
                     required: true,
                     error: {

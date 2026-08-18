@@ -1,24 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { createRuntimeStatePostgresSql } from '../../postgres-runtime-state-client-fixtures.ts';
 import { isRuntimeStateGuardedBatchRepositoryLike } from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
 
 const POSTGRES_INTEGRATION_ENABLED =
   readEnv('RALLAR_POSTGRES_INTEGRATION') === '1';
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
 const FUTURE_MS = Date.parse('2100-01-02T03:04:05.678Z');
-
-type PostgresSql = PSqlSql &
-  Readonly<{
-    end(): Promise<void>;
-  }>;
-
-type PostgresModule = Readonly<{
-  default: (
-    databaseUrl: string,
-    options: Readonly<{ max: number; idle_timeout: number }>,
-  ) => PostgresSql;
-}>;
 
 type GlobalEnv = Readonly<{
   Deno?: Readonly<{
@@ -35,7 +23,7 @@ describe('Postgres runtime-state guarded batches', () => {
   postgresIt(
     'executes a non-empty guarded batch through postgres.js',
     async () => {
-      const sql = await createSql(requireDatabaseUrl());
+      const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
       const repository = new PSqlRuntimeStateRepository(sql);
       const namespace = `guarded-batch-${crypto.randomUUID()}`;
 
@@ -96,11 +84,6 @@ describe('Postgres runtime-state guarded batches', () => {
     },
   );
 });
-
-async function createSql(databaseUrl: string): Promise<PostgresSql> {
-  const postgres = (await import('postgres')) as PostgresModule;
-  return postgres.default(databaseUrl, { max: 1, idle_timeout: 1 });
-}
 
 function requireDatabaseUrl(): string {
   const databaseUrl = readEnv('DATABASE_URL');

@@ -4,6 +4,7 @@ import {
   RALLAR_CRDT_OPERATION_VERSION,
   RALLAR_CRDT_PROTOCOL_VERSION,
   type RallarCrdtDocumentRef,
+  type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
 import {
   createCrdtMutationCommand,
@@ -229,7 +230,7 @@ describe('Task 9 correction 2 exact contracts and fanout', () => {
     };
   }
 
-  function updateEnvelope(updateId: string) {
+  function updateEnvelope(updateId: string): RallarCrdtUpdateEnvelope {
     return {
       protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
       document: DOCUMENT,

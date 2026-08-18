@@ -25,7 +25,7 @@ function readCapabilityExportsFromFile(
   visiting.add(normalized);
   const program = parse(readFileSync(normalized, 'utf8'), {
     sourceType: 'module',
-    plugins: ['typescript', 'importAttributes'],
+    plugins: ['typescript'],
   }).program;
   const exports = new Set<string>();
   for (const statement of program.body as AstNode[]) {

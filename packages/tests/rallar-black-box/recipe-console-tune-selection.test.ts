@@ -59,7 +59,8 @@ function run(input: Readonly<{
                 readyParticipants: input.agents.length, passedParticipants: 0,
                 failedParticipants: 0, recipes: input.recipes.length,
                 requiredRecipes: input.recipes.length, passedRecipes: 0,
-                failedRecipes: 1, blockingFailures: 1,
+                failedRecipes: 1, groupAssertions: 0, passedGroupAssertions: 0,
+                failedGroupAssertions: 0, blockingFailures: 1,
             },
         },
     };

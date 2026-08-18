@@ -1,9 +1,13 @@
 import type { ClientStateRepository } from '@shared-server/mod.ts';
 
+type ClientCapabilitySlot =
+  | ClientStateRepository['readSnapshot']
+  | ClientStateRepository['insertPrincipal'];
+
 export function ignoreNeverInvokedNestedWriter(
   repository: ClientStateRepository,
 ): void {
-  let invoke = repository.readSnapshot;
+  let invoke: ClientCapabilitySlot = repository.readSnapshot;
   const root = { callbacks: { write: () => undefined } };
   const callbacks = root.callbacks;
 
@@ -17,7 +21,7 @@ export function ignoreNeverInvokedNestedWriter(
 export function ignoreOverwrittenNestedWriter(
   repository: ClientStateRepository,
 ): void {
-  let invoke = repository.readSnapshot;
+  let invoke: ClientCapabilitySlot = repository.readSnapshot;
   const root = { callbacks: { write: () => undefined } };
   const callbacks = root.callbacks;
 

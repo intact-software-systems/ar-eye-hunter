@@ -117,6 +117,12 @@ describe('Recipe Console retention cleanup controller', () => {
         await act(async () => root.render(createElement(Harness, props)));
     }
 
+    async function remount(): Promise<void> {
+        await act(async () => root.unmount());
+        root = createRoot(container);
+        current = undefined;
+    }
+
     beforeEach(() => {
         container = document.createElement('div');
         document.body.append(container);
@@ -453,9 +459,7 @@ describe('Recipe Console retention cleanup controller', () => {
         });
         expect(current?.canPreview).toBe(false);
 
-        await act(async () => root.unmount());
-        root = createRoot(container);
-        current = undefined;
+        await remount();
         await render({ capability: fixture().capability });
         expect(current?.state).toEqual({ status: 'idle' });
     });

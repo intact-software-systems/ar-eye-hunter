@@ -288,7 +288,8 @@ function resolveReturnedCallable(
     );
     const body = unwrap(asNode(target.definition.node.body));
     if (body?.type !== 'BlockStatement') {
-      returns.push(resolveCallable(body, readPosition(body), targetContext, nextResolving));
+      const position = readPosition(body ?? target.definition.node);
+      returns.push(resolveCallable(body, position, targetContext, nextResolving));
       continue;
     }
     walkExecution(target.definition.node, (node) => {

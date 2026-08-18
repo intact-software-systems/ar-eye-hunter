@@ -1,4 +1,5 @@
 import {
+  asCapabilityNode as asNode,
   type MutationBoundaryCapabilityAstNode as AstNode,
   unwrapCapabilityExpression as unwrap,
 } from './mutation-boundary-capability-ast.ts';
@@ -30,10 +31,15 @@ export function unionStoredAliases(
   const left = unwrap(target);
   if (!left) return false;
   if (left.type === 'AssignmentPattern') {
-    return unionStoredAliases(unwrap(left.left), source ?? unwrap(left.right), context, write);
+    return unionStoredAliases(
+      unwrap(asNode(left.left)),
+      source ?? unwrap(asNode(left.right)),
+      context,
+      write,
+    );
   }
   if (left.type === 'RestElement') {
-    return unionStoredAliases(unwrap(left.argument), source, context, write);
+    return unionStoredAliases(unwrap(asNode(left.argument)), source, context, write);
   }
   if (left.type === 'ObjectPattern') {
     return unionObjectPattern(left, source, context, write);
@@ -114,7 +120,7 @@ function unionObjectPattern(
     const name = context.access.propertyName(property.key, property.computed === true);
     if (!name) continue;
     changed = unionStoredAliases(
-      unwrap(property.value),
+      unwrap(asNode(property.value)),
       referenceNode(`${sourceKey}.${name}`),
       context,
       write,
@@ -158,14 +164,14 @@ function resolveStoredReferences(
     const truth = context.access.staticTruth(node.test);
     if (truth !== undefined) {
       return resolveStoredReferences(
-        unwrap(truth ? node.consequent : node.alternate),
+        unwrap(asNode(truth ? node.consequent : node.alternate)),
         context,
         position,
       );
     }
     return new Set([
-      ...resolveStoredReferences(unwrap(node.consequent), context, position),
-      ...resolveStoredReferences(unwrap(node.alternate), context, position),
+      ...resolveStoredReferences(unwrap(asNode(node.consequent)), context, position),
+      ...resolveStoredReferences(unwrap(asNode(node.alternate)), context, position),
     ]);
   }
   if (node.type === 'SequenceExpression') {

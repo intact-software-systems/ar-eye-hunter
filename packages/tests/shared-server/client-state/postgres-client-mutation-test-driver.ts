@@ -66,6 +66,7 @@ export function createPostgresClientPhaseDriver(
 ): PostgresClientPhaseDriver {
   const service = createClientStateService({
     runtimeRepository: options.runtimeRepository,
+    formationDamping: 'damped',
     createClientStateEventStore:
       options.createClientStateEventStore ?? createClientStateEventRepository,
     serviceId: options.serviceId,

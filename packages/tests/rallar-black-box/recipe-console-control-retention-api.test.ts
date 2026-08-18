@@ -556,14 +556,10 @@ describe('Recipe Console authorized retention API', () => {
     });
 
     it('maps a post-response TypeError to a reachable protocol error', async () => {
-        const response = {
-            ok: true,
-            status: 200,
-            statusText: 'OK',
-            text: async () => {
-                throw new TypeError('Response adapter failed while reading JSON.');
-            },
-        } as Response;
+        const response = Response.json(PREVIEW);
+        response.text = async () => {
+            throw new TypeError('Response adapter failed while reading JSON.');
+        };
         const api = createRecipeConsoleControlApi({
             controlUrl: 'https://control.test',
             apiBaseUrl: 'https://api.test',

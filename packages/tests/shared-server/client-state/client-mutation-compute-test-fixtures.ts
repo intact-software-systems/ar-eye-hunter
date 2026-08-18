@@ -28,7 +28,7 @@ export const TEST_SCOPE: StateScope = {
 
 export async function principalCommand(
   commandId = 'principal-1',
-  displayName: string | null = 'Alice',
+  displayName: string | undefined = 'Alice',
 ): Promise<ClientMutationCommand> {
   return await command(
     toUpsertPrincipalCommandInput(

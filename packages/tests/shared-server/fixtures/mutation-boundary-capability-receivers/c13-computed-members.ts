@@ -11,9 +11,9 @@ export function mutateComputedMembers(repository: ClientStateRepository): void {
   const unknownMethod = enabled ? 'deletePrincipal' : dynamicMethod;
 
   void repository[conditionalMethod]({} as never);
-  void repository[logicalMethod]({} as never);
-  void repository[differentMethod]({} as never);
-  void repository[unknownMethod as 'deletePrincipal']({} as never);
+  void repository[logicalMethod]({} as never, 0);
+  void repository[differentMethod]({} as never, 0);
+  void repository[unknownMethod as 'deletePrincipal']({} as never, 0);
 }
 
 export function mutateComputedFactory(): void {

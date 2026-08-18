@@ -218,11 +218,13 @@ function createSourceReader(options: MutationRouteValidationOptions): SourceRead
       if (cached) return cached;
       try {
         const source = options.sourceOverrides?.get(filePath) ?? readFileSync(filePath, 'utf8');
-        const program = parse(source, {
-          sourceType: 'module',
-          sourceFilename: filePath,
-          plugins: ['typescript', 'importAttributes'],
-        }).program as AstNode;
+        const program: AstNode = {
+          ...parse(source, {
+            sourceType: 'module',
+            sourceFilename: filePath,
+            plugins: ['typescript'],
+          }).program,
+        };
         cache.set(filePath, program);
         return program;
       } catch {

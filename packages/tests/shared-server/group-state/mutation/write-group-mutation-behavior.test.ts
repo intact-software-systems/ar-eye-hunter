@@ -21,6 +21,7 @@ describe('GroupStateService guarded batch write boundary', () => {
     const authority = createTestAuthSession('alice');
     const group = createTestGroupStateRuntime({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: () => eventStore,
       now: () => 1_000,
       serviceId: 'write-boundary-service',
