@@ -97,9 +97,27 @@ Deno.test('production AppCrdt accepts a new session replay and rejects changed-c
     const service = productionService({ queueSql: sql, database: sql, now, allow: true });
     const original = update('shared-update', now - 10_000, 'original');
 
-    await enqueueAndDrain({ service, envelope: original, deliveryId: 'session-1:delivery-1', sessionId: 'session-1', capturedAtEpochMs: now });
-    await enqueueAndDrain({ service, envelope: original, deliveryId: 'session-2:delivery-2', sessionId: 'session-2', capturedAtEpochMs: now + 1 });
-    await enqueueAndDrain({ service, envelope: update('shared-update', now - 10_000, 'changed'), deliveryId: 'session-3:delivery-3', sessionId: 'session-3', capturedAtEpochMs: now + 2 });
+    await enqueueAndDrain({
+      service,
+      envelope: original,
+      deliveryId: 'session-1:delivery-1',
+      sessionId: 'session-1',
+      capturedAtEpochMs: now,
+    });
+    await enqueueAndDrain({
+      service,
+      envelope: original,
+      deliveryId: 'session-2:delivery-2',
+      sessionId: 'session-2',
+      capturedAtEpochMs: now + 1,
+    });
+    await enqueueAndDrain({
+      service,
+      envelope: update('shared-update', now - 10_000, 'changed'),
+      deliveryId: 'session-3:delivery-3',
+      sessionId: 'session-3',
+      capturedAtEpochMs: now + 2,
+    });
 
     const [counts] = await sql<{ documents: string; updates: string; outbox: string }[]>`
       select
@@ -134,9 +152,21 @@ Deno.test('production AppInbox retries a CRDT conflict from a fresh revoked auth
     const database = withOneCrdtConflict(sql, () => {
       allowed = false;
     });
-    const service = productionService({ queueSql: sql, database, now, allow: true, isAllowed: () => allowed });
+    const service = productionService({
+      queueSql: sql,
+      database,
+      now,
+      allow: true,
+      isAllowed: () => allowed,
+    });
 
-    await enqueueAndDrain({ service, envelope: update('revoked-update', now - 10_000), deliveryId: 'revoked-delivery', sessionId: 'session-1', capturedAtEpochMs: now });
+    await enqueueAndDrain({
+      service,
+      envelope: update('revoked-update', now - 10_000),
+      deliveryId: 'revoked-delivery',
+      sessionId: 'session-1',
+      capturedAtEpochMs: now,
+    });
 
     const [counts] = await sql<{ documents: string; updates: string; outbox: string }[]>`
       select

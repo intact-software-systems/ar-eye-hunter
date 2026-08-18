@@ -46,15 +46,15 @@ import {
   type UpdateRow,
 } from './crdt-mutation-row-codec.ts';
 
-export type PSqlCrdtLogRepositoryOptions = Readonly<{
-  now?: () => number;
-  serverId?: string;
-  validation?: RallarCrdtValidationOptions;
-  policies?: readonly RallarCrdtDocumentTypePolicy[];
-  metrics?: RallarCrdtMetricsSink;
-  audit?: RallarCrdtAuditSink;
+export interface PSqlCrdtLogRepositoryOptions {
+  readonly now?: () => number;
+  readonly serverId?: string;
+  readonly validation?: RallarCrdtValidationOptions;
+  readonly policies?: readonly RallarCrdtDocumentTypePolicy[];
+  readonly metrics?: RallarCrdtMetricsSink;
+  readonly audit?: RallarCrdtAuditSink;
   readonly [legacyOption: string]: unknown;
-}>;
+}
 
 export class PSqlCrdtLogRepository<
   TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,

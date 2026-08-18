@@ -92,21 +92,21 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
       mutationService,
       serviceId: 'server-1',
       options: {
-          waitMaxElapsedMsecs: 5_000,
-          waitRetryIntervalMsecs: 1,
-          waitMaxRetryIntervalMsecs: 4,
-          waitJitterRatio: 0,
-          nowEpochMs: () => now + 1,
+        waitMaxElapsedMsecs: 5_000,
+        waitRetryIntervalMsecs: 1,
+        waitMaxRetryIntervalMsecs: 4,
+        waitJitterRatio: 0,
+        nowEpochMs: () => now + 1,
       },
       effects: {
-          audit: {
-            record: (event: RallarCrdtAuditEvent) => {
-              auditAttempts += 1;
-              if (auditAttempts === 1) throw new Error('audit sink unavailable');
-              audit.push(event);
-            },
+        audit: {
+          record: (event: RallarCrdtAuditEvent) => {
+            auditAttempts += 1;
+            if (auditAttempts === 1) throw new Error('audit sink unavailable');
+            audit.push(event);
           },
-          outboxQueueReader: outbox,
+        },
+        outboxQueueReader: outbox,
       },
     });
     const app = new Hono();
@@ -126,11 +126,17 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
       requireApiUserSession: () => Promise.reject(new Error('unused')),
     });
 
-    const missing = await postAndProcessRaw({ app, inbox, sql, path: '/api/crdt/admin/documents/compact', body: {
-      requestId: 'missing-route',
-      document: { ...DOCUMENT, documentId: 'missing-document' },
-      reason: 'missing-route',
-    } });
+    const missing = await postAndProcessRaw({
+      app,
+      inbox,
+      sql,
+      path: '/api/crdt/admin/documents/compact',
+      body: {
+        requestId: 'missing-route',
+        document: { ...DOCUMENT, documentId: 'missing-document' },
+        reason: 'missing-route',
+      },
+    });
     assert.equal(missing.response.status, 404);
     assert.equal(missing.body.ok, false);
 
@@ -169,11 +175,17 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
         appendSequence: number;
         snapshot: { document: { documentId: string } };
       };
-    }>({ app, inbox, sql, path: '/api/crdt/admin/documents/compact', body: {
-      requestId: 'compact-route',
-      document: DOCUMENT,
-      reason: 'compact-route',
-    } });
+    }>({
+      app,
+      inbox,
+      sql,
+      path: '/api/crdt/admin/documents/compact',
+      body: {
+        requestId: 'compact-route',
+        document: DOCUMENT,
+        reason: 'compact-route',
+      },
+    });
     assert.equal(compact.ok, true);
     assert.equal(compact.result.appendSequence, 1);
     assert.equal(compact.result.snapshot.document.documentId, DOCUMENT.documentId);
@@ -186,11 +198,17 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
         quota: unknown;
         projectionIds: string[];
       };
-    }>({ app, inbox, sql, path: '/api/crdt/admin/documents/lifecycle', body: {
-      requestId: 'lifecycle-route',
-      document: DOCUMENT,
-      lifecycle: 'archived',
-    } });
+    }>({
+      app,
+      inbox,
+      sql,
+      path: '/api/crdt/admin/documents/lifecycle',
+      body: {
+        requestId: 'lifecycle-route',
+        document: DOCUMENT,
+        lifecycle: 'archived',
+      },
+    });
     assert.equal(lifecycle.result.lifecycle, 'archived');
     assert.equal(lifecycle.result.documentKey, initial.documentKey);
     assert.deepEqual(lifecycle.result.retention, { mode: 'retain', reason: 'existing' });
@@ -203,12 +221,18 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
         auditEvent: { kind: string };
         metadata: { lifecycle: string };
       };
-    }>({ app, inbox, sql, path: '/api/crdt/admin/documents/erase', body: {
-      requestId: 'erase-route',
-      document: DOCUMENT,
-      mode: 'destroy-document',
-      reason: 'privacy',
-    } });
+    }>({
+      app,
+      inbox,
+      sql,
+      path: '/api/crdt/admin/documents/erase',
+      body: {
+        requestId: 'erase-route',
+        document: DOCUMENT,
+        mode: 'destroy-document',
+        reason: 'privacy',
+      },
+    });
     assert.equal(erase.result.request.mode, 'destroy-document');
     assert.equal(erase.result.auditEvent.kind, 'erase');
     assert.equal(erase.result.metadata.lifecycle, 'destroyed');

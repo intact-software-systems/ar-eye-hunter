@@ -970,12 +970,13 @@ apps/api-v1/src/crdt/create-crdt-admin-mutations.ts
 This authenticates responsibility recovery to the changed-style checker; it is not a source-file
 inventory, progress record, or waiver.
 
-- [ ] **Step 3: Replace the positional constructor and mixed responsibilities**
+- [ ] **Step 3: Move the established named constructor owner and separate mixed responsibilities**
 
-Implement the canonical constructor from the Global Interfaces section. The shared inbox retains
-only durable enqueue, command identity validation, mutation attempt invocation, and queue wake.
-Move API admin request decoding, `AuthSession` translation, public result projection, and HTTP error
-mapping into `apps/api-v1/src/crdt/create-crdt-admin-mutations.ts`.
+Task 1 already establishes the named `AppCrdtInboxService` constructor input. Move that established
+owner without repeating the constructor replacement. The shared inbox retains only durable enqueue,
+command identity validation, mutation attempt invocation, and queue wake. Move API admin request
+decoding, `AuthSession` translation, public result projection, and HTTP error mapping into
+`apps/api-v1/src/crdt/create-crdt-admin-mutations.ts`.
 
 The inbox attempt remains visibly ordered:
 

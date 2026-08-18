@@ -52,12 +52,17 @@ export function withCompetingWrite(
           ),
         serviceId: 'server-2',
       });
-      const command = await appendCommand({ now, commandId: 'competitor', updateId: 'competitor-update', actor: {
-        actorId: 'client-2',
-        principalId: 'principal-2',
-        sessionId: 'session-2',
-        serverId: 'server-2',
-      } });
+      const command = await appendCommand({
+        now,
+        commandId: 'competitor',
+        updateId: 'competitor-update',
+        actor: {
+          actorId: 'client-2',
+          principalId: 'principal-2',
+          sessionId: 'session-2',
+          serverId: 'server-2',
+        },
+      });
       const computed = service.compute(command, await service.read(command));
       assert.equal(computed.outcome, 'write');
       await database.begin(async (transaction) => {

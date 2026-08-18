@@ -5,9 +5,9 @@ import type {
 } from '../crdt/mutation/crdt-mutation-contracts.ts';
 
 export interface CurrentCrdtMutationSession {
-  clientId: string;
-  username: string;
-  sessionId: string;
+  readonly clientId: string;
+  readonly username: string;
+  readonly sessionId: string;
 }
 
 export type ResolveCurrentCrdtMutationSession = (
@@ -16,12 +16,12 @@ export type ResolveCurrentCrdtMutationSession = (
 ) => Promise<CurrentCrdtMutationSession>;
 
 export interface AuthenticatedCrdtAppendInput {
-  update: RallarCrdtUpdateEnvelope;
-  deliveryId: string;
-  trustedSessionId: string;
-  responseAudience: Omit<CrdtMutationResponseAudience, 'senderSessionId'>;
-  capturedAtEpochMs: number;
-  expireAtEpochMs: number;
+  readonly update: RallarCrdtUpdateEnvelope;
+  readonly deliveryId: string;
+  readonly trustedSessionId: string;
+  readonly responseAudience: Omit<CrdtMutationResponseAudience, 'senderSessionId'>;
+  readonly capturedAtEpochMs: number;
+  readonly expireAtEpochMs: number;
 }
 
 export async function createAndEnqueueAuthenticatedCrdtAppend(

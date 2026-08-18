@@ -27,51 +27,51 @@ import {
 import * as CrdtUpdate from '../../rallar-system/crdt/mutation/decode-exact-update-envelope.ts';
 
 export interface DocumentRow {
-  document_key: string;
-  application_id: string;
-  workspace_id: string | null;
-  document_scope: string;
-  document_type: string;
-  document_id: string;
-  document_ref: string;
-  document_revision: number | string;
-  lifecycle: string;
-  created_at_ts: Date | string;
-  updated_at_ts: Date | string;
-  archived_at_ts: Date | string | null;
-  destroyed_at_ts: Date | string | null;
-  last_append_sequence: number | string;
-  update_count: number | string;
-  snapshot_count: number | string;
-  stored_update_bytes: number | string;
-  retention_policy: string | null;
-  quota_policy: string | null;
-  projection_ids: string | null;
+  readonly document_key: string;
+  readonly application_id: string;
+  readonly workspace_id: string | null;
+  readonly document_scope: string;
+  readonly document_type: string;
+  readonly document_id: string;
+  readonly document_ref: string;
+  readonly document_revision: number | string;
+  readonly lifecycle: string;
+  readonly created_at_ts: Date | string;
+  readonly updated_at_ts: Date | string;
+  readonly archived_at_ts: Date | string | null;
+  readonly destroyed_at_ts: Date | string | null;
+  readonly last_append_sequence: number | string;
+  readonly update_count: number | string;
+  readonly snapshot_count: number | string;
+  readonly stored_update_bytes: number | string;
+  readonly retention_policy: string | null;
+  readonly quota_policy: string | null;
+  readonly projection_ids: string | null;
 }
 
 export interface UpdateRow {
-  document_key: string;
-  update_id: string;
-  append_sequence: number | string;
-  update_envelope: string;
-  accepted_update_hash: string;
-  actor_id: string | null;
-  principal_id: string | null;
-  session_id: string | null;
-  server_id: string | null;
-  authorization_scope: string;
-  accepted_at_ts: Date | string;
+  readonly document_key: string;
+  readonly update_id: string;
+  readonly append_sequence: number | string;
+  readonly update_envelope: string;
+  readonly accepted_update_hash: string;
+  readonly actor_id: string | null;
+  readonly principal_id: string | null;
+  readonly session_id: string | null;
+  readonly server_id: string | null;
+  readonly authorization_scope: string;
+  readonly accepted_at_ts: Date | string;
 }
 
 export interface SnapshotRow {
-  document_key: string;
-  snapshot_id: string;
-  append_sequence: number | string;
-  snapshot_envelope: string;
-  created_at_ts: Date | string;
-  reason: string;
-  snapshot_bytes: number | string;
-  snapshot_count: number | string;
+  readonly document_key: string;
+  readonly snapshot_id: string;
+  readonly append_sequence: number | string;
+  readonly snapshot_envelope: string;
+  readonly created_at_ts: Date | string;
+  readonly reason: string;
+  readonly snapshot_bytes: number | string;
+  readonly snapshot_count: number | string;
 }
 
 export function toMetadata(

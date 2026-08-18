@@ -26,7 +26,8 @@ export interface CurrentMutationAuthority {
   readonly readSession: (sessionId: string) => Promise<
     | CurrentMutationSession
     | null
-    | undefined>;
+    | undefined
+  >;
   readonly authorizeDocument: (
     command: Crdt.CrdtMutationCommand,
     session: CurrentMutationSession,
