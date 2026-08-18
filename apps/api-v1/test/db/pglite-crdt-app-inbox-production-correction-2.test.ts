@@ -220,7 +220,9 @@ function productionService(input: ProductionServiceInput) {
         }),
       adminClientIds: ['client-1'],
     },
-    policies: allow ? [{ documentType: 'checklist', rollout: 'production' }] : undefined,
+    policies: allow
+      ? [{ documentType: 'checklist', rollout: 'production' }]
+      : [{ documentType: '*', rollout: 'disabled' }],
   });
 }
 
@@ -350,7 +352,9 @@ function withInjectedTransactionFailure(
           (stage === 'result' && text.includes('insert into resource_inbox_results')) ||
           (stage === 'completion' && text.includes('update resource_inbox') &&
             text.includes("ri_status = 'RESERVED'"));
-        if (fail) throw new Error(`injected ${stage} failure`);
+        if (fail) {
+          throw new Error(`injected ${stage} failure`);
+        }
         return transaction(parts as never, ...values);
       }) as PSqlTransactionSql;
       failing.begin = transaction.begin.bind(transaction);

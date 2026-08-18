@@ -93,8 +93,9 @@ export function toMetadata(
     row.document_scope !== document.scope ||
     row.document_type !== document.documentType ||
     row.document_id !== document.documentId
-  )
+  ) {
     throw new TypeError('CRDT persisted document identity is corrupt');
+  }
   const counters = [
     row.document_revision,
     row.last_append_sequence,
@@ -121,8 +122,9 @@ export function toMetadata(
     !Array.isArray(projectionIds) ||
     projectionIds.some((id) => typeof id !== 'string' || !id) ||
     new Set(projectionIds).size !== projectionIds.length
-  )
+  ) {
     throw new TypeError('CRDT persisted document metadata is corrupt');
+  }
   return decodeExactDocumentMetadata({
     document,
     documentKey: row.document_key,
@@ -171,8 +173,9 @@ export function toRecord<TPayload extends RallarCrdtOperationBatch>(
     !Number.isSafeInteger(acceptedAtEpochMs) ||
     acceptedAtEpochMs < 0 ||
     row.authorization_scope !== document.scope
-  )
+  ) {
     throw new TypeError('CRDT persisted update identity is corrupt');
+  }
   const append = decodeExactTrustedAppendMetadata({
     appendSequence,
     acceptedAtEpochMs,
@@ -215,8 +218,9 @@ export function toSnapshot(input: SnapshotDecodingInput): RallarCrdtSnapshotEnve
     toRallarCrdtDocumentKey(snapshot.document) !== expectedDocumentKey ||
     toRallarCrdtDocumentKey(expectedDocument) !== expectedDocumentKey ||
     !validateRallarCrdtSnapshotEnvelope(snapshot).valid
-  )
+  ) {
     throw new TypeError('CRDT persisted snapshot identity is corrupt');
+  }
   return snapshot;
 }
 

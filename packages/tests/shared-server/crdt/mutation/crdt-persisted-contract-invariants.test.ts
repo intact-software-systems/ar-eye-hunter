@@ -172,7 +172,9 @@ describe('CRDT persisted mutation contract invariants', () => {
     let finalRetryAtEpochMs = capturedAtEpochMs;
     for (let attempt = 1; attempt < DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts; attempt += 1) {
       const decision = retryAfterAttempt(DEFAULT_RESOURCE_INBOX_RETRY_POLICY, attempt, 1);
-      if (decision.status === 'retry') finalRetryAtEpochMs += decision.delayMs;
+      if (decision.status === 'retry') {
+        finalRetryAtEpochMs += decision.delayMs;
+      }
     }
 
     expect(Number(entry.audit.expiryTs.epochMilliseconds)).toBeGreaterThanOrEqual(

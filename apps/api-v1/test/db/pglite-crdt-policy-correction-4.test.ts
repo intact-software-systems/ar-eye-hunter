@@ -102,6 +102,10 @@ Deno.test('operator CRDT status defaults disabled and matches configured mutatio
     await withPGliteSql(async (sql) => {
       await insertDocument(sql);
       Deno.env.delete(ENVIRONMENT_KEY);
+      assert.deepEqual(readConfiguredCrdtPolicies(), [{
+        documentType: '*',
+        rollout: 'disabled',
+      }]);
       const defaultStatus = await new PSqlCrdtLogRepository(sql).listDocuments();
       assert.equal(defaultStatus.documents[0]?.rollout, 'disabled');
 
@@ -161,7 +165,10 @@ async function withPolicyEnvironment<T>(run: () => T | Promise<T>): Promise<T> {
   try {
     return await run();
   } finally {
-    if (previous === undefined) Deno.env.delete(ENVIRONMENT_KEY);
-    else Deno.env.set(ENVIRONMENT_KEY, previous);
+    if (previous === undefined) {
+      Deno.env.delete(ENVIRONMENT_KEY);
+    } else {
+      Deno.env.set(ENVIRONMENT_KEY, previous);
+    }
   }
 }

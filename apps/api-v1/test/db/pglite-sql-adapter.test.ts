@@ -753,7 +753,9 @@ Deno.test('PGlite client write commits state, event, and ResourceInbox rows in o
       const computed = service.compute(command, read);
       service.validate(command, read, computed);
       assert.equal(computed.outcome, 'write');
-      if (computed.outcome !== 'write') throw new Error('Expected applied client write');
+      if (computed.outcome !== 'write') {
+        throw new Error('Expected applied client write');
+      }
       assert.equal(requiresClientWrite(computed), true);
       return computed;
     };
@@ -824,14 +826,16 @@ async function createPGliteClientEventCollisionFixture(
   } as const;
   await authSessions.putSession(authority);
 
-  const compute = async (
-    input: ReturnType<typeof toUpsertPrincipalCommandInput>,
-    operation: 'upsertPrincipal' | 'upsertInstance',
-    eventId: string,
-    nowEpochMs: number,
-  ) => {
+  interface ComputeInput {
+    readonly commandInput: ReturnType<typeof toUpsertPrincipalCommandInput>;
+    readonly operation: 'upsertPrincipal' | 'upsertInstance';
+    readonly eventId: string;
+    readonly nowEpochMs: number;
+  }
+  const compute = async (input: ComputeInput) => {
+    const { commandInput, operation, eventId, nowEpochMs } = input;
     const command = await toClientMutationCommand(
-      input,
+      commandInput,
       {
         nowEpochMs,
         serviceId: 'pglite-client-service',
@@ -846,13 +850,15 @@ async function createPGliteClientEventCollisionFixture(
     const computed = service.compute(command, read);
     service.validate(command, read, computed);
     assert.equal(computed.outcome, 'write');
-    if (computed.outcome !== 'write') throw new Error('Expected applied client write');
+    if (computed.outcome !== 'write') {
+      throw new Error('Expected applied client write');
+    }
     return computed;
   };
 
   const seedRequestId = `${prefix}-seed`;
-  const seed = await compute(
-    toUpsertPrincipalCommandInput(
+  const seed = await compute({
+    commandInput: toUpsertPrincipalCommandInput(
       scope,
       principalId,
       {
@@ -864,10 +870,10 @@ async function createPGliteClientEventCollisionFixture(
       },
       seedRequestId,
     ),
-    'upsertPrincipal',
-    `${seedRequestId}-event`,
-    2_000,
-  );
+    operation: 'upsertPrincipal',
+    eventId: `${seedRequestId}-event`,
+    nowEpochMs: 2_000,
+  });
   await sql.begin(async (transaction) => {
     await service.write(transaction, seed);
   });
@@ -876,8 +882,8 @@ async function createPGliteClientEventCollisionFixture(
 
   const requestId = `${prefix}-instance`;
   const clientInstanceId = `${prefix}-browser`;
-  const computed = await compute(
-    toUpsertInstanceCommandInput(
+  const computed = await compute({
+    commandInput: toUpsertInstanceCommandInput(
       scope,
       principalId,
       clientInstanceId,
@@ -890,10 +896,10 @@ async function createPGliteClientEventCollisionFixture(
       },
       requestId,
     ),
-    'upsertInstance',
-    `${requestId}-event`,
-    3_000,
-  );
+    operation: 'upsertInstance',
+    eventId: `${requestId}-event`,
+    nowEpochMs: 3_000,
+  });
   return {
     before,
     clientInstanceId,
@@ -1458,10 +1464,7 @@ Deno.test('PSqlRuntimeStateRepository generic expiry preserves protected namespa
     await repository.upsert(protectedNamespaces[1], 'intent', '{}', PAST_MS);
     await repository.upsert('ordinary-expired', 'row', '{}', PAST_MS);
 
-    const deleteAllExpired = repository.deleteAllExpired as unknown as (
-      excludedNamespaces: readonly string[],
-    ) => Promise<number>;
-    assert.equal(await deleteAllExpired.call(repository, protectedNamespaces), 1);
+    assert.equal(await repository.deleteAllExpired(protectedNamespaces), 1);
     assert.notEqual(
       await repository.findEntry(protectedNamespaces[0], 'receipt'),
       undefined,
@@ -1485,7 +1488,9 @@ Deno.test('PGlite AppGroup retries cross-target topology CAS conflicts through R
         ...args: Parameters<PSqlQueueBox['releaseEntries']>
       ): ReturnType<PSqlQueueBox['releaseEntries']> {
         const released = await super.releaseEntries(...args);
-        if (args[1].status === EntityStatus.RETRY) retryReleaseCount += 1;
+        if (args[1].status === EntityStatus.RETRY) {
+          retryReleaseCount += 1;
+        }
         return released;
       }
     }
@@ -1685,7 +1690,9 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
     const snapshot = topologyGroupSnapshot(groupRef);
     const groupRepository = new GroupStateRepository(runtime);
     assert.equal((await groupRepository.insertGroup(snapshot.group)).status, 'applied');
-    for (const member of snapshot.members) await groupRepository.putMember(member);
+    for (const member of snapshot.members) {
+      await groupRepository.putMember(member);
+    }
     const groupState = createGroupStateService({
       runtimeRepository: runtime,
       formationDamping: 'damped',
@@ -2045,12 +2052,12 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
         'code' in error && error.code === 'app-inbox-idempotency-conflict',
     );
 
-    const rttGroup = topologyGroupSnapshotWithSessions(
+    const rttGroup = topologyGroupSnapshotWithSessions({
       groupRef,
-      authority.sessionId,
-      'peer-session',
+      ownerSessionId: authority.sessionId,
+      peerSessionId: 'peer-session',
       nowEpochMs,
-    );
+    });
     appGroup.setRtcRttAppInboxDependencies({
       repository: new RtcRttRepository(runtime, { now: () => nowEpochMs }),
       readPolicyInputs: () =>
@@ -2222,7 +2229,9 @@ Deno.test('PGlite topology route preserves structured AppInbox terminal and unav
     const snapshot = topologyGroupSnapshot(groupRef);
     const groupRepository = new GroupStateRepository(runtime);
     assert.equal((await groupRepository.insertGroup(snapshot.group)).status, 'applied');
-    for (const member of snapshot.members) await groupRepository.putMember(member);
+    for (const member of snapshot.members) {
+      await groupRepository.putMember(member);
+    }
     const groupState = createGroupStateService({
       runtimeRepository: runtime,
       formationDamping: 'damped',
@@ -2424,7 +2433,9 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
     const snapshot = topologyGroupSnapshot(groupRef);
     const groupRepository = new GroupStateRepository(runtime);
     assert.equal((await groupRepository.insertGroup(snapshot.group)).status, 'applied');
-    for (const member of snapshot.members) await groupRepository.putMember(member);
+    for (const member of snapshot.members) {
+      await groupRepository.putMember(member);
+    }
     const configRepository = new GroupTopologyConfigRepository(runtime);
     const baselineTopology = new GroupTopologyManagementService({
       findGroupSnapshotByRef: (ref) => groupRepository.readSnapshot(ref),
@@ -2571,7 +2582,9 @@ Deno.test('PGlite topology authority fence rejects an archive overlapping the st
     };
     const snapshot = topologyGroupSnapshot(groupRef);
     assert.equal((await groupState.insertGroup(snapshot.group)).status, 'applied');
-    for (const member of snapshot.members) await groupState.putMember(member);
+    for (const member of snapshot.members) {
+      await groupState.putMember(member);
+    }
     const observed = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     let pauseFirstRead = false;
@@ -2633,7 +2646,9 @@ Deno.test('PGlite topology authority fence rejects an archive overlapping the st
       firstComputed,
     );
     assert.equal(firstComputed.outcome, 'write');
-    if (firstComputed.outcome !== 'write') throw new Error('Expected topology write');
+    if (firstComputed.outcome !== 'write') {
+      throw new Error('Expected topology write');
+    }
     await assert.rejects(
       () =>
         sql.begin((transaction) => service.writeTopologyConfigMutation(transaction, firstComputed)),
@@ -2776,8 +2791,12 @@ Deno.test('PGlite topology planning filters stored RTTs that are not reporting e
     const runtime = new PSqlRuntimeStateRepository(sql);
     const groups = new GroupStateRepository(runtime);
     assert.equal((await groups.insertGroup(group.group)).status, 'applied');
-    for (const member of group.members) await groups.putMember(member);
-    for (const session of group.activeSessions) await groups.putPresenceSession(session);
+    for (const member of group.members) {
+      await groups.putMember(member);
+    }
+    for (const session of group.activeSessions) {
+      await groups.putPresenceSession(session);
+    }
     const rttRepository = new RtcRttRepository(runtime, {
       now: () => nowEpochMs,
     });
@@ -2817,16 +2836,16 @@ Deno.test('PGlite topology planning filters stored RTTs that are not reporting e
       },
       now: () => nowEpochMs,
     });
-    const previous = activeTopologySnapshot(
+    const previous = activeTopologySnapshot({
       groupRef,
-      { groupRevision: 1, presenceRevision: 1 },
-      ['session-a', 'session-b', 'session-c'],
-      {
+      sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 1 },
+      activeSessionIds: ['session-a', 'session-b', 'session-c'],
+      nextHopsBySessionId: {
         'session-a': ['session-b'],
         'session-b': ['session-a', 'session-c'],
         'session-c': ['session-b'],
       },
-    );
+    });
     const authority = await service.readTopologyPlanningAuthority(groupRef);
     assert.deepEqual(authority.rttMeasurements, [storedRtt]);
 
@@ -2858,16 +2877,18 @@ Deno.test('PGlite topology worker rereads terminal authority and the topology pr
     const runtimeRepository = new PSqlRuntimeStateRepository(sql);
     const groups = new GroupStateRepository(runtimeRepository);
     assert.equal((await groups.insertGroup(terminal.group)).status, 'applied');
-    for (const member of terminal.members) await groups.putMember(member);
+    for (const member of terminal.members) {
+      await groups.putMember(member);
+    }
     const durableTerminal = await groups.readSnapshot(groupRef);
     assert.ok(durableTerminal);
     const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
-    const predecessor = activeTopologySnapshot(
+    const predecessor = activeTopologySnapshot({
       groupRef,
-      { groupRevision: 0, presenceRevision: 0 },
-      [],
-      {},
-    );
+      sourceGroupStateCausalRevision: { groupRevision: 0, presenceRevision: 0 },
+      activeSessionIds: [],
+      nextHopsBySessionId: {},
+    });
     assert.equal(await snapshots.observeSnapshot(predecessor), 'inserted');
     const movedPredecessor = { ...predecessor, version: 1, updatedAtEpochMs: 2 };
     let authorityReadCount = 0;
@@ -2899,7 +2920,9 @@ Deno.test('PGlite topology worker rereads terminal authority and the topology pr
         ...args: Parameters<PSqlQueueBox['releaseEntries']>
       ): ReturnType<PSqlQueueBox['releaseEntries']> {
         const released = await super.releaseEntries(...args);
-        if (args[1].status === EntityStatus.RETRY) retryReleaseCount += 1;
+        if (args[1].status === EntityStatus.RETRY) {
+          retryReleaseCount += 1;
+        }
         return released;
       }
     }
@@ -3443,10 +3466,10 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
         randomId: () => `event-${testCase.kind}-${eventSequence++}`,
         serviceId: `pglite-complete-${testCase.kind}`,
       });
-      await applyPGliteGroupMutation(
+      await applyPGliteGroupMutation({
         sql,
         service,
-        mutationDescriptor('createGroup', scope, ref.groupId, {
+        descriptor: mutationDescriptor('createGroup', scope, ref.groupId, {
           groupId: ref.groupId,
           displayName: `Complete ${testCase.kind}`,
           kind: 'room',
@@ -3455,12 +3478,12 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
           requestId: `create-${testCase.kind}`,
         }),
         authority,
-      );
+      });
       if (testCase.kind === 'session') {
-        await applyPGliteGroupMutation(
+        await applyPGliteGroupMutation({
           sql,
           service,
-          mutationDescriptor(
+          descriptor: mutationDescriptor(
             'connectPresence',
             scope,
             ref.groupId,
@@ -3478,7 +3501,7 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
             authority.sessionId,
           ),
           authority,
-        );
+        });
       }
 
       const storageKey = testCase.kind === 'member'
@@ -3555,27 +3578,43 @@ Deno.test('PSql state event repositories page by snapshot cursor order', async (
     };
 
     await clientEvents.appendClientEvent(
-      createClientStateEvent('client-late-snapshot', 1_000, 30),
+      createClientStateEvent({
+        eventId: 'client-late-snapshot',
+        occurredAtEpochMs: 1_000,
+        snapshotVersion: 30,
+      }),
     );
     await clientEvents.appendClientEvent(
-      createClientStateEvent('client-early-snapshot', 2_000, 10),
+      createClientStateEvent({
+        eventId: 'client-early-snapshot',
+        occurredAtEpochMs: 2_000,
+        snapshotVersion: 10,
+      }),
     );
     await clientEvents.appendClientEvent(
-      createClientStateEvent('client-middle-snapshot', 3_000, 20),
+      createClientStateEvent({
+        eventId: 'client-middle-snapshot',
+        occurredAtEpochMs: 3_000,
+        snapshotVersion: 20,
+      }),
     );
-    const firstClientDuplicate = createClientStateEvent(
-      'client-filtered',
-      4_000,
-      40,
-      'session-disconnected',
-    );
+    const firstClientDuplicate = createClientStateEvent({
+      eventId: 'client-filtered',
+      occurredAtEpochMs: 4_000,
+      snapshotVersion: 40,
+      eventType: 'session-disconnected',
+    });
     await clientEvents.appendClientEvent(firstClientDuplicate);
     await clientEvents.appendClientEvent(structuredClone(firstClientDuplicate));
     await assert.rejects(
       () =>
         clientEvents.appendClientEvent(
-          createClientStateEvent('client-filtered', 5_000, 50, 'session-disconnected', {
-            reason: 'updated',
+          createClientStateEvent({
+            eventId: 'client-filtered',
+            occurredAtEpochMs: 5_000,
+            snapshotVersion: 50,
+            eventType: 'session-disconnected',
+            overrides: { reason: 'updated' },
           }),
         ),
       (error) => error instanceof ClientStateEventCollisionError,
@@ -3647,27 +3686,43 @@ Deno.test('PSql state event repositories page by snapshot cursor order', async (
     );
 
     await groupEvents.appendGroupEvent(
-      createGroupStateEvent('group-late-snapshot', 1_000, 30),
+      createGroupStateEvent({
+        eventId: 'group-late-snapshot',
+        occurredAtEpochMs: 1_000,
+        snapshotVersion: 30,
+      }),
     );
     await groupEvents.appendGroupEvent(
-      createGroupStateEvent('group-early-snapshot', 2_000, 10),
+      createGroupStateEvent({
+        eventId: 'group-early-snapshot',
+        occurredAtEpochMs: 2_000,
+        snapshotVersion: 10,
+      }),
     );
     await groupEvents.appendGroupEvent(
-      createGroupStateEvent('group-middle-snapshot', 3_000, 20),
+      createGroupStateEvent({
+        eventId: 'group-middle-snapshot',
+        occurredAtEpochMs: 3_000,
+        snapshotVersion: 20,
+      }),
     );
-    const firstDuplicate = createGroupStateEvent(
-      'group-duplicate',
-      4_000,
-      40,
-      'member-left',
-    );
+    const firstDuplicate = createGroupStateEvent({
+      eventId: 'group-duplicate',
+      occurredAtEpochMs: 4_000,
+      snapshotVersion: 40,
+      eventType: 'member-left',
+    });
     await groupEvents.appendGroupEvent(firstDuplicate);
     await groupEvents.appendGroupEvent(structuredClone(firstDuplicate));
     await assert.rejects(
       () =>
         groupEvents.appendGroupEvent(
-          createGroupStateEvent('group-duplicate', 5_000, 50, 'member-left', {
-            reason: 'updated',
+          createGroupStateEvent({
+            eventId: 'group-duplicate',
+            occurredAtEpochMs: 5_000,
+            snapshotVersion: 50,
+            eventType: 'member-left',
+            overrides: { reason: 'updated' },
           }),
         ),
       (error) =>
@@ -3720,20 +3775,23 @@ Deno.test('PSql group events isolate ordinary and sentinel workspaces without ev
       groupId: 'shared-group',
     };
     const explicitSentinelRef = { ...ordinaryRef, workspaceId: '_' };
-    const ordinaryEvent = createGroupStateEvent('shared-event', 1_000, 1, 'group-updated', {
-      ...ordinaryRef,
-      reason: 'ordinary',
+    const ordinaryEvent = createGroupStateEvent({
+      eventId: 'shared-event',
+      occurredAtEpochMs: 1_000,
+      snapshotVersion: 1,
+      eventType: 'group-updated',
+      overrides: { ...ordinaryRef, reason: 'ordinary' },
     });
-    const explicitSentinelEvent = createGroupStateEvent(
-      'shared-event',
-      2_000,
-      2,
-      'group-updated',
-      {
+    const explicitSentinelEvent = createGroupStateEvent({
+      eventId: 'shared-event',
+      occurredAtEpochMs: 2_000,
+      snapshotVersion: 2,
+      eventType: 'group-updated',
+      overrides: {
         ...explicitSentinelRef,
         reason: 'explicit-sentinel',
       },
-    );
+    });
 
     await repository.appendGroupEvent(ordinaryEvent);
     await repository.appendGroupEvent(explicitSentinelEvent);
@@ -3792,10 +3850,10 @@ Deno.test('PGlite group event collision rolls back the authoritative mutation tr
     });
     const scope = { applicationId: 'collision-app', workspaceId: 'main' };
     const ref = { ...scope, groupId: 'collision-group' };
-    await applyPGliteGroupMutation(
+    await applyPGliteGroupMutation({
       sql,
       service,
-      mutationDescriptor('createGroup', scope, ref.groupId, {
+      descriptor: mutationDescriptor('createGroup', scope, ref.groupId, {
         groupId: ref.groupId,
         displayName: 'Before collision',
         kind: 'room',
@@ -3804,7 +3862,7 @@ Deno.test('PGlite group event collision rolls back the authoritative mutation tr
         requestId: 'seed-collision-group',
       }),
       authority,
-    );
+    });
     const updateDescriptor = mutationDescriptor('updateGroup', scope, ref.groupId, {
       displayName: 'Must roll back',
       actorPrincipalId: 'alice',
@@ -3812,9 +3870,12 @@ Deno.test('PGlite group event collision rolls back the authoritative mutation tr
     });
     const updatePreparation = await service.prepareMutation(updateDescriptor, authority);
     await new PSqlGroupStateEventRepository(sql).appendGroupEvent(
-      createGroupStateEvent(updatePreparation.facts.eventId, 9_000, 99, 'group-updated', {
-        ...ref,
-        requestId: 'preexisting-event',
+      createGroupStateEvent({
+        eventId: updatePreparation.facts.eventId,
+        occurredAtEpochMs: 9_000,
+        snapshotVersion: 99,
+        eventType: 'group-updated',
+        overrides: { ...ref, requestId: 'preexisting-event' },
       }),
     );
 
@@ -3878,10 +3939,10 @@ Deno.test('PGlite group summary outbox collision rolls back state event and rece
     });
     const scope = { applicationId: 'summary-collision-app', workspaceId: 'main' };
     const ref = { ...scope, groupId: 'summary-collision-group' };
-    await applyPGliteGroupMutation(
+    await applyPGliteGroupMutation({
       sql,
       service,
-      mutationDescriptor('createGroup', scope, ref.groupId, {
+      descriptor: mutationDescriptor('createGroup', scope, ref.groupId, {
         groupId: ref.groupId,
         displayName: 'Before summary collision',
         kind: 'room',
@@ -3890,7 +3951,7 @@ Deno.test('PGlite group summary outbox collision rolls back state event and rece
         requestId: 'seed-summary-collision-group',
       }),
       authority,
-    );
+    });
 
     const preparation = await service.prepareMutation(
       mutationDescriptor('updateGroup', scope, ref.groupId, {
@@ -3908,7 +3969,9 @@ Deno.test('PGlite group summary outbox collision rolls back state event and rece
     const computed = service.compute(command, read);
     service.validate(command, read, computed);
     assert.equal(computed.outcome, 'write');
-    if (computed.outcome !== 'write') throw new TypeError('Expected summary collision write');
+    if (computed.outcome !== 'write') {
+      throw new TypeError('Expected summary collision write');
+    }
     const [summaryEntry] = computed.outboxEntries;
     assert.ok(summaryEntry);
     const divergentResource = JSON.stringify({
@@ -3954,9 +4017,12 @@ Deno.test('PSql group event reads fail closed on a legacy wrong-scope payload', 
       workspaceId: 'main',
       groupId: 'legacy-group-event-group',
     };
-    const corruptEvent = createGroupStateEvent('legacy-event', 1_000, 1, 'group-updated', {
-      ...expectedRef,
-      workspaceId: '_',
+    const corruptEvent = createGroupStateEvent({
+      eventId: 'legacy-event',
+      occurredAtEpochMs: 1_000,
+      snapshotVersion: 1,
+      eventType: 'group-updated',
+      overrides: { ...expectedRef, workspaceId: '_' },
     });
     await sql`
       insert into group_state_events (
@@ -4091,7 +4157,13 @@ Deno.test('PSql group event reads validate the decoded event-id slot', async () 
       workspaceId: 'main',
       groupId: 'group-event-slot-group',
     };
-    const event = createGroupStateEvent('payload-event-id', 1_000, 1, 'group-updated', ref);
+    const event = createGroupStateEvent({
+      eventId: 'payload-event-id',
+      occurredAtEpochMs: 1_000,
+      snapshotVersion: 1,
+      eventType: 'group-updated',
+      overrides: ref,
+    });
     await sql`
       insert into group_state_events (
         application_id, workspace_key, group_id, event_id, event_type,
@@ -4121,18 +4193,18 @@ Deno.test('PSql group events enforce the complete event contract and physical co
       workspaceId: 'main',
       groupId: 'group-event-complete-contract-group',
     };
-    const baseEvent = createGroupStateEvent(
-      'complete-contract-event',
-      1_000,
-      1,
-      'group-updated',
-      baseRef,
-    );
-    const missingActor = structuredClone(baseEvent) as Record<string, unknown>;
-    delete missingActor.actor;
+    const baseEvent = createGroupStateEvent({
+      eventId: 'complete-contract-event',
+      occurredAtEpochMs: 1_000,
+      snapshotVersion: 1,
+      eventType: 'group-updated',
+      overrides: baseRef,
+    });
+    const missingActor = structuredClone(baseEvent);
+    Reflect.deleteProperty(missingActor, 'actor');
 
     await assert.rejects(
-      () => repository.appendGroupEvent(missingActor as unknown as GroupEvent),
+      () => repository.appendGroupEvent(missingActor),
       (error) =>
         error instanceof Error &&
         'code' in error &&
@@ -5405,12 +5477,17 @@ function topologyGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
   };
 }
 
+interface TopologyGroupSnapshotWithSessionsInput {
+  readonly groupRef: GroupRef;
+  readonly ownerSessionId: string;
+  readonly peerSessionId: string;
+  readonly nowEpochMs: number;
+}
+
 function topologyGroupSnapshotWithSessions(
-  groupRef: GroupRef,
-  ownerSessionId: string,
-  peerSessionId: string,
-  nowEpochMs: number,
+  input: TopologyGroupSnapshotWithSessionsInput,
 ): GroupSnapshot {
+  const { groupRef, ownerSessionId, peerSessionId, nowEpochMs } = input;
   const base = topologyGroupSnapshot(groupRef);
   const peer = {
     ...base.members[0],
@@ -5492,12 +5569,20 @@ function topologyGroupSnapshotWithSessionIds(
   };
 }
 
-function activeTopologySnapshot(
-  groupRef: GroupRef,
-  sourceGroupStateCausalRevision: GroupSnapshot['causalRevision'],
-  activeSessionIds: readonly string[],
-  nextHopsBySessionId: Readonly<Record<string, readonly string[]>>,
-): RallarOverlayTopologySnapshot {
+interface ActiveTopologySnapshotInput {
+  readonly groupRef: GroupRef;
+  readonly sourceGroupStateCausalRevision: GroupSnapshot['causalRevision'];
+  readonly activeSessionIds: readonly string[];
+  readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>>;
+}
+
+function activeTopologySnapshot(input: ActiveTopologySnapshotInput): RallarOverlayTopologySnapshot {
+  const {
+    groupRef,
+    sourceGroupStateCausalRevision,
+    activeSessionIds,
+    nextHopsBySessionId,
+  } = input;
   return {
     sourceGroupStateCausalRevision,
     state: 'active',
@@ -5558,7 +5643,9 @@ async function createPGliteRemovalPlanningScenario(
   const runtime = new PSqlRuntimeStateRepository(sql);
   const groups = new GroupStateRepository(runtime);
   assert.equal((await groups.insertGroup(current.group)).status, 'applied');
-  for (const member of current.members) await groups.putMember(member);
+  for (const member of current.members) {
+    await groups.putMember(member);
+  }
   const durable = await groups.readSnapshot(groupRef);
   assert.ok(durable);
   const staleTerminal: GroupSnapshot = {
@@ -5575,12 +5662,12 @@ async function createPGliteRemovalPlanningScenario(
     },
   };
   const snapshots = new RtcTopologySnapshotRepository(runtime);
-  const previous = activeTopologySnapshot(
+  const previous = activeTopologySnapshot({
     groupRef,
-    { groupRevision: 0, presenceRevision: 0 },
-    [],
-    {},
-  );
+    sourceGroupStateCausalRevision: { groupRevision: 0, presenceRevision: 0 },
+    activeSessionIds: [],
+    nextHopsBySessionId: {},
+  });
   assert.equal(await snapshots.observeSnapshot(previous), 'inserted');
   const service = new GroupTopologyManagementService({
     findGroupSnapshotByRef: (ref) => groups.readSnapshot(ref),
@@ -5678,18 +5765,23 @@ async function waitForPGliteQueueRow(
       from resource_inbox
       where ri_type_id = ${typeId} and ri_status = ${status}
     `;
-    if (Number(row?.count ?? 0) > 0) return;
+    if (Number(row?.count ?? 0) > 0) {
+      return;
+    }
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   throw new Error(`Timed out waiting for ${typeId} ${status} queue row`);
 }
 
-async function applyPGliteGroupMutation(
-  sql: PGliteSql,
-  service: GroupStateService,
-  descriptor: GroupMutationDescriptor,
-  authority: IssuedAuthSession,
-): Promise<void> {
+interface ApplyPGliteGroupMutationInput {
+  readonly sql: PGliteSql;
+  readonly service: GroupStateService;
+  readonly descriptor: GroupMutationDescriptor;
+  readonly authority: IssuedAuthSession;
+}
+
+async function applyPGliteGroupMutation(input: ApplyPGliteGroupMutationInput): Promise<void> {
+  const { sql, service, descriptor, authority } = input;
   await applyPreparedPGliteGroupMutation(
     sql,
     service,
@@ -5709,19 +5801,30 @@ async function applyPreparedPGliteGroupMutation(
   const read = await service.read(command);
   const computed = service.compute(command, read);
   service.validate(command, read, computed);
-  if (computed.outcome !== 'write') return;
+  if (computed.outcome !== 'write') {
+    return;
+  }
   await sql.begin(async (transaction) => {
     await service.write(transaction, computed);
   });
 }
 
-function createClientStateEvent(
-  eventId: string,
-  occurredAtEpochMs: number,
-  snapshotVersion: number,
-  eventType: ClientEvent['eventType'] = 'session-connected',
-  overrides: Partial<ClientEvent> = {},
-): ClientEvent {
+interface CreateClientStateEventInput {
+  readonly eventId: string;
+  readonly occurredAtEpochMs: number;
+  readonly snapshotVersion: number;
+  readonly eventType?: ClientEvent['eventType'];
+  readonly overrides?: Partial<ClientEvent>;
+}
+
+function createClientStateEvent(input: CreateClientStateEventInput): ClientEvent {
+  const {
+    eventId,
+    occurredAtEpochMs,
+    snapshotVersion,
+    eventType = 'session-connected',
+    overrides = {},
+  } = input;
   return {
     applicationId: 'rallar-test',
     workspaceId: 'main',
@@ -5744,13 +5847,22 @@ function createClientStateEvent(
   };
 }
 
-function createGroupStateEvent(
-  eventId: string,
-  occurredAtEpochMs: number,
-  snapshotVersion: number,
-  eventType: GroupEvent['eventType'] = 'session-connected',
-  overrides: Partial<GroupEvent> = {},
-): GroupEvent {
+interface CreateGroupStateEventInput {
+  readonly eventId: string;
+  readonly occurredAtEpochMs: number;
+  readonly snapshotVersion: number;
+  readonly eventType?: GroupEvent['eventType'];
+  readonly overrides?: Partial<GroupEvent>;
+}
+
+function createGroupStateEvent(input: CreateGroupStateEventInput): GroupEvent {
+  const {
+    eventId,
+    occurredAtEpochMs,
+    snapshotVersion,
+    eventType = 'session-connected',
+    overrides = {},
+  } = input;
   return {
     applicationId: 'rallar-test',
     workspaceId: 'main',

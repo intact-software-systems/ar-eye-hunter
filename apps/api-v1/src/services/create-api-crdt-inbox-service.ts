@@ -32,8 +32,8 @@ export interface CreateApiCrdtInboxServiceInput {
   readonly serviceId: string;
   readonly timing?: RallarTimingSink;
   readonly options?: AppInboxServiceOptions;
-  readonly currentAuthority?: CurrentMutationAuthority;
-  readonly policies?: readonly RallarCrdtDocumentTypePolicy[];
+  readonly currentAuthority: CurrentMutationAuthority;
+  readonly policies: readonly RallarCrdtDocumentTypePolicy[];
   readonly outboxQueueReader?: OutboxQueueReader;
   readonly wakeQueueEngine?: () => void;
 }
@@ -41,10 +41,13 @@ export interface CreateApiCrdtInboxServiceInput {
 export function createApiCrdtInboxService(
   input: CreateApiCrdtInboxServiceInput,
 ): AppCrdtInboxService {
+  const { currentAuthority, policies } = input;
   const authorize = async (command: Crdt.CrdtMutationCommand) => {
-    const session = await input.currentAuthority?.readSession(command.actor.sessionId);
+    const session = await currentAuthority.readSession(command.actor.sessionId);
     const nowEpochMs = input.options?.nowEpochMs?.() ?? Date.now();
-    if (!session) return { allowed: false, code: 'authentication-missing' };
+    if (!session) {
+      return { allowed: false, code: 'authentication-missing' };
+    }
     if (session.expiresAtEpochMs <= nowEpochMs) {
       return { allowed: false, code: 'authentication-expired' };
     }
@@ -53,19 +56,15 @@ export function createApiCrdtInboxService(
       session.username !== command.actor.principalId ||
       session.sessionId !== command.actor.sessionId ||
       command.responseAudience.senderSessionId !== session.sessionId
-    ) return { allowed: false, code: 'authorization-forbidden' };
+    ) {
+      return { allowed: false, code: 'authorization-forbidden' };
+    }
     if (command.responseAudience.kind === 'admin') {
-      const allowed = Boolean(input.currentAuthority?.adminClientIds.includes(session.clientId));
+      const allowed = currentAuthority.adminClientIds.includes(session.clientId);
       return { allowed, code: allowed ? 'allowed' : 'authorization-forbidden' };
     }
-    if (!input.currentAuthority) {
-      return { allowed: false, code: 'authorization-scope-denied' };
-    }
-    return await input.currentAuthority.authorizeDocument(command, session);
+    return await currentAuthority.authorizeDocument(command, session);
   };
-  const policies = input.policies && input.policies.length > 0
-    ? input.policies
-    : [{ documentType: '*', rollout: 'disabled' as const }];
   const repository = new PSqlCrdtMutationRepository(
     { sql: input.database, authorize },
     { policies },
@@ -88,7 +87,7 @@ export function createApiCrdtInboxService(
       outboxQueueReader: input.outboxQueueReader,
       wakeQueueEngine: input.wakeQueueEngine,
       resolveCurrentSession: async (sessionId, atEpochMs) => {
-        const session = await input.currentAuthority?.readSession(sessionId);
+        const session = await currentAuthority.readSession(sessionId);
         if (!session || session.expiresAtEpochMs <= atEpochMs) {
           throw Object.assign(new Error('CRDT current session is unavailable'), {
             code: 'authentication-missing',

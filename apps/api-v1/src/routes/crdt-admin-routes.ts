@@ -20,32 +20,48 @@ export type RallarCrdtAdminMutationOperation =
   | 'lifecycle'
   | 'erase';
 
-export type RallarCrdtAdminMutations = Readonly<{
-  processAdminMutationUntilCompletion(
-    operation: RallarCrdtAdminMutationOperation,
-    input: Readonly<{ adminSession: AuthSession; request: unknown }>,
-  ): Promise<unknown>;
-}>;
+export interface RallarCrdtAdminMutationInput {
+  readonly adminSession: AuthSession;
+  readonly request: unknown;
+}
 
-export type RallarCrdtAdminRoutesOptions = Readonly<{
-  repository: RallarCrdtAdminReadRepository;
-  mutations?: RallarCrdtAdminMutations;
-  audit?: RallarCrdtAuditSink;
-  now?: () => number;
-  requireAuth?: boolean;
-  adminClientIds?: readonly string[];
-  authorizeAdmin?: (
-    input: Readonly<{
-      session: AuthSession;
-      context: Context;
-    }>,
+export interface RallarCrdtAdminMutations {
+  readonly processAdminMutationUntilCompletion: (
+    operation: RallarCrdtAdminMutationOperation,
+    input: RallarCrdtAdminMutationInput,
+  ) => Promise<unknown>;
+}
+
+export interface RallarCrdtAdminAuthorizationInput {
+  readonly session: AuthSession;
+  readonly context: Context;
+}
+
+export interface RallarCrdtCatchUpAuthorizationInput {
+  readonly document: RallarCrdtDocumentRef;
+  readonly session: AuthSession;
+}
+
+export interface RallarCrdtCatchUpAuthorizationDecision {
+  readonly allowed: boolean;
+}
+
+export interface RallarCrdtAdminRoutesOptions {
+  readonly repository: RallarCrdtAdminReadRepository;
+  readonly mutations?: RallarCrdtAdminMutations;
+  readonly audit?: RallarCrdtAuditSink;
+  readonly now?: () => number;
+  readonly requireAuth?: boolean;
+  readonly adminClientIds?: readonly string[];
+  readonly authorizeAdmin?: (
+    input: RallarCrdtAdminAuthorizationInput,
   ) => boolean | Promise<boolean>;
-  requireApiAdminSession: (context: Context) => Promise<IssuedAuthSession>;
-  requireApiUserSession: (context: Context) => Promise<IssuedAuthSession>;
-  authorizeCatchUp?: (
-    input: Readonly<{ document: RallarCrdtDocumentRef; session: AuthSession }>,
-  ) => Promise<Readonly<{ allowed: boolean }>>;
-}>;
+  readonly requireApiAdminSession: (context: Context) => Promise<IssuedAuthSession>;
+  readonly requireApiUserSession: (context: Context) => Promise<IssuedAuthSession>;
+  readonly authorizeCatchUp?: (
+    input: RallarCrdtCatchUpAuthorizationInput,
+  ) => Promise<RallarCrdtCatchUpAuthorizationDecision>;
+}
 
 interface ProcessCrdtAdminMutationInput {
   readonly context: Context;
@@ -249,8 +265,10 @@ async function requireCrdtAdminSession(
 }
 
 function readErrorStatus(error: unknown): 400 | 401 | 403 | 404 | 409 | 429 | 503 {
-  if (!error || typeof error !== 'object' || !('status' in error)) return 400;
-  const status = Number((error as { status: unknown }).status);
+  if (!error || typeof error !== 'object' || !('status' in error)) {
+    return 400;
+  }
+  const status = Number(Reflect.get(error, 'status'));
   return [400, 401, 403, 404, 409, 429, 503].includes(status)
     ? status as 400 | 401 | 403 | 404 | 409 | 429 | 503
     : 400;

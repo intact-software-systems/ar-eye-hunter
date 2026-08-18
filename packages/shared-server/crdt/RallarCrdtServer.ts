@@ -41,17 +41,17 @@ export const RALLAR_CRDT_SERVER_DEFAULT_MAX_SYNC_BYTES = 64 * 1024;
 export type RallarCrdtServerEnvelopeKind =
   'update' | 'sync-request' | 'sync-response' | 'catch-up-request' | 'catch-up-response';
 export type RallarCrdtServerTopicScope = 'room' | 'app';
-export type RallarCrdtServerTrustedMetadata = Readonly<{
-  senderId: string;
-  sessionId: string;
-  claimedActorId?: string;
-  claimedSessionId?: string;
-  receivedAtEpochMs: number;
-  topicId: string;
-  typeId: string;
-  roomId?: string;
-  roomRef?: GroupRef;
-}>;
+export interface RallarCrdtServerTrustedMetadata {
+  readonly senderId: string;
+  readonly sessionId: string;
+  readonly claimedActorId?: string;
+  readonly claimedSessionId?: string;
+  readonly receivedAtEpochMs: number;
+  readonly topicId: string;
+  readonly typeId: string;
+  readonly roomId?: string;
+  readonly roomRef?: GroupRef;
+}
 export type RallarCrdtServerAcceptedEnvelope =
   | Readonly<{
       kind: 'update';
@@ -83,57 +83,66 @@ export type RallarCrdtServerAcceptedEnvelope =
       trusted: RallarCrdtServerTrustedMetadata;
       raw: ALMessage;
     }>;
-export type RallarCrdtServerMutationIngress = Readonly<{
-  enqueueUpdate(
+export interface RallarCrdtServerMutationIngress {
+  readonly enqueueUpdate: (
     accepted: Extract<RallarCrdtServerAcceptedEnvelope, { kind: 'update' }>,
-  ): Promise<void>;
-}>;
-export type RallarCrdtServerDocumentAuthorizationInput = Readonly<{
-  kind: RallarCrdtServerEnvelopeKind;
-  document: RallarCrdtDocumentRef;
-  envelope: unknown;
-  trusted: RallarCrdtServerTrustedMetadata;
-  raw: ALMessage;
-}>;
-export type RallarCrdtServerTopicBridgeOptions = Readonly<{
-  allowedDocumentTypes?: readonly string[];
-  allowedSchemaVersions?: readonly number[];
-  allowedOperationKinds?: readonly RallarCrdtOperationKind[];
-  maxUpdateBytes?: number;
-  maxSyncBytes?: number;
-  validation?: RallarCrdtValidationOptions;
-  fanout?: RallarServerWsFanout;
-  allowAppDocuments?: boolean;
-  allowPrincipalDocuments?: boolean;
-  logRepository?: Pick<RallarCrdtAdminReadRepository, 'listAfter' | 'readSnapshot'>;
-  mutationIngress?: RallarCrdtServerMutationIngress;
-  policies?: readonly RallarCrdtDocumentTypePolicy[];
-  resolvePrincipalSessionIds?: (
+  ) => Promise<void>;
+}
+export interface RallarCrdtServerDocumentAuthorizationInput {
+  readonly kind: RallarCrdtServerEnvelopeKind;
+  readonly document: RallarCrdtDocumentRef;
+  readonly envelope: unknown;
+  readonly trusted: RallarCrdtServerTrustedMetadata;
+  readonly raw: ALMessage;
+}
+export interface RallarCrdtServerTopicBridgeOptions {
+  readonly allowedDocumentTypes?: readonly string[];
+  readonly allowedSchemaVersions?: readonly number[];
+  readonly allowedOperationKinds?: readonly RallarCrdtOperationKind[];
+  readonly maxUpdateBytes?: number;
+  readonly maxSyncBytes?: number;
+  readonly validation?: RallarCrdtValidationOptions;
+  readonly fanout?: RallarServerWsFanout;
+  readonly allowAppDocuments?: boolean;
+  readonly allowPrincipalDocuments?: boolean;
+  readonly logRepository?: Pick<RallarCrdtAdminReadRepository, 'listAfter' | 'readSnapshot'>;
+  readonly mutationIngress?: RallarCrdtServerMutationIngress;
+  readonly policies?: readonly RallarCrdtDocumentTypePolicy[];
+  readonly resolvePrincipalSessionIds?: (
     input: RallarCrdtServerPrincipalFanoutInput,
   ) => readonly string[] | Promise<readonly string[]>;
-  authorizeDocument?: (
+  readonly authorizeDocument?: (
     input: RallarCrdtServerDocumentAuthorizationInput,
   ) => boolean | Promise<boolean>;
-  onAcceptedEnvelope?: (accepted: RallarCrdtServerAcceptedEnvelope) => void | Promise<void>;
-}>;
-export type RallarCrdtServerPrincipalFanoutInput = Readonly<{
-  document: RallarCrdtDocumentRef;
-  update: RallarCrdtUpdateEnvelope;
-  trusted: RallarCrdtServerTrustedMetadata;
-  raw: ALMessage;
-}>;
-export type RallarCrdtServerTopicBridge = Readonly<{
-  topicIds: readonly string[];
-  definitions: readonly RallarServerWsTopicDefinition[];
-  unsubscribeHandlers(): void;
-}>;
+  readonly onAcceptedEnvelope?: (
+    accepted: RallarCrdtServerAcceptedEnvelope,
+  ) => void | Promise<void>;
+}
+export interface RallarCrdtServerPrincipalFanoutInput {
+  readonly document: RallarCrdtDocumentRef;
+  readonly update: RallarCrdtUpdateEnvelope;
+  readonly trusted: RallarCrdtServerTrustedMetadata;
+  readonly raw: ALMessage;
+}
+export interface RallarCrdtServerTopicBridge {
+  readonly topicIds: readonly string[];
+  readonly definitions: readonly RallarServerWsTopicDefinition[];
+  readonly unsubscribeHandlers: () => void;
+}
 export type RallarCrdtServerWsTopicInstaller = Pick<RallarServerWsFacade, 'defineTopic' | 'on'>;
-export type RallarCrdtServerLiveValidationContext = Readonly<{
-  topicId: string;
-  typeId: string;
-  roomId?: string;
-  roomRef?: GroupRef;
-}>;
+export interface RallarCrdtServerLiveValidationContext {
+  readonly topicId: string;
+  readonly typeId: string;
+  readonly roomId?: string;
+  readonly roomRef?: GroupRef;
+}
+export interface RallarCrdtServerLiveValidationInput {
+  readonly kind: RallarCrdtServerEnvelopeKind;
+  readonly topicScope: RallarCrdtServerTopicScope;
+  readonly value: unknown;
+  readonly context: RallarCrdtServerLiveValidationContext;
+  readonly options?: RallarCrdtServerTopicBridgeOptions;
+}
 export function installRallarCrdtWsTopics(
   ws: RallarCrdtServerWsTopicInstaller,
   options: RallarCrdtServerTopicBridgeOptions = {},
@@ -176,12 +185,9 @@ export function installRallarCrdtWsTopics(
 }
 
 export function validateRallarCrdtServerLiveEnvelope(
-  kind: RallarCrdtServerEnvelopeKind,
-  topicScope: RallarCrdtServerTopicScope,
-  value: unknown,
-  context: RallarCrdtServerLiveValidationContext,
-  options: RallarCrdtServerTopicBridgeOptions = {},
+  input: RallarCrdtServerLiveValidationInput,
 ): RallarCrdtValidationResult {
+  const { kind, topicScope, value, context, options = {} } = input;
   const validationOptions = toSharedValidationOptions(options);
   const base = validateEnvelopeByKind(kind, value, validationOptions);
   const issues = [...base.issues];
@@ -203,7 +209,7 @@ export function validateRallarCrdtServerLiveEnvelope(
         message: 'CRDT live envelope must contain a document ref.',
       });
     } else {
-      issues.push(...validateLiveDocumentScope(document, topicScope, context, options));
+      issues.push(...validateLiveDocumentScope({ document, topicScope, context, options }));
     }
   }
 
@@ -236,22 +242,22 @@ function createRallarCrdtTopicDefinition(
         ? 'none'
         : (options.fanout ?? 'live-only'),
     validate: (value, context) =>
-      validateRallarCrdtServerLiveEnvelope(
+      validateRallarCrdtServerLiveEnvelope({
         kind,
         topicScope,
         value,
-        {
+        context: {
           topicId: context.definition?.topicId ?? toTopicId(topicScope),
           typeId,
           roomId: context.roomId,
           roomRef: context.roomRef,
         },
         options,
-      ).valid,
+      }).valid,
     authorize:
       options.authorizeDocument || options.policies?.length
         ? async (message, context) =>
-            await authorizeAcceptedEnvelope(kind, message, context, options)
+            await authorizeAcceptedEnvelope({ kind, message, context, options })
         : undefined,
   };
 }
@@ -333,12 +339,15 @@ async function respondToDurableCatchUpRequest(
   );
 }
 
-async function authorizeAcceptedEnvelope(
-  kind: RallarCrdtServerEnvelopeKind,
-  message: RallarServerWsMessage<unknown>,
-  context: RallarServerWsMessageContext<unknown>,
-  options: RallarCrdtServerTopicBridgeOptions,
-): Promise<boolean> {
+interface AuthorizeAcceptedEnvelopeInput {
+  readonly kind: RallarCrdtServerEnvelopeKind;
+  readonly message: RallarServerWsMessage<unknown>;
+  readonly context: RallarServerWsMessageContext<unknown>;
+  readonly options: RallarCrdtServerTopicBridgeOptions;
+}
+
+async function authorizeAcceptedEnvelope(input: AuthorizeAcceptedEnvelopeInput): Promise<boolean> {
+  const { kind, message, context, options } = input;
   const document = readEnvelopeDocument(message.payload);
   if (!document) {
     return false;
@@ -472,12 +481,17 @@ function validateRallarCrdtCatchUpResponseEnvelope(
   };
 }
 
+interface ValidateLiveDocumentScopeInput {
+  readonly document: RallarCrdtDocumentRef;
+  readonly topicScope: RallarCrdtServerTopicScope;
+  readonly context: RallarCrdtServerLiveValidationContext;
+  readonly options: RallarCrdtServerTopicBridgeOptions;
+}
+
 function validateLiveDocumentScope(
-  document: RallarCrdtDocumentRef,
-  topicScope: RallarCrdtServerTopicScope,
-  context: RallarCrdtServerLiveValidationContext,
-  options: RallarCrdtServerTopicBridgeOptions,
+  input: ValidateLiveDocumentScopeInput,
 ): readonly RallarCrdtValidationIssue[] {
+  const { document, topicScope, context, options } = input;
   const issues: RallarCrdtValidationIssue[] = [];
 
   if (topicScope === 'room') {

@@ -35,21 +35,31 @@ export interface CurrentMutationAuthority {
   readonly adminClientIds: readonly string[];
 }
 
+export interface CreateApiMutationInboxFactoriesInput {
+  readonly resourceInboxRepository: ResourceInboxRepository;
+  readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
+  readonly database: PSqlSql;
+  readonly serviceId: string;
+  readonly timing: RallarTimingSink | undefined;
+  readonly options: AppInboxServiceOptions;
+  readonly currentAuthority: CurrentMutationAuthority;
+  readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
+}
+
+export interface ApiMutationInboxFactories {
+  readonly createAppCrdtInboxService: RallarCrdtInboxServiceFactory;
+  readonly createAppAdminInboxService: RallarAdminInboxServiceFactory;
+}
+
+export interface CreateConfiguredApiMutationInboxFactoriesInput
+  extends Omit<CreateApiMutationInboxFactoriesInput, 'currentAuthority' | 'crdtPolicies'> {
+  readonly readSession: CurrentMutationAuthority['readSession'];
+  readonly authorizeDocument: CurrentMutationAuthority['authorizeDocument'];
+}
+
 export function createApiMutationInboxFactories(
-  input: Readonly<{
-    resourceInboxRepository: ResourceInboxRepository;
-    resourceInboxResultsRepository: ResourceInboxResultsRepository;
-    database: PSqlSql;
-    serviceId: string;
-    timing: RallarTimingSink | undefined;
-    options: AppInboxServiceOptions;
-    currentAuthority: CurrentMutationAuthority;
-    crdtPolicies?: readonly RallarCrdtDocumentTypePolicy[];
-  }>,
-): Readonly<{
-  createAppCrdtInboxService: RallarCrdtInboxServiceFactory;
-  createAppAdminInboxService: RallarAdminInboxServiceFactory;
-}> {
+  input: CreateApiMutationInboxFactoriesInput,
+): ApiMutationInboxFactories {
   return {
     createAppCrdtInboxService: ({ inboxQueueReader, outboxQueueReader, wakeQueueEngine }) =>
       createApiCrdtInboxService({
@@ -86,16 +96,8 @@ export function createApiMutationInboxFactories(
 }
 
 export function createConfiguredApiMutationInboxFactories(
-  input:
-    & Omit<
-      Parameters<typeof createApiMutationInboxFactories>[0],
-      'currentAuthority' | 'crdtPolicies'
-    >
-    & Readonly<{
-      readSession: CurrentMutationAuthority['readSession'];
-      authorizeDocument: CurrentMutationAuthority['authorizeDocument'];
-    }>,
-): ReturnType<typeof createApiMutationInboxFactories> {
+  input: CreateConfiguredApiMutationInboxFactoriesInput,
+): ApiMutationInboxFactories {
   const { readSession, authorizeDocument, ...base } = input;
   return createApiMutationInboxFactories({
     ...base,
@@ -115,10 +117,18 @@ export function readConfiguredAdminClientIds(): readonly string[] {
     .filter((value) => value.length > 0);
 }
 
-export function readConfiguredCrdtPolicies():
-  | readonly RallarCrdtDocumentTypePolicy[]
-  | undefined {
+export function readConfiguredCrdtPolicies(): readonly RallarCrdtDocumentTypePolicy[] {
   const source = Deno.env.get('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
-  if (!source) return undefined;
-  return decodeRallarCrdtDocumentTypePolicies(JSON.parse(source) as unknown);
+  if (!source) {
+    return resolveApiCrdtPolicies(undefined);
+  }
+  return resolveApiCrdtPolicies(
+    decodeRallarCrdtDocumentTypePolicies(JSON.parse(source) as unknown),
+  );
+}
+
+export function resolveApiCrdtPolicies(
+  policies: readonly RallarCrdtDocumentTypePolicy[] | undefined,
+): readonly RallarCrdtDocumentTypePolicy[] {
+  return policies && policies.length > 0 ? policies : [{ documentType: '*', rollout: 'disabled' }];
 }

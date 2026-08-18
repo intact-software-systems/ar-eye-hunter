@@ -105,7 +105,9 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
         audit: {
           record: (event: RallarCrdtAuditEvent) => {
             auditAttempts += 1;
-            if (auditAttempts === 1) throw new Error('audit sink unavailable');
+            if (auditAttempts === 1) {
+              throw new Error('audit sink unavailable');
+            }
             audit.push(event);
           },
         },

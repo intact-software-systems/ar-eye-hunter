@@ -41,54 +41,54 @@ import {
   readTimingTarget,
 } from './admin-operations-request-reading.ts';
 export type { AdminPruneExpiredOptions } from './admin-prune-options.ts';
-export type AdminOperationsReadInput = Readonly<{
-  adminSession: AuthSession;
-  scope?: StateScope;
-}>;
-export type AdminOperationsWriteInput<TRequest> = Readonly<{
-  adminSession: AuthSession;
-  request: TRequest;
-}>;
-export type AdminOperationsStatsReader = Readonly<{
-  readQueues(input: AdminOperationsReadInput): Promise<AdminOperationsQueuesResponse>;
-  readState(input: AdminOperationsReadInput): Promise<AdminOperationsStateResponse>;
-  readCrdt(input: AdminOperationsReadInput): Promise<AdminOperationsCrdtResponse>;
-  readSystem(input: AdminOperationsReadInput): Promise<AdminOperationsSystemResponse>;
-}>;
-export type AdminOperationsPruner = Readonly<{
-  countExpired(
+export interface AdminOperationsReadInput {
+  readonly adminSession: AuthSession;
+  readonly scope?: StateScope;
+}
+export interface AdminOperationsWriteInput<TRequest> {
+  readonly adminSession: AuthSession;
+  readonly request: TRequest;
+}
+export interface AdminOperationsStatsReader {
+  readonly readQueues: (input: AdminOperationsReadInput) => Promise<AdminOperationsQueuesResponse>;
+  readonly readState: (input: AdminOperationsReadInput) => Promise<AdminOperationsStateResponse>;
+  readonly readCrdt: (input: AdminOperationsReadInput) => Promise<AdminOperationsCrdtResponse>;
+  readonly readSystem: (input: AdminOperationsReadInput) => Promise<AdminOperationsSystemResponse>;
+}
+export interface AdminOperationsPruner {
+  readonly countExpired: (
     category: AdminPruneExpiredCategory,
     options: AdminPruneExpiredOptions,
-  ): Promise<number>;
-  pruneExpired(
+  ) => Promise<number>;
+  readonly pruneExpired: (
     category: AdminPruneExpiredCategory,
     options: AdminPruneExpiredOptions,
-  ): Promise<number>;
-}>;
-export type AdminOperationsTopologyManagement = Readonly<{
-  reconfigureGroupTopology(input: unknown): Promise<unknown>;
-}>;
-export type AdminOperationsServiceOptions = Readonly<{
-  now: () => number;
-  serverId?: string;
-  statsReader: AdminOperationsStatsReader;
-  wsStatus?: () => AdminRealtimeWsStatus;
-  readRtcTopologyMetrics?: () => unknown;
-  resetRtcTopologyMetrics?: () => void;
-  readGroupFormationMetrics?: () => RallarGroupFormationMetrics;
-  resetGroupFormationMetrics?: () => void;
-  crdtAdminRepository?: Partial<RallarCrdtAdminReadRepository>;
-  timing?: RallarTimingSink;
-  mutationGateway: AdminOperationsMutationGateway;
-}>;
+  ) => Promise<number>;
+}
+export interface AdminOperationsTopologyManagement {
+  readonly reconfigureGroupTopology: (input: unknown) => Promise<unknown>;
+}
+export interface AdminOperationsServiceOptions {
+  readonly now: () => number;
+  readonly serverId?: string;
+  readonly statsReader: AdminOperationsStatsReader;
+  readonly wsStatus?: () => AdminRealtimeWsStatus;
+  readonly readRtcTopologyMetrics?: () => unknown;
+  readonly resetRtcTopologyMetrics?: () => void;
+  readonly readGroupFormationMetrics?: () => RallarGroupFormationMetrics;
+  readonly resetGroupFormationMetrics?: () => void;
+  readonly crdtAdminRepository?: Partial<RallarCrdtAdminReadRepository>;
+  readonly timing?: RallarTimingSink;
+  readonly mutationGateway: AdminOperationsMutationGateway;
+}
 
-export type AdminRealtimeWsStatus = Readonly<{
-  connectionCount: number;
-  openConnectionCount: number;
-  connectionIds: readonly string[];
-  openConnectionIds: readonly string[];
-  connections?: readonly unknown[];
-}>;
+export interface AdminRealtimeWsStatus {
+  readonly connectionCount: number;
+  readonly openConnectionCount: number;
+  readonly connectionIds: readonly string[];
+  readonly openConnectionIds: readonly string[];
+  readonly connections?: readonly unknown[];
+}
 
 export class AdminOperationsService {
   private readonly options: AdminOperationsServiceOptions;

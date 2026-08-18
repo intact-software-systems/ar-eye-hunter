@@ -193,7 +193,9 @@ async function readSnapshot(sql: PSqlSql, documentKey: string): Promise<Snapshot
 }
 
 function sameDocumentGuard(left: DocumentRow | undefined, right: DocumentRow | undefined): boolean {
-  if (!left || !right) return left === right;
+  if (!left || !right) {
+    return left === right;
+  }
   return (
     left.document_key === right.document_key &&
     Number(left.document_revision) === Number(right.document_revision) &&

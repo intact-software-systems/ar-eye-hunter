@@ -42,41 +42,41 @@ import {
   recordRallarTiming,
 } from '../services/timing.ts';
 
-export type AdminSupportReadInput = Readonly<{
-  adminSession: AuthSession;
-}>;
+export interface AdminSupportReadInput {
+  readonly adminSession: AuthSession;
+}
 
-export type AdminSupportWriteInput<TRequest> = Readonly<{
-  adminSession: AuthSession;
-  request: TRequest;
-}>;
+export interface AdminSupportWriteInput<TRequest> {
+  readonly adminSession: AuthSession;
+  readonly request: TRequest;
+}
 
 export type AdminSupportQueueEntrySource = 'resource_inbox' | 'resource_inbox_results';
 
-export type AdminSupportQueueEntryRead = Readonly<{
-  source: AdminSupportQueueEntrySource;
-  key: Key;
-  typeId: string;
-  status: string;
-  attempts: number;
-  createdAtEpochMs?: number;
-  startedAtEpochMs?: number;
-  endedAtEpochMs?: number;
-  nextRetryAtEpochMs?: number;
-  expiresAtEpochMs?: number;
-  payload: string;
-}>;
+export interface AdminSupportQueueEntryRead {
+  readonly source: AdminSupportQueueEntrySource;
+  readonly key: Key;
+  readonly typeId: string;
+  readonly status: string;
+  readonly attempts: number;
+  readonly createdAtEpochMs?: number;
+  readonly startedAtEpochMs?: number;
+  readonly endedAtEpochMs?: number;
+  readonly nextRetryAtEpochMs?: number;
+  readonly expiresAtEpochMs?: number;
+  readonly payload: string;
+}
 
-export type AdminSupportReader = Readonly<{
-  readQueueEntry(
+export interface AdminSupportReader {
+  readonly readQueueEntry: (
     key: Key,
     includeExpired: boolean,
-  ): Promise<AdminSupportQueueEntryRead | undefined>;
-  readQueueResult(
+  ) => Promise<AdminSupportQueueEntryRead | undefined>;
+  readonly readQueueResult: (
     key: Key,
     includeExpired: boolean,
-  ): Promise<AdminSupportQueueEntryRead | undefined>;
-}>;
+  ) => Promise<AdminSupportQueueEntryRead | undefined>;
+}
 
 export type AdminSupportClientStateService = Pick<
   ClientStateService,
@@ -88,29 +88,29 @@ export type AdminSupportGroupStateService = Pick<
   'readSnapshot' | 'listRecentEvents'
 >;
 
-export type AdminSupportTopologyManagement = Readonly<{
-  readTopologyView(groupRef: GroupRef): Promise<unknown>;
-}>;
+export interface AdminSupportTopologyManagement {
+  readonly readTopologyView: (groupRef: GroupRef) => Promise<unknown>;
+}
 
-export type AdminSupportWsStatus = Readonly<{
-  connectionCount: number;
-  openConnectionCount: number;
-  connectionIds: readonly string[];
-  openConnectionIds: readonly string[];
-  connections?: readonly unknown[];
-}>;
+export interface AdminSupportWsStatus {
+  readonly connectionCount: number;
+  readonly openConnectionCount: number;
+  readonly connectionIds: readonly string[];
+  readonly openConnectionIds: readonly string[];
+  readonly connections?: readonly unknown[];
+}
 
-export type AdminSupportServiceOptions = Readonly<{
-  now: () => number;
-  serverId?: string;
-  reader: AdminSupportReader;
-  clientStateService?: AdminSupportClientStateService;
-  groupStateService?: AdminSupportGroupStateService;
-  topologyManagement?: AdminSupportTopologyManagement;
-  wsStatus?: () => AdminSupportWsStatus;
-  crdtAdminRepository?: Partial<RallarCrdtAdminReadRepository>;
-  timing?: RallarTimingSink;
-}>;
+export interface AdminSupportServiceOptions {
+  readonly now: () => number;
+  readonly serverId?: string;
+  readonly reader: AdminSupportReader;
+  readonly clientStateService?: AdminSupportClientStateService;
+  readonly groupStateService?: AdminSupportGroupStateService;
+  readonly topologyManagement?: AdminSupportTopologyManagement;
+  readonly wsStatus?: () => AdminSupportWsStatus;
+  readonly crdtAdminRepository?: Partial<RallarCrdtAdminReadRepository>;
+  readonly timing?: RallarTimingSink;
+}
 
 export class AdminSupportService {
   private readonly options: AdminSupportServiceOptions;
@@ -170,7 +170,12 @@ export class AdminSupportService {
         facts,
         timeline: clientTimeline(recentEvents),
         warnings,
-        likelyCauses: clientLikelyCauses(snapshot, session, input.request.sessionId, wsStatus),
+        likelyCauses: clientLikelyCauses({
+          snapshot,
+          session,
+          sessionId: input.request.sessionId,
+          wsStatus,
+        }),
         suggestedActions: clientSuggestedActions(snapshot, session, input.request.sessionId),
         rawRefs: [`client:${toClientRef(ref)}`],
       };
@@ -617,12 +622,15 @@ function clientWarnings(
   return warnings;
 }
 
-function clientLikelyCauses(
-  snapshot: ClientSnapshot | undefined,
-  session: ClientSession | undefined,
-  sessionId: string | undefined,
-  wsStatus: AdminSupportWsStatus | undefined,
-): readonly string[] {
+interface ClientLikelyCausesInput {
+  readonly snapshot: ClientSnapshot | undefined;
+  readonly session: ClientSession | undefined;
+  readonly sessionId: string | undefined;
+  readonly wsStatus: AdminSupportWsStatus | undefined;
+}
+
+function clientLikelyCauses(input: ClientLikelyCausesInput): readonly string[] {
+  const { snapshot, session, sessionId, wsStatus } = input;
   const causes = [];
   if (!snapshot) {
     causes.push('Client principal has no durable state snapshot.');
@@ -939,30 +947,30 @@ function crdtTimeline(
     return [];
   }
   return [
-    toTimeline(
-      metadata.createdAtEpochMs,
-      'crdt-admin-log',
-      'crdt.created',
-      'CRDT document metadata was created.',
-    ),
-    toTimeline(
-      metadata.updatedAtEpochMs,
-      'crdt-admin-log',
-      'crdt.updated',
-      'CRDT document metadata was updated.',
-    ),
-    toTimeline(
-      metadata.archivedAtEpochMs ?? undefined,
-      'crdt-admin-log',
-      'crdt.archived',
-      'CRDT document was archived.',
-    ),
-    toTimeline(
-      metadata.destroyedAtEpochMs ?? undefined,
-      'crdt-admin-log',
-      'crdt.destroyed',
-      'CRDT document was destroyed.',
-    ),
+    toTimeline({
+      atEpochMs: metadata.createdAtEpochMs,
+      source: 'crdt-admin-log',
+      eventType: 'crdt.created',
+      summary: 'CRDT document metadata was created.',
+    }),
+    toTimeline({
+      atEpochMs: metadata.updatedAtEpochMs,
+      source: 'crdt-admin-log',
+      eventType: 'crdt.updated',
+      summary: 'CRDT document metadata was updated.',
+    }),
+    toTimeline({
+      atEpochMs: metadata.archivedAtEpochMs ?? undefined,
+      source: 'crdt-admin-log',
+      eventType: 'crdt.archived',
+      summary: 'CRDT document was archived.',
+    }),
+    toTimeline({
+      atEpochMs: metadata.destroyedAtEpochMs ?? undefined,
+      source: 'crdt-admin-log',
+      eventType: 'crdt.destroyed',
+      summary: 'CRDT document was destroyed.',
+    }),
   ].filter((item): item is AdminSupportTimelineItem => item !== undefined);
 }
 
@@ -1113,35 +1121,48 @@ function entryTimeline(
     return [];
   }
   return [
-    toTimeline(entry.createdAtEpochMs, entry.source, `${prefix}.created`, 'Queue row was created.'),
-    toTimeline(
-      entry.startedAtEpochMs,
-      entry.source,
-      `${prefix}.started`,
-      'Queue row processing started.',
-    ),
-    toTimeline(
-      entry.endedAtEpochMs,
-      entry.source,
-      `${prefix}.ended`,
-      'Queue row processing ended.',
-    ),
-    toTimeline(
-      entry.nextRetryAtEpochMs,
-      entry.source,
-      `${prefix}.next-retry`,
-      'Queue row is scheduled for retry.',
-    ),
-    toTimeline(entry.expiresAtEpochMs, entry.source, `${prefix}.expires`, 'Queue row expires.'),
+    toTimeline({
+      atEpochMs: entry.createdAtEpochMs,
+      source: entry.source,
+      eventType: `${prefix}.created`,
+      summary: 'Queue row was created.',
+    }),
+    toTimeline({
+      atEpochMs: entry.startedAtEpochMs,
+      source: entry.source,
+      eventType: `${prefix}.started`,
+      summary: 'Queue row processing started.',
+    }),
+    toTimeline({
+      atEpochMs: entry.endedAtEpochMs,
+      source: entry.source,
+      eventType: `${prefix}.ended`,
+      summary: 'Queue row processing ended.',
+    }),
+    toTimeline({
+      atEpochMs: entry.nextRetryAtEpochMs,
+      source: entry.source,
+      eventType: `${prefix}.next-retry`,
+      summary: 'Queue row is scheduled for retry.',
+    }),
+    toTimeline({
+      atEpochMs: entry.expiresAtEpochMs,
+      source: entry.source,
+      eventType: `${prefix}.expires`,
+      summary: 'Queue row expires.',
+    }),
   ].filter((item): item is AdminSupportTimelineItem => item !== undefined);
 }
 
-function toTimeline(
-  atEpochMs: number | undefined,
-  source: string,
-  eventType: string,
-  summary: string,
-): AdminSupportTimelineItem | undefined {
+interface ToTimelineInput {
+  readonly atEpochMs: number | undefined;
+  readonly source: string;
+  readonly eventType: string;
+  readonly summary: string;
+}
+
+function toTimeline(input: ToTimelineInput): AdminSupportTimelineItem | undefined {
+  const { atEpochMs, source, eventType, summary } = input;
   return atEpochMs === undefined
     ? undefined
     : {

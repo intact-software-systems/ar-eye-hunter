@@ -22,8 +22,14 @@ import { decodeExactUpdateEnvelope } from './decode-exact-update-envelope.ts';
 
 export function decodeExactDebugBundle(value: unknown): RallarCrdtDebugBundle {
   const bundle = requireRecord(value, 'CRDT debug bundle');
+  validateExactDebugBundle(bundle);
+  return bundle;
+}
+
+function validateExactDebugBundle(bundle: object): asserts bundle is RallarCrdtDebugBundle {
+  const fields = requireRecord(bundle, 'CRDT debug bundle');
   requireExactOptionalKeys(
-    bundle,
+    fields,
     [
       'format',
       'exportedAtEpochMs',
@@ -37,30 +43,37 @@ export function decodeExactDebugBundle(value: unknown): RallarCrdtDebugBundle {
     ['metadata', 'snapshot', 'health'],
     'CRDT debug bundle',
   );
-  if (bundle.format !== 'rallar.crdt.debug-bundle.v1') {
+  if (fields.format !== 'rallar.crdt.debug-bundle.v1') {
     throw new TypeError('CRDT debug bundle format is invalid');
   }
-  requireEpoch(bundle.exportedAtEpochMs, 'debug bundle exportedAtEpochMs');
-  requireString(bundle.reason, 'debug bundle reason');
-  const document = decodeExactDocumentRef(bundle.document, 'CRDT debug bundle document');
-  requireString(bundle.documentKey, 'debug bundle documentKey');
-  if (bundle.documentKey !== toRallarCrdtDocumentKey(document)) {
+  requireEpoch(fields.exportedAtEpochMs, 'debug bundle exportedAtEpochMs');
+  requireString(fields.reason, 'debug bundle reason');
+  const document = decodeExactDocumentRef(fields.document, 'CRDT debug bundle document');
+  requireString(fields.documentKey, 'debug bundle documentKey');
+  if (fields.documentKey !== toRallarCrdtDocumentKey(document)) {
     throw new TypeError('CRDT debug bundle document key differs from document');
   }
-  if ('metadata' in bundle) decodeExactDocumentMetadata(bundle.metadata);
-  if ('snapshot' in bundle) decodeExactSnapshotEnvelope(bundle.snapshot);
-  const records = decodeExactRecords(bundle.records, document);
-  decodeExactRedaction(bundle.redaction);
-  if ('health' in bundle) decodeExactHealth(bundle.health);
-  decodeExactBundleIntegrity(bundle.integrity, records);
-  return bundle as RallarCrdtDebugBundle;
+  if ('metadata' in fields) {
+    decodeExactDocumentMetadata(fields.metadata);
+  }
+  if ('snapshot' in fields) {
+    decodeExactSnapshotEnvelope(fields.snapshot);
+  }
+  const records = decodeExactRecords(fields.records, document);
+  decodeExactRedaction(fields.redaction);
+  if ('health' in fields) {
+    decodeExactHealth(fields.health);
+  }
+  decodeExactBundleIntegrity(fields.integrity, records);
 }
 
 function decodeExactRecords(
   value: unknown,
   document: RallarCrdtDocumentRef,
 ): readonly Record<string, unknown>[] {
-  if (!Array.isArray(value)) throw new TypeError('CRDT debug records are invalid');
+  if (!Array.isArray(value)) {
+    throw new TypeError('CRDT debug records are invalid');
+  }
   const documentKey = toRallarCrdtDocumentKey(document);
   return value.map((item) => {
     const record = requireRecord(item, 'CRDT debug record');
@@ -73,8 +86,9 @@ function decodeExactRecords(
       toRallarCrdtDocumentKey(recordDocument) !== documentKey ||
       toRallarCrdtDocumentKey(update.document) !== documentKey ||
       append.acceptedUpdateHash !== hashRallarCrdtUpdateEnvelope(update)
-    )
+    ) {
       throw new TypeError('CRDT debug record identity is invalid');
+    }
     return record;
   });
 }
@@ -94,9 +108,12 @@ function decodeExactRedaction(value: unknown): void {
     'sensitiveFields' in redaction &&
     (!Array.isArray(redaction.sensitiveFields) ||
       redaction.sensitiveFields.some((field) => typeof field !== 'string' || !field))
-  )
+  ) {
     throw new TypeError('CRDT debug sensitive fields are invalid');
-  if ('reason' in redaction) requireString(redaction.reason, 'CRDT debug redaction reason');
+  }
+  if ('reason' in redaction) {
+    requireString(redaction.reason, 'CRDT debug redaction reason');
+  }
 }
 
 function decodeExactBundleIntegrity(
@@ -112,9 +129,13 @@ function decodeExactBundleIntegrity(
   );
   requireString(integrity.bundleHash, 'debug bundle hash');
   requireString(integrity.documentRefHash, 'debug bundle document ref hash');
-  if ('snapshotHash' in integrity) requireString(integrity.snapshotHash, 'debug snapshot hash');
+  if ('snapshotHash' in integrity) {
+    requireString(integrity.snapshotHash, 'debug snapshot hash');
+  }
   const updateHashes = requireRecord(integrity.updateHashes, 'CRDT debug update hashes');
-  for (const hash of Object.values(updateHashes)) requireString(hash, 'CRDT debug update hash');
+  for (const hash of Object.values(updateHashes)) {
+    requireString(hash, 'CRDT debug update hash');
+  }
   requireEpoch(integrity.updateCount, 'debug update count');
   if (integrity.updateCount !== records.length) {
     throw new TypeError('CRDT debug update count differs from records');
@@ -160,7 +181,9 @@ function decodeExactHealth(value: unknown): void {
   ];
   requireExactOptionalKeys(health, required, optional, 'CRDT debug health');
   requireString(health.replicaId, 'CRDT debug health replicaId');
-  for (const field of required.slice(1)) requireEpoch(health[field], `CRDT debug health ${field}`);
+  for (const field of required.slice(1)) {
+    requireEpoch(health[field], `CRDT debug health ${field}`);
+  }
   for (const field of [
     'lastServerAppendSequence',
     'lastServerAckAtEpochMs',
@@ -177,9 +200,13 @@ function decodeExactHealth(value: unknown): void {
     'liveSyncRequestCount',
     'liveSyncResponseCount',
   ]) {
-    if (field in health) requireEpoch(health[field], `CRDT debug health ${field}`);
+    if (field in health) {
+      requireEpoch(health[field], `CRDT debug health ${field}`);
+    }
   }
-  if ('lastSyncError' in health) requireString(health.lastSyncError, 'CRDT last sync error');
+  if ('lastSyncError' in health) {
+    requireString(health.lastSyncError, 'CRDT last sync error');
+  }
   if ('transportStrategy' in health) {
     requireOneOf(
       health.transportStrategy,
@@ -201,8 +228,12 @@ function decodeExactHealth(value: unknown): void {
       ['usageBytes', 'quotaBytes', 'nearingLimit'],
       'health quota',
     );
-    if ('usageBytes' in quota) requireEpoch(quota.usageBytes, 'CRDT health quota usageBytes');
-    if ('quotaBytes' in quota) requireEpoch(quota.quotaBytes, 'CRDT health quota quotaBytes');
+    if ('usageBytes' in quota) {
+      requireEpoch(quota.usageBytes, 'CRDT health quota usageBytes');
+    }
+    if ('quotaBytes' in quota) {
+      requireEpoch(quota.quotaBytes, 'CRDT health quota quotaBytes');
+    }
     if ('nearingLimit' in quota && typeof quota.nearingLimit !== 'boolean') {
       throw new TypeError('CRDT health quota nearingLimit is invalid');
     }
@@ -214,6 +245,7 @@ function decodeSequenceList(value: unknown, label: string): void {
     !Array.isArray(value) ||
     value.some((item) => !Number.isSafeInteger(item) || item < 1) ||
     new Set(value).size !== value.length
-  )
+  ) {
     throw new TypeError(`${label} is invalid`);
+  }
 }

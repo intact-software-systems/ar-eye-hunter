@@ -70,77 +70,77 @@ export type RallarCrdtFeatureDecisionCode =
   | 'graph-disabled'
   | 'sequence-text-disabled';
 
-export type RallarCrdtFeatureFlags = Readonly<{
-  networkSend?: boolean;
-  ws?: boolean;
-  rtc?: boolean;
-  durableAppend?: boolean;
-  peerCatchUp?: boolean;
-  readOnly?: boolean;
-  appScope?: boolean;
-  customScope?: boolean;
-  graphDocuments?: boolean;
-  sequenceTextDocuments?: boolean;
-  killSwitchReason?: string;
-}>;
+export interface RallarCrdtFeatureFlags {
+  readonly networkSend?: boolean;
+  readonly ws?: boolean;
+  readonly rtc?: boolean;
+  readonly durableAppend?: boolean;
+  readonly peerCatchUp?: boolean;
+  readonly readOnly?: boolean;
+  readonly appScope?: boolean;
+  readonly customScope?: boolean;
+  readonly graphDocuments?: boolean;
+  readonly sequenceTextDocuments?: boolean;
+  readonly killSwitchReason?: string;
+}
 
-export type RallarCrdtDocumentTypePolicy = Readonly<{
-  applicationId?: string;
-  workspaceId?: string;
-  scope?: RallarCrdtDocumentScope | 'any';
-  documentType: string | '*';
-  rollout: RallarCrdtRolloutLabel;
-  flags?: RallarCrdtFeatureFlags;
-  quota?: RallarCrdtQuotaPolicy;
-  retention?: RallarCrdtRetentionPolicy;
-  sensitiveFields?: readonly string[];
-}>;
+export interface RallarCrdtDocumentTypePolicy {
+  readonly applicationId?: string;
+  readonly workspaceId?: string;
+  readonly scope?: RallarCrdtDocumentScope | 'any';
+  readonly documentType: string | '*';
+  readonly rollout: RallarCrdtRolloutLabel;
+  readonly flags?: RallarCrdtFeatureFlags;
+  readonly quota?: RallarCrdtQuotaPolicy;
+  readonly retention?: RallarCrdtRetentionPolicy;
+  readonly sensitiveFields?: readonly string[];
+}
 
-export type RallarCrdtFeatureDecision = Readonly<{
-  allowed: boolean;
-  code: RallarCrdtFeatureDecisionCode;
-  reason: string;
-  rollout: RallarCrdtRolloutLabel;
-  retryable: boolean;
-  policy?: RallarCrdtDocumentTypePolicy;
-}>;
+export interface RallarCrdtFeatureDecision {
+  readonly allowed: boolean;
+  readonly code: RallarCrdtFeatureDecisionCode;
+  readonly reason: string;
+  readonly rollout: RallarCrdtRolloutLabel;
+  readonly retryable: boolean;
+  readonly policy?: RallarCrdtDocumentTypePolicy;
+}
 
-export type RallarCrdtFeaturePolicyInput = Readonly<{
-  document: RallarCrdtDocumentRef;
-  operation: RallarCrdtFeatureOperation;
-  policies?: readonly RallarCrdtDocumentTypePolicy[];
-}>;
+export interface RallarCrdtFeaturePolicyInput {
+  readonly document: RallarCrdtDocumentRef;
+  readonly operation: RallarCrdtFeatureOperation;
+  readonly policies?: readonly RallarCrdtDocumentTypePolicy[];
+}
 
-export type RallarCrdtAdminDocumentStatus = Readonly<{
-  document: RallarCrdtDocumentRef;
-  documentKey: string;
-  lifecycle: RallarCrdtDocumentLifecycleState;
-  rollout: RallarCrdtRolloutLabel;
-  updateCount: number;
-  snapshotCount: number;
-  lastAppendSequence: number;
-  updatedAtEpochMs: number;
-  health?: RallarCrdtDocumentHealth;
-  retention?: RallarCrdtRetentionPolicy;
-  quota?: RallarCrdtQuotaPolicy;
-  quarantineReason?: string;
-}>;
+export interface RallarCrdtAdminDocumentStatus {
+  readonly document: RallarCrdtDocumentRef;
+  readonly documentKey: string;
+  readonly lifecycle: RallarCrdtDocumentLifecycleState;
+  readonly rollout: RallarCrdtRolloutLabel;
+  readonly updateCount: number;
+  readonly snapshotCount: number;
+  readonly lastAppendSequence: number;
+  readonly updatedAtEpochMs: number;
+  readonly health?: RallarCrdtDocumentHealth;
+  readonly retention?: RallarCrdtRetentionPolicy;
+  readonly quota?: RallarCrdtQuotaPolicy;
+  readonly quarantineReason?: string;
+}
 
-export type RallarCrdtListDocumentsInput = Readonly<{
-  applicationId?: string;
-  workspaceId?: string;
-  scope?: RallarCrdtDocumentScope;
-  documentType?: string;
-  lifecycle?: RallarCrdtDocumentLifecycleState;
-  limit?: number;
-  cursor?: string;
-}>;
+export interface RallarCrdtListDocumentsInput {
+  readonly applicationId?: string;
+  readonly workspaceId?: string;
+  readonly scope?: RallarCrdtDocumentScope;
+  readonly documentType?: string;
+  readonly lifecycle?: RallarCrdtDocumentLifecycleState;
+  readonly limit?: number;
+  readonly cursor?: string;
+}
 
-export type RallarCrdtDocumentAdminPage = Readonly<{
-  documents: readonly RallarCrdtAdminDocumentStatus[];
-  nextCursor?: string;
-  hasMore: boolean;
-}>;
+export interface RallarCrdtDocumentAdminPage {
+  readonly documents: readonly RallarCrdtAdminDocumentStatus[];
+  readonly nextCursor?: string;
+  readonly hasMore: boolean;
+}
 
 export type RallarCrdtMetricName =
   | 'crdt.local.apply.ms'
@@ -158,17 +158,17 @@ export type RallarCrdtMetricName =
   | 'crdt.update_log.count'
   | 'crdt.rtc.fallback.count';
 
-export type RallarCrdtMetricEvent = Readonly<{
-  name: RallarCrdtMetricName;
-  value: number;
-  atEpochMs: number;
-  documentKey?: string;
-  tags?: Readonly<Record<string, string>>;
-}>;
+export interface RallarCrdtMetricEvent {
+  readonly name: RallarCrdtMetricName;
+  readonly value: number;
+  readonly atEpochMs: number;
+  readonly documentKey?: string;
+  readonly tags?: Readonly<Record<string, string>>;
+}
 
-export type RallarCrdtMetricsSink = Readonly<{
-  record(event: RallarCrdtMetricEvent): void | Promise<void>;
-}>;
+export interface RallarCrdtMetricsSink {
+  readonly record: (event: RallarCrdtMetricEvent) => void | Promise<void>;
+}
 
 export class InMemoryRallarCrdtMetricsSink implements RallarCrdtMetricsSink {
   private readonly recorded: RallarCrdtMetricEvent[] = [];
@@ -200,19 +200,19 @@ export type RallarCrdtAuditEventKind =
   | 'rebuild'
   | 'compact';
 
-export type RallarCrdtAuditEvent = Readonly<{
-  kind: RallarCrdtAuditEventKind;
-  atEpochMs: number;
-  documentKey?: string;
-  actorId?: ActorId;
-  principalId?: PrincipalId;
-  reason?: string;
-  metadata?: Readonly<Record<string, string | number | boolean>>;
-}>;
+export interface RallarCrdtAuditEvent {
+  readonly kind: RallarCrdtAuditEventKind;
+  readonly atEpochMs: number;
+  readonly documentKey?: string;
+  readonly actorId?: ActorId;
+  readonly principalId?: PrincipalId;
+  readonly reason?: string;
+  readonly metadata?: Readonly<Record<string, string | number | boolean>>;
+}
 
-export type RallarCrdtAuditSink = Readonly<{
-  record(event: RallarCrdtAuditEvent): void | Promise<void>;
-}>;
+export interface RallarCrdtAuditSink {
+  readonly record: (event: RallarCrdtAuditEvent) => void | Promise<void>;
+}
 
 export class InMemoryRallarCrdtAuditSink implements RallarCrdtAuditSink {
   private readonly recorded: RallarCrdtAuditEvent[] = [];
@@ -230,38 +230,38 @@ export class InMemoryRallarCrdtAuditSink implements RallarCrdtAuditSink {
   }
 }
 
-export type RallarCrdtDebugBundleRedaction = Readonly<{
-  payloadsRedacted: boolean;
-  sensitiveFields?: readonly string[];
-  reason?: string;
-}>;
+export interface RallarCrdtDebugBundleRedaction {
+  readonly payloadsRedacted: boolean;
+  readonly sensitiveFields?: readonly string[];
+  readonly reason?: string;
+}
 
-export type RallarCrdtDebugBundle<
+export interface RallarCrdtDebugBundle<
   TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
-> = Readonly<{
-  format: 'rallar.crdt.debug-bundle.v1';
-  exportedAtEpochMs: number;
-  reason: string;
-  document: RallarCrdtDocumentRef;
-  documentKey: string;
-  metadata?: RallarCrdtDocumentMetadata;
-  snapshot?: RallarCrdtSnapshotEnvelope;
-  records: readonly RallarCrdtDurableUpdateRecord<TPayload>[];
-  health?: RallarCrdtDocumentHealth;
-  redaction: RallarCrdtDebugBundleRedaction;
-  integrity: RallarCrdtBundleIntegrity;
-}>;
+> {
+  readonly format: 'rallar.crdt.debug-bundle.v1';
+  readonly exportedAtEpochMs: number;
+  readonly reason: string;
+  readonly document: RallarCrdtDocumentRef;
+  readonly documentKey: string;
+  readonly metadata?: RallarCrdtDocumentMetadata;
+  readonly snapshot?: RallarCrdtSnapshotEnvelope;
+  readonly records: readonly RallarCrdtDurableUpdateRecord<TPayload>[];
+  readonly health?: RallarCrdtDocumentHealth;
+  readonly redaction: RallarCrdtDebugBundleRedaction;
+  readonly integrity: RallarCrdtBundleIntegrity;
+}
 
-export type RallarCrdtBundleIntegrity = Readonly<{
-  bundleHash: string;
-  documentRefHash: string;
-  snapshotHash?: string;
-  updateHashes: Readonly<Record<string, string>>;
-  firstAppendSequence?: number;
-  lastAppendSequence?: number;
-  updateCount: number;
-  sequenceGaps: readonly number[];
-}>;
+export interface RallarCrdtBundleIntegrity {
+  readonly bundleHash: string;
+  readonly documentRefHash: string;
+  readonly snapshotHash?: string;
+  readonly updateHashes: Readonly<Record<string, string>>;
+  readonly firstAppendSequence?: number;
+  readonly lastAppendSequence?: number;
+  readonly updateCount: number;
+  readonly sequenceGaps: readonly number[];
+}
 
 export type RallarCrdtIntegrityReport = RallarCrdtValidationResult &
   Readonly<{
@@ -271,27 +271,27 @@ export type RallarCrdtIntegrityReport = RallarCrdtValidationResult &
     bundleHash?: string;
   }>;
 
-export type RallarCrdtBackupBundle<
+export interface RallarCrdtBackupBundle<
   TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
-> = Readonly<{
-  format: 'rallar.crdt.backup-bundle.v1';
-  exportedAtEpochMs: number;
-  document: RallarCrdtDocumentRef;
-  documentKey: string;
-  metadata: RallarCrdtDocumentMetadata;
-  snapshot?: RallarCrdtSnapshotEnvelope;
-  records: readonly RallarCrdtDurableUpdateRecord<TPayload>[];
-  integrity: RallarCrdtBundleIntegrity;
-}>;
+> {
+  readonly format: 'rallar.crdt.backup-bundle.v1';
+  readonly exportedAtEpochMs: number;
+  readonly document: RallarCrdtDocumentRef;
+  readonly documentKey: string;
+  readonly metadata: RallarCrdtDocumentMetadata;
+  readonly snapshot?: RallarCrdtSnapshotEnvelope;
+  readonly records: readonly RallarCrdtDurableUpdateRecord<TPayload>[];
+  readonly integrity: RallarCrdtBundleIntegrity;
+}
 
-export type RallarCrdtRestoreResult = Readonly<{
-  document: RallarCrdtDocumentRef;
-  documentKey: string;
-  restoredUpdateCount: number;
-  restoredSnapshot: boolean;
-  firstAppendSequence?: number;
-  lastAppendSequence?: number;
-}>;
+export interface RallarCrdtRestoreResult {
+  readonly document: RallarCrdtDocumentRef;
+  readonly documentKey: string;
+  readonly restoredUpdateCount: number;
+  readonly restoredSnapshot: boolean;
+  readonly firstAppendSequence?: number;
+  readonly lastAppendSequence?: number;
+}
 
 export interface RallarCrdtAdminReadRepository<
   TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
@@ -355,47 +355,47 @@ export type RallarCrdtAdminLogRepository<
     ): Promise<RallarCrdtIntegrityReport>;
   }>;
 
-export type RallarCrdtSpatialMetadata = Readonly<{
-  coordinateFrameId: string;
-  coordinateFrameVersion: string;
-  anchorRef?: string;
-  calibrationVersion?: string;
-  source?: string;
-  transformProvenance?: string;
-  confidence?: number;
-  accuracyMeters?: number;
-}>;
+export interface RallarCrdtSpatialMetadata {
+  readonly coordinateFrameId: string;
+  readonly coordinateFrameVersion: string;
+  readonly anchorRef?: string;
+  readonly calibrationVersion?: string;
+  readonly source?: string;
+  readonly transformProvenance?: string;
+  readonly confidence?: number;
+  readonly accuracyMeters?: number;
+}
 
-export type RallarCrdtDomainFollowUpPlan = Readonly<{
-  kind: 'sequence-text' | 'document-encryption' | 'ar-spatial';
-  required: boolean;
-  reason: string;
-  candidateDocumentTypes?: readonly string[];
-  blockedBy?: readonly string[];
-}>;
+export interface RallarCrdtDomainFollowUpPlan {
+  readonly kind: 'sequence-text' | 'document-encryption' | 'ar-spatial';
+  readonly required: boolean;
+  readonly reason: string;
+  readonly candidateDocumentTypes?: readonly string[];
+  readonly blockedBy?: readonly string[];
+}
 
-export type RallarCrdtRetentionStatus = Readonly<{
-  state: 'ok' | 'retention-due' | 'expired';
-  dueAtEpochMs?: number;
-  reason?: string;
-}>;
+export interface RallarCrdtRetentionStatus {
+  readonly state: 'ok' | 'retention-due' | 'expired';
+  readonly dueAtEpochMs?: number;
+  readonly reason?: string;
+}
 
-export type RallarCrdtErasureRequest = Readonly<{
-  document: RallarCrdtDocumentRef;
-  requestedAtEpochMs: number;
-  requestedBy: PrincipalId;
-  reason: string;
-  mode: 'destroy-document' | 'redact-payloads';
-}>;
+export interface RallarCrdtErasureRequest {
+  readonly document: RallarCrdtDocumentRef;
+  readonly requestedAtEpochMs: number;
+  readonly requestedBy: PrincipalId;
+  readonly reason: string;
+  readonly mode: 'destroy-document' | 'redact-payloads';
+}
 
-export type RallarCrdtEncryptionMetadata = Readonly<{
-  enabled: boolean;
-  algorithm?: string;
-  keyId?: string;
-  payloadEncrypted?: boolean;
-  snapshotEncrypted?: boolean;
-  visibleMetadataFields?: readonly string[];
-}>;
+export interface RallarCrdtEncryptionMetadata {
+  readonly enabled: boolean;
+  readonly algorithm?: string;
+  readonly keyId?: string;
+  readonly payloadEncrypted?: boolean;
+  readonly snapshotEncrypted?: boolean;
+  readonly visibleMetadataFields?: readonly string[];
+}
 
 export type RallarCrdtDestructiveCompactionSafetyCode =
   | 'safe'
@@ -407,33 +407,33 @@ export type RallarCrdtDestructiveCompactionSafetyCode =
   | 'no-compactable-updates'
   | 'encrypted-log-requires-key-authorized-snapshot';
 
-export type RallarCrdtDestructiveCompactionSafety = Readonly<{
-  safe: boolean;
-  code: RallarCrdtDestructiveCompactionSafetyCode;
-  reason: string;
-  compactableUpdateIds: readonly string[];
-}>;
+export interface RallarCrdtDestructiveCompactionSafety {
+  readonly safe: boolean;
+  readonly code: RallarCrdtDestructiveCompactionSafetyCode;
+  readonly reason: string;
+  readonly compactableUpdateIds: readonly string[];
+}
 
-export type RallarCrdtScheduledHealthStatus = Readonly<{
-  documentKey: string;
-  lifecycle: RallarCrdtDocumentLifecycleState;
-  updateCount: number;
-  snapshotCount: number;
-  retention: RallarCrdtRetentionStatus;
-  staleSnapshot: boolean;
-  alert: 'clean' | 'warn' | 'critical';
-}>;
+export interface RallarCrdtScheduledHealthStatus {
+  readonly documentKey: string;
+  readonly lifecycle: RallarCrdtDocumentLifecycleState;
+  readonly updateCount: number;
+  readonly snapshotCount: number;
+  readonly retention: RallarCrdtRetentionStatus;
+  readonly staleSnapshot: boolean;
+  readonly alert: 'clean' | 'warn' | 'critical';
+}
 
-export type RallarCrdtScheduledHealthSummary = Readonly<{
-  checkedAtEpochMs: number;
-  total: number;
-  unhealthy: number;
-  quarantined: number;
-  retentionDue: number;
-  expired: number;
-  staleSnapshots: number;
-  documents: readonly RallarCrdtScheduledHealthStatus[];
-}>;
+export interface RallarCrdtScheduledHealthSummary {
+  readonly checkedAtEpochMs: number;
+  readonly total: number;
+  readonly unhealthy: number;
+  readonly quarantined: number;
+  readonly retentionDue: number;
+  readonly expired: number;
+  readonly staleSnapshots: number;
+  readonly documents: readonly RallarCrdtScheduledHealthStatus[];
+}
 
 export function evaluateRallarCrdtFeaturePolicy(
   input: RallarCrdtFeaturePolicyInput,

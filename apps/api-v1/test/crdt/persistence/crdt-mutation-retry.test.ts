@@ -20,11 +20,14 @@ import {
 import { waitForPGliteQueueRow, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 import { appendCommand, queueNow, update, withCompetingWrite } from '../crdt-api-test-fixtures.ts';
 
-Deno.test('configured production factory keeps absent CRDT policy undefined and denies writes', async () => {
+Deno.test('configured production factory resolves absent CRDT policy to disabled and denies writes', async () => {
   const previous = Deno.env.get('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
   Deno.env.delete('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
   try {
-    assert.equal(readConfiguredCrdtPolicies(), undefined);
+    assert.deepEqual(readConfiguredCrdtPolicies(), [{
+      documentType: '*',
+      rollout: 'disabled',
+    }]);
     await withPGliteSql(async (sql) => {
       const now = await queueNow(sql);
       const resourceInbox = new ResourceInboxRepository(sql);
@@ -48,7 +51,7 @@ Deno.test('configured production factory keeps absent CRDT policy undefined and 
             allowed: true,
             code: 'allowed',
           }),
-      } as never);
+      });
       const service = factories.createAppCrdtInboxService({
         inboxQueueReader: new InboxQueueReader(queue),
         outboxQueueReader: new OutboxQueueReader(queue),
@@ -66,8 +69,11 @@ Deno.test('configured production factory keeps absent CRDT policy undefined and 
       assert.equal(read.featureDecision.allowed, false);
     });
   } finally {
-    if (previous === undefined) Deno.env.delete('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
-    else Deno.env.set('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON', previous);
+    if (previous === undefined) {
+      Deno.env.delete('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
+    } else {
+      Deno.env.set('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON', previous);
+    }
   }
 });
 
@@ -103,8 +109,11 @@ Deno.test('configured CRDT policy parser accepts only the authoritative rollout 
       assert.throws(() => readConfiguredCrdtPolicies(), /policy|rollout|invalid/i);
     }
   } finally {
-    if (previous === undefined) Deno.env.delete('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
-    else Deno.env.set('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON', previous);
+    if (previous === undefined) {
+      Deno.env.delete('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
+    } else {
+      Deno.env.set('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON', previous);
+    }
   }
 });
 

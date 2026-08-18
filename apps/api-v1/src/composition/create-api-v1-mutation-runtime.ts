@@ -92,6 +92,7 @@ import {
 } from '../services/create-api-crdt-document-authorizer.ts';
 import {
   createApiMutationInboxFactories,
+  resolveApiCrdtPolicies,
 } from '../services/create-api-mutation-inbox-factories.ts';
 
 export interface CreateApiV1MutationRuntimeInput {
@@ -201,7 +202,7 @@ export function createApiV1MutationRuntime(
       }),
       adminClientIds: input.adminClientIds,
     },
-    crdtPolicies: input.crdtPolicies,
+    crdtPolicies: resolveApiCrdtPolicies(input.crdtPolicies),
   });
 
   return {
