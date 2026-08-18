@@ -109,12 +109,13 @@ packages/shared-server/rallar-system/crdt/
   mutation/
     crdt-mutation-contracts.ts
     crdt-mutation-command-codec.ts
-    crdt-mutation-result-codec.ts
+    decode-crdt-mutation-result.ts
     crdt-mutation-value-codec.ts
+    crdt-mutation-result-detail-codec.ts
     crdt-operation-exact-codec.ts
     crdt-snapshot-state-exact-codec.ts
-    crdt-update-exact-codec.ts
-    crdt-debug-bundle-exact-codec.ts
+    decode-exact-update-envelope.ts
+    decode-exact-debug-bundle.ts
     crdt-append-rejection.ts
     to-crdt-canonical-snapshot.ts
     create-crdt-mutation-result.ts
@@ -291,12 +292,13 @@ same domain setup.
 
 - Create: `packages/shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts`
 - Create: `packages/shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts`
-- Create: `packages/shared-server/rallar-system/crdt/mutation/crdt-mutation-result-codec.ts`
+- Create: `packages/shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts`
 - Create: `packages/shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts`
 - Create: `packages/shared-server/rallar-system/crdt/mutation/crdt-operation-exact-codec.ts`
 - Create: `packages/shared-server/rallar-system/crdt/mutation/crdt-snapshot-state-exact-codec.ts`
-- Create: `packages/shared-server/rallar-system/crdt/mutation/crdt-update-exact-codec.ts`
-- Create: `packages/shared-server/rallar-system/crdt/mutation/crdt-debug-bundle-exact-codec.ts`
+- Create: `packages/shared-server/rallar-system/crdt/mutation/decode-exact-update-envelope.ts`
+- Create: `packages/shared-server/rallar-system/crdt/mutation/decode-exact-debug-bundle.ts`
+- Create: `packages/shared-server/rallar-system/crdt/mutation/crdt-mutation-result-detail-codec.ts`
 - Modify imports: `packages/shared-server/postgres/crdt/PSqlCrdtMutationRepository.ts`
 - Modify imports: `packages/shared-server/postgres/crdt/crdt-mutation-row-codec.ts`
 - Modify imports: `apps/api-v1/src/services/create-api-crdt-document-authorizer.ts`
@@ -384,7 +386,7 @@ git mv packages/shared-server/rallar-system/services/crdt-mutation-contracts.ts 
 git mv packages/shared-server/rallar-system/services/crdt-mutation-codec.ts \
   packages/shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts
 git mv packages/shared-server/rallar-system/services/crdt-mutation-result-codec.ts \
-  packages/shared-server/rallar-system/crdt/mutation/crdt-mutation-result-codec.ts
+  packages/shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts
 git mv packages/shared-server/rallar-system/services/crdt-mutation-value-codec.ts \
   packages/shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts
 git mv packages/shared-server/rallar-system/services/crdt-operation-exact-codec.ts \
@@ -392,13 +394,13 @@ git mv packages/shared-server/rallar-system/services/crdt-operation-exact-codec.
 git mv packages/shared-server/rallar-system/services/crdt-snapshot-state-exact-codec.ts \
   packages/shared-server/rallar-system/crdt/mutation/crdt-snapshot-state-exact-codec.ts
 git mv packages/shared-server/rallar-system/services/crdt-update-exact-codec.ts \
-  packages/shared-server/rallar-system/crdt/mutation/crdt-update-exact-codec.ts
+  packages/shared-server/rallar-system/crdt/mutation/decode-exact-update-envelope.ts
 git mv packages/shared-server/rallar-system/services/crdt-debug-bundle-exact-codec.ts \
-  packages/shared-server/rallar-system/crdt/mutation/crdt-debug-bundle-exact-codec.ts
+  packages/shared-server/rallar-system/crdt/mutation/decode-exact-debug-bundle.ts
 ```
 
 Update direct imports. Remove the command codec's re-export barrel behavior; callers import
-`crdt-mutation-contracts.ts` and `crdt-mutation-result-codec.ts` directly.
+`crdt-mutation-contracts.ts` and `decode-crdt-mutation-result.ts` directly.
 
 - [ ] **Step 5: Close the moved files to current type and boundary standards**
 

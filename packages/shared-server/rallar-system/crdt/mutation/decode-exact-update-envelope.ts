@@ -33,5 +33,5 @@ export function decodeExactUpdateEnvelope(value: unknown): RallarCrdtUpdateEnvel
   if ('causalFrontier' in update) decodeExactCausalFrontierShape(update.causalFrontier);
   const validation = validateRallarCrdtUpdateEnvelope(update);
   if (!validation.valid) throw new TypeError('CRDT update envelope is invalid');
-  return update as unknown as RallarCrdtUpdateEnvelope;
+  return update as RallarCrdtUpdateEnvelope;
 }

@@ -15,7 +15,7 @@ import {
   toRallarCrdtDocumentKey,
   validateRallarCrdtSnapshotEnvelope,
 } from '@shared/crdt/mod.ts';
-import type * as CrdtMutationContracts from '../../rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+import type * as Crdt from '../../rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import {
   decodeExactDocumentMetadata,
   decodeExactDocumentRef,
@@ -24,7 +24,7 @@ import {
   decodeExactSnapshotEnvelope,
   decodeExactTrustedAppendMetadata,
 } from '../../rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
-import { decodeExactUpdateEnvelope } from '../../rallar-system/crdt/mutation/crdt-update-exact-codec.ts';
+import * as CrdtUpdate from '../../rallar-system/crdt/mutation/decode-exact-update-envelope.ts';
 
 export type DocumentRow = Readonly<{
   document_key: string;
@@ -151,7 +151,7 @@ export function toRecord<TPayload extends RallarCrdtOperationBatch>(
   row: UpdateRow,
   document: RallarCrdtDocumentRef,
 ): RallarCrdtDurableUpdateRecord<TPayload> {
-  const update = decodeExactUpdateEnvelope(
+  const update = CrdtUpdate.decodeExactUpdateEnvelope(
     JSON.parse(row.update_envelope),
   ) as RallarCrdtUpdateEnvelope<TPayload>;
   const expectedKey = toRallarCrdtDocumentKey(document);
@@ -218,7 +218,7 @@ export function toSnapshot(
 }
 
 export function toFeatureDecision(
-  command: CrdtMutationContracts.CrdtMutationCommand,
+  command: Crdt.CrdtMutationCommand,
   policies: readonly RallarCrdtDocumentTypePolicy[],
 ): RallarCrdtFeatureDecision {
   return evaluateRallarCrdtFeaturePolicy({

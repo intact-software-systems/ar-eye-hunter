@@ -11,7 +11,7 @@ import {
   createCrdtMutationCommand,
   decodeCrdtMutationCommand,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-result-codec.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
 import {
   RALLAR_CRDT_OPERATION_VERSION,

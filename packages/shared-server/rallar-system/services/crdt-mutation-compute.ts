@@ -34,22 +34,46 @@ import {
   toRejectedAdminResultDetails,
 } from './crdt-mutation-result-builders.ts';
 
+interface CrdtMutationRejectedInput {
+  readonly command: CrdtMutationCommand;
+  readonly read: CrdtMutationRead;
+  readonly code: string;
+  readonly serviceId: string;
+}
+
+interface CrdtMutationWriteComputedInput {
+  readonly command: Exclude<CrdtMutationCommand, CrdtAppendCommand>;
+  readonly read: CrdtMutationRead;
+  readonly document: RallarCrdtDocumentMetadata;
+  readonly snapshot: CrdtCanonicalSnapshotEnvelope | null;
+  readonly serviceId: string;
+}
+
+interface NextAppendDocumentInput {
+  readonly command: CrdtAppendCommand;
+  readonly read: CrdtMutationRead;
+  readonly appendSequence: number;
+  readonly updateBytes: number;
+}
+
 export function computeCrdtMutation(
   command: CrdtMutationCommand,
   read: CrdtMutationRead,
   serviceId: string,
 ): CrdtMutationComputed {
   if (!read.authorized) {
-    return rejected(
+    return rejected({
       command,
       read,
-      read.authorizationCode === 'allowed' ? 'authorization-denied' : read.authorizationCode,
+      code: read.authorizationCode === 'allowed' ? 'authorization-denied' : read.authorizationCode,
       serviceId,
-    );
+    });
   }
-  if (!read.featureDecision.allowed) return rejected(command, read, 'feature-disabled', serviceId);
+  if (!read.featureDecision.allowed) {
+    return rejected({ command, read, code: 'feature-disabled', serviceId });
+  }
   if (command.operation === 'append') return computeAppend(command, read, serviceId);
-  if (!read.document) return rejected(command, read, 'document-not-found', serviceId);
+  if (!read.document) return rejected({ command, read, code: 'document-not-found', serviceId });
   if (command.operation === 'rebuild-projection') {
     const sourceIntegrity = verifyRallarCrdtDebugBundle(
       createRallarCrdtDebugBundle({
@@ -61,7 +85,9 @@ export function computeCrdtMutation(
         records: read.records,
       }),
     );
-    if (!sourceIntegrity.valid) return rejected(command, read, 'integrity-invalid', serviceId);
+    if (!sourceIntegrity.valid) {
+      return rejected({ command, read, code: 'integrity-invalid', serviceId });
+    }
   }
   const next: RallarCrdtDocumentMetadata = {
     ...read.document,
@@ -124,8 +150,8 @@ export function computeCrdtMutation(
       byteLengthOfRallarCrdtJson(snapshot) >
       read.document.quota.maxDocumentBytes
   )
-    return rejected(command, read, 'quota-exceeded', serviceId);
-  return writeComputed(command, read, next, snapshot, serviceId);
+    return rejected({ command, read, code: 'quota-exceeded', serviceId });
+  return writeComputed({ command, read, document: next, snapshot, serviceId });
 }
 
 function applyLifecycleAction<T>(
@@ -146,7 +172,7 @@ function computeAppend(
   serviceId: string,
 ): CrdtMutationComputed {
   const validation = validateRallarCrdtUpdateEnvelope(command.update);
-  if (!validation.valid) return rejected(command, read, 'invalid-update', serviceId);
+  if (!validation.valid) return rejected({ command, read, code: 'invalid-update', serviceId });
   const candidateHash = hashRallarCrdtUpdateEnvelope(command.update);
   if (read.existingUpdate) {
     const code =
@@ -155,10 +181,15 @@ function computeAppend(
         : 'duplicate-hash-mismatch';
     return code === null
       ? replay(command, read, serviceId)
-      : rejected(command, read, code, serviceId);
+      : rejected({ command, read, code, serviceId });
   }
   if (read.document && read.document.lifecycle !== 'active') {
-    return rejected(command, read, `document-${read.document.lifecycle}`, serviceId);
+    return rejected({
+      command,
+      read,
+      code: `document-${read.document.lifecycle}`,
+      serviceId,
+    });
   }
   const updateBytes = byteLengthOfRallarCrdtJson(command.update);
   const quota = read.document?.quota ?? read.featureDecision.policy?.quota;
@@ -166,23 +197,23 @@ function computeAppend(
     quota?.maxUpdateCount !== undefined &&
     (read.document?.updateCount ?? 0) >= quota.maxUpdateCount
   ) {
-    return rejected(command, read, 'quota-exceeded', serviceId);
+    return rejected({ command, read, code: 'quota-exceeded', serviceId });
   }
   if (quota?.maxUpdateBytes !== undefined && updateBytes > quota.maxUpdateBytes) {
-    return rejected(command, read, 'update-too-large', serviceId);
+    return rejected({ command, read, code: 'update-too-large', serviceId });
   }
   if (
     quota?.maxDocumentBytes !== undefined &&
     (read.document?.storedUpdateBytes ?? 0) + read.storedSnapshotBytes + updateBytes >
       quota.maxDocumentBytes
   ) {
-    return rejected(command, read, 'quota-exceeded', serviceId);
+    return rejected({ command, read, code: 'quota-exceeded', serviceId });
   }
   if (
     quota?.maxUpdatesPerMinutePerActor !== undefined &&
     read.actorUpdatesInWindow >= quota.maxUpdatesPerMinutePerActor
   ) {
-    return rejected(command, read, 'rate-limited', serviceId);
+    return rejected({ command, read, code: 'rate-limited', serviceId });
   }
   const appendSequence = (read.document?.lastAppendSequence ?? 0) + 1;
   const append = {
@@ -195,15 +226,20 @@ function computeAppend(
     authorizationScope: command.authorizationScope,
     acceptedUpdateHash: candidateHash,
   } as const;
-  const document = nextAppendDocument(command, read, appendSequence, updateBytes);
+  const document = nextAppendDocument({ command, read, appendSequence, updateBytes });
   const appendResult: RallarCrdtAppendResult = {
     status: 'accepted',
     update: command.update,
     append,
     document,
   };
-  const response = toCrdtMutationResult(command, 'accepted', document, appendSequence, null, {
-    appendResult,
+  const response = toCrdtMutationResult({
+    command,
+    status: 'accepted',
+    document,
+    appendSequence,
+    code: null,
+    details: { appendResult },
   });
   return {
     outcome: 'write',
@@ -223,12 +259,8 @@ function computeAppend(
   };
 }
 
-function nextAppendDocument(
-  command: CrdtAppendCommand,
-  read: CrdtMutationRead,
-  appendSequence: number,
-  updateBytes: number,
-): RallarCrdtDocumentMetadata {
+function nextAppendDocument(input: NextAppendDocumentInput): RallarCrdtDocumentMetadata {
+  const { command, read, appendSequence, updateBytes } = input;
   const current = read.document;
   if (current) {
     return {
@@ -259,22 +291,17 @@ function nextAppendDocument(
   };
 }
 
-function writeComputed(
-  command: Exclude<CrdtMutationCommand, CrdtAppendCommand>,
-  read: CrdtMutationRead,
-  document: RallarCrdtDocumentMetadata,
-  snapshot: CrdtCanonicalSnapshotEnvelope | null,
-  serviceId: string,
-): CrdtMutationComputedWrite {
-  const resultDetails = toAcceptedAdminResultDetails(command, read, document, snapshot);
-  const mutationResult = toCrdtMutationResult(
+function writeComputed(input: CrdtMutationWriteComputedInput): CrdtMutationComputedWrite {
+  const { command, read, document, snapshot, serviceId } = input;
+  const resultDetails = toAcceptedAdminResultDetails({ command, read, document, snapshot });
+  const mutationResult = toCrdtMutationResult({
     command,
-    'accepted',
+    status: 'accepted',
     document,
-    document.lastAppendSequence,
-    null,
-    resultDetails,
-  );
+    appendSequence: document.lastAppendSequence,
+    code: null,
+    details: resultDetails,
+  });
   const auditEvent =
     command.operation === 'erase' ? (mutationResult as CrdtEraseMutationResult).auditEvent : null;
   return {
@@ -304,14 +331,14 @@ function replay(
   const appendResult: RallarCrdtAppendResult = read.document
     ? { status: 'duplicate', update: command.update, append, document: read.document }
     : rejectionResult(command, null, 'storage-failed');
-  const response = toCrdtMutationResult(
+  const response = toCrdtMutationResult({
     command,
-    'replay',
-    read.document,
-    append.appendSequence,
-    null,
-    { appendResult },
-  );
+    status: 'replay',
+    document: read.document,
+    appendSequence: append.appendSequence,
+    code: null,
+    details: { appendResult },
+  });
   return {
     outcome: 'replay',
     operation: command.operation,
@@ -330,24 +357,20 @@ function replay(
   };
 }
 
-function rejected(
-  command: CrdtMutationCommand,
-  read: CrdtMutationRead,
-  code: string,
-  serviceId: string,
-): CrdtMutationComputedRejected {
+function rejected(input: CrdtMutationRejectedInput): CrdtMutationComputedRejected {
+  const { command, read, code, serviceId } = input;
   const appendResult =
     command.operation === 'append' ? rejectionResult(command, read.document, code) : undefined;
-  const response = toCrdtMutationResult(
+  const response = toCrdtMutationResult({
     command,
-    'rejected',
-    read.document,
-    null,
+    status: 'rejected',
+    document: read.document,
+    appendSequence: null,
     code,
-    appendResult
+    details: appendResult
       ? { appendResult }
       : toRejectedAdminResultDetails(command as Exclude<CrdtMutationCommand, CrdtAppendCommand>),
-  );
+  });
   return {
     outcome: 'rejected',
     operation: command.operation,

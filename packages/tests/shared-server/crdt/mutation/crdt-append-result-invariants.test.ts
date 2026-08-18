@@ -18,7 +18,7 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-result-codec.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import { computeCrdtMutation } from '@shared-server/rallar-system/services/crdt-mutation-compute.ts';
 import { appendRejectionReason } from '@shared-server/rallar-system/services/crdt-append-rejection.ts';
 

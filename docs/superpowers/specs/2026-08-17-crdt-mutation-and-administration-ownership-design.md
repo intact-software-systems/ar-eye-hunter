@@ -131,8 +131,9 @@ packages/shared-server/rallar-system/crdt/
   mutation/
     crdt-mutation-contracts.ts
     crdt-mutation-command-codec.ts
-    crdt-mutation-result-codec.ts
+    decode-crdt-mutation-result.ts
     crdt-mutation-value-codec.ts
+    crdt-mutation-result-detail-codec.ts
     compute-crdt-mutation.ts
     validate-crdt-mutation.ts
     create-crdt-mutation-service.ts

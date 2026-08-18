@@ -14,18 +14,20 @@ import {
   toAppendRejectionCode,
 } from '../../services/crdt-append-rejection.ts';
 import { requireCrdtCanonicalSnapshotReason } from '../../services/crdt-compact-snapshot.ts';
-import { decodeExactDebugBundle } from './crdt-debug-bundle-exact-codec.ts';
-import type { CrdtMutationResult } from './crdt-mutation-contracts.ts';
+import { decodeExactDebugBundle } from './decode-exact-debug-bundle.ts';
 import {
-  decodeExactDocumentMetadata,
   decodeExactErasureAuditEvent,
   decodeExactErasureRequest,
   decodeExactIntegrityReport,
+  decodeExactValidationResult,
+} from './crdt-mutation-result-detail-codec.ts';
+import type { CrdtMutationResult } from './crdt-mutation-contracts.ts';
+import {
+  decodeExactDocumentMetadata,
   decodeExactSnapshotEnvelope,
   decodeExactTrustedAppendMetadata,
-  decodeExactValidationResult,
 } from './crdt-mutation-value-codec.ts';
-import { decodeExactUpdateEnvelope } from './crdt-update-exact-codec.ts';
+import { decodeExactUpdateEnvelope } from './decode-exact-update-envelope.ts';
 import {
   requireExactKeys,
   requireNullableInteger,
@@ -101,16 +103,22 @@ export function decodeCrdtMutationResult(value: unknown): CrdtMutationResult {
   } else if (operation === 'lifecycle' && result.metadata !== null) {
     decodeExactDocumentMetadata(result.metadata);
   } else if (operation === 'rebuild-projection') {
-    if (result.integrity !== null) decodeExactIntegrityReport(result.integrity);
+    if (result.integrity !== null) {
+      decodeExactIntegrityReport(requireRecord(result.integrity, 'CRDT integrity report'));
+    }
     if (result.metadata !== null) decodeExactDocumentMetadata(result.metadata);
   } else if (operation === 'erase') {
-    if (result.request !== null) decodeExactErasureRequest(result.request);
-    if (result.auditEvent !== null) decodeExactErasureAuditEvent(result.auditEvent);
+    if (result.request !== null) {
+      decodeExactErasureRequest(requireRecord(result.request, 'CRDT erasure request'));
+    }
+    if (result.auditEvent !== null) {
+      decodeExactErasureAuditEvent(requireRecord(result.auditEvent, 'CRDT erasure audit event'));
+    }
     if (result.metadata !== null) decodeExactDocumentMetadata(result.metadata);
     if (result.redactedBundle !== null) decodeExactDebugBundle(result.redactedBundle);
   }
   validateResultConsistency(result, operation);
-  return result as unknown as CrdtMutationResult;
+  return result as CrdtMutationResult & Record<string, unknown>;
 }
 
 function validateResultConsistency(
@@ -275,6 +283,8 @@ function decodeAppendResult(value: unknown): void {
     throw new TypeError('CRDT append rejection retryable differs from code');
   }
   decodeExactUpdateEnvelope(append.update);
-  if ('validation' in append) decodeExactValidationResult(append.validation);
+  if ('validation' in append) {
+    decodeExactValidationResult(requireRecord(append.validation, 'CRDT validation result'));
+  }
   if ('document' in append) decodeExactDocumentMetadata(append.document);
 }

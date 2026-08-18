@@ -3,22 +3,52 @@ import {
   publicResultIdentityMatches,
 } from './api-v1-state-write-group-causal-evidence.ts';
 import { decodeAuthMutationResult } from '@shared-server/mod.ts';
-import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-result-codec.ts';
+import * as CrdtResult from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import { readPersistedAppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 import { validateTopologyMutationResultPayload } from './validate-topology-mutation-result-payload.ts';
 
-type ResultEvidence = Readonly<{
-  valid: boolean;
-  result: unknown;
-  receipt?: Readonly<{
-    commandId: string;
-    outboxIds: readonly string[];
-    identityKind: ReceiptEffectIdentityKind;
-    commandHash?: string;
-    outcome?: string;
+interface ResultEvidence {
+  readonly valid: boolean;
+  readonly result: unknown;
+  readonly receipt?: ResultEvidenceReceipt;
+  readonly failure?: string;
+}
+
+interface ResultEvidenceReceipt {
+  readonly commandId: string;
+  readonly outboxIds: readonly string[];
+  readonly identityKind: ReceiptEffectIdentityKind;
+  readonly commandHash?: string;
+  readonly outcome?: string;
+}
+
+interface ValidatePersistedAppInboxResultInput {
+  readonly commandType: string;
+  readonly commandIds: readonly string[];
+  readonly resultStatus: string;
+  readonly resultResource: string | null;
+  readonly authoritativeReceipt?: AuthoritativeResultReceipt;
+  readonly commandScope?: Readonly<{
+    applicationId: string;
+    workspaceId: string;
+    groupId?: string;
   }>;
-  failure?: string;
-}>;
+  readonly requireAuthoritativeReceipt?: boolean;
+}
+
+interface ValidateReceiptResultInput {
+  readonly receipt: RecordValue;
+  readonly commandIds: readonly string[];
+  readonly identityKind: ReceiptEffectIdentityKind;
+  readonly result?: RecordValue;
+}
+
+interface ValidatePublicResultIdentityInput {
+  readonly result: RecordValue;
+  readonly receipt: AuthoritativeResultReceipt;
+  readonly kind: 'client' | 'group';
+  readonly commandType: string;
+}
 
 export interface AuthoritativeResultReceipt extends PublicResultReceiptIdentity {
   readonly commandId: string;
@@ -50,19 +80,7 @@ type RecordValue = Record<string, unknown>;
 export type ReceiptEffectIdentityKind = 'logical-msg-id' | 'physical-resource-id';
 
 export function validatePersistedAppInboxResult(
-  input: Readonly<{
-    commandType: string;
-    commandIds: readonly string[];
-    resultStatus: string;
-    resultResource: string | null;
-    authoritativeReceipt?: AuthoritativeResultReceipt;
-    commandScope?: Readonly<{
-      applicationId: string;
-      workspaceId: string;
-      groupId?: string;
-    }>;
-    requireAuthoritativeReceipt?: boolean;
-  }>,
+  input: ValidatePersistedAppInboxResultInput,
 ): ResultEvidence {
   if (!['COMPLETED', 'FAILED'].includes(input.resultStatus)) {
     return invalid(undefined, 'missing-result-status');
@@ -103,12 +121,12 @@ export function validatePersistedAppInboxResult(
       return invalid(result, 'malformed-client-result');
     }
     return input.authoritativeReceipt
-      ? validatePublicResultIdentity(
+      ? validatePublicResultIdentity({
           result,
-          input.authoritativeReceipt,
-          'client',
-          input.commandType,
-        )
+          receipt: input.authoritativeReceipt,
+          kind: 'client',
+          commandType: input.commandType,
+        })
       : !input.requireAuthoritativeReceipt
         ? { valid: true, result }
         : invalid(result, 'missing-authoritative-client-receipt');
@@ -127,7 +145,11 @@ export function validatePersistedAppInboxResult(
   }
   if (input.commandType.startsWith('GROUP_PRESENCE_')) {
     return validateEmbeddedAuthoritativeReceipt(
-      validateReceiptResult(result, input.commandIds, 'physical-resource-id'),
+      validateReceiptResult({
+        receipt: result,
+        commandIds: input.commandIds,
+        identityKind: 'physical-resource-id',
+      }),
       input.authoritativeReceipt,
       input.requireAuthoritativeReceipt ?? false,
     );
@@ -139,7 +161,12 @@ export function validatePersistedAppInboxResult(
     const receipt = record(result.receipt);
     if (!receipt) return invalid(result, 'missing-topology-receipt');
     const embedded = validateEmbeddedAuthoritativeReceipt(
-      validateReceiptResult(receipt, input.commandIds, 'logical-msg-id', result),
+      validateReceiptResult({
+        receipt,
+        commandIds: input.commandIds,
+        identityKind: 'logical-msg-id',
+        result,
+      }),
       input.authoritativeReceipt,
       input.requireAuthoritativeReceipt ?? false,
     );
@@ -188,12 +215,12 @@ export function validatePersistedAppInboxResult(
       : typeof left === 'string';
     if (!validStatus || !validEither) return invalid(result, 'malformed-group-result');
     if (input.authoritativeReceipt) {
-      return validatePublicResultIdentity(
+      return validatePublicResultIdentity({
         result,
-        input.authoritativeReceipt,
-        'group',
-        input.commandType,
-      );
+        receipt: input.authoritativeReceipt,
+        kind: 'group',
+        commandType: input.commandType,
+      });
     }
     return input.requireAuthoritativeReceipt
       ? invalid(result, 'missing-authoritative-group-receipt')
@@ -211,7 +238,7 @@ export function validatePersistedAppInboxResult(
   }
   if (input.commandType.startsWith('CRDT_')) {
     try {
-      const decoded = decodeCrdtMutationResult(result);
+      const decoded = CrdtResult.decodeCrdtMutationResult(result);
       const commandId = readMatchingId(decoded.commandId, input.commandIds);
       return commandId ? { valid: true, result } : invalid(result, 'mismatched-crdt-result');
     } catch {
@@ -231,12 +258,8 @@ export function validatePersistedAppInboxResult(
   return invalid(result, 'unsupported-command-result');
 }
 
-function validatePublicResultIdentity(
-  result: RecordValue,
-  receipt: AuthoritativeResultReceipt,
-  kind: 'client' | 'group',
-  commandType: string,
-): ResultEvidence {
+function validatePublicResultIdentity(input: ValidatePublicResultIdentityInput): ResultEvidence {
+  const { result, receipt, kind, commandType } = input;
   if (!publicResultIdentityMatches(result, receipt, kind, commandType)) {
     return invalid(result, `mismatched-${kind}-result-receipt-identity`);
   }
@@ -261,9 +284,7 @@ function validateEmbeddedAuthoritativeReceipt(
     : invalid(embedded.result, 'embedded-authoritative-receipt-mismatch');
 }
 
-function toResultReceipt(
-  receipt: AuthoritativeResultReceipt,
-): NonNullable<ResultEvidence['receipt']> {
+function toResultReceipt(receipt: AuthoritativeResultReceipt): ResultEvidenceReceipt {
   return {
     commandId: receipt.commandId,
     outboxIds: [...receipt.outboxIds],
@@ -341,12 +362,9 @@ function validateRtcRttResult(result: RecordValue, commandIds: readonly string[]
   );
 }
 
-function validateReceiptResult(
-  receipt: RecordValue,
-  commandIds: readonly string[],
-  identityKind: ReceiptEffectIdentityKind,
-  result: RecordValue = receipt,
-): ResultEvidence {
+function validateReceiptResult(input: ValidateReceiptResultInput): ResultEvidence {
+  const { receipt, commandIds, identityKind } = input;
+  const result = input.result ?? receipt;
   const allowedKeys =
     identityKind === 'physical-resource-id'
       ? [

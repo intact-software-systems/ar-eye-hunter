@@ -28,23 +28,58 @@ import {
 } from './crdt-snapshot-state-exact-codec.ts';
 
 export function decodeCrdtAuditEvent(value: unknown): RallarCrdtAuditEvent {
+  const event = requireCrdtAuditEventRecord(value);
   try {
-    const event = requireRecord(value, 'CRDT audit outbox event');
     requireExactKeys(
       event,
       ['kind', 'atEpochMs', 'documentKey', 'principalId', 'reason', 'metadata'],
       'CRDT audit outbox event',
     );
-    requireOneOf(event.kind, ['erase', 'redact'] as const, 'CRDT audit outbox event kind');
+    const kind = requireOneOf(
+      event.kind,
+      ['erase', 'redact'] as const,
+      'CRDT audit outbox event kind',
+    );
     requireEpoch(event.atEpochMs, 'CRDT audit outbox event epoch');
     requireString(event.documentKey, 'CRDT audit outbox event documentKey');
     requireString(event.principalId, 'CRDT audit outbox event principalId');
     requireString(event.reason, 'CRDT audit outbox event reason');
-    requireRecord(event.metadata, 'CRDT audit outbox event metadata');
-    return event as RallarCrdtAuditEvent;
+    const metadata = requireCrdtAuditEventMetadata(event.metadata);
+    return {
+      kind,
+      atEpochMs: event.atEpochMs as number,
+      documentKey: event.documentKey,
+      principalId: event.principalId,
+      reason: event.reason,
+      metadata,
+    };
   } catch {
     throw new TypeError('CRDT audit outbox event is invalid');
   }
+}
+
+function requireCrdtAuditEventRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('CRDT admin request must be an object');
+  }
+  return value as Record<string, unknown>;
+}
+
+function requireCrdtAuditEventMetadata(
+  value: unknown,
+): Readonly<Record<string, string | number | boolean>> {
+  const metadata = requireRecord(value, 'CRDT audit outbox event metadata');
+  if (
+    Object.values(metadata).some(
+      (metadataValue) =>
+        typeof metadataValue !== 'string' &&
+        typeof metadataValue !== 'number' &&
+        typeof metadataValue !== 'boolean',
+    )
+  ) {
+    throw new TypeError('CRDT audit outbox event metadata is invalid');
+  }
+  return metadata as Readonly<Record<string, string | number | boolean>>;
 }
 
 export function decodeExactSnapshotEnvelope(value: unknown): RallarCrdtSnapshotEnvelope {
@@ -117,7 +152,7 @@ export function decodeExactSnapshotEnvelope(value: unknown): RallarCrdtSnapshotE
   if (!validateRallarCrdtSnapshotEnvelope(snapshot).valid) {
     throw new TypeError('CRDT snapshot envelope is invalid');
   }
-  return snapshot as unknown as RallarCrdtSnapshotEnvelope;
+  return snapshot as RallarCrdtSnapshotEnvelope;
 }
 
 export function decodeExactDocumentRef(
@@ -143,7 +178,7 @@ export function decodeExactDocumentRef(
   if (!validateRallarCrdtDocumentRef(document).valid) {
     throw new TypeError(`${label} is invalid`);
   }
-  return document as unknown as RallarCrdtDocumentRef;
+  return document as RallarCrdtDocumentRef;
 }
 
 export function decodeExactRetentionPolicy(value: unknown): RallarCrdtRetentionPolicy {
@@ -167,7 +202,7 @@ export function decodeExactRetentionPolicy(value: unknown): RallarCrdtRetentionP
     throw new TypeError('CRDT retention sensitivePayloads is invalid');
   }
   if ('reason' in policy) requireString(policy.reason, 'retention reason');
-  return policy as unknown as RallarCrdtRetentionPolicy;
+  return policy as RallarCrdtRetentionPolicy;
 }
 
 export function decodeExactQuotaPolicy(value: unknown): RallarCrdtQuotaPolicy {
@@ -184,7 +219,7 @@ export function decodeExactQuotaPolicy(value: unknown): RallarCrdtQuotaPolicy {
   for (const key of keys) {
     if (key in policy) requirePositiveInteger(policy[key], `quota ${key}`);
   }
-  return policy as unknown as RallarCrdtQuotaPolicy;
+  return policy as RallarCrdtQuotaPolicy;
 }
 
 export function decodeExactProjectionIds(value: unknown): readonly string[] {
@@ -223,7 +258,7 @@ export function decodeExactTrustedAppendMetadata(value: unknown): RallarCrdtTrus
     ['room', 'principal', 'app', 'custom'] as const,
     'append authorizationScope',
   );
-  return append as unknown as RallarCrdtTrustedAppendMetadata;
+  return append as RallarCrdtTrustedAppendMetadata;
 }
 
 export function decodeExactDocumentMetadata(value: unknown): RallarCrdtDocumentMetadata {
@@ -282,88 +317,5 @@ export function decodeExactDocumentMetadata(value: unknown): RallarCrdtDocumentM
   if (metadata.retention !== null) decodeExactRetentionPolicy(metadata.retention);
   if (metadata.quota !== null) decodeExactQuotaPolicy(metadata.quota);
   decodeExactProjectionIds(metadata.projectionIds);
-  return metadata as unknown as RallarCrdtDocumentMetadata;
-}
-
-export function decodeExactValidationResult(value: unknown): Record<string, unknown> {
-  const validation = requireRecord(value, 'CRDT validation result');
-  requireExactKeys(validation, ['valid', 'issues'], 'CRDT validation result');
-  if (typeof validation.valid !== 'boolean' || !Array.isArray(validation.issues)) {
-    throw new TypeError('CRDT validation result is invalid');
-  }
-  for (const issue of validation.issues) {
-    const fields = requireRecord(issue, 'CRDT validation issue');
-    requireExactKeys(fields, ['path', 'code', 'message'], 'CRDT validation issue');
-    for (const field of ['path', 'code', 'message']) {
-      requireString(fields[field], `validation issue ${field}`);
-    }
-  }
-  if (validation.valid !== (validation.issues.length === 0)) {
-    throw new TypeError('CRDT validation result differs from issues');
-  }
-  return validation;
-}
-
-export function decodeExactIntegrityReport(value: unknown): Record<string, unknown> {
-  const report = requireRecord(value, 'CRDT integrity report');
-  requireExactOptionalKeys(
-    report,
-    ['valid', 'issues', 'documentKey', 'checkedUpdateCount', 'sequenceGaps'],
-    ['bundleHash'],
-    'CRDT integrity report',
-  );
-  if (typeof report.valid !== 'boolean' || !Array.isArray(report.issues)) {
-    throw new TypeError('CRDT integrity report validity is invalid');
-  }
-  for (const issue of report.issues) {
-    const fields = requireRecord(issue, 'CRDT integrity issue');
-    requireExactKeys(fields, ['path', 'code', 'message'], 'CRDT integrity issue');
-    for (const field of ['path', 'code', 'message']) requireString(fields[field], `issue ${field}`);
-  }
-  if (report.valid !== (report.issues.length === 0)) {
-    throw new TypeError('CRDT integrity report validity differs from issues');
-  }
-  requireString(report.documentKey, 'integrity documentKey');
-  requireEpoch(report.checkedUpdateCount, 'integrity checkedUpdateCount');
-  if (
-    !Array.isArray(report.sequenceGaps) ||
-    report.sequenceGaps.some((gap) => !Number.isSafeInteger(gap) || gap < 1) ||
-    new Set(report.sequenceGaps).size !== report.sequenceGaps.length
-  )
-    throw new TypeError('CRDT integrity sequence gaps are invalid');
-  if ('bundleHash' in report) requireString(report.bundleHash, 'integrity bundleHash');
-  return report;
-}
-
-export function decodeExactErasureRequest(value: unknown): Record<string, unknown> {
-  const request = requireRecord(value, 'CRDT erasure request');
-  requireExactKeys(
-    request,
-    ['document', 'requestedAtEpochMs', 'requestedBy', 'reason', 'mode'],
-    'CRDT erasure request',
-  );
-  decodeExactDocumentRef(request.document, 'CRDT erasure document');
-  requireEpoch(request.requestedAtEpochMs, 'erasure requestedAtEpochMs');
-  requireString(request.requestedBy, 'erasure requestedBy');
-  requireString(request.reason, 'erasure reason');
-  requireOneOf(request.mode, ['destroy-document', 'redact-payloads'] as const, 'erasure mode');
-  return request;
-}
-
-export function decodeExactErasureAuditEvent(value: unknown): Record<string, unknown> {
-  const event = requireRecord(value, 'CRDT erasure audit event');
-  requireExactKeys(
-    event,
-    ['kind', 'atEpochMs', 'documentKey', 'principalId', 'reason', 'metadata'],
-    'CRDT erasure audit event',
-  );
-  requireOneOf(event.kind, ['erase', 'redact'] as const, 'erasure audit kind');
-  requireEpoch(event.atEpochMs, 'erasure audit atEpochMs');
-  for (const field of ['documentKey', 'principalId', 'reason']) {
-    requireString(event[field], `erasure audit ${field}`);
-  }
-  const metadata = requireRecord(event.metadata, 'CRDT erasure audit metadata');
-  requireExactKeys(metadata, ['mode'], 'CRDT erasure audit metadata');
-  requireOneOf(metadata.mode, ['destroy-document', 'redact-payloads'] as const, 'audit mode');
-  return event;
+  return metadata as RallarCrdtDocumentMetadata;
 }

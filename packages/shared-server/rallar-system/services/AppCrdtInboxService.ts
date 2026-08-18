@@ -31,7 +31,7 @@ import {
   createCrdtMutationCommand,
   decodeCrdtMutationCommand,
 } from '../crdt/mutation/crdt-mutation-command-codec.ts';
-import { decodeCrdtMutationResult } from '../crdt/mutation/crdt-mutation-result-codec.ts';
+import { decodeCrdtMutationResult } from '../crdt/mutation/decode-crdt-mutation-result.ts';
 import { decodeCrdtAuditEvent } from '../crdt/mutation/crdt-mutation-value-codec.ts';
 import type { CrdtMutationService } from './crdt-mutations.ts';
 import type { RallarTimingSink } from './timing.ts';

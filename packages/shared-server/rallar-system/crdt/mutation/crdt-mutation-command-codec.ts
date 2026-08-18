@@ -11,7 +11,6 @@ import {
   decodeExactRetentionPolicy,
   decodeExactSnapshotEnvelope,
   decodeExactTrustedAppendMetadata,
-  decodeExactValidationResult,
 } from './crdt-mutation-value-codec.ts';
 import {
   requireEpoch,
@@ -20,9 +19,10 @@ import {
   requireRecord,
   requireString,
 } from '../../services/exact-object-codec.ts';
-import { decodeExactUpdateEnvelope } from './crdt-update-exact-codec.ts';
+import { decodeExactUpdateEnvelope } from './decode-exact-update-envelope.ts';
 import type {
   CrdtMutationCommand,
+  CrdtLifecycleFieldAction,
   CreateCrdtMutationCommandInput,
 } from './crdt-mutation-contracts.ts';
 import {
@@ -77,7 +77,14 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
   }
   const actor = requireRecord(command.actor, 'CRDT mutation actor');
   requireExactKeys(actor, ['actorId', 'principalId', 'sessionId', 'serverId'], 'actor');
-  Object.values(actor).forEach((field) => requireString(field, 'actor field'));
+  const actorId = actor.actorId;
+  const principalId = actor.principalId;
+  const sessionId = actor.sessionId;
+  const serverId = actor.serverId;
+  requireString(actorId, 'actor field');
+  requireString(principalId, 'actor field');
+  requireString(sessionId, 'actor field');
+  requireString(serverId, 'actor field');
   const audience = requireRecord(command.responseAudience, 'CRDT response audience');
   requireExactKeys(
     audience,
@@ -92,35 +99,60 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
   if (toRallarCrdtDocumentKey(document) !== command.documentKey) {
     throw new TypeError('CRDT command document key differs from document');
   }
-  validateOperationFields(operation, command, document);
   const { commandHash: _hash, ...stable } = command;
   if (hashRallarCrdtJson(stable) !== command.commandHash) {
     throw new TypeError('CRDT mutation command hash differs from canonical command');
   }
-  return command as unknown as CrdtMutationCommand;
-}
-
-function validateOperationFields(
-  operation: CrdtMutationCommand['operation'],
-  command: Record<string, unknown>,
-  document: RallarCrdtDocumentRef,
-): void {
+  const common = {
+    version: 1 as const,
+    commandId: command.commandId,
+    deliveryId: command.deliveryId,
+    commandHash: command.commandHash,
+    actor: {
+      actorId,
+      principalId,
+      sessionId,
+      serverId,
+    },
+    capturedAtEpochMs: Number(command.capturedAtEpochMs),
+    expireAtEpochMs: Number(command.expireAtEpochMs),
+    document,
+    documentKey: command.documentKey,
+    responseAudience: {
+      kind: requireOneOf(
+        audience.kind,
+        ['room', 'principal', 'app', 'admin'] as const,
+        'audience kind',
+      ),
+      senderSessionId: audience.senderSessionId,
+      topicId: audience.topicId,
+      contextId: audience.contextId,
+    },
+  };
   if (operation === 'append') {
     const update = decodeExactUpdateEnvelope(command.update);
     if (toRallarCrdtDocumentKey(update.document) !== toRallarCrdtDocumentKey(document)) {
       throw new TypeError('CRDT update document differs');
     }
-    requireOneOf(
+    const authorizationScope = requireOneOf(
       command.authorizationScope,
       ['room', 'principal', 'app', 'custom'] as const,
       'authorizationScope',
     );
+    return { ...common, operation, update, authorizationScope };
   } else if (operation === 'rebuild-projection') {
     requireString(command.projectionId, 'projectionId');
+    return { ...common, operation, projectionId: command.projectionId };
   } else if (operation === 'compact') {
     requireString(command.snapshotId, 'snapshotId');
+    requireCrdtCanonicalSnapshotReason(command.reason);
     const snapshot =
-      command.snapshot === null ? null : decodeExactSnapshotEnvelope(command.snapshot);
+      command.snapshot === null
+        ? null
+        : toCrdtCanonicalSnapshotEnvelope(
+            decodeExactSnapshotEnvelope(command.snapshot),
+            command.reason,
+          );
     if (
       snapshot !== null &&
       toRallarCrdtDocumentKey(snapshot.document) !== toRallarCrdtDocumentKey(document)
@@ -130,25 +162,46 @@ function validateOperationFields(
     if (snapshot !== null && snapshot.snapshotId !== command.snapshotId) {
       throw new TypeError('CRDT compact snapshot ID differs from command input');
     }
-    requireCrdtCanonicalSnapshotReason(command.reason);
     if (snapshot !== null && snapshot.metadata.reason !== command.reason) {
       throw new TypeError('CRDT compact snapshot reason differs from command reason');
     }
+    return {
+      ...common,
+      operation,
+      snapshotId: command.snapshotId,
+      snapshot,
+      reason: command.reason,
+    };
   } else if (operation === 'lifecycle') {
-    requireOneOf(
+    const lifecycle = requireOneOf(
       command.lifecycle,
       ['active', 'archived', 'destroyed', 'quarantined'] as const,
       'lifecycle',
     );
-    const retention = decodeLifecycleAction(command.retentionAction, 'retention');
-    if (retention.kind === 'set') decodeExactRetentionPolicy(retention.value);
-    const quota = decodeLifecycleAction(command.quotaAction, 'quota');
-    if (quota.kind === 'set') decodeExactQuotaPolicy(quota.value);
-    const projections = decodeLifecycleAction(command.projectionIdsAction, 'projectionIds');
-    if (projections.kind === 'set') decodeExactProjectionIds(projections.value);
+    return {
+      ...common,
+      operation,
+      lifecycle,
+      retentionAction: decodeLifecycleAction(
+        command.retentionAction,
+        'retention',
+        decodeExactRetentionPolicy,
+      ),
+      quotaAction: decodeLifecycleAction(command.quotaAction, 'quota', decodeExactQuotaPolicy),
+      projectionIdsAction: decodeLifecycleAction(
+        command.projectionIdsAction,
+        'projectionIds',
+        decodeExactProjectionIds,
+      ),
+    };
   } else {
-    requireOneOf(command.mode, ['destroy-document', 'redact-payloads'] as const, 'erase mode');
+    const mode = requireOneOf(
+      command.mode,
+      ['destroy-document', 'redact-payloads'] as const,
+      'erase mode',
+    );
     requireString(command.reason, 'reason');
+    return { ...common, operation, mode, reason: command.reason };
   }
 }
 
@@ -165,7 +218,11 @@ function toCanonicalCompactCommandInput(
   };
 }
 
-function decodeLifecycleAction(value: unknown, label: string): Record<string, unknown> {
+function decodeLifecycleAction<T>(
+  value: unknown,
+  label: string,
+  decodeValue: (candidate: unknown) => T,
+): CrdtLifecycleFieldAction<T> {
   const action = requireRecord(value, `${label} action`);
   const kind = requireOneOf(
     action.kind,
@@ -173,10 +230,10 @@ function decodeLifecycleAction(value: unknown, label: string): Record<string, un
     `${label} action kind`,
   );
   requireExactKeys(action, kind === 'set' ? ['kind', 'value'] : ['kind'], `${label} action`);
-  if (kind === 'set' && action.value === null) {
-    throw new TypeError(`${label} action value is invalid`);
-  }
-  return action;
+  if (kind === 'preserve') return { kind };
+  if (kind === 'clear') return { kind };
+  if (action.value === null) throw new TypeError(`${label} action value is invalid`);
+  return { kind, value: decodeValue(action.value) };
 }
 
 const commonCommandKeys = [

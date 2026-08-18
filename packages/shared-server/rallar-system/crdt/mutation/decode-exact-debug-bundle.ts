@@ -18,7 +18,7 @@ import {
   decodeExactSnapshotEnvelope,
   decodeExactTrustedAppendMetadata,
 } from './crdt-mutation-value-codec.ts';
-import { decodeExactUpdateEnvelope } from './crdt-update-exact-codec.ts';
+import { decodeExactUpdateEnvelope } from './decode-exact-update-envelope.ts';
 
 export function decodeExactDebugBundle(value: unknown): RallarCrdtDebugBundle {
   const bundle = requireRecord(value, 'CRDT debug bundle');
@@ -53,7 +53,7 @@ export function decodeExactDebugBundle(value: unknown): RallarCrdtDebugBundle {
   decodeExactRedaction(bundle.redaction);
   if ('health' in bundle) decodeExactHealth(bundle.health);
   decodeExactBundleIntegrity(bundle.integrity, records);
-  return bundle as unknown as RallarCrdtDebugBundle;
+  return bundle as RallarCrdtDebugBundle;
 }
 
 function decodeExactRecords(

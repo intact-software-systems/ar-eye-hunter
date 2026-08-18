@@ -13,14 +13,28 @@ import type {
   CrdtMutationResult,
 } from '../crdt/mutation/crdt-mutation-contracts.ts';
 
-export function toCrdtMutationResult(
-  command: CrdtMutationCommand,
-  status: CrdtMutationResult['status'],
-  document: RallarCrdtDocumentMetadata | null,
-  appendSequence: number | null,
-  code: string | null,
-  details: Record<string, unknown>,
-): CrdtMutationResult {
+export interface CrdtMutationResultDetails {
+  readonly [key: string]: unknown;
+}
+
+export interface CrdtMutationResultInput {
+  readonly command: CrdtMutationCommand;
+  readonly status: CrdtMutationResult['status'];
+  readonly document: RallarCrdtDocumentMetadata | null;
+  readonly appendSequence: number | null;
+  readonly code: string | null;
+  readonly details: CrdtMutationResultDetails;
+}
+
+export interface AcceptedAdminResultDetailsInput {
+  readonly command: Exclude<CrdtMutationCommand, CrdtAppendCommand>;
+  readonly read: CrdtMutationRead;
+  readonly document: RallarCrdtDocumentMetadata;
+  readonly snapshot: CrdtCanonicalSnapshotEnvelope | null;
+}
+
+export function toCrdtMutationResult(input: CrdtMutationResultInput): CrdtMutationResult {
+  const { command, status, document, appendSequence, code, details } = input;
   return {
     version: 1,
     operation: command.operation,
@@ -35,11 +49,9 @@ export function toCrdtMutationResult(
 }
 
 export function toAcceptedAdminResultDetails(
-  command: Exclude<CrdtMutationCommand, CrdtAppendCommand>,
-  read: CrdtMutationRead,
-  document: RallarCrdtDocumentMetadata,
-  snapshot: CrdtCanonicalSnapshotEnvelope | null,
-): Record<string, unknown> {
+  input: AcceptedAdminResultDetailsInput,
+): CrdtMutationResultDetails {
+  const { command, read, document, snapshot } = input;
   if (command.operation === 'compact') {
     if (!snapshot) throw new TypeError('Accepted CRDT compaction requires a snapshot');
     return { snapshot, metadata: document };
@@ -76,7 +88,7 @@ export function toAcceptedAdminResultDetails(
 
 export function toRejectedAdminResultDetails(
   command: Exclude<CrdtMutationCommand, CrdtAppendCommand>,
-): Record<string, unknown> {
+): CrdtMutationResultDetails {
   if (command.operation === 'compact') return { snapshot: null, metadata: null };
   if (command.operation === 'lifecycle') return { metadata: null };
   if (command.operation === 'rebuild-projection') return { integrity: null, metadata: null };

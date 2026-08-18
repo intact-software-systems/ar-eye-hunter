@@ -7,7 +7,7 @@ import {
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-result-codec.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import { computeCrdtMutation } from '@shared-server/rallar-system/services/crdt-mutation-compute.ts';
 import { toCrdtAuditOutbox } from '@shared-server/rallar-system/services/crdt-mutation-outbox.ts';
 

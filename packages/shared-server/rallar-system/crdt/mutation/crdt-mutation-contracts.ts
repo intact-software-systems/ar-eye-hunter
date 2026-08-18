@@ -273,9 +273,9 @@ export type CrdtMutationResult =
   | CrdtEraseMutationResult;
 
 export interface CrdtMutationRepository {
-  readMutation(command: CrdtMutationCommand): Promise<CrdtMutationRead>;
-  writeMutation(computed: CrdtMutationComputedWrite): Promise<void>;
-  writeOutbox(entries: readonly ResourceEntry[]): Promise<void>;
+  readonly readMutation: (command: CrdtMutationCommand) => Promise<CrdtMutationRead>;
+  readonly writeMutation: (computed: CrdtMutationComputedWrite) => Promise<void>;
+  readonly writeOutbox: (entries: readonly ResourceEntry[]) => Promise<void>;
 }
 
 export class CrdtMutationConflictError extends Error {
