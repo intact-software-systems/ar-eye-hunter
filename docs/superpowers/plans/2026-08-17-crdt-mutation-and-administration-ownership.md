@@ -910,6 +910,7 @@ and has no `setAuditSink`; this task owns only the later audit-delivery registra
 - Modify/Test: active mutation-route owner and phase-order analyzer files under
   `packages/tests/shared-server`
 - Create/Test: `packages/tests/shared-server/mutation-routing-crdt-operation.ts`
+- Modify: `docs/test-structure-coupling-exceptions.md`
 
 **Interfaces:**
 
@@ -1114,6 +1115,18 @@ admin mutation row. Executable AST traversal follows the registered route throug
 `writeCrdtCommandUntilCompletion`, and `toCrdtAppInboxType`. Controlled mutations that reroute
 compact to lifecycle at the direct route, general gateway, command builder, or AppInbox type
 mapping must produce an operation-specific finding; generic reachability alone is insufficient.
+The operation analysis preserves live dataflow rather than accepting compatible AST fragments:
+the direct helper must forward `input.operation`, the command submitted to AppInbox must be the
+same binding created for that mutation, and the command/type switches must return the expected
+value on the live terminal path. Executable mutants cover a hardcoded helper operation, a second
+wrong submitted command, literal-false correct returns followed by live fallthrough, and dead
+correct route/gateway calls masking live wrong calls.
+
+Individually review every current source-read assertion in the changed coupling registry. Replace
+stale location identities after the test move, add durable security classifications for the live
+operation/binding mutants, and preserve the mutation-boundary inventory classification. The exact
+`22bb4919c92f96d785ff65d7f308a6d2fd3318e7` changed-range coupling gate must pass; the checker unit
+suite alone is not acceptance evidence.
 
 - [x] **Step 7: Run GREEN and the corrected PGlite audit path**
 
@@ -1134,6 +1147,8 @@ cd apps/api-v1 && deno test -A \
 deno task check
 cd ../..
 npx tsc -p packages/shared-server/tsconfig.json --noEmit
+node scripts/check-test-structure-coupling.mjs --changed \
+  22bb4919c92f96d785ff65d7f308a6d2fd3318e7 HEAD
 git diff --check
 ```
 
@@ -1162,6 +1177,7 @@ git add packages/shared-server/rallar-system/crdt/inbox \
   packages/tests/shared-server/mutation-routing-reachability.ts \
   packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts \
   packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts \
+  docs/test-structure-coupling-exceptions.md \
   apps/api-v1/src/crdt/create-crdt-admin-mutations.ts \
   apps/api-v1/src/routes/crdt-admin-routes.ts \
   apps/api-v1/src/services/create-api-admin-mutation-gateway.ts \
