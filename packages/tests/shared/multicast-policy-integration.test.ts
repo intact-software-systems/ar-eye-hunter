@@ -1,5 +1,13 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { Temporal } from '@js-temporal/polyfill';
+import type { OverlayInfo } from '@shared/api/api-config.ts';
+import type {
+    AuditStamp,
+    GroupMember,
+    GroupPresenceSession,
+    GroupSnapshot,
+} from '@shared/api/group-types.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 (globalThis as { Temporal?: typeof Temporal }).Temporal ??= Temporal;
 
@@ -576,71 +584,93 @@ function createOverlayContext(
     };
 }
 
-function createGroupSnapshot(memberSessionIds: readonly string[]) {
+function createGroupSnapshot(memberSessionIds: readonly string[]): GroupSnapshot {
     const applicationId = 'app-1';
     const workspaceId = 'workspace-1';
+    const groupId = 'group-1';
+    const audit = createAuditStamp('owner');
 
     return {
-        group: {
+        stateRevision: 1,
+        causalRevision: {
+            groupRevision: 1,
+            presenceRevision: 0,
+        },
+        group: createTestGroup({
             applicationId,
             workspaceId,
-            groupId: 'group-1',
+            groupId,
             displayName: 'Group 1',
-            kind: 'room',
-            status: 'active',
-            joinMode: 'open',
-            metadata: {},
+            activeMemberCount: memberSessionIds.length,
+            ownerPrincipalId: 'owner',
             snapshotVersion: 1,
             metadataVersion: 0,
             rosterVersion: 1,
             presenceVersion: 0,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-        },
-        members: memberSessionIds.map((sessionId) => ({
+            created: audit,
+            updated: audit,
+        }),
+        members: memberSessionIds.map((sessionId): GroupMember => ({
             applicationId,
             workspaceId,
-            groupId: 'group-1',
+            groupId,
             principalId: sessionId,
             role: 'member',
             status: 'active',
-            joined: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
+            joined: audit,
+            updated: audit,
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
         })),
-        activeSessions: memberSessionIds.map((sessionId) => ({
+        activeSessions: memberSessionIds.map((sessionId): GroupPresenceSession => ({
             applicationId,
             workspaceId,
-            groupId: 'group-1',
+            groupId,
             sessionId,
             principalId: sessionId,
+            generationId: `generation-${sessionId}`,
+            generationVersion: 1,
+            status: 'active',
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,
             expiresAtEpochMs: 60_001,
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         })),
         memberCount: memberSessionIds.length,
         onlineMemberCount: memberSessionIds.length,
     };
 }
 
-function createOverlayInfo(nextHopSessionIds: readonly string[]) {
+function createAuditStamp(principalId: string): AuditStamp {
     return {
+        atEpochMs: 1,
+        actor: { kind: 'principal', principalId },
+        reason: null,
+        traceId: null,
+        requestId: null,
+    };
+}
+
+function createOverlayInfo(nextHopSessionIds: readonly string[]): OverlayInfo {
+    return {
+        sourceGroupStateCausalRevision: {
+            groupRevision: 1,
+            presenceRevision: 0,
+        },
+        provenance: 'server',
+        state: 'active',
         overlayId: 'group-1',
+        groupRef: groupRef('group-1'),
+        topology: 'star',
         name: 'Group 1',
         createdByClientId: 'owner',
         createdAtEpochMs: 1,
         nextHopSessionIds,
+        degreeLimit: nextHopSessionIds.length,
         overlayVersion: 1,
         updatedAtEpochMs: 1,
     };

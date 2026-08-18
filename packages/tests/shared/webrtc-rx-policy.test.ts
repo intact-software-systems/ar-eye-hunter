@@ -1,7 +1,9 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Temporal } from '@js-temporal/polyfill';
 
-(globalThis as { Temporal?: typeof Temporal }).Temporal ??= Temporal;
+if (!('Temporal' in globalThis)) {
+    Object.assign(globalThis, { Temporal });
+}
 
 type SharedModule = typeof import('@shared/mod.ts');
 type SharedMessage = import('@shared/mod.ts').ALMessage;

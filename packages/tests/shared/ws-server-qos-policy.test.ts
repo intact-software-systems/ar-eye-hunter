@@ -1,8 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { Temporal } from '@js-temporal/polyfill';
 
-(globalThis as { Temporal?: typeof Temporal }).Temporal ??= Temporal;
-
 type SharedModule = typeof import('@shared/mod.ts');
 type SharedMessage = import('@shared/mod.ts').ALMessage;
 type SharedTargetResolver = import('@shared/mod.ts').WsServerTargetResolver;

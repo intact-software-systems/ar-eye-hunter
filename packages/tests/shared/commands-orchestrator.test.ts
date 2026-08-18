@@ -157,8 +157,12 @@ describe('CommandsOrchestrator', () => {
 
         const results = await CommandsOrchestrator.withPolicies<string, number>()
             .sequential(async () => ['a', 1])
-            .then((existing) => snapshots.push(Array.from(existing.entries())))
-            .then((existing) => snapshots.push(Array.from(existing.entries())))
+            .then((existing) => {
+                snapshots.push(Array.from(existing.entries()));
+            })
+            .then((existing) => {
+                snapshots.push(Array.from(existing.entries()));
+            })
             .run();
 
         expect(Array.from(results.entries())).toEqual([['a', 1]]);

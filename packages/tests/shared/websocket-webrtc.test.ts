@@ -4,6 +4,7 @@ import {
   newALEventRoute,
   newALUnicastMessage,
 } from '@shared/al-contracts/al-contract.ts';
+import type { ALOutboundEnqueueResult } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import {
   DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
@@ -247,7 +248,9 @@ describe('JsonWebSocketServer', () => {
 
     server.onWebsocketCallbacksDo('callbacks', {
       onConnection: (ctx) => lifecycle.push(`open:${ctx.id}`),
-      onClose: (ctx) => lifecycle.push(`close:${ctx.id}`),
+      onClose: (ctx) => {
+        lifecycle.push(`close:${ctx.id}`);
+      },
       onParseError: (_ctx, rawText) => parseErrors.push(rawText),
     });
     server.onMessageDo('messages', {
@@ -371,12 +374,16 @@ describe('JsonWebSocketServer', () => {
 
     first.readyState = FakeWebSocket.OPEN;
     second.readyState = FakeWebSocket.OPEN;
+    const firstContext = new ConnectionContext('session-1', first as never);
+    const secondContext = new ConnectionContext('session-1', second as never);
     server.onWebsocketCallbacksDo('lifecycle', {
-      onClose: (ctx) => lifecycle.push(`close:${ctx.id}:${ctx.socket === second}`),
+      onClose: (ctx) => {
+        lifecycle.push(`close:${ctx.id}:${ctx.socket === secondContext.socket}`);
+      },
     });
 
-    server.addConnection(new ConnectionContext('session-1', first as never));
-    server.addConnection(new ConnectionContext('session-1', second as never));
+    server.addConnection(firstContext);
+    server.addConnection(secondContext);
 
     expect(first.closedWith).toEqual({
       code: 1000,
@@ -560,7 +567,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
 
     expect(qbox.enqueueOutboxIfAbsent).toHaveBeenCalledOnce();
 
-    const sent = qbox.enqueueOutboxIfAbsent.mock.calls[0][0] as ALMessage;
+    const sent = qbox.enqueueOutboxIfAbsent.mock.calls[0][0];
 
     expect(sent.payload.typeId).toBe('rtc');
     expect(sent.id.senderId).toBe(payload.fromId);
@@ -571,6 +578,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
     const qbox = createQboxHarness();
     qbox.enqueueOutboxIfAbsent.mockResolvedValueOnce({
       status: 'enqueued',
+      message: createEnvelope('rtc', createSignalingPayload()),
       entries: [],
     });
     const wakeOutbox = vi.fn();
@@ -861,12 +869,15 @@ function createReconnectSocketHarness(
       onError?: (ev: Event) => void | Promise<void>;
       onClose?: (ev: CloseEvent) => void | Promise<void>;
     };
-  } = {};
+    ws?: { readyState: number };
+  } = {
+    ws: { readyState: 1 },
+  };
 
   const client = {
     url: 'ws://test',
-    ws: {
-      readyState: 1,
+    get ws() {
+      return state.ws;
     },
     onWebsocketCallbacksDo: vi.fn(function (
       _id: string,
@@ -877,7 +888,7 @@ function createReconnectSocketHarness(
     }),
     connect: vi.fn(options.connect ?? (async (_options?: { signal?: AbortSignal }) => {})),
     close: vi.fn((_code?: number, _reason?: string) => {
-      client.ws = undefined;
+      state.ws = undefined;
     }),
     onWebSocketMessageDo: vi.fn(function () {
       return client;
@@ -947,9 +958,13 @@ function createQboxHarness() {
     | undefined;
 
   const socket = createSocketHarness();
-  const enqueueOutboxIfAbsent = vi.fn(async () => ({
-    resourceId: 'outbox-entry',
-  }));
+  const enqueueOutboxIfAbsent = vi.fn(
+    async (message: ALMessage): Promise<ALOutboundEnqueueResult> => ({
+      status: 'skipped',
+      message,
+      entries: [],
+    }),
+  );
 
   const service = {
     socket: socket.client,

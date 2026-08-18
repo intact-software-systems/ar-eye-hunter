@@ -111,11 +111,15 @@ function createRepository(): RuntimeStateRepositoryLike {
                 .sort((left, right) => left.key.localeCompare(right.key));
         },
         async upsert(namespace, key, value, expireAtTimestamp) {
-            data.set(`${namespace}:${key}`, {
+            const compositeKey = `${namespace}:${key}`;
+            const previousRevision = data.get(compositeKey)?.revision ?? 0;
+
+            data.set(compositeKey, {
                 key,
                 value,
                 expireAtTimestamp,
                 updatedTimestamp: new Date().toISOString(),
+                revision: previousRevision + 1,
             });
         },
         async deleteByKey(namespace, key) {

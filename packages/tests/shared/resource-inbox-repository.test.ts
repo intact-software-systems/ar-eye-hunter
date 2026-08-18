@@ -210,7 +210,10 @@ describe('ResourceInboxRepository', () => {
         const capture = createQueryCapture();
         const repo = new repositoryModule.ResourceInboxRepository(capture.sql);
         const entry = {
-            ...createEntry(createKey('finalization-generation'), { text: 'recover' }),
+            ...createEntry(createKey('finalization-generation'), {
+                text: 'recover',
+                expiryTs: Temporal.Instant.from('9999-01-01T00:00:00Z'),
+            }),
             typeId: 'APP_INBOX',
             status: EntityStatus.RESERVED,
             dequeueAudit: {
@@ -711,26 +714,13 @@ describe('ResourceInboxRepository', () => {
         stored.ri_status = EntityStatus.RESERVED;
         stored.ri_attempts = 2n;
 
-        const releaseRepo = repo as unknown as {
-            releaseReserved(
-                key: Key,
-                options: Readonly<{
-                    expectedAttempts: number;
-                    releasedAt: Temporal.Instant;
-                    disposition: Readonly<{
-                        status: EntityStatus.RETRY;
-                        delayMs: number;
-                    }>;
-                }>,
-            ): Promise<ResourceEntry | null>;
-        };
-        await expect(releaseRepo.releaseReserved(entry.key, {
+        await expect(repo.releaseReserved(entry.key, {
             expectedAttempts: 1,
             releasedAt,
             disposition: { status: EntityStatus.RETRY, delayMs: 37 },
         })).resolves.toBeNull();
 
-        const released = await releaseRepo.releaseReserved(entry.key, {
+        const released = await repo.releaseReserved(entry.key, {
             expectedAttempts: 2,
             releasedAt,
             disposition: { status: EntityStatus.RETRY, delayMs: 37 },
@@ -775,7 +765,7 @@ describe('ResourceInboxRepository', () => {
         await expect(repo.finishReserved(
             createKey('invalid-finish-status'),
             1,
-            EntityStatus.RETRY as EntityStatus.COMPLETED,
+            EntityStatus.RETRY as typeof EntityStatus.COMPLETED,
             new Date('2026-01-01T00:01:00.000Z'),
         )).rejects.toThrow('COMPLETED or FAILED');
         expect(harness.sqlCalls).toHaveLength(sqlCallsBefore);

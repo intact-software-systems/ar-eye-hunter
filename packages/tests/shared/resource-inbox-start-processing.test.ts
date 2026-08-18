@@ -2,7 +2,9 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { Temporal } from '@js-temporal/polyfill';
 import { EntityStatus, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
 
-(globalThis as { Temporal?: typeof Temporal }).Temporal ??= Temporal;
+if (!('Temporal' in globalThis)) {
+    Object.assign(globalThis, { Temporal });
+}
 
 type ResourceInboxRepositoryModule =
     typeof import('@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts');

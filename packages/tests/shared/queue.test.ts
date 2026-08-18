@@ -6,7 +6,10 @@ import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { toResourceInboxFairnessReservationOptions } from '@shared/queuebox/QueueBoxTypes.ts';
+import {
+    type DequeueResourceEntryRepository,
+    toResourceInboxFairnessReservationOptions,
+} from '@shared/queuebox/QueueBoxTypes.ts';
 
 describe('enqueue and dequeue', () => {
 
@@ -556,7 +559,9 @@ function createQueueEntry(
     };
 }
 
-function createDequeueRepository(overrides: Record<string, unknown> = {}) {
+function createDequeueRepository(
+    overrides: Partial<DequeueResourceEntryRepository> = {},
+) {
     return {
         isAnyEntryToLock: async () => false,
         reserveEntries: async () => new Map(),

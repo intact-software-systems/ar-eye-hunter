@@ -84,6 +84,14 @@ type ManifestCommand = Readonly<{
     thresholds?: Record<string, unknown>;
 }>;
 
+// Every multi-agent Hetzner manifest must carry the standard barrier so agents start synchronized;
+// only these two are exempt, because neither drives RTC traffic between peers. A new manifest
+// without a barrier fails this test until it is either given one or added here deliberately.
+const BARRIER_EXEMPT_MANIFEST_PATHS: ReadonlySet<string> = new Set([
+    'apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json',
+    'apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json',
+]);
+
 function manifestCommands(manifest: RallarBlackBoxDistributedRunManifest): readonly ManifestCommand[] {
     const walk = (commands: readonly ManifestCommand[]): readonly ManifestCommand[] =>
         commands.flatMap(command => [
@@ -301,20 +309,30 @@ describe('Hetzner distributed manifest catalog', () => {
         }
     });
 
-    it('synchronizes every live multi-agent Hetzner recipe before execution', () => {
+    it('synchronizes every multi-agent Hetzner recipe before execution', () => {
+        const checkedPaths: string[] = [];
+
         for (const entry of buildHetznerDistributedManifestCatalog()) {
-            const hasLiveRecipe = manifestCommands(entry.manifest).some(command =>
-                command.kind?.startsWith('rtc.') === true
-            );
-            if (!hasLiveRecipe || entry.agentCount < 2) {
+            if (entry.agentCount < 2 || BARRIER_EXEMPT_MANIFEST_PATHS.has(entry.filePath)) {
                 continue;
             }
+            checkedPaths.push(entry.filePath);
 
             expect(entry.manifest.barrier, entry.filePath).toEqual({
                 enabled: true,
                 timeoutMs: 15_000,
             });
         }
+
+        expect(checkedPaths.length).toBeGreaterThan(0);
+        expect(
+            [...BARRIER_EXEMPT_MANIFEST_PATHS].filter(
+                exemptPath =>
+                    !buildHetznerDistributedManifestCatalog().some(
+                        entry => entry.filePath === exemptPath,
+                    ),
+            ),
+        ).toEqual([]);
     });
 
     it('keeps readiness-enabled recipes resolvable to exact rooms', () => {

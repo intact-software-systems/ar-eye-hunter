@@ -52,10 +52,11 @@ describe('QRtcPeerConnection', () => {
         await pc.ondatachannel?.({
             channel: new FakeRTCDataChannel('chat'),
         } as RTCDataChannelEvent);
-        await pc.ontrack?.({
+        const remoteTrackEvent: Pick<RTCTrackEvent, 'track' | 'streams'> = {
             track: createFakeTrack('video'),
             streams: [createFakeStream('remote-1', [createFakeTrack('audio')])],
-        } as RTCTrackEvent);
+        };
+        await pc.ontrack?.(remoteTrackEvent as RTCTrackEvent);
 
         pc.connectionState = 'connected';
         pc.onconnectionstatechange?.();

@@ -572,14 +572,18 @@ describe('AsyncCommand', () => {
             resource: first,
             timeoutMs: 10,
             isComplete: (value) => value.state === 'open',
-            onTimeout: (value) => timeouts.push(value.id),
+            onTimeout: (value) => {
+                timeouts.push(value.id);
+            },
         });
         command.watch({
             key: 'peer-1',
             resource: second,
             timeoutMs: 20,
             isComplete: (value) => value.state === 'open',
-            onTimeout: (value) => timeouts.push(value.id),
+            onTimeout: (value) => {
+                timeouts.push(value.id);
+            },
         });
 
         await vi.advanceTimersByTimeAsync(20);

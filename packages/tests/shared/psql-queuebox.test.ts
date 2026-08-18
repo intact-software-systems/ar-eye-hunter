@@ -255,10 +255,13 @@ describe('PSqlQueueBox', () => {
         };
         const startProcessingEntity = vi.fn(async (
             entry: ResourceEntry,
-            maxAttempts = 20,
+            maxAttempts: number = 20,
         ) => entry.dequeueAudit.attempts >= maxAttempts
-            ? Either.ofLeft({ kind: 'expired-or-missing' as const, key: entry.key })
-            : Either.ofRight(entry));
+            ? Either.ofLeft<{ kind: 'expired-or-missing'; key: Key }, ResourceEntry>({
+                kind: 'expired-or-missing',
+                key: entry.key,
+            })
+            : Either.ofRight<{ kind: 'expired-or-missing'; key: Key }, ResourceEntry>(entry));
         const repo = createRepo({
             findEntriesSkipLocked: async () =>
                 new Map<Key, ResourceEntry>([[exhausted.key, exhausted]]),
@@ -286,10 +289,13 @@ describe('PSqlQueueBox', () => {
         };
         const startProcessingEntity = vi.fn(async (
             entry: ResourceEntry,
-            maxAttempts = 20,
+            maxAttempts: number = 20,
         ) => entry.dequeueAudit.attempts >= maxAttempts
-            ? Either.ofLeft({ kind: 'expired-or-missing' as const, key: entry.key })
-            : Either.ofRight(entry));
+            ? Either.ofLeft<{ kind: 'expired-or-missing'; key: Key }, ResourceEntry>({
+                kind: 'expired-or-missing',
+                key: entry.key,
+            })
+            : Either.ofRight<{ kind: 'expired-or-missing'; key: Key }, ResourceEntry>(entry));
         const repo = createRepo({
             findTimedOutReservedEntriesSkipLocked: async () =>
                 new Map<Key, ResourceEntry>([[exhausted.key, exhausted]]),

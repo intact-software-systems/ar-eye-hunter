@@ -41,7 +41,6 @@ const ADAPTERS: readonly ReleaseAdapter[] = [
                 dbName: `indexeddb-rtc-finalized-${crypto.randomUUID()}`,
             });
             await queue.enqueue(current);
-            vi.spyOn(queue as never, 'toResourceEntry').mockReturnValue(current);
             return firstValue(await queue.releaseEntries([reserved], {
                 status: EntityStatus.COMPLETED,
                 delayMs: null,
