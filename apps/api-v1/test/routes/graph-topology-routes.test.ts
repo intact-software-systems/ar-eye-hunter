@@ -640,6 +640,17 @@ function createRouteApp(options: {
         (() => Promise.resolve({ effective: { topologyKind: 'auto' } })),
       readOverride: options.topologyManagement?.readOverride ??
         (() => Promise.resolve(undefined)),
+      readTopologyPlanningAuthority: options.topologyManagement?.readTopologyPlanningAuthority ??
+        ((groupRef, _requestOptions, knownGroup) =>
+          Promise.resolve({
+            group: knownGroup ??
+              createGroupSnapshot(groupRef.groupId, ['alice'], {
+                applicationId: groupRef.applicationId,
+                workspaceId: groupRef.workspaceId,
+              }),
+            rttMeasurements: [],
+            nowEpochMs: 123_456,
+          })),
     },
     processTopologyAppInbox: options.processTopologyAppInbox ??
       (() => Promise.resolve({ committed: true })),

@@ -47,7 +47,12 @@ const STORED_GROUP_KEYS = [
   'purgeAfterEpochMs',
   'lifecycleState',
   'formationEpoch',
+  'formationAttemptCount',
+  'lastFormationOutcome',
+  'establishmentStartedAtEpochMs',
 ] as const;
+
+const FORMATION_OUTCOME_KEYS = ['outcome', 'observedRate', 'atEpochMs', 'formationEpoch'] as const;
 
 const STORED_MEMBER_KEYS = [
   'applicationId',
@@ -107,6 +112,33 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
     'Stored group lifecycleState',
   );
   requireNonNegativeSafeInteger(value.formationEpoch, 'Stored group formationEpoch');
+  requireNonNegativeSafeInteger(value.formationAttemptCount, 'Stored group formationAttemptCount');
+  if (value.lastFormationOutcome !== null) {
+    const outcome = requireRecord(value.lastFormationOutcome, 'Stored group lastFormationOutcome');
+    assertExactKeys(outcome, FORMATION_OUTCOME_KEYS, 'Stored group lastFormationOutcome');
+    requireOneOf(
+      outcome.outcome,
+      ['activated', 'activated-degraded', 'below-floor'],
+      'Stored group lastFormationOutcome outcome',
+    );
+    if (
+      typeof outcome.observedRate !== 'number' ||
+      !Number.isFinite(outcome.observedRate) ||
+      outcome.observedRate < 0 ||
+      outcome.observedRate > 1
+    ) {
+      throw new TypeError('Stored group lastFormationOutcome observedRate must be within [0, 1]');
+    }
+    requirePositiveSafeInteger(outcome.atEpochMs, 'Stored group lastFormationOutcome atEpochMs');
+    requireNonNegativeSafeInteger(
+      outcome.formationEpoch,
+      'Stored group lastFormationOutcome formationEpoch',
+    );
+  }
+  nullablePositiveSafeInteger(
+    value.establishmentStartedAtEpochMs,
+    'Stored group establishmentStartedAtEpochMs',
+  );
 }
 
 export function validateStoredMember(

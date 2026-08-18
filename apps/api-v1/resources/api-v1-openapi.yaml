@@ -1115,6 +1115,37 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation:
+    get:
+      tags: [Group State]
+      summary: Read the group formation view
+      description: |
+        Authoritative formation intent beside derived observation: lifecycle
+        state, formation epoch, attempt count, the criterion's last recorded
+        outcome, and the readiness fraction of planned overlay edges with
+        fresh RTT evidence. Readiness is computed at read time and never
+        stored.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      responses:
+        '200':
+          description: The formation view for the group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupFormationView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/establish:
     post:
       tags: [Group State]
@@ -4316,6 +4347,9 @@ components:
         - purgeAfterEpochMs
         - lifecycleState
         - formationEpoch
+        - formationAttemptCount
+        - lastFormationOutcome
+        - establishmentStartedAtEpochMs
       discriminator:
         propertyName: status
       oneOf:
@@ -4414,6 +4448,82 @@ components:
         lifecycleState:
           type: string
           enum: [forming, establishing, active, reconfiguring]
+        formationEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+        formationAttemptCount:
+          type: integer
+          format: int64
+          minimum: 0
+        lastFormationOutcome:
+          $ref: '#/components/schemas/GroupFormationOutcome'
+          nullable: true
+        establishmentStartedAtEpochMs:
+          type: integer
+          format: int64
+          nullable: true
+
+    GroupFormationView:
+      type: object
+      required:
+        - groupRef
+        - lifecycleState
+        - formationEpoch
+        - formationAttemptCount
+        - lastFormationOutcome
+        - establishmentStartedAtEpochMs
+        - readiness
+      properties:
+        groupRef:
+          $ref: '#/components/schemas/GroupRef'
+        lifecycleState:
+          type: string
+          enum: [forming, establishing, active, reconfiguring]
+        formationEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+        formationAttemptCount:
+          type: integer
+          format: int64
+          minimum: 0
+        lastFormationOutcome:
+          $ref: '#/components/schemas/GroupFormationOutcome'
+          nullable: true
+        establishmentStartedAtEpochMs:
+          type: integer
+          format: int64
+          nullable: true
+        readiness:
+          type: object
+          required: [plannedEdgeCount, observedEdgeCount, observedRate]
+          properties:
+            plannedEdgeCount:
+              type: integer
+              minimum: 0
+            observedEdgeCount:
+              type: integer
+              minimum: 0
+            observedRate:
+              type: number
+              minimum: 0
+              maximum: 1
+
+    GroupFormationOutcome:
+      type: object
+      required: [outcome, observedRate, atEpochMs, formationEpoch]
+      properties:
+        outcome:
+          type: string
+          enum: [activated, activated-degraded, below-floor]
+        observedRate:
+          type: number
+          minimum: 0
+          maximum: 1
+        atEpochMs:
+          type: integer
+          format: int64
         formationEpoch:
           type: integer
           format: int64

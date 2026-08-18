@@ -50,6 +50,9 @@ const PERSISTED_GROUP_KEYS = [
   'purgeAfterEpochMs',
   'lifecycleState',
   'formationEpoch',
+  'formationAttemptCount',
+  'lastFormationOutcome',
+  'establishmentStartedAtEpochMs',
 ] as const;
 
 export function normalizePersistedGroup(value: unknown, ref: GroupRef): Group {
@@ -83,6 +86,13 @@ export function normalizePersistedGroup(value: unknown, ref: GroupRef): Group {
     purgeAfterEpochMs: persistedOrDefault(legacy, 'purgeAfterEpochMs', null),
     lifecycleState: persistedOrDefault(legacy, 'lifecycleState', 'active'),
     formationEpoch: persistedOrDefault(legacy, 'formationEpoch', 0),
+    formationAttemptCount: persistedOrDefault(legacy, 'formationAttemptCount', 0),
+    lastFormationOutcome: persistedOrDefault(legacy, 'lastFormationOutcome', null),
+    establishmentStartedAtEpochMs: persistedOrDefault(
+      legacy,
+      'establishmentStartedAtEpochMs',
+      null,
+    ),
   };
   validatePersistedGroup(canonical, ref);
   return canonical;
