@@ -5,6 +5,13 @@ import type {
   GroupTopologyConfigPatch,
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+// prettier-ignore
+import {
+  computeGroupFormationReadiness,
+} from '@shared/api/group-lifecycle/compute-group-formation-readiness.ts';
+import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import {
@@ -61,6 +68,17 @@ export type GraphTopologyRouteTopologyManagement = Readonly<{
   readTopologyView(groupRef: GroupRef): Promise<unknown>;
   readConfig(groupRef: GroupRef): Promise<unknown>;
   readOverride(groupRef: GroupRef): Promise<unknown>;
+  readTopologyPlanningAuthority(
+    groupRef: GroupRef,
+    requestOptions?: undefined,
+    knownGroup?: GroupSnapshot,
+  ): Promise<
+    Readonly<{
+      group: GroupSnapshot;
+      rttMeasurements: readonly RttMeasurementInfo[];
+      nowEpochMs: number;
+    }>
+  >;
 }>;
 
 export type GraphTopologyRouteDependencies = Readonly<{
@@ -127,6 +145,20 @@ export function registerGraphTopologyRoutes(
         const snapshot = await readCurrentGroupSnapshot(groupRef, deps);
         await assertCanReadGroupSnapshot(c.req, deps, snapshot);
         return c.json(await deps.topologyManagement.readTopologyView(groupRef));
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
+    },
+  );
+
+  app.get(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/formation',
+    async (c) => {
+      try {
+        const groupRef = toGroupRef(c);
+        const snapshot = await readCurrentGroupSnapshot(groupRef, deps);
+        await assertCanReadGroupSnapshot(c.req, deps, snapshot);
+        return c.json(await readGroupFormationView(groupRef, snapshot, deps));
       } catch (error) {
         return toErrorResponse(c, error);
       }
@@ -309,6 +341,35 @@ async function handlePutTopologyOverride(
   } catch (error) {
     return toErrorResponse(context, error);
   }
+}
+
+async function readGroupFormationView(
+  groupRef: GroupRef,
+  snapshot: GroupSnapshot,
+  deps: GraphTopologyRouteDependencies,
+): Promise<GroupFormationView> {
+  const [authority, view] = await Promise.all([
+    deps.topologyManagement.readTopologyPlanningAuthority(groupRef, undefined, snapshot),
+    deps.topologyManagement.readTopologyView(groupRef) as Promise<
+      Readonly<{ snapshot: RallarOverlayTopologySnapshot | null }>
+    >,
+  ]);
+  const group = authority.group.group;
+  return {
+    groupRef,
+    lifecycleState: group.lifecycleState,
+    formationEpoch: group.formationEpoch,
+    formationAttemptCount: group.formationAttemptCount,
+    lastFormationOutcome: group.lastFormationOutcome,
+    establishmentStartedAtEpochMs: group.establishmentStartedAtEpochMs,
+    readiness: view.snapshot === null
+      ? { plannedEdgeCount: 0, observedEdgeCount: 0, observedRate: 1 }
+      : computeGroupFormationReadiness({
+        planned: view.snapshot,
+        rttMeasurements: authority.rttMeasurements,
+        nowEpochMs: authority.nowEpochMs,
+      }),
+  };
 }
 
 async function readCurrentGroupSnapshot(

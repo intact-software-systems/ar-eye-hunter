@@ -48,6 +48,9 @@ export function createInitialGroup({
     purgeAfterEpochMs: command.input.purgeAfterEpochMs,
     lifecycleState: command.input.lifecyclePolicy?.formation === 'phased' ? 'forming' : 'active',
     formationEpoch: 0,
+    formationAttemptCount: 0,
+    lastFormationOutcome: null,
+    establishmentStartedAtEpochMs: null,
   };
 }
 

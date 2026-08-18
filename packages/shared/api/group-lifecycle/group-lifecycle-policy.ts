@@ -86,6 +86,18 @@ export type GroupDataPolicy = Readonly<{
     preActivationAppData: GroupPreActivationAppData;
 }>;
 
+/**
+ * A recorded formation decision -- what the criterion concluded the last time
+ * it evaluated, with the observed rate at that moment. Live readiness is
+ * derived on read and never stored; this is the decision, not the observation.
+ */
+export type GroupFormationOutcome = Readonly<{
+    outcome: 'activated' | 'activated-degraded' | 'below-floor';
+    observedRate: number;
+    atEpochMs: number;
+    formationEpoch: number;
+}>;
+
 export type GroupLifecyclePolicy = Readonly<{
     formation: GroupFormationMode;
     manager: GroupManagerPolicy;

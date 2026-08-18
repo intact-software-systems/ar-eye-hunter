@@ -293,6 +293,9 @@ function createGroupSnapshotGroup(
     purgeAfterEpochMs: null,
     lifecycleState: 'active',
     formationEpoch: 0,
+    formationAttemptCount: 0,
+    lastFormationOutcome: null,
+    establishmentStartedAtEpochMs: null,
   };
 }
 

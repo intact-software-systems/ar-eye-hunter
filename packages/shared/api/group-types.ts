@@ -1,4 +1,7 @@
-import type { GroupLifecycleState } from './group-lifecycle/group-lifecycle-policy.ts';
+import type {
+    GroupFormationOutcome,
+    GroupLifecycleState,
+} from './group-lifecycle/group-lifecycle-policy.ts';
 import type { MutationActor } from './mutation-actor.ts';
 
 export type ApplicationId = string;
@@ -89,6 +92,21 @@ type GroupBase =
      * this boundary so membership churn during FORMING cannot flap them.
      */
     formationEpoch: number;
+
+    /** Completed criterion evaluations that did not reach full activation. */
+    formationAttemptCount: number;
+
+    /** Null until the criterion first decides; then the recorded decision. */
+    lastFormationOutcome: GroupFormationOutcome | null;
+
+    /**
+     * When the current establishment phase began -- set by the
+     * start-establishment and reopen-establishment transitions, because
+     * `updated` is overwritten by any group write and the epoch is a counter,
+     * not a time. Null before the first establishment. The deadline half of
+     * the activation criterion measures from here.
+     */
+    establishmentStartedAtEpochMs: number | null;
 }>;
 
 export type Group = GroupBase & (

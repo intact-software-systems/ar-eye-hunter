@@ -44,6 +44,9 @@ export function createTestGroup(overrides: Partial<Group> = {}): Group {
     deleted: null,
     lifecycleState: 'active',
     formationEpoch: 0,
+    formationAttemptCount: 0,
+    lastFormationOutcome: null,
+    establishmentStartedAtEpochMs: null,
   };
 
   // `Group` correlates `status` with `archived`/`deleted`, and a spread of

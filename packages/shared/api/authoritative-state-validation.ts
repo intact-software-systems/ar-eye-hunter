@@ -38,6 +38,7 @@ const GROUP_KEYS = [
     'snapshotVersion', 'metadataVersion', 'rosterVersion', 'presenceVersion',
     'created', 'updated', 'archived', 'deleted', 'expiresAtEpochMs',
     'emptySinceEpochMs', 'purgeAfterEpochMs', 'lifecycleState', 'formationEpoch',
+    'formationAttemptCount', 'lastFormationOutcome', 'establishmentStartedAtEpochMs',
 ];
 const GROUP_MEMBER_KEYS = [
     'applicationId', 'workspaceId', 'groupId', 'principalId', 'role', 'status',
@@ -312,6 +313,38 @@ export function validateAuthoritativeGroupSnapshot(
         'GroupSnapshot.group.lifecycleState',
     );
     nonNegativeInteger(group.formationEpoch, 'GroupSnapshot.group.formationEpoch');
+    nonNegativeInteger(
+        group.formationAttemptCount,
+        'GroupSnapshot.group.formationAttemptCount',
+    );
+    if (group.lastFormationOutcome !== null) {
+        const outcome = record(
+            group.lastFormationOutcome,
+            'GroupSnapshot.group.lastFormationOutcome',
+        );
+        exact(outcome, [
+            'outcome', 'observedRate', 'atEpochMs', 'formationEpoch',
+        ], 'GroupSnapshot.group.lastFormationOutcome');
+        enumValue(
+            outcome.outcome,
+            ['activated', 'activated-degraded', 'below-floor'],
+            'GroupSnapshot.group.lastFormationOutcome.outcome',
+        );
+        if (
+            typeof outcome.observedRate !== 'number' ||
+            !Number.isFinite(outcome.observedRate) ||
+            outcome.observedRate < 0 || outcome.observedRate > 1
+        ) fail('GroupSnapshot.group.lastFormationOutcome.observedRate must be within [0, 1]');
+        positiveInteger(outcome.atEpochMs, 'GroupSnapshot.group.lastFormationOutcome.atEpochMs');
+        nonNegativeInteger(
+            outcome.formationEpoch,
+            'GroupSnapshot.group.lastFormationOutcome.formationEpoch',
+        );
+    }
+    nullablePositiveInteger(
+        group.establishmentStartedAtEpochMs,
+        'GroupSnapshot.group.establishmentStartedAtEpochMs',
+    );
     const members = array(snapshot.members, 'GroupSnapshot.members');
     const memberIds = new Set<string>();
     const activeMemberIds = new Set<string>();

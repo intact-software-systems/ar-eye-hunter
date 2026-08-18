@@ -78,10 +78,16 @@ export function computeLifecycleTransition(
     formationEpoch: stored.value.formationEpoch,
   });
   if (!outcome.allowed) throw new GroupPolicyDeniedError(outcome);
+  const beginsEstablishment =
+    command.operation === 'startGroupEstablishment' ||
+    command.operation === 'reopenGroupEstablishment';
   const next: Group = {
     ...stored.value,
     lifecycleState: outcome.nextState,
     formationEpoch: outcome.nextFormationEpoch,
+    establishmentStartedAtEpochMs: beginsEstablishment
+      ? facts.nowEpochMs
+      : stored.value.establishmentStartedAtEpochMs,
     snapshotVersion: stored.value.snapshotVersion + 1,
     updated: auditStamp(command, facts, command.input.actorPrincipalId ?? undefined),
   };

@@ -210,6 +210,28 @@
       }
     },
     {
+      "name": "formationViewWhileForming",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "forming",
+          "formationEpoch": 0,
+          "formationAttemptCount": 0,
+          "establishmentStartedAtEpochMs": null
+        }
+      }
+    },
+    {
       "name": "bobCannotStartEstablishment",
       "type": "http",
       "connection": "primary",
@@ -276,6 +298,32 @@
         "body": {
           "snapshot": {
             "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "formationViewAfterEstablish",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "establishing",
+          "formationEpoch": 1,
+          "establishmentStartedAtEpochMs": "integer",
+          "readiness": {
+            "plannedEdgeCount": 0,
+            "observedEdgeCount": 0,
+            "observedRate": 1
           }
         }
       }

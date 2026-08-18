@@ -77,6 +77,9 @@ const GROUP_KEYS = [
   'purgeAfterEpochMs',
   'lifecycleState',
   'formationEpoch',
+  'formationAttemptCount',
+  'lastFormationOutcome',
+  'establishmentStartedAtEpochMs',
 ];
 const GROUP_MEMBER_KEYS = [
   'applicationId',
@@ -196,6 +199,34 @@ function validateDeltaGroup(
     `${label}.lifecycleState`,
   );
   nonNegativeInteger(group.formationEpoch, `${label}.formationEpoch`);
+  nonNegativeInteger(group.formationAttemptCount, `${label}.formationAttemptCount`);
+  if (group.lastFormationOutcome !== null) {
+    const outcome = record(group.lastFormationOutcome, `${label}.lastFormationOutcome`);
+    exact(
+      outcome,
+      ['outcome', 'observedRate', 'atEpochMs', 'formationEpoch'],
+      `${label}.lastFormationOutcome`,
+    );
+    enumValue(
+      outcome.outcome,
+      ['activated', 'activated-degraded', 'below-floor'],
+      `${label}.lastFormationOutcome.outcome`,
+    );
+    if (
+      typeof outcome.observedRate !== 'number' ||
+      !Number.isFinite(outcome.observedRate) ||
+      outcome.observedRate < 0 ||
+      outcome.observedRate > 1
+    ) {
+      fail(`${label}.lastFormationOutcome.observedRate must be within [0, 1]`);
+    }
+    positiveInteger(outcome.atEpochMs, `${label}.lastFormationOutcome.atEpochMs`);
+    nonNegativeInteger(outcome.formationEpoch, `${label}.lastFormationOutcome.formationEpoch`);
+  }
+  nullablePositiveInteger(
+    group.establishmentStartedAtEpochMs,
+    `${label}.establishmentStartedAtEpochMs`,
+  );
   return { activeMemberCount: group.activeMemberCount, status: group.status };
 }
 
