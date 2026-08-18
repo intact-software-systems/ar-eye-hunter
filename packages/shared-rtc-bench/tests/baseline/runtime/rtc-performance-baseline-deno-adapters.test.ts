@@ -14,9 +14,25 @@ function createRuntimeDouble() {
     },
     build: { os: 'darwin', arch: 'aarch64' },
     version: { deno: '2.4.0' },
+    pid: 321,
+    hostname: () => 'runner-a',
+    randomUuid: () => '00000000-0000-4000-8000-000000000001',
+    kill: (processId: number, signal: number) => {
+      calls.push(`kill:${processId}:${signal}`);
+    },
     lstat: async (path: string) => {
       calls.push(`lstat:${path}`);
-      return { isFile: true, isDirectory: false, isSymlink: false };
+      return {
+        isFile: true,
+        isDirectory: false,
+        isSymlink: false,
+        dev: 10,
+        ino: 20,
+        size: 5,
+      };
+    },
+    open: async () => {
+      throw new Error('unused');
     },
     mkdir: async (path: string, options?: { recursive?: boolean }) => {
       calls.push(`mkdir:${path}:recursive=${String(options?.recursive)}`);
@@ -69,6 +85,31 @@ function captureRequest(environmentId: 'E1-local' | 'E5-remote') {
   };
 }
 describe('RTC baseline Deno adapters', () => {
+  it('provides local writer identity and conservative Deno process liveness', async () => {
+    const double = createRuntimeDouble();
+    const adapters = createDenoRtcBaselineAdapters(double.runtime);
+
+    expect(adapters.writerLockRuntime.createOwnerToken()).toBe(
+      '00000000-0000-4000-8000-000000000001',
+    );
+    expect(adapters.writerLockRuntime.readOwnerIdentity()).toEqual({
+      hostname: 'runner-a',
+      processId: 321,
+    });
+    expect(await adapters.writerLockRuntime.readProcessLiveness(122)).toBe('alive');
+    const NotFound = double.runtime.errors?.NotFound;
+    if (!NotFound) throw new Error('NotFound double is required.');
+    double.runtime.kill = () => {
+      throw new NotFound();
+    };
+    expect(await adapters.writerLockRuntime.readProcessLiveness(123)).toBe('dead');
+    double.runtime.kill = () => {
+      throw new Error('unsupported signal probe');
+    };
+    expect(await adapters.writerLockRuntime.readProcessLiveness(124)).toBe('unknown');
+    expect(double.calls).toContain('kill:122:0');
+  });
+
   it('implements file, SHA-256, clock, runtime, host, and allowlisted environment adapters', async () => {
     const double = createRuntimeDouble();
     const adapters = createDenoRtcBaselineAdapters(double.runtime);

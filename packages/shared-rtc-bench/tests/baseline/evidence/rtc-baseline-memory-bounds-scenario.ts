@@ -12,10 +12,8 @@ import type {
   RtcBaselineRuntimeObservationDto,
   RtcBaselineSampleDto,
 } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
-import type {
-  RtcBaselineFileStore,
-  RtcBaselineStoredFile,
-} from '../../../baseline/evidence/rtc-baseline-evidence-store.ts';
+import type { RtcBaselineStoredFile } from '../../../baseline/evidence/rtc-baseline-artifact-files.ts';
+import type { RtcBaselineFileStore } from '../../../baseline/evidence/rtc-baseline-evidence-store.ts';
 
 interface MemoryPeak {
   readonly heapUsed: number;
@@ -313,7 +311,12 @@ function createUnusedDenoPort(): RtcBaselineDenoPort {
     envGet: () => undefined,
     build: Deno.build,
     version: Deno.version,
+    pid: Deno.pid,
+    hostname: () => Deno.hostname(),
+    randomUuid: () => crypto.randomUUID(),
+    kill: () => undefined,
     lstat: unused,
+    open: unused,
     mkdir: unused,
     readFile: unused,
     writeFile: unused,

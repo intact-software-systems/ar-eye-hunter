@@ -136,17 +136,24 @@ function defaultRuntime() {
     get version() {
       return deno.version;
     },
+    get pid() {
+      return deno.pid;
+    },
     get errors() {
       return deno.errors;
     },
     stat: (path: string) => deno.stat(path),
     lstat: (path: string) => deno.lstat(path),
+    open: (path: string, options: Deno.OpenOptions) => deno.open(path, options),
     mkdir: (path: string, options?: { recursive?: boolean }) => deno.mkdir(path, options),
     readFile: (path: string) => deno.readFile(path),
     writeFile: (path: string, bytes: Uint8Array, options?: { createNew?: boolean }) =>
       deno.writeFile(path, bytes, options),
     remove: (path: string, options?: { recursive?: boolean }) => deno.remove(path, options),
     readDir: (path: string) => deno.readDir(path),
+    hostname: () => deno.hostname(),
+    randomUuid: () => crypto.randomUUID(),
+    kill: (processId: number, signal: Deno.Signal | number) => deno.kill(processId, signal),
     async command(executable: string, arguments_: readonly string[]) {
       return new deno.Command(executable, { args: [...arguments_] }).output();
     },

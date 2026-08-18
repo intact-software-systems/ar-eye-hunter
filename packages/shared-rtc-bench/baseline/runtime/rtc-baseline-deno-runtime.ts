@@ -15,6 +15,7 @@ export function createRtcBaselineDenoRuntime(
   const evidence = createRtcBaselineDenoEvidence({
     rootPath: RTC_BASELINE_DENO_ROOT_PATH,
     filePort: adapters.filePort,
+    writerLockRuntime: adapters.writerLockRuntime,
     observeRuntime,
   });
   const acceptance = createRtcBaselineDenoAcceptance(evidence, adapters.freshWorker);

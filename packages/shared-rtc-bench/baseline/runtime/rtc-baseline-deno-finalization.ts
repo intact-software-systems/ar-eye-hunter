@@ -12,10 +12,8 @@ import {
   classifyRtcBaselineArtifactPath,
   type RtcBaselineArtifactKind,
 } from '../evidence/rtc-baseline-evidence-layout.ts';
-import type {
-  RtcBaselineLockedWriter,
-  RtcBaselineStoredFile,
-} from '../evidence/rtc-baseline-evidence-store.ts';
+import type { RtcBaselineStoredFile } from '../evidence/rtc-baseline-artifact-files.ts';
+import type { RtcBaselineLockedWriter } from '../evidence/rtc-baseline-evidence-store.ts';
 import {
   createRtcBaselineArtifactProjector,
   type RtcBaselineArtifactProjection,
