@@ -66,10 +66,7 @@ export class PSqlCrdtLogRepository<
 
   private readonly sql: PSqlSql;
 
-  constructor(
-    sql: PSqlSql,
-    options: PSqlCrdtLogRepositoryOptions = {},
-  ) {
+  constructor(sql: PSqlSql, options: PSqlCrdtLogRepositoryOptions = {}) {
     this.sql = sql;
     this.now = options.now ?? Date.now;
     this.policies = options.policies?.length
@@ -78,9 +75,7 @@ export class PSqlCrdtLogRepository<
     this.audit = options.audit;
   }
 
-  append(
-    _input: RallarCrdtAppendUpdateInput<TPayload>,
-  ): Promise<RallarCrdtAppendResult<TPayload>> {
+  append(_input: RallarCrdtAppendUpdateInput<TPayload>): Promise<RallarCrdtAppendResult<TPayload>> {
     return rejectDirectCrdtMutation();
   }
 
@@ -90,14 +85,10 @@ export class PSqlCrdtLogRepository<
     return rejectDirectCrdtMutation();
   }
 
-  async listAfter(
-    input: RallarCrdtListUpdatesInput,
-  ): Promise<RallarCrdtUpdatePage<TPayload>> {
+  async listAfter(input: RallarCrdtListUpdatesInput): Promise<RallarCrdtUpdatePage<TPayload>> {
     const documentKey = toRallarCrdtDocumentKey(input.document);
     const metadata = await this.readDocumentMetadata(input.document);
-    const afterSequence = input.afterSequence ??
-      fromRallarCrdtAppendCursor(input.afterCursor) ??
-      0;
+    const afterSequence = input.afterSequence ?? fromRallarCrdtAppendCursor(input.afterCursor) ?? 0;
     const limit = Math.max(0, input.limit ?? 100);
     const rows = await this.sql<UpdateRow[]>`
             select document_key,
@@ -159,34 +150,26 @@ export class PSqlCrdtLogRepository<
       throw new TypeError('CRDT persisted snapshot count differs from document');
     }
     return rows[0]
-      ? toSnapshot({
-        row: rows[0],
-        expectedDocumentKey: documentKey,
-        expectedDocument: document,
-        lastAppendSequence: metadata.lastAppendSequence,
-      }) as RallarCrdtSnapshotEnvelope<TValue>
+      ? (toSnapshot({
+          row: rows[0],
+          expectedDocumentKey: documentKey,
+          expectedDocument: document,
+          lastAppendSequence: metadata.lastAppendSequence,
+        }) as RallarCrdtSnapshotEnvelope<TValue>)
       : undefined;
   }
 
-  writeSnapshot(
-    _input: RallarCrdtWriteSnapshotInput<TValue>,
-  ): Promise<void> {
+  writeSnapshot(_input: RallarCrdtWriteSnapshotInput<TValue>): Promise<void> {
     return rejectDirectCrdtMutation();
   }
 
   async readDocumentMetadata(
     document: RallarCrdtDocumentRef,
   ): Promise<RallarCrdtDocumentMetadata | undefined> {
-    return await readDocumentMetadataByKey(
-      this.sql,
-      toRallarCrdtDocumentKey(document),
-      document,
-    );
+    return await readDocumentMetadataByKey(this.sql, toRallarCrdtDocumentKey(document), document);
   }
 
-  updateDocumentLifecycle(
-    _input: RallarCrdtLifecycleInput,
-  ): Promise<RallarCrdtDocumentMetadata> {
+  updateDocumentLifecycle(_input: RallarCrdtLifecycleInput): Promise<RallarCrdtDocumentMetadata> {
     return rejectDirectCrdtMutation();
   }
 
@@ -222,25 +205,19 @@ export class PSqlCrdtLogRepository<
       .map(toStoredMetadata)
       .filter((metadata) => matchesDocumentListInput(metadata, input));
     const startIndex = input.cursor
-      ? documents.findIndex(
-        (metadata) => metadata.documentKey > input.cursor!,
-      )
+      ? documents.findIndex((metadata) => metadata.documentKey > input.cursor!)
       : 0;
     const safeStartIndex = startIndex < 0 ? documents.length : startIndex;
-    const selected = documents.slice(
-      safeStartIndex,
-      safeStartIndex + limit,
-    );
+    const selected = documents.slice(safeStartIndex, safeStartIndex + limit);
 
     return {
       documents: selected.map((metadata) =>
         createRallarCrdtAdminDocumentStatus({
           metadata,
           rollout: this.rolloutFor(metadata.document),
-          quarantineReason: metadata.lifecycle === 'quarantined'
-            ? 'document lifecycle is quarantined'
-            : undefined,
-        })
+          quarantineReason:
+            metadata.lifecycle === 'quarantined' ? 'document lifecycle is quarantined' : undefined,
+        }),
       ),
       nextCursor: selected.at(-1)?.documentKey,
       hasMore: safeStartIndex + selected.length < documents.length,
@@ -310,9 +287,7 @@ export class PSqlCrdtLogRepository<
     return rejectDirectCrdtMutation();
   }
 
-  async verifyIntegrity(
-    document: RallarCrdtDocumentRef,
-  ): Promise<RallarCrdtIntegrityReport> {
+  async verifyIntegrity(document: RallarCrdtDocumentRef): Promise<RallarCrdtIntegrityReport> {
     return verifyRallarCrdtDebugBundle(
       await this.exportDebugBundle(document, {
         reason: 'integrity-check',
@@ -378,14 +353,10 @@ function matchesDocumentListInput(
   return (
     (input.applicationId === undefined ||
       metadata.document.applicationId === input.applicationId) &&
-    (input.workspaceId === undefined ||
-      metadata.document.workspaceId === input.workspaceId) &&
-    (input.scope === undefined ||
-      metadata.document.scope === input.scope) &&
-    (input.documentType === undefined ||
-      metadata.document.documentType === input.documentType) &&
-    (input.lifecycle === undefined ||
-      metadata.lifecycle === input.lifecycle)
+    (input.workspaceId === undefined || metadata.document.workspaceId === input.workspaceId) &&
+    (input.scope === undefined || metadata.document.scope === input.scope) &&
+    (input.documentType === undefined || metadata.document.documentType === input.documentType) &&
+    (input.lifecycle === undefined || metadata.lifecycle === input.lifecycle)
   );
 }
 

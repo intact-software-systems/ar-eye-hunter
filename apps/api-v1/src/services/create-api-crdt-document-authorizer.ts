@@ -80,10 +80,22 @@ export async function authorizeCrdtDocumentAccess(
   }
   if (document.scope === 'principal') {
     if (document.principalId !== actorPrincipalId) return denied();
-    return await authorizeCurrentClientDocument({ options, applicationId: document.applicationId, workspaceId: document.workspaceId, principalId: document.principalId, sessionId });
+    return await authorizeCurrentClientDocument({
+      options,
+      applicationId: document.applicationId,
+      workspaceId: document.workspaceId,
+      principalId: document.principalId,
+      sessionId,
+    });
   }
   if (document.scope === 'app') {
-    return await authorizeCurrentClientDocument({ options, applicationId: document.applicationId, workspaceId: document.workspaceId, principalId: actorPrincipalId, sessionId });
+    return await authorizeCurrentClientDocument({
+      options,
+      applicationId: document.applicationId,
+      workspaceId: document.workspaceId,
+      principalId: actorPrincipalId,
+      sessionId,
+    });
   }
   return denied();
 }

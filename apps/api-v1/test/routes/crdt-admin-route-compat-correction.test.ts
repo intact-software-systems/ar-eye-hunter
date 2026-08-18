@@ -84,23 +84,21 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
 
     const audit: RallarCrdtAuditEvent[] = [];
     let auditAttempts = 0;
-    const appCrdt =
-      new (AppCrdtInboxService as never as new (...args: unknown[]) => AppCrdtInboxService)(
-        inbox,
-        resourceInbox,
-        results,
-        sql,
-        mutationService,
-        'server-1',
-        undefined,
-        {
+    const appCrdt = new AppCrdtInboxService({
+      inbox,
+      resourceInbox,
+      resourceInboxResults: results,
+      database: sql,
+      mutationService,
+      serviceId: 'server-1',
+      options: {
           waitMaxElapsedMsecs: 5_000,
           waitRetryIntervalMsecs: 1,
           waitMaxRetryIntervalMsecs: 4,
           waitJitterRatio: 0,
           nowEpochMs: () => now + 1,
-        },
-        {
+      },
+      effects: {
           audit: {
             record: (event: RallarCrdtAuditEvent) => {
               auditAttempts += 1;
@@ -109,8 +107,8 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
             },
           },
           outboxQueueReader: outbox,
-        },
-      );
+      },
+    });
     const app = new Hono();
     routes.registerCrdtAdminRoutes(app, {
       repository: new PSqlCrdtLogRepository(sql),
@@ -128,11 +126,11 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
       requireApiUserSession: () => Promise.reject(new Error('unused')),
     });
 
-    const missing = await postAndProcessRaw(app, inbox, sql, '/api/crdt/admin/documents/compact', {
+    const missing = await postAndProcessRaw({ app, inbox, sql, path: '/api/crdt/admin/documents/compact', body: {
       requestId: 'missing-route',
       document: { ...DOCUMENT, documentId: 'missing-document' },
       reason: 'missing-route',
-    });
+    } });
     assert.equal(missing.response.status, 404);
     assert.equal(missing.body.ok, false);
 
@@ -142,17 +140,17 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
       where document_key = ${initial.documentKey}
     `;
     const beforeQuotaRejection = await mutationCounts(sql, initial.documentKey);
-    const quotaRejected = await postAndProcessRaw(
+    const quotaRejected = await postAndProcessRaw({
       app,
       inbox,
       sql,
-      '/api/crdt/admin/documents/compact',
-      {
+      path: '/api/crdt/admin/documents/compact',
+      body: {
         requestId: 'quota-rejected-route',
         document: DOCUMENT,
         reason: 'quota-rejected-route',
       },
-    );
+    });
     assert.equal(quotaRejected.response.status, 409);
     assert.equal(quotaRejected.body.ok, false);
     assert.deepEqual(
@@ -171,11 +169,11 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
         appendSequence: number;
         snapshot: { document: { documentId: string } };
       };
-    }>(app, inbox, sql, '/api/crdt/admin/documents/compact', {
+    }>({ app, inbox, sql, path: '/api/crdt/admin/documents/compact', body: {
       requestId: 'compact-route',
       document: DOCUMENT,
       reason: 'compact-route',
-    });
+    } });
     assert.equal(compact.ok, true);
     assert.equal(compact.result.appendSequence, 1);
     assert.equal(compact.result.snapshot.document.documentId, DOCUMENT.documentId);
@@ -188,11 +186,11 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
         quota: unknown;
         projectionIds: string[];
       };
-    }>(app, inbox, sql, '/api/crdt/admin/documents/lifecycle', {
+    }>({ app, inbox, sql, path: '/api/crdt/admin/documents/lifecycle', body: {
       requestId: 'lifecycle-route',
       document: DOCUMENT,
       lifecycle: 'archived',
-    });
+    } });
     assert.equal(lifecycle.result.lifecycle, 'archived');
     assert.equal(lifecycle.result.documentKey, initial.documentKey);
     assert.deepEqual(lifecycle.result.retention, { mode: 'retain', reason: 'existing' });
@@ -205,12 +203,12 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
         auditEvent: { kind: string };
         metadata: { lifecycle: string };
       };
-    }>(app, inbox, sql, '/api/crdt/admin/documents/erase', {
+    }>({ app, inbox, sql, path: '/api/crdt/admin/documents/erase', body: {
       requestId: 'erase-route',
       document: DOCUMENT,
       mode: 'destroy-document',
       reason: 'privacy',
-    });
+    } });
     assert.equal(erase.result.request.mode, 'destroy-document');
     assert.equal(erase.result.auditEvent.kind, 'erase');
     assert.equal(erase.result.metadata.lifecycle, 'destroyed');
@@ -321,13 +319,16 @@ async function mutationCounts(
   };
 }
 
-async function postAndProcess<T>(
-  app: Hono,
-  inbox: InboxQueueReader,
-  sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
-  path: string,
-  body: unknown,
-): Promise<T> {
+interface PostAndProcessInput {
+  readonly app: Hono;
+  readonly inbox: InboxQueueReader;
+  readonly sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0];
+  readonly path: string;
+  readonly body: unknown;
+}
+
+async function postAndProcess<T>(input: PostAndProcessInput): Promise<T> {
+  const { app, inbox, sql, path, body } = input;
   const responsePending = app.request(path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -339,12 +340,9 @@ async function postAndProcess<T>(
 }
 
 async function postAndProcessRaw<T extends object = { ok: boolean }>(
-  app: Hono,
-  inbox: InboxQueueReader,
-  sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
-  path: string,
-  body: unknown,
+  input: PostAndProcessInput,
 ): Promise<{ response: Response; body: T }> {
+  const { app, inbox, sql, path, body } = input;
   const responsePending = app.request(path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

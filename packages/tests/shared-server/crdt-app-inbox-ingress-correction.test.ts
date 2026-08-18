@@ -29,7 +29,9 @@ describe('Task 9 CRDT production AppInbox ingress', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
       await expect(
-        service.createAndEnqueueAppend(input(update('update-1'), 1_000)),
+        service.createAndEnqueueAppend(
+          input({ updateEnvelope: update('update-1'), receivedAtEpochMs: 1_000 }),
+        ),
       ).rejects.toThrow('injected durable enqueue failure');
     } finally {
       error.mockRestore();
@@ -41,7 +43,9 @@ describe('Task 9 CRDT production AppInbox ingress', () => {
     const service = appCrdt(reader);
     const semantic = update('stable-update');
 
-    await service.createAndEnqueueAppend(input(semantic, 1_000));
+    await service.createAndEnqueueAppend(
+      input({ updateEnvelope: semantic, receivedAtEpochMs: 1_000 }),
+    );
     await vi.waitFor(() => expect(reader.messages).toHaveLength(1));
 
     const command = JSON.parse(reader.messages[0]!.payload.resource).data;
@@ -55,8 +59,22 @@ describe('Task 9 CRDT production AppInbox ingress', () => {
     const service = appCrdt(reader);
     const semantic = update('reconnect-update');
 
-    await service.createAndEnqueueAppend(input(semantic, 1_000, 'session-1', 'delivery-1'));
-    await service.createAndEnqueueAppend(input(semantic, 2_000, 'session-2', 'delivery-2'));
+    await service.createAndEnqueueAppend(
+      input({
+        updateEnvelope: semantic,
+        receivedAtEpochMs: 1_000,
+        sessionId: 'session-1',
+        deliveryId: 'delivery-1',
+      }),
+    );
+    await service.createAndEnqueueAppend(
+      input({
+        updateEnvelope: semantic,
+        receivedAtEpochMs: 2_000,
+        sessionId: 'session-2',
+        deliveryId: 'delivery-2',
+      }),
+    );
     await vi.waitFor(() => expect(reader.messages).toHaveLength(2));
 
     const commands = reader.messages.map((message) => JSON.parse(message.payload.resource).data);
@@ -104,12 +122,20 @@ function appCrdt(inbox: InboxQueueReader): AppCrdtInboxService {
   });
 }
 
-function input(
-  updateEnvelope: RallarCrdtUpdateEnvelope,
-  receivedAtEpochMs: number,
-  sessionId = 'session-1',
-  deliveryId = `delivery-${receivedAtEpochMs}`,
-) {
+interface CrdtInboxInput {
+  readonly updateEnvelope: RallarCrdtUpdateEnvelope;
+  readonly receivedAtEpochMs: number;
+  readonly sessionId?: string;
+  readonly deliveryId?: string;
+}
+
+function input(input: CrdtInboxInput) {
+  const {
+    updateEnvelope,
+    receivedAtEpochMs,
+    sessionId = 'session-1',
+    deliveryId = `delivery-${receivedAtEpochMs}`,
+  } = input;
   return {
     update: updateEnvelope,
     deliveryId,

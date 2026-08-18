@@ -73,7 +73,11 @@ Deno.test('configured production factory keeps absent CRDT policy undefined and 
                 wakeQueueEngine: () => undefined,
             });
             const read = await service.mutationService.read(
-                await appendCommand(now, 'default-deny', 'default-deny-update'),
+                await appendCommand({
+                  now,
+                  commandId: 'default-deny',
+                  updateId: 'default-deny-update',
+                }),
             );
 
             assert.equal(read.featureDecision.allowed, false);

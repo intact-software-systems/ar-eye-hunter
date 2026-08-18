@@ -33,7 +33,7 @@ const DOCUMENT: RallarCrdtDocumentRef = {
 Deno.test('production CRDT factory fails closed when document policies are unavailable', async () => {
   await withPGliteSql(async (sql) => {
     const now = await pgliteQueueNow(sql);
-    const service = productionService(sql, sql, now);
+    const service = productionService({ queueSql: sql, database: sql, now });
     const command = await appendCommand(now, 'policy-delivery', 'policy-update');
     const read = await service.mutationService.read(command);
     assert.equal(read.authorized, true);
@@ -55,7 +55,7 @@ for (const stage of FAILURE_STAGES) {
     await withPGliteSql(async (sql) => {
       const now = await pgliteQueueNow(sql);
       const database = withInjectedTransactionFailure(sql, stage);
-      const service = productionService(sql, database, now, true);
+      const service = productionService({ queueSql: sql, database, now, allow: true });
       await service.createAndEnqueueAppend({
         update: update(`${stage}-update`, now - 10_000),
         deliveryId: `${stage}-delivery`,
@@ -94,18 +94,12 @@ for (const stage of FAILURE_STAGES) {
 Deno.test('production AppCrdt accepts a new session replay and rejects changed-content collision', async () => {
   await withPGliteSql(async (sql) => {
     const now = await pgliteQueueNow(sql);
-    const service = productionService(sql, sql, now, true);
+    const service = productionService({ queueSql: sql, database: sql, now, allow: true });
     const original = update('shared-update', now - 10_000, 'original');
 
-    await enqueueAndDrain(service, original, 'session-1:delivery-1', 'session-1', now);
-    await enqueueAndDrain(service, original, 'session-2:delivery-2', 'session-2', now + 1);
-    await enqueueAndDrain(
-      service,
-      update('shared-update', now - 10_000, 'changed'),
-      'session-3:delivery-3',
-      'session-3',
-      now + 2,
-    );
+    await enqueueAndDrain({ service, envelope: original, deliveryId: 'session-1:delivery-1', sessionId: 'session-1', capturedAtEpochMs: now });
+    await enqueueAndDrain({ service, envelope: original, deliveryId: 'session-2:delivery-2', sessionId: 'session-2', capturedAtEpochMs: now + 1 });
+    await enqueueAndDrain({ service, envelope: update('shared-update', now - 10_000, 'changed'), deliveryId: 'session-3:delivery-3', sessionId: 'session-3', capturedAtEpochMs: now + 2 });
 
     const [counts] = await sql<{ documents: string; updates: string; outbox: string }[]>`
       select
@@ -140,15 +134,9 @@ Deno.test('production AppInbox retries a CRDT conflict from a fresh revoked auth
     const database = withOneCrdtConflict(sql, () => {
       allowed = false;
     });
-    const service = productionService(sql, database, now, true, () => allowed);
+    const service = productionService({ queueSql: sql, database, now, allow: true, isAllowed: () => allowed });
 
-    await enqueueAndDrain(
-      service,
-      update('revoked-update', now - 10_000),
-      'revoked-delivery',
-      'session-1',
-      now,
-    );
+    await enqueueAndDrain({ service, envelope: update('revoked-update', now - 10_000), deliveryId: 'revoked-delivery', sessionId: 'session-1', capturedAtEpochMs: now });
 
     const [counts] = await sql<{ documents: string; updates: string; outbox: string }[]>`
       select
@@ -169,13 +157,16 @@ Deno.test('production AppInbox retries a CRDT conflict from a fresh revoked auth
   });
 });
 
-function productionService(
-  queueSql: PSqlSql,
-  database: PSqlSql,
-  now: number,
-  allow = false,
-  isAllowed: () => boolean = () => true,
-) {
+interface ProductionServiceInput {
+  readonly queueSql: PSqlSql;
+  readonly database: PSqlSql;
+  readonly now: number;
+  readonly allow?: boolean;
+  readonly isAllowed?: () => boolean;
+}
+
+function productionService(input: ProductionServiceInput) {
+  const { queueSql, database, now, allow = false, isAllowed = () => true } = input;
   const resourceInbox = new ResourceInboxRepository(queueSql);
   return createApiCrdtInboxService({
     inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(resourceInbox)),
@@ -253,13 +244,16 @@ async function pgliteQueueNow(sql: PGliteSql): Promise<number> {
   return await readPGliteDatabaseEpochMs(sql) + 12 * 60 * 60 * 1_000;
 }
 
-async function enqueueAndDrain(
-  service: ReturnType<typeof productionService>,
-  envelope: RallarCrdtUpdateEnvelope,
-  deliveryId: string,
-  sessionId: string,
-  capturedAtEpochMs: number,
-): Promise<void> {
+interface EnqueueAndDrainInput {
+  readonly service: ReturnType<typeof productionService>;
+  readonly envelope: RallarCrdtUpdateEnvelope;
+  readonly deliveryId: string;
+  readonly sessionId: string;
+  readonly capturedAtEpochMs: number;
+}
+
+async function enqueueAndDrain(input: EnqueueAndDrainInput): Promise<void> {
+  const { service, envelope, deliveryId, sessionId, capturedAtEpochMs } = input;
   await service.createAndEnqueueAppend({
     update: envelope,
     deliveryId,

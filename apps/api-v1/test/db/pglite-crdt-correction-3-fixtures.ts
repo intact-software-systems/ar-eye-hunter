@@ -9,6 +9,7 @@ import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrd
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+import type { CrdtMutationActor } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { readPGliteDatabaseEpochMs } from './pglite-auth-test-harness.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -51,12 +52,12 @@ export function withCompetingWrite(
           ),
         serviceId: 'server-2',
       });
-      const command = await appendCommand(now, 'competitor', 'competitor-update', {
+      const command = await appendCommand({ now, commandId: 'competitor', updateId: 'competitor-update', actor: {
         actorId: 'client-2',
         principalId: 'principal-2',
         sessionId: 'session-2',
         serverId: 'server-2',
-      });
+      } });
       const computed = service.compute(command, await service.read(command));
       assert.equal(computed.outcome, 'write');
       await database.begin(async (transaction) => {
@@ -73,17 +74,25 @@ export function withCompetingWrite(
   return wrapped;
 }
 
-export async function appendCommand(
-  now: number,
-  commandId: string,
-  updateId: string,
-  actor = {
-    actorId: 'client-1',
-    principalId: 'principal-1',
-    sessionId: 'session-1',
-    serverId: 'server-1',
-  },
-) {
+export interface AppendCommandInput {
+  readonly now: number;
+  readonly commandId: string;
+  readonly updateId: string;
+  readonly actor?: CrdtMutationActor;
+}
+
+export async function appendCommand(input: AppendCommandInput) {
+  const {
+    now,
+    commandId,
+    updateId,
+    actor = {
+      actorId: 'client-1',
+      principalId: 'principal-1',
+      sessionId: 'session-1',
+      serverId: 'server-1',
+    },
+  } = input;
   return await createCrdtMutationCommand({
     operation: 'append',
     commandId,
