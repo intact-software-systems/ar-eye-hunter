@@ -42,12 +42,7 @@ export function withCompetingWrite(
   afterCompetingWrite: () => void,
 ): PSqlSql {
   let compete = true;
-  const wrapped = new Proxy(database, {
-    apply(target, thisArgument, argumentList) {
-      return Reflect.apply(target, thisArgument, argumentList);
-    },
-  });
-  wrapped.begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) => {
+  const begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) => {
     if (compete) {
       compete = false;
       const repository = new PSqlCrdtMutationRepository(
@@ -89,7 +84,17 @@ export function withCompetingWrite(
     }
     return await database.begin(write);
   };
-  return wrapped;
+  return new Proxy(database, {
+    apply(target, thisArgument, argumentList) {
+      return Reflect.apply(target, thisArgument, argumentList);
+    },
+    get(target, property, receiver) {
+      if (property === 'begin') {
+        return begin;
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  });
 }
 
 export interface AppendCommandInput {

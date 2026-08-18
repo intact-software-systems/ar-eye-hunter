@@ -126,9 +126,9 @@ Deno.test('public and mutation CRDT reads reject reason-only snapshot corruption
   });
 });
 
-Deno.test('public CRDT read permits only the canonical legacy reason fallback', async () => {
+Deno.test('public and mutation CRDT reads reject an omitted snapshot reason', async () => {
   await withPGliteSql(async (sql) => {
-    await append(sql);
+    const { command, service } = await append(sql);
     await insertSnapshot(sql);
     await sql`
       update crdt_snapshots
@@ -137,9 +137,8 @@ Deno.test('public CRDT read permits only the canonical legacy reason fallback', 
     `;
     const repository = new PSqlCrdtLogRepository(sql);
 
-    assert.equal((await repository.readSnapshot(DOCUMENT))?.snapshotId, 'snapshot-1');
-    await sql`update crdt_snapshots set reason = 'arbitrary-legacy-reason'`;
     await assert.rejects(repository.readSnapshot(DOCUMENT), /snapshot|identity|corrupt/i);
+    await assert.rejects(service.read(command), /snapshot|identity|corrupt/i);
   });
 });
 
