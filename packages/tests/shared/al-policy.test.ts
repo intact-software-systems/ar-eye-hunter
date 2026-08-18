@@ -484,13 +484,6 @@ describe('AL QoS policy', () => {
             {
                 text: 'system maintenance',
             },
-            {
-                qos: {
-                    security: {
-                        algo: 'none',
-                    },
-                },
-            },
         );
 
         const provider: ALQosInputProvider = {

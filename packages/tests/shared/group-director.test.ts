@@ -381,7 +381,14 @@ function createMember(
     const terminal = createAuditStamp(1, actorPrincipalId);
     switch (member.status) {
         case 'invited':
-            return { ...base, status: 'invited', left: null, removed: null, banned: null };
+            return {
+                ...base,
+                status: 'invited',
+                joined: null,
+                left: null,
+                removed: null,
+                banned: null,
+            };
         case 'active':
             return { ...base, status: 'active', left: null, removed: null, banned: null };
         case 'left':

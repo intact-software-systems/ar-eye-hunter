@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { newALEventRoute, newALUnicastMessage, } from '@shared/al-contracts/al-contract.ts';
+import type { RtcDataChannelInputDto } from '@shared/webrtc/QRtcDataChannel.ts';
 import {
     QRtcSignalingChannel,
     type QRtcSignalingMessage,
     QRtcSignalingMsgType,
+    type QRtcSignalingTransport,
+    type QRtcSignalingTransportInputDto,
     QRtcSignalingType,
 } from '@shared/webrtc/QRtcSignalingContracts.ts';
 import { WebRtcConnectionService } from '@shared/services/WebRtcConnectionService.ts';
@@ -84,8 +87,8 @@ vi.mock('@shared/webrtc/QRtcDataChannel.ts', () => {
             return true;
         });
         public readonly readHealth = vi.fn(() => ({
-            peerId: (this.input as { peerId: string }).peerId,
-            label: (this.input as { dataChannelName: string }).dataChannelName,
+            peerId: this.input.peerId,
+            label: this.input.dataChannelName,
             ...(this.healthReadyState
                 ? {
                     readyState: this.healthReadyState,
@@ -102,11 +105,11 @@ vi.mock('@shared/webrtc/QRtcDataChannel.ts', () => {
             | undefined;
 
         public readonly connection: unknown;
-        public readonly input: { dataChannelName: string };
+        public readonly input: RtcDataChannelInputDto;
 
         constructor(
             connection: unknown,
-            input: { dataChannelName: string },
+            input: RtcDataChannelInputDto,
         ) {
             this.connection = connection;
             this.input = input;
@@ -123,10 +126,12 @@ vi.mock('@shared/webrtc/QRtcMediaChannel.ts', () => {
     class MockQRtcMediaChannel {
         public readonly connect = vi.fn();
         public readonly reset = vi.fn();
-        public readonly onRemoteStreamDo = vi.fn(function () {
+        public readonly onRemoteStreamDo = vi.fn(function (
+            this: MockQRtcMediaChannel,
+        ) {
             return this;
         });
-        public readonly onTrackDo = vi.fn(function () {
+        public readonly onTrackDo = vi.fn(function (this: MockQRtcMediaChannel) {
             return this;
         });
 
@@ -158,14 +163,9 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('connects the signaler and routes incoming signaling messages to peers', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             createConnectionInput('self'),
         );
 
@@ -173,7 +173,7 @@ describe('WebRtcConnectionService', () => {
 
         expect(signaler.connect).toHaveBeenCalledOnce();
 
-        const connectInput = signaler.connect.mock.calls[0]?.[0];
+        const connectInput = getConnectInput(signaler);
 
         await expect(
             connectInput.callbacks.onMessage(
@@ -282,21 +282,16 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('does not create a missing peer from inbound signaling when the creation policy denies it', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             createConnectionInput('self'),
         ).setInboundPeerCreationPolicy(({ peerId, signalType }) =>
             peerId !== 'peer-1' || signalType !== QRtcSignalingType.Offer
         );
 
         await service.connectSignaler();
-        const connectInput = signaler.connect.mock.calls[0]?.[0];
+        const connectInput = getConnectInput(signaler);
 
         await connectInput.callbacks.onMessage(
             'self',
@@ -324,19 +319,14 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('does not create a missing peer when the creation policy returns a deny decision', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             createConnectionInput('self'),
         ).setInboundPeerCreationPolicy(() => ({ decision: 'deny' }) as never);
 
         await service.connectSignaler();
-        const connectInput = signaler.connect.mock.calls[0]?.[0];
+        const connectInput = getConnectInput(signaler);
 
         await connectInput.callbacks.onMessage(
             'self',
@@ -364,19 +354,14 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('creates a tentative peer from an inbound offer while group ownership is still unknown', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             createConnectionInput('self'),
         ).setInboundPeerCreationPolicy(() => ({ decision: 'tentative' }) as never);
 
         await service.connectSignaler();
-        const connectInput = signaler.connect.mock.calls[0]?.[0];
+        const connectInput = getConnectInput(signaler);
 
         await connectInput.callbacks.onMessage(
             'self',
@@ -405,19 +390,14 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('does not create a missing peer from an inbound answer', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             createConnectionInput('self'),
         );
 
         await service.connectSignaler();
-        const connectInput = signaler.connect.mock.calls[0]?.[0];
+        const connectInput = getConnectInput(signaler);
 
         await connectInput.callbacks.onMessage(
             'self',
@@ -445,20 +425,15 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('applies inbound signaling to an existing peer even when the creation policy denies new peers', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             createConnectionInput('self'),
         ).setInboundPeerCreationPolicy(() => false);
 
         service.ensurePeerConnectionStarted('peer-1');
         await service.connectSignaler();
-        const connectInput = signaler.connect.mock.calls[0]?.[0];
+        const connectInput = getConnectInput(signaler);
 
         await connectInput.callbacks.onMessage(
             'self',
@@ -485,14 +460,9 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('creates peers once, defaults initiator mode from politeness, and cleans up on close', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             createConnectionInput('a-self'),
         );
         const lifecycle: string[] = [];
@@ -526,14 +496,9 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('treats another session for the same user principal as a normal RTC peer', () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             createConnectionInput('alice-session-a'),
         );
 
@@ -549,14 +514,9 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('rejects same-session RTC self connections without creating a peer', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             createConnectionInput('alice-session-a'),
         );
 
@@ -577,14 +537,9 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('disconnects one same-principal RTC session peer without removing other session peers', () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             createConnectionInput('alice-session-a'),
         );
 
@@ -605,14 +560,9 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('reconnects stale data channels on an otherwise active peer', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             createConnectionInput('a-self'),
         );
 
@@ -635,14 +585,9 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('reports known, active, lane-reconciled, and lane-ready peers separately', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             createConnectionInput('a-self'),
         );
 
@@ -665,12 +610,7 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('creates a reliable lane plus configured realtime lanes for each peer', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const realtimeFlowControl = {
             highWatermarkBytes: 1024,
             lowWatermarkBytes: 256,
@@ -678,7 +618,7 @@ describe('WebRtcConnectionService', () => {
             maxQueueItems: 8,
         };
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             {
                 ...createConnectionInput('a-self'),
                 dataChannelLanes: [
@@ -757,14 +697,9 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('reports lane readiness separately when only the realtime lane is reconnectable', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             {
                 ...createConnectionInput('a-self'),
                 dataChannelLanes: [
@@ -810,14 +745,9 @@ describe('WebRtcConnectionService', () => {
 
     it('removes a stalled peer after the configured establishment timeout', async () => {
         vi.useFakeTimers();
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             {
                 ...createConnectionInput('a-self'),
                 peerEstablishmentTimeout: {
@@ -863,14 +793,9 @@ describe('WebRtcConnectionService', () => {
 
     it('keeps a peer when the establishment timeout is cleared by an open lane', async () => {
         vi.useFakeTimers();
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             {
                 ...createConnectionInput('a-self'),
                 peerEstablishmentTimeout: {
@@ -903,14 +828,9 @@ describe('WebRtcConnectionService', () => {
 
     it('exhausts repeated initial establishment attempts and cools down before retrying', async () => {
         vi.useFakeTimers();
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             {
                 ...createConnectionInput('a-self'),
                 peerEstablishmentTimeout: {
@@ -982,14 +902,9 @@ describe('WebRtcConnectionService', () => {
 
     it('clears initial attempt history once a lane opens', () => {
         vi.useFakeTimers();
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             {
                 ...createConnectionInput('a-self'),
                 peerEstablishmentTimeout: {
@@ -1020,14 +935,9 @@ describe('WebRtcConnectionService', () => {
 
     it('counts attempt-budget consumption, exhaustion, and reset evidence separately', async () => {
         vi.useFakeTimers();
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             {
                 ...createConnectionInput('a-self'),
                 peerEstablishmentTimeout: {
@@ -1092,14 +1002,9 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('ensures a requested peer lane is open after starting the connection', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             {
                 ...createConnectionInput('a-self'),
                 dataChannelLanes: [
@@ -1130,14 +1035,9 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('reports missing and timed-out peer lanes without forcing cleanup by default', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             createConnectionInput('a-self'),
         );
 
@@ -1163,14 +1063,9 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('can clean up a peer when explicit lane establishment fails', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             createConnectionInput('a-self'),
         );
 
@@ -1198,14 +1093,9 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('reports aborted when lane establishment is cancelled while waiting', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             createConnectionInput('a-self'),
         );
         const deferred = createDeferred<boolean>();
@@ -1232,14 +1122,9 @@ describe('WebRtcConnectionService', () => {
     });
 
     it('rejects self-connections', async () => {
-        const signaler = {
-            connect: vi.fn(async () => {
-            }),
-            send: vi.fn(async () => {
-            }),
-        };
+        const signaler = createSignaler();
         const service = new WebRtcConnectionService(
-            signaler as never,
+            signaler,
             createConnectionInput('self'),
         );
 
@@ -1251,6 +1136,29 @@ describe('WebRtcConnectionService', () => {
         });
     });
 });
+
+function createSignaler() {
+    const signaler = {
+        connect: vi.fn(async (_input: QRtcSignalingTransportInputDto) => {
+        }),
+        send: vi.fn(async (_payload: QRtcSignalingMessage) => {
+        }),
+    };
+
+    return signaler satisfies QRtcSignalingTransport;
+}
+
+function getConnectInput(
+    signaler: ReturnType<typeof createSignaler>,
+): QRtcSignalingTransportInputDto {
+    const connectInput = signaler.connect.mock.calls[0]?.[0];
+
+    if (connectInput === undefined) {
+        throw new Error('The service never connected the signaling transport.');
+    }
+
+    return connectInput;
+}
 
 function createConnectionInput(sessionId: string) {
     return {
@@ -1323,7 +1231,7 @@ type MockQRtcDataChannel = {
     rtcCallbacks?: {
         onOpen?: () => void;
     };
-    readonly input: unknown;
+    readonly input: RtcDataChannelInputDto;
 };
 
 type MockQRtcMediaChannel = {

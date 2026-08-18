@@ -72,14 +72,12 @@ describe('LatestRepository expiry surface', () => {
 
         const first = repository.readOrAcceptAt({
             key: 'work-1',
-            value: { claimed: true },
             nowEpochMs: 0,
             expireAtEpochMs: 100,
             create,
         });
         const second = repository.readOrAcceptAt({
             key: 'work-1',
-            value: { claimed: true },
             nowEpochMs: 50,
             expireAtEpochMs: 100,
             create,

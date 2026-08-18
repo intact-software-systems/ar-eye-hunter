@@ -134,10 +134,13 @@ describe('Rallar CRDT contracts', () => {
     });
 
     it('rejects unknown protocol and operation versions', () => {
-        const update = createUpdateEnvelope({
+        // Protocol version 2 is not representable in RallarCrdtUpdateEnvelope,
+        // so this stands in for a wire value the decoder has to reject.
+        const update: Record<string, unknown> = {
+            ...createUpdateEnvelope(),
             protocolVersion: 2,
             operationVersion: 99,
-        });
+        };
 
         const result = validateRallarCrdtUpdateEnvelope(update);
 
@@ -333,6 +336,10 @@ describe('Rallar CRDT contracts', () => {
             append: {
                 appendSequence: 1,
                 acceptedAtEpochMs: 1_100,
+                actorId: 'actor-a',
+                principalId: 'principal-a',
+                sessionId: 'session-a',
+                serverId: 'server-1',
                 authorizationScope: 'room' as const,
                 acceptedUpdateHash: hashRallarCrdtUpdateEnvelope(update),
             },

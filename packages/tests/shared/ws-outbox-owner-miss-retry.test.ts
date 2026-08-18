@@ -288,7 +288,9 @@ describe('durable WS outbox owner misses', () => {
         createUnicastMessage(), EnqueuedType.WS_OUTBOX,
       );
       await outbox.enqueue(original);
-      const bus = race === 'before' ? createBridgeBus() : createFireAndForgetBridgeBus();
+      const bus: QueueBoxPubSubBridge & { drain?(): Promise<void> } = race === 'before'
+        ? createBridgeBus()
+        : createFireAndForgetBridgeBus();
       const claimant = createService(outbox, createSocket(), 'claimant', () => []);
       const remoteSocket = createSocket();
       remoteSocket.sendEncoded.mockImplementationOnce(() => {

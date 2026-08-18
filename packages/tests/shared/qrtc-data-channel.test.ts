@@ -16,9 +16,15 @@ describe('QRtcDataChannel', () => {
         const plainMessages: unknown[] = [];
 
         dataChannel.onRtcCallbacksDo('callbacks', {
-            onOpen: () => lifecycle.push('open'),
-            onClose: async () => lifecycle.push('close'),
-            onError: async () => lifecycle.push('error'),
+            onOpen: async () => {
+                lifecycle.push('open');
+            },
+            onClose: async () => {
+                lifecycle.push('close');
+            },
+            onError: async () => {
+                lifecycle.push('error');
+            },
         });
         dataChannel.onRtcMessageDo(
             'typed',
@@ -96,7 +102,9 @@ describe('QRtcDataChannel', () => {
         const opened: string[] = [];
 
         dataChannel.onRtcCallbacksDo('callbacks', {
-            onOpen: () => opened.push('open'),
+            onOpen: async () => {
+                opened.push('open');
+            },
         });
 
         dataChannel.connect(false);
@@ -107,14 +115,14 @@ describe('QRtcDataChannel', () => {
         const wrong = new FakeRTCDataChannel('other');
         await peerConnection.onDataChannelCallback?.({
             channel: wrong,
-        } as RTCDataChannelEvent);
+        });
 
         expect(opened).toEqual([]);
 
         const matching = new FakeRTCDataChannel('room');
         await peerConnection.onDataChannelCallback?.({
             channel: matching,
-        } as RTCDataChannelEvent);
+        });
 
         matching.readyState = 'open';
         await matching.emitOpen();
@@ -160,7 +168,7 @@ describe('QRtcDataChannel', () => {
         for (const callback of peerConnection.onDataChannelCallbacks.values()) {
             await callback({
                 channel: incoming,
-            } as RTCDataChannelEvent);
+            });
         }
 
         expect(reliable.readHealth().readyState).toBeUndefined();
@@ -251,7 +259,9 @@ describe('QRtcDataChannel', () => {
         const lifecycle: string[] = [];
 
         dataChannel.onRtcCallbacksDo('callbacks', {
-            onClose: async () => lifecycle.push('close'),
+            onClose: async () => {
+                lifecycle.push('close');
+            },
         });
 
         dataChannel.connect(true);
@@ -480,7 +490,7 @@ describe('QRtcDataChannel', () => {
         const firstChannel = new FakeRTCDataChannel('room');
         await peerConnection.onDataChannelCallback?.({
             channel: firstChannel,
-        } as RTCDataChannelEvent);
+        });
         await firstChannel.emitOpen();
         await firstChannel.emitClose();
 
@@ -492,7 +502,7 @@ describe('QRtcDataChannel', () => {
         const secondChannel = new FakeRTCDataChannel('room');
         await peerConnection.onDataChannelCallback?.({
             channel: secondChannel,
-        } as RTCDataChannelEvent);
+        });
         await secondChannel.emitOpen();
 
         await expect(wait).resolves.toBe(true);
@@ -867,13 +877,15 @@ class FakeRTCDataChannel {
     }
 }
 
+type FakeRTCDataChannelEvent = { channel: FakeRTCDataChannel };
+
 function createPeerConnectionHarness() {
     let onDataChannelCallback:
-        | ((event: RTCDataChannelEvent) => Promise<void>)
+        | ((event: FakeRTCDataChannelEvent) => Promise<void>)
         | undefined;
     const onDataChannelCallbacks = new Map<
         string,
-        (event: RTCDataChannelEvent) => Promise<void>
+        (event: FakeRTCDataChannelEvent) => Promise<void>
     >();
     const createdChannels: FakeRTCDataChannel[] = [];
 
@@ -881,7 +893,7 @@ function createPeerConnectionHarness() {
         isReadyToConnect: vi.fn(() => true),
         onDataChannelDo: vi.fn(function (
             id: string,
-            callback: (event: RTCDataChannelEvent) => Promise<void>,
+            callback: (event: FakeRTCDataChannelEvent) => Promise<void>,
         ) {
             onDataChannelCallbacks.set(id, callback);
             onDataChannelCallback = callback;

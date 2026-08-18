@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
+import {
+    type RttMeasurementCallbacks,
+    WebRtcRxStreamerService,
+} from '@shared/services/WebRtcRxStreamerService.ts';
 
 const mockState = vi.hoisted(() => ({
     heartbeats: [] as MockHeartbeatService[],
@@ -193,8 +196,10 @@ describe('WebRtcRxStreamerService', () => {
             createFakeMulticastManager() as never,
             { sessionId: 'self' },
         );
-        const onHeartbeat = vi.fn(async () => {
-        });
+        const onHeartbeat = vi.fn<RttMeasurementCallbacks['onHeartbeat']>(
+            async () => {
+            },
+        );
         service.onRttMeasurementDo('rtt', { onHeartbeat });
 
         const peer = createPeerDto('peer-1');

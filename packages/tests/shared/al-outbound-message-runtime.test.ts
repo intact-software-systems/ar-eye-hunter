@@ -1459,34 +1459,28 @@ describe('ALOutboundMessageRuntime', () => {
 
     it('does not reschedule a failed durable effect after dispose', async () => {
         const msg = createOutboundMessage('msg-dispose-during-effect');
-        const effect = {
-            effectId: 'effect-dispose-during-send',
-            payload: {
-                kind: 'send-prepared' as const,
-                msg,
-                prepared: { kind: 'send', msgId: msg.id.msgId },
-                phase: 'immediate' as const,
-            },
-            status: 'running' as const,
-            attempts: 1,
-            retryAtMs: Date.now(),
-            updatedAtMs: Date.now(),
-            expireAtTimestamp: Date.now() + 60_000,
-        };
         const admissionStore = createMemoryOutboundAdmissionStore();
-        let claimed = false;
         const rescheduleEffect = vi.fn(async () => undefined);
+        const committingRuntime = createOutboundRuntime({
+            stores: {
+                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+                    claimReadyEffects: async () => [],
+                }),
+            },
+            sendPreparedMessage: async () => Promise.resolve(),
+            planOutgoingMessage: (plannedMsg) => ({
+                persist: false,
+                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
+            }),
+        });
+
+        await enqueueOutboundOrThrow(committingRuntime, msg);
+        committingRuntime.dispose();
+
         let runtime!: ALOutboundMessageRuntime<Record<string, unknown>>;
         runtime = createOutboundRuntime({
             stores: {
                 admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    claimReadyEffects: async () => {
-                        if (claimed) {
-                            return [];
-                        }
-                        claimed = true;
-                        return [effect];
-                    },
                     rescheduleEffect,
                 }),
             },

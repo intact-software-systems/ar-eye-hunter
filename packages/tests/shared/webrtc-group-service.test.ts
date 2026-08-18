@@ -88,8 +88,10 @@ describe('WebRtcGroupService', () => {
             snapshot.group,
             cache as never,
         );
-        const callback = vi.fn(async () => {
-        });
+        const callback = vi.fn<Parameters<WebRtcGroupService['onStateDo']>[1]>(
+            async () => {
+            },
+        );
 
         service.onStateDo('state', callback);
 

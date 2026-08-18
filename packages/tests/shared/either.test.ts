@@ -16,7 +16,7 @@ describe('Either', () => {
         const right = Either.ofRight<string, number>(2);
 
         expect(left.fold((value) => value.toUpperCase(), String)).toBe('ERROR');
-        expect(right.fold(String, (value) => value * 2)).toBe(4);
+        expect(right.fold<string | number>(String, (value) => value * 2)).toBe(4);
         expect(right.mapRight((value) => value + 1).right).toBe(3);
         expect(left.mapLeft((value) => `${value}!`).left).toBe('error!');
         expect(

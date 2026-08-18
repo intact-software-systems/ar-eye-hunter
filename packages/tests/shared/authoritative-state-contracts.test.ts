@@ -99,15 +99,18 @@ describe('authoritative state contracts', () => {
     expectTypeOf<OptionalKeys<GroupTopologyConfigPatch>>().toEqualTypeOf<
       'topologyKind' | 'degreeLimit' | 'treeMinSize' | 'meshMinSize' | 'meshParamK'
     >();
-    expectTypeOf<OptionalKeys<PutGroupTopologyConfigRequest>>().toEqualTypeOf<'requestId'>();
+    expectTypeOf<OptionalKeys<PutGroupTopologyConfigRequest>>().toEqualTypeOf<never>();
 
     const actor = {} satisfies MutationActorInput;
     const patch = {} satisfies GroupTopologyConfigPatch;
-    const request = { config: {} } satisfies PutGroupTopologyConfigRequest;
+    const request = {
+      requestId: 'request-1',
+      config: {},
+    } satisfies PutGroupTopologyConfigRequest;
     expect({ actor, patch, request }).toEqual({
       actor: {},
       patch: {},
-      request: { config: {} },
+      request: { requestId: 'request-1', config: {} },
     });
   });
 

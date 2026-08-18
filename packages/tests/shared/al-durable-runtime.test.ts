@@ -11,6 +11,7 @@ import {
     InMemoryALOrderingStore,
     InMemoryPersistenceProvider,
     InMemoryQueueBox,
+    type Key,
     newALAckControlMessage,
     newALMulticastMessage,
     newALNackControlMessage,

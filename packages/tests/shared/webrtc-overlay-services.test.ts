@@ -5,7 +5,7 @@ import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { EntityStatus, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { EnqueuedType } from '@shared/api/api-config.ts';
+import { EnqueuedType, type OverlayInfo } from '@shared/api/api-config.ts';
 import {
     newALMulticastMessage,
     newALUnicastMessage,
@@ -13,8 +13,7 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/WebRtcOverlayMulticastService.ts';
-
-(globalThis as { Temporal?: typeof Temporal }).Temporal ??= Temporal;
+import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
 describe('WebRtc overlay services', () => {
     afterEach(() => {
@@ -757,69 +756,32 @@ function createOverlayContext(
     const workspaceId = options.workspaceId ?? 'workspace-1';
     const groupId = options.groupId ?? 'group-1';
 
+    const room = createGroupSnapshotFixture({
+        applicationId,
+        workspaceId,
+        groupId,
+        sessionIds: memberSessionIds,
+    });
+    const overlay: OverlayInfo = {
+        sourceGroupStateCausalRevision: room.causalRevision,
+        provenance: 'server',
+        state: 'active',
+        overlayId: groupId,
+        groupRef: room.group,
+        topology: 'tree',
+        name: 'Group 1',
+        createdByClientId: 'owner',
+        createdAtEpochMs: 1,
+        nextHopSessionIds,
+        degreeLimit: Math.max(1, nextHopSessionIds.length),
+        overlayVersion: 1,
+        updatedAtEpochMs: 1,
+    };
+
     return {
         overlayId: groupId,
-        room: {
-            group: {
-                applicationId,
-                workspaceId,
-                groupId,
-                displayName: 'Group 1',
-                kind: 'room',
-                status: 'active',
-                joinMode: 'open',
-                metadata: {},
-                snapshotVersion: 1,
-                metadataVersion: 0,
-                rosterVersion: 1,
-                presenceVersion: 0,
-                created: {
-                    atEpochMs: 1,
-                    byPrincipalId: 'owner',
-                },
-                updated: {
-                    atEpochMs: 1,
-                    byPrincipalId: 'owner',
-                },
-            },
-            members: memberSessionIds.map((sessionId) => ({
-                applicationId,
-                workspaceId,
-                groupId,
-                principalId: sessionId,
-                role: 'member',
-                status: 'active',
-                joined: {
-                    atEpochMs: 1,
-                    byPrincipalId: 'owner',
-                },
-                updated: {
-                    atEpochMs: 1,
-                    byPrincipalId: 'owner',
-                },
-            })),
-            activeSessions: memberSessionIds.map((sessionId) => ({
-                applicationId,
-                workspaceId,
-                groupId,
-                sessionId,
-                principalId: sessionId,
-                connectedAtEpochMs: 1,
-                lastHeartbeatAtEpochMs: 1,
-                expiresAtEpochMs: 60_001,
-            })),
-            memberCount: memberSessionIds.length,
-            onlineMemberCount: memberSessionIds.length,
-        },
-        overlay: {
-            overlayId: groupId,
-            name: 'Group 1',
-            createdByClientId: 'owner',
-            createdAtEpochMs: 1,
-            nextHopSessionIds,
-            overlayVersion: 1,
-            updatedAtEpochMs: 1,
-        },
+        room,
+        overlay,
     };
 }
 

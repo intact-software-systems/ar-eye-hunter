@@ -6,6 +6,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
@@ -13,7 +14,7 @@ describe('OutboxQueueReader', () => {
     it('dispatches app outbox messages using the APP_OUTBOX queue type', async () => {
         const queue = new InMemoryQueueBox();
         const reader = new OutboxQueueReader(queue);
-        const onMessage = vi.fn(async () => undefined);
+        const onMessage = vi.fn<OnMessageCallback['onMessage']>(async () => undefined);
         const message = createAppMessage('RTC_TOPOLOGY_RECOMPUTE', 'outbox');
 
         reader.onOutboxMessageDo('RTC_TOPOLOGY_RECOMPUTE', { onMessage });

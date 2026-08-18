@@ -389,12 +389,19 @@ function createMetadata(
     return {
         document: documentRef,
         documentKey: toRallarCrdtDocumentKey(documentRef),
+        documentRevision: 1,
         lifecycle: 'active',
         createdAtEpochMs: 1_000,
         updatedAtEpochMs: 2_000,
+        archivedAtEpochMs: null,
+        destroyedAtEpochMs: null,
         lastAppendSequence: 1,
         updateCount: 1,
         snapshotCount: 0,
+        storedUpdateBytes: 512,
+        retention: null,
+        quota: null,
+        projectionIds: [],
         ...overrides,
     };
 }
@@ -410,6 +417,10 @@ function createRecord(
         append: {
             appendSequence,
             acceptedAtEpochMs: 2_000 + appendSequence,
+            actorId: 'actor-a',
+            principalId: 'principal-a',
+            sessionId: 'session-a',
+            serverId: 'server-a',
             authorizationScope: 'room',
             acceptedUpdateHash: hashRallarCrdtUpdateEnvelope(update),
         },
