@@ -60,6 +60,24 @@ type AcceptedRtcTopologyMutation = Exclude<
   Readonly<{ outcome: 'loaded' | 'retry' }>
 >;
 
+// prettier-ignore
+import {
+  computeFormationCriterionCommand,
+} from './compute-formation-criterion-command.ts';
+// prettier-ignore
+import type {
+  GroupLifecyclePolicyRead,
+} from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
+// prettier-ignore
+import type {
+  GroupMutationCommand,
+} from '../../group-state/mutation/group-mutation-contracts.ts';
+// prettier-ignore
+import type {
+  GroupTopologyPlanningAuthority,
+} from '../planning/group-topology-planning-authority.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+
 export interface RtcTopologyDeliveryOptions {
   readonly publisherStreamId: string;
   readonly append: RtcTopologyDeliveryAppendPort;
@@ -78,6 +96,15 @@ interface RtcTopologyWorkHandlerOptions {
   >;
   readonly executionRepository: RtcTopologyExecutionRepository;
   readonly rttRefinementService?: RtcRttRefinementService;
+  /**
+   * The evidence leg of the activation criterion (plan slice 3b). Absent means
+   * this deployment does not automate formation; groups then activate only by
+   * operator command.
+   */
+  readonly formationCriterion?: Readonly<{
+    readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
+    submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
+  }>;
   readonly topologyDelivery?: RtcTopologyDeliveryOptions;
   readonly onInactiveOverlay?: (overlayId: string) => void;
   readonly wakeQueue?: () => void;
@@ -197,6 +224,23 @@ async function processLoadedRtcTopologyWork(
   options.wakeReplay?.();
 }
 
+async function petitionFormationCriterion(
+  options: RtcTopologyWorkHandlerOptions,
+  authority: GroupTopologyPlanningAuthority,
+  planned: RallarOverlayTopologySnapshot,
+): Promise<void> {
+  if (!options.formationCriterion) return;
+  const command = await computeFormationCriterionCommand({
+    group: authority.group,
+    planned,
+    rttMeasurements: authority.rttMeasurements,
+    nowEpochMs: authority.nowEpochMs,
+    readLifecyclePolicy: options.formationCriterion.readLifecyclePolicy,
+  });
+  if (command === null) return;
+  await options.formationCriterion.submitCommand(command, authority.nowEpochMs);
+}
+
 async function computeAcceptedRtcTopologyWork(
   input: ComputeAcceptedRtcTopologyWorkInput,
 ): Promise<AcceptedRtcTopologyWork> {
@@ -241,6 +285,7 @@ async function computeAcceptedRtcTopologyWork(
     read.snapshot?.value,
     membershipDeltaWork ? 'membership-delta' : 'full-rebuild',
   );
+  await petitionFormationCriterion(options, authority, computedTopology.snapshot);
   // RTT is deliberately outside the fingerprint, so an RTT refresh always
   // replans — but an unchanged planned graph publishes nothing (M8).
   const unchangedGated = changeGated || work.kind !== 'group-revision';

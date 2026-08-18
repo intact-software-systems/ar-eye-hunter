@@ -66,7 +66,10 @@ function createTimedPreparationOperations(
   input: TimedGroupStateServiceInput,
 ): Pick<
   GroupStateService,
-  'prepareMutation' | 'prepareExpiredPresenceMutations' | 'prepareSessionCleanupMutations'
+  | 'prepareMutation'
+  | 'prepareExpiredPresenceMutations'
+  | 'prepareSessionCleanupMutations'
+  | 'prepareFormationCriterionMutation'
 > {
   return {
     prepareMutation: async (descriptor, authority) =>
@@ -82,6 +85,13 @@ function createTimedPreparationOperations(
         operation: 'prepareExpiredPresenceMutations',
         details: {},
         action: async () => await service.prepareExpiredPresenceMutations(atEpochMs),
+      }),
+    prepareFormationCriterionMutation: async (command, atEpochMs) =>
+      await timeGroupStateOperation({
+        ...input,
+        operation: 'prepareFormationCriterionMutation',
+        details: {},
+        action: async () => await service.prepareFormationCriterionMutation(command, atEpochMs),
       }),
     prepareSessionCleanupMutations: async (cleanup) =>
       await timeGroupStateOperation({

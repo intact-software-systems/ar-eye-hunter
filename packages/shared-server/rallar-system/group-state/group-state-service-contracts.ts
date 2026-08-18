@@ -172,6 +172,10 @@ export type GroupStateService = GroupStateMutationService &
     prepareSessionCleanupMutations(
       input: GroupSessionCleanupInput,
     ): Promise<readonly GroupMutationPreparation[]>;
+    prepareFormationCriterionMutation(
+      command: GroupMutationCommand,
+      atEpochMs: number,
+    ): Promise<GroupMutationPreparation>;
     listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]>;
     listSnapshotsPage(
       scope: GroupScope,

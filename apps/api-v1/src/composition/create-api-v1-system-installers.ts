@@ -147,6 +147,11 @@ function createSystemTopicOptions(
       topologyDelivery: runtime.rtcTopologyDelivery,
       findGroupSnapshotByRef: (ref, cacheOptions) =>
         runtime.groupStateService.readSnapshotAtLeast(ref, cacheOptions ?? {}),
+      formationCriterion: {
+        readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
+        submitCommand: (command, atEpochMs) =>
+          runtime.appGroupInboxService.enqueueFormationCriterionCommand(command, atEpochMs),
+      },
     },
     enqueueRtcRttMutation: (enqueue) => runtime.appGroupInboxService.enqueueRtcRtt(enqueue),
   };
