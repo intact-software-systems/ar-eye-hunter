@@ -1,15 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import { createRallarBrowserFacadeRuntimeContext } from '@shared-web/browser/rallar-runtime-context.ts';
+import {
+    createRallarBrowserFacadeRuntimeContext,
+    type RallarBrowserRuntimeDefaults,
+} from '@shared-web/browser/rallar-runtime-context.ts';
+import { createApiMiddlewareTestDouble } from './api-middleware-test-double.ts';
+
+type RoomDefaults = NonNullable<RallarBrowserRuntimeDefaults['room']>;
+
+type MutableRoomDefaults = {
+    -readonly [K in keyof RoomDefaults]: RoomDefaults[K];
+};
 
 describe('Rallar browser facade runtime context', () => {
     it('clones defaults and resolves operation options from them', () => {
         const shouldRetry = vi.fn(() => true);
         const signal = new AbortController().signal;
-        const lanes = [{ laneId: 'motion' }];
+        const lanes: readonly RtcDataChannelLaneConfig[] = [
+            { id: 'motion', label: 'rtc-motion' },
+        ];
         const context = createRallarBrowserFacadeRuntimeContext();
 
         context.setDefaults({
@@ -56,7 +68,8 @@ describe('Rallar browser facade runtime context', () => {
         });
         expect(defaults?.room).not.toBe(context.readDefaults()?.room);
 
-        (defaults as { room?: { roomId?: string } }).room!.roomId = 'mutated';
+        const mutableRoom = defaults?.room as MutableRoomDefaults;
+        mutableRoom.roomId = 'mutated';
 
         expect(context.defaults()?.room?.roomId).toBe('room-1');
         expect(context.resolveOperationScope()).toEqual({
@@ -137,15 +150,13 @@ function createGroupSnapshot(groupId: string): GroupSnapshot {
 }
 
 function createMiddleware(sessionId: string): ApiMiddleware {
-    return {
+    return createApiMiddlewareTestDouble({
         session: {
             clientId: 'client-1',
             sessionId,
             username: 'user-1',
             accessToken: 'token-1',
             expiresAtEpochMs: Date.now() + 60_000,
-        } satisfies AuthSession,
-        authFetch: vi.fn(),
-        middleware: {},
-    } as unknown as ApiMiddleware;
+        },
+    });
 }

@@ -5,114 +5,20 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
-function createTestSession() {
-  return {
-    clientId: 'principal-1',
-    sessionId: 'session-1',
-    username: 'principal-1',
-    accessToken: 'token-1',
-    expiresAtEpochMs: Date.now() + 60_000,
-  };
-}
-
-function createTestWebRtcConnectionService() {
-  return {
-    peerIdsWithNoReconnectableLanes: vi.fn((): readonly string[] => []),
-    knownPeerIds: vi.fn((): readonly string[] => []),
-    activePeerIds: vi.fn((): readonly string[] => []),
-    readyPeerIdsForLane: vi.fn((): readonly string[] => []),
-    ensurePeerConnectionStarted: vi.fn(),
-    ensurePeerLaneOpen: vi.fn(),
-    disconnectPeer: vi.fn(() => true),
-    onRtcPeerLifecycleDo: vi.fn(),
-    readPeer: vi.fn(),
-    removeRtcPeerLifecycleById: vi.fn(() => true),
-  };
-}
-
-function createTestRtcRxStreamer() {
-  return {
-    enqueueOutboxIfAbsent: vi.fn(async () => ({ status: 'enqueued', entries: [] })),
-    onInboxMessageDo: vi.fn(),
-    removeInboxMessageCallback: vi.fn(() => true),
-    onRemoteStreamDo: vi.fn(),
-    removeOnRemoteStreamCallbackById: vi.fn(() => true),
-    setLocalMediaStream: vi.fn(),
-    setLocalAudioEnabled: vi.fn(),
-    setLocalVideoEnabled: vi.fn(),
-    setMediaPolicy: vi.fn(),
-    stopLocalMedia: vi.fn(),
-    stopAllHeartbeats: vi.fn(),
-  };
-}
-
-function createTestWebSocketQueueBox(sessionId: string) {
-  return {
-    enqueueOutboxIfAbsent: vi.fn(async () => ({ status: 'enqueued', entries: [] })),
-    readHealth: vi.fn(() => ({
-      sessionId,
-      url: 'ws://localhost/ws',
-      readyState: 'missing',
-      isOpen: false,
-      reconnecting: false,
-      reconnectEnabled: false,
-      reconnectAttempts: 0,
-      maxReconnectAttempts: 12,
-      reconnectExhausted: false,
-    })),
-    close: vi.fn(),
-    onAnyInboxMessageDo: vi.fn(),
-    removeAnyInboxMessageCallback: vi.fn(() => true),
-    socket: {
-      close: vi.fn(),
-      onWebsocketCallbacksDo: vi.fn(),
-      removeWebsocketCallbackById: vi.fn(() => true),
-    },
-  };
-}
-
-function createTestMiddleware(
-  input: Readonly<{
-    session: ReturnType<typeof createTestSession>;
-    webRtcConnectionService: ReturnType<typeof createTestWebRtcConnectionService>;
-    rtcRxStreamer: ReturnType<typeof createTestRtcRxStreamer>;
-    webSocketQueueBox: ReturnType<typeof createTestWebSocketQueueBox>;
-  }>,
-): ApiMiddleware {
-  return {
-    session: input.session,
-    authFetch: vi.fn(),
-    middleware: {
-      qboxEngine: { wake: vi.fn(), stop: vi.fn() },
-      rtcRxStreamer: input.rtcRxStreamer,
-      webRtcGroupManager: {},
-      webRtcConnectionService: input.webRtcConnectionService,
-      heartbeat: { generationId: undefined, stop: vi.fn() },
-      webSocketQueueBox: input.webSocketQueueBox,
-    },
-  } as unknown as ApiMiddleware;
-}
-
-function createRoomWorkflowMocks() {
+const roomWorkflowMocks = await vi.hoisted(async () => {
+  const { createApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
+  const ctx = createApiMiddlewareTestDouble();
   const operationLog: string[] = [];
   const groupSnapshots: GroupSnapshot[] = [];
-  const cacheListeners = new Set<() => void | Promise<void>>();
-  const session = createTestSession();
-  const ctx = createTestMiddleware({
-    session,
-    webRtcConnectionService: createTestWebRtcConnectionService(),
-    rtcRxStreamer: createTestRtcRxStreamer(),
-    webSocketQueueBox: createTestWebSocketQueueBox(session.sessionId),
-  });
 
   return {
     operationLog,
     groupSnapshots,
-    cacheListeners,
-    session,
+    cacheListeners: new Set<() => void | Promise<void>>(),
+    session: ctx.session,
     ctx,
     clearMiddleware: vi.fn(),
-    initMiddleware: vi.fn(async () => ctx),
+    initMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
     isMiddlewareReady: vi.fn(() => false),
     createAndJoinStateGroup: vi.fn(),
     joinStateGroup: vi.fn(),
@@ -130,39 +36,37 @@ function createRoomWorkflowMocks() {
     transferStateGroupOwnership: vi.fn(),
     hydrateStateCaches: vi.fn(),
     onStateCacheChange: vi.fn(),
-    readSession: vi.fn(() => session),
+    readSession: vi.fn(() => ctx.session),
   };
-}
+});
 
-const roomWorkflowMocks = vi.hoisted(createRoomWorkflowMocks);
-
-vi.mock('@shared-web/browser/app-context.ts', () => ({
+vi.mock(import('@shared-web/browser/app-context.ts'), () => ({
   clearMiddleware: roomWorkflowMocks.clearMiddleware,
   getMiddleware: vi.fn(() => roomWorkflowMocks.ctx),
   initMiddleware: roomWorkflowMocks.initMiddleware,
   isMiddlewareReady: roomWorkflowMocks.isMiddlewareReady,
 }));
 
-vi.mock('@shared-web/browser/api-workflows.ts', () => ({
+vi.mock(import('@shared-web/browser/api-workflows.ts'), () => ({
   createAndJoinStateGroup: roomWorkflowMocks.createAndJoinStateGroup,
   joinStateGroup: roomWorkflowMocks.joinStateGroup,
   leaveStateGroup: roomWorkflowMocks.leaveStateGroup,
 }));
 
-vi.mock('@shared-web/browser/rooms/room-group-state-workflows.ts', () => ({
+vi.mock(import('@shared-web/browser/rooms/room-group-state-workflows.ts'), () => ({
   createAndJoinStateGroup: roomWorkflowMocks.createAndJoinStateGroup,
   joinStateGroup: roomWorkflowMocks.joinStateGroup,
   leaveStateGroup: roomWorkflowMocks.leaveStateGroup,
 }));
 
-vi.mock('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts', () => ({
+vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts'), () => ({
   updateStateGroupDetails: roomWorkflowMocks.updateStateGroupDetails,
   updateStateGroupMetadata: roomWorkflowMocks.updateStateGroupMetadata,
   archiveStateGroup: roomWorkflowMocks.archiveStateGroup,
   deleteStateGroup: roomWorkflowMocks.deleteStateGroup,
 }));
 
-vi.mock('@shared-web/browser/rooms/room-membership-group-state-workflows.ts', () => ({
+vi.mock(import('@shared-web/browser/rooms/room-membership-group-state-workflows.ts'), () => ({
   createStateGroupInvite: roomWorkflowMocks.createStateGroupInvite,
   acceptStateGroupInvite: roomWorkflowMocks.acceptStateGroupInvite,
   removeStateGroupMember: roomWorkflowMocks.removeStateGroupMember,
@@ -172,24 +76,24 @@ vi.mock('@shared-web/browser/rooms/room-membership-group-state-workflows.ts', ()
   transferStateGroupOwnership: roomWorkflowMocks.transferStateGroupOwnership,
 }));
 
-vi.mock('@shared-web/browser/data-caches.ts', () => ({
+vi.mock(import('@shared-web/browser/data-caches.ts'), () => ({
   hydrateStateCaches: roomWorkflowMocks.hydrateStateCaches,
   onStateCacheChange: roomWorkflowMocks.onStateCacheChange,
 }));
 
-vi.mock('@shared/api/auth.ts', () => ({
+vi.mock(import('@shared/api/auth.ts'), () => ({
   clearSession: vi.fn(),
   isLoggedIn: vi.fn(() => true),
   readSession: roomWorkflowMocks.readSession,
   writeSession: vi.fn(),
 }));
 
-vi.mock('@shared/repository/client-state-snapshots-repository.ts', () => ({
+vi.mock(import('@shared/repository/client-state-snapshots-repository.ts'), () => ({
   findClientStateSnapshotByPrincipalId: vi.fn(),
   getAllClientStateSnapshots: vi.fn(() => []),
 }));
 
-vi.mock('@shared/repository/group-state-snapshots-repository.ts', () => ({
+vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), () => ({
   findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn(
     (sessionId: string) =>
       roomWorkflowMocks.groupSnapshots.find((snapshot) =>
@@ -201,8 +105,8 @@ vi.mock('@shared/repository/group-state-snapshots-repository.ts', () => ({
   ),
   getAllGroupStateSnapshots: vi.fn(() => [...roomWorkflowMocks.groupSnapshots]),
   removeGroupStateSnapshotIfUnchanged: vi.fn((roomRef: GroupRef, expected: GroupSnapshot) => {
-    const index = roomWorkflowMocks.groupSnapshots.findIndex((snapshot) =>
-      snapshot === expected && isSameRoomRef(snapshot.group, roomRef)
+    const index = roomWorkflowMocks.groupSnapshots.findIndex(
+      (snapshot) => snapshot === expected && isSameRoomRef(snapshot.group, roomRef),
     );
     if (index < 0) return false;
     roomWorkflowMocks.groupSnapshots.splice(index, 1);

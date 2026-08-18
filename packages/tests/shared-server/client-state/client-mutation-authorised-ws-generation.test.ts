@@ -131,21 +131,8 @@ async function runGenerationAdvanceScenario() {
     sessionId: 'ws-session-1',
     expiresAtEpochMs: 60_000,
   };
-  const register = service.registerAuthorisedWsClientSession as unknown as (
-    auth: AuthSession,
-    generationId: string,
-    input: Readonly<{
-      applicationId: string;
-      workspaceId: string;
-      connectedAtEpochMs: number;
-      expiresAtEpochMs: number;
-    }>,
-  ) => ReturnType<typeof service.registerAuthorisedWsClientSession>;
-  const disconnect = service.disconnectAuthorisedWsClientSession as unknown as (
-    sessionId: string,
-    generationId: string,
-    reason?: string,
-  ) => ReturnType<typeof service.disconnectAuthorisedWsClientSession>;
+  const register = service.registerAuthorisedWsClientSession.bind(service);
+  const disconnect = service.disconnectAuthorisedWsClientSession.bind(service);
   const expiresAtEpochMs = Date.now() + 60_000;
   const first = await register(authSession, 'ws-generation-1', {
     ...SCOPE,
@@ -211,17 +198,7 @@ async function runOrderedGenerationScenario() {
     sessionId: 'ws-session-ordered',
     expiresAtEpochMs: 60_000,
   };
-  const register = service.registerAuthorisedWsClientSession as unknown as (
-    auth: AuthSession,
-    generationId: string,
-    input: Readonly<{
-      applicationId: string;
-      workspaceId: string;
-      displayName: string;
-      connectedAtEpochMs: number;
-      expiresAtEpochMs: number;
-    }>,
-  ) => ReturnType<typeof service.registerAuthorisedWsClientSession>;
+  const register = service.registerAuthorisedWsClientSession.bind(service);
   const expiresAtEpochMs = Date.now() + 60_000;
   const newer = await register(authSession, 'generation-b', {
     ...SCOPE,

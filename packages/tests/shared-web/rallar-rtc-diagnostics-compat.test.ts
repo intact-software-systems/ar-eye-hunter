@@ -1,141 +1,91 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
+import type { RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
 import type { QRtcPeerConnectionDiagnostics } from '@shared/webrtc/QRtcPeerConnection.ts';
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 
-const mocks = vi.hoisted(() => {
-    const session = {
-        clientId: 'principal-1',
-        sessionId: 'session-1',
-        username: 'principal-1',
-        accessToken: 'token-1',
-        expiresAtEpochMs: Date.now() + 60_000,
-    };
-    const webRtcConnectionService = {
-        peerIdsWithNoReconnectableLanes: vi.fn((): readonly string[] => []),
-        knownPeerIds: vi.fn((): readonly string[] => []),
-        activePeerIds: vi.fn((): readonly string[] => []),
-        readyPeerIdsForLane: vi.fn((_laneId?: string): readonly string[] => []),
-        ensurePeerConnectionStarted: vi.fn((_peerId: string) => ({
-            left: {
-                kind: 'connect-failed',
-                peerId: _peerId,
-                error: new Error('connect not mocked'),
-            },
-        })),
-        ensurePeerLaneOpen: vi.fn(async (peerId: string, laneId: string) => ({
-            status: 'connect-failed',
-            peerId,
-            laneId,
-            error: new Error('connect not mocked'),
-        })),
-        disconnectPeer: vi.fn(() => true),
-        onRtcPeerLifecycleDo: vi.fn(),
-        readPeer: vi.fn(),
-        removeRtcPeerLifecycleById: vi.fn(() => true),
-    };
-    webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(() =>
-        webRtcConnectionService
+// The factories below annotate their return type on purpose: without it the contextual type of a
+// `vi.mock` factory is a union, and TypeScript then accepts an export name the module does not
+// have. With the annotation a renamed or removed export fails the type check.
+type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
+type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
+type AuthModule = typeof import('@shared/api/auth.ts');
+type ClientStateSnapshotsModule =
+    typeof import('@shared/repository/client-state-snapshots-repository.ts');
+type GroupStateSnapshotsModule =
+    typeof import('@shared/repository/group-state-snapshots-repository.ts');
+
+const mocks = await vi.hoisted(async () => {
+    const { createApiMiddlewareTestDouble } = await import(
+        './api-middleware-test-double.ts'
     );
-    const ctx = {
-        session,
-        authFetch: vi.fn(),
-        middleware: {
-            qboxEngine: {
-                wake: vi.fn(),
-                stop: vi.fn(),
-            },
-            rtcRxStreamer: {
-                enqueueOutboxIfAbsent: vi.fn(async () => ({
-                    status: 'enqueued',
-                    entries: [],
-                })),
-                onInboxMessageDo: vi.fn(),
-                removeInboxMessageCallback: vi.fn(() => true),
-                stopAllHeartbeats: vi.fn(),
-            },
-            webRtcGroupManager: {},
-            webRtcConnectionService,
-            heartbeat: {
-                stop: vi.fn(),
-            },
-            webSocketQueueBox: {
-                enqueueOutboxIfAbsent: vi.fn(async () => ({
-                    status: 'enqueued',
-                    entries: [],
-                })),
-                readHealth: vi.fn(() => ({
-                    sessionId: session.sessionId,
-                    url: 'ws://localhost/ws',
-                    readyState: 'missing',
-                    isOpen: false,
-                    reconnecting: false,
-                    reconnectEnabled: false,
-                    reconnectAttempts: 0,
-                    maxReconnectAttempts: 12,
-                    reconnectExhausted: false,
-                })),
-                close: vi.fn(),
-                onAnyInboxMessageDo: vi.fn(),
-                removeAnyInboxMessageCallback: vi.fn(() => true),
-                socket: {
-                    close: vi.fn(),
-                    onWebsocketCallbacksDo: vi.fn(),
-                    removeWebsocketCallbackById: vi.fn(() => true),
-                },
-            },
-        },
-    } as unknown as ApiMiddleware;
+    const ctx = createApiMiddlewareTestDouble();
 
     return {
         ctx,
+        webRtcConnectionService: ctx.middleware.webRtcConnectionService,
+        webSocketQueueBox: ctx.middleware.webSocketQueueBox,
         hydrateStateCaches: vi.fn(() => Promise.resolve()),
-        initMiddleware: vi.fn((_options?: unknown) => Promise.resolve(ctx)),
+        initMiddleware: vi.fn(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn(() => false),
         onStateCacheChange: vi.fn(() => vi.fn()),
-        readSession: vi.fn(() => session),
-        clientRepositoryMissing: vi.fn((_value?: unknown): unknown => {
+        readSession: vi.fn(() => ctx.session),
+        clientRepositoryMissing: vi.fn((): never => {
             throw new Error(
                 'Repository not found: shared.repository.client-state-snapshots',
             );
         }),
-        groupRepositoryMissing: vi.fn((_value?: unknown): unknown => {
+        groupRepositoryMissing: vi.fn((): never => {
             throw new Error(
                 'Repository not found: shared.repository.group-state-snapshots',
             );
         }),
-        webRtcConnectionService,
     };
 });
 
-vi.mock('@shared-web/browser/app-context.ts', () => ({
-    clearMiddleware: vi.fn(),
-    getMiddleware: vi.fn(() => mocks.ctx),
-    initMiddleware: mocks.initMiddleware,
-    isMiddlewareReady: mocks.isMiddlewareReady,
-}));
+vi.mock(
+    import('@shared-web/browser/app-context.ts'),
+    (): Partial<AppContextModule> => ({
+        clearMiddleware: vi.fn(),
+        getMiddleware: vi.fn(() => mocks.ctx),
+        initMiddleware: mocks.initMiddleware,
+        isMiddlewareReady: mocks.isMiddlewareReady,
+    }),
+);
 
-vi.mock('@shared-web/browser/data-caches.ts', () => ({
-    hydrateStateCaches: mocks.hydrateStateCaches,
-    onStateCacheChange: mocks.onStateCacheChange,
-}));
+vi.mock(
+    import('@shared-web/browser/data-caches.ts'),
+    (): Partial<DataCachesModule> => ({
+        hydrateStateCaches: mocks.hydrateStateCaches,
+        onStateCacheChange: mocks.onStateCacheChange,
+    }),
+);
 
-vi.mock('@shared/api/auth.ts', () => ({
-    clearSession: vi.fn(),
-    isLoggedIn: vi.fn(() => true),
-    readSession: mocks.readSession,
-    writeSession: vi.fn(),
-}));
+vi.mock(
+    import('@shared/api/auth.ts'),
+    (): Partial<AuthModule> => ({
+        clearSession: vi.fn(),
+        isLoggedIn: vi.fn(() => true),
+        readSession: mocks.readSession,
+        writeSession: vi.fn(),
+    }),
+);
 
-vi.mock('@shared/repository/client-state-snapshots-repository.ts', () => ({
-    findClientStateSnapshotByPrincipalId: mocks.clientRepositoryMissing,
-    getAllClientStateSnapshots: mocks.clientRepositoryMissing,
-}));
+vi.mock(
+    import('@shared/repository/client-state-snapshots-repository.ts'),
+    (): Partial<ClientStateSnapshotsModule> => ({
+        findClientStateSnapshotByPrincipalId: mocks.clientRepositoryMissing,
+        getAllClientStateSnapshots: mocks.clientRepositoryMissing,
+    }),
+);
 
-vi.mock('@shared/repository/group-state-snapshots-repository.ts', () => ({
-    findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.groupRepositoryMissing,
-    findGroupStateSnapshotByRef: mocks.groupRepositoryMissing,
-    getAllGroupStateSnapshots: mocks.groupRepositoryMissing,
-}));
+vi.mock(
+    import('@shared/repository/group-state-snapshots-repository.ts'),
+    (): Partial<GroupStateSnapshotsModule> => ({
+        findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.groupRepositoryMissing,
+        findGroupStateSnapshotByRef: mocks.groupRepositoryMissing,
+        getAllGroupStateSnapshots: mocks.groupRepositoryMissing,
+    }),
+);
 
 describe('Rallar RTC diagnostics compatibility', () => {
     beforeEach(() => {
@@ -154,33 +104,14 @@ describe('Rallar RTC diagnostics compatibility', () => {
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
         mocks.isMiddlewareReady.mockReturnValue(false);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
-        mocks.webRtcConnectionService.knownPeerIds.mockReturnValue([]);
-        mocks.webRtcConnectionService.activePeerIds.mockReturnValue([]);
-        mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
+        vi.mocked(mocks.webRtcConnectionService.knownPeerIds).mockReturnValue([]);
+        vi.mocked(mocks.webRtcConnectionService.activePeerIds).mockReturnValue([]);
+        vi.mocked(mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes)
             .mockReturnValue([]);
-        mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([]);
-        mocks.webRtcConnectionService.readPeer.mockReturnValue(undefined);
-        mocks.webRtcConnectionService.ensurePeerConnectionStarted.mockImplementation(
-            (peerId: string) => ({
-                left: {
-                    kind: 'connect-failed',
-                    peerId,
-                    error: new Error('connect not mocked'),
-                },
-            }),
-        );
-        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
-            async (peerId: string, laneId: string) => ({
-                status: 'connect-failed',
-                peerId,
-                laneId,
-                error: new Error('connect not mocked'),
-            }),
-        );
-        mocks.webRtcConnectionService.onRtcPeerLifecycleDo.mockReturnValue(
-            mocks.webRtcConnectionService,
-        );
-        mocks.ctx.middleware.webSocketQueueBox.readHealth.mockReturnValue({
+        vi.mocked(mocks.webRtcConnectionService.readyPeerIdsForLane)
+            .mockReturnValue([]);
+        vi.mocked(mocks.webRtcConnectionService.readPeer).mockReturnValue(undefined);
+        vi.mocked(mocks.webSocketQueueBox.readHealth).mockReturnValue({
             sessionId: mocks.ctx.session.sessionId,
             url: 'ws://localhost/ws',
             readyState: 'missing',
@@ -241,39 +172,40 @@ describe('Rallar RTC diagnostics compatibility', () => {
             state: 'Open',
             readyState: 'open',
         });
-        const peer = {
+        const peer = toRtcPeerTestDouble({
             peerId: 'peer-1',
-            connection: {
-                status: {
-                    state: 'Open',
-                    pc: {
-                        connectionState: 'connected',
-                        iceConnectionState: 'connected',
-                        signalingState: 'stable',
-                    },
-                    reconnectAttempts: 2,
-                    reconnectTimer: undefined,
-                    disconnectTimer: undefined,
-                    makingOffer: false,
-                    ignoreOffer: false,
-                    iceCandidateQueue: [{}],
-                    localStream: {
-                        id: 'local-stream',
-                    },
-                    remoteStreams: new Map([['remote-stream', {}]]),
+            status: {
+                state: 'Open',
+                pc: {
+                    connectionState: 'connected',
+                    iceConnectionState: 'connected',
+                    signalingState: 'stable',
                 },
+                reconnectAttempts: 2,
+                reconnectTimer: undefined,
+                disconnectTimer: undefined,
+                makingOffer: false,
+                ignoreOffer: false,
+                iceCandidateQueue: [{}],
+                localStream: {
+                    id: 'local-stream',
+                },
+                remoteStreams: new Map([['remote-stream', {}]]),
             },
-            channels: new Map([
-                ['reliable', { readHealth: vi.fn(() => reliableHealth) }],
-                ['realtime', { readHealth: vi.fn(() => realtimeHealth) }],
+            lanes: new Map([
+                ['reliable', vi.fn(() => reliableHealth)],
+                ['realtime', vi.fn(() => realtimeHealth)],
             ]),
-        };
-        mocks.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);
-        mocks.webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
-        mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
+        });
+        vi.mocked(mocks.webRtcConnectionService.knownPeerIds)
             .mockReturnValue(['peer-1']);
-        mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue(['peer-1']);
-        mocks.webRtcConnectionService.readPeer.mockReturnValue(peer);
+        vi.mocked(mocks.webRtcConnectionService.activePeerIds)
+            .mockReturnValue(['peer-1']);
+        vi.mocked(mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes)
+            .mockReturnValue(['peer-1']);
+        vi.mocked(mocks.webRtcConnectionService.readyPeerIdsForLane)
+            .mockReturnValue(['peer-1']);
+        vi.mocked(mocks.webRtcConnectionService.readPeer).mockReturnValue(peer);
         const facade = createRallarFacade();
 
         await facade.connect();
@@ -388,40 +320,40 @@ describe('Rallar RTC diagnostics compatibility', () => {
                 port: 4321,
             }],
         ]);
-        const pc = {
-            connectionState: 'connected',
-            iceConnectionState: 'connected',
-            iceGatheringState: 'complete',
-            signalingState: 'stable',
-            localDescription: { type: 'offer' },
-            remoteDescription: { type: 'answer' },
-            canTrickleIceCandidates: true,
-            getStats: vi.fn(async () => stats),
-        };
-        const peer = {
+        const getStats = vi.fn(async () => stats);
+        const readDiagnostics = vi.fn(() => connectionDiagnostics);
+        const peer = toRtcPeerTestDouble({
             peerId: 'peer-1',
-            connection: {
-                readDiagnostics: vi.fn(() => connectionDiagnostics),
-                status: {
-                    state: 'Open',
-                    pc,
-                    reconnectAttempts: 0,
-                    reconnectTimer: undefined,
-                    disconnectTimer: undefined,
-                    makingOffer: false,
-                    ignoreOffer: false,
-                    iceCandidateQueue: [],
-                    remoteStreams: new Map(),
+            readDiagnostics,
+            status: {
+                state: 'Open',
+                pc: {
+                    connectionState: 'connected',
+                    iceConnectionState: 'connected',
+                    iceGatheringState: 'complete',
+                    signalingState: 'stable',
+                    localDescription: { type: 'offer' },
+                    remoteDescription: { type: 'answer' },
+                    canTrickleIceCandidates: true,
+                    getStats,
                 },
+                reconnectAttempts: 0,
+                reconnectTimer: undefined,
+                disconnectTimer: undefined,
+                makingOffer: false,
+                ignoreOffer: false,
+                iceCandidateQueue: [],
+                remoteStreams: new Map(),
             },
-            channels: new Map([
-                ['reliable', { readHealth: vi.fn(() => reliableHealth) }],
-            ]),
-        };
-        mocks.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);
-        mocks.webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
-        mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue(['peer-1']);
-        mocks.webRtcConnectionService.readPeer.mockReturnValue(peer);
+            lanes: new Map([['reliable', vi.fn(() => reliableHealth)]]),
+        });
+        vi.mocked(mocks.webRtcConnectionService.knownPeerIds)
+            .mockReturnValue(['peer-1']);
+        vi.mocked(mocks.webRtcConnectionService.activePeerIds)
+            .mockReturnValue(['peer-1']);
+        vi.mocked(mocks.webRtcConnectionService.readyPeerIdsForLane)
+            .mockReturnValue(['peer-1']);
+        vi.mocked(mocks.webRtcConnectionService.readPeer).mockReturnValue(peer);
         const facade = createRallarFacade();
 
         await facade.connect();
@@ -430,8 +362,8 @@ describe('Rallar RTC diagnostics compatibility', () => {
             laneIds: ['reliable'],
         });
 
-        expect(pc.getStats).toHaveBeenCalledOnce();
-        expect(peer.connection.readDiagnostics).toHaveBeenCalledOnce();
+        expect(getStats).toHaveBeenCalledOnce();
+        expect(readDiagnostics).toHaveBeenCalledOnce();
         expect(diagnostics).toMatchObject({
             sessionId: 'session-1',
             peerCount: 1,
@@ -500,6 +432,64 @@ describe('Rallar RTC diagnostics compatibility', () => {
     });
 });
 
+type RtcPeerConnectionStatus = QRtcPeerDto['connection']['status'];
+
+type RtcPeerConnectionTestDouble =
+    & Partial<
+        Pick<
+            RTCPeerConnection,
+            | 'connectionState'
+            | 'iceConnectionState'
+            | 'iceGatheringState'
+            | 'signalingState'
+            | 'canTrickleIceCandidates'
+        >
+    >
+    & Readonly<{
+        localDescription?: Pick<RTCSessionDescription, 'type'>;
+        remoteDescription?: Pick<RTCSessionDescription, 'type'>;
+        getStats?: () => Promise<ReadonlyMap<string, Record<string, unknown>>>;
+    }>;
+
+type RtcPeerStatusTestDouble =
+    & Omit<
+        Partial<RtcPeerConnectionStatus>,
+        'pc' | 'localStream' | 'remoteStreams'
+    >
+    & Readonly<{
+        pc?: RtcPeerConnectionTestDouble;
+        localStream?: Pick<MediaStream, 'id'>;
+        remoteStreams?: ReadonlyMap<string, unknown>;
+    }>;
+
+type RtcPeerTestDoubleInput = Readonly<{
+    peerId: QRtcPeerDto['peerId'];
+    status: RtcPeerStatusTestDouble;
+    readDiagnostics?: () => QRtcPeerConnectionDiagnostics;
+    lanes: ReadonlyMap<string, () => RtcDataChannelHealth>;
+}>;
+
+// A QRtcPeerDto hangs off concrete classes (QRtcPeerConnection, QRtcDataChannel) and live DOM
+// objects (RTCPeerConnection, MediaStream) that a unit test cannot construct. The RTC diagnostics
+// readers walk only the members declared above, so this is the single place where the partial peer
+// graph is asserted onto the production DTO; every member name it supplies is still checked against
+// the production types.
+function toRtcPeerTestDouble(input: RtcPeerTestDoubleInput): QRtcPeerDto {
+    return {
+        peerId: input.peerId,
+        connection: {
+            status: input.status,
+            readDiagnostics: input.readDiagnostics,
+        },
+        channels: new Map(
+            Array.from(input.lanes, ([laneId, readHealth]) => [
+                laneId,
+                { readHealth },
+            ]),
+        ),
+    } as unknown as QRtcPeerDto;
+}
+
 function createChannelHealth(
     input: Readonly<{
         peerId: string;
@@ -507,7 +497,7 @@ function createChannelHealth(
         state: string;
         readyState: RTCDataChannelState;
     }>,
-) {
+): RtcDataChannelHealth {
     return {
         peerId: input.peerId,
         label: input.label,
