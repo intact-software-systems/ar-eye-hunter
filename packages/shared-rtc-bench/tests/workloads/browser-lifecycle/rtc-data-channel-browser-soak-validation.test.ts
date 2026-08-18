@@ -225,6 +225,10 @@ it.each([
     description: 'a non-string callback value',
     events: [...expectedEvents, null],
   },
+  {
+    description: 'an object callback value that cannot be coerced to a string',
+    events: [...expectedEvents, { toString: null }],
+  },
 ])('rejects $description', ({ events }) => {
   const computed = computeRtcDataChannelBrowserSoakSample(createSample(events), baselineId);
 
@@ -263,6 +267,23 @@ it('rejects incomplete lifecycle cleanup even when all expected callbacks occurr
     expect.objectContaining({
       path: '$.soak.results[0]',
       code: 'incomplete-lifecycle-cleanup',
+    }),
+  );
+});
+
+it('rejects heap evidence with missing fields', () => {
+  const staged = createSample(expectedEvents);
+  const rawEvidence = staged.rawEvidence as Record<string, RtcBaselineJson>;
+  const computed = computeRtcDataChannelBrowserSoakSample(
+    { ...staged, rawEvidence: { ...rawEvidence, heap: {} } },
+    baselineId,
+  );
+
+  expect(computed.outcome).toBe('failed');
+  expect(computed.issues).toContainEqual(
+    expect.objectContaining({
+      path: '$.heap',
+      code: 'incomplete-heap-metrics',
     }),
   );
 });

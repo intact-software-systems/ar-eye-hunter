@@ -152,7 +152,8 @@ function validateHeap(heapValue: RtcBaselineJson | undefined) {
     return [rtcBaselineIssue('$.heap', 'invalid-heap-metrics', 'Heap metrics must be an object.')];
   }
   const values = [heap.beforeBytes, heap.afterBytes, heap.deltaBytes];
-  if (values.every((value) => value === null)) {
+  const heapMetricsAbsent = values.map((value) => value === null).every(Boolean);
+  if (heapMetricsAbsent) {
     return [];
   }
   if (!values.every((value) => typeof value === 'number' && Number.isFinite(value))) {
@@ -165,7 +166,12 @@ function validateHeap(heapValue: RtcBaselineJson | undefined) {
     ];
   }
   const [beforeBytes, afterBytes, deltaBytes] = values as number[];
-  if (beforeBytes < 0 || afterBytes < 0 || deltaBytes !== afterBytes - beforeBytes) {
+  const heapMetricsConsistent = [
+    beforeBytes >= 0,
+    afterBytes >= 0,
+    deltaBytes === afterBytes - beforeBytes,
+  ].every(Boolean);
+  if (!heapMetricsConsistent) {
     return [
       rtcBaselineIssue(
         '$.heap.deltaBytes',
@@ -237,13 +243,10 @@ function validateIterationCleanup(iteration: Record<string, RtcBaselineJson>, in
     );
   }
   const events = Array.isArray(iteration.events) ? iteration.events : [];
-  const eventNames = events.filter((event): event is string => typeof event === 'string');
-  const everyEventKnown = eventNames.length === events.length &&
-    eventNames.every((eventName) => expectedEvents.includes(eventName));
-  const everyExpectedEventObserved = expectedEvents.every((expectedEvent) =>
-    eventNames.includes(expectedEvent)
-  );
-  if (!everyEventKnown || !everyExpectedEventObserved || iteration.failure !== null) {
+  const uniqueEvents = new Set(events);
+  const lifecycleEventsComplete = uniqueEvents.size === expectedEvents.length &&
+    expectedEvents.every((eventName) => uniqueEvents.has(eventName));
+  if (!lifecycleEventsComplete || iteration.failure !== null) {
     issues.push(
       rtcBaselineIssue(
         `$.soak.results[${index}].events`,
