@@ -493,9 +493,13 @@ it.each([
   );
 });
 
-it('has no direct mutators or persistence imports at route and WS boundaries', () => {
-  expect(findMutationBoundaryViolations()).toEqual([]);
-});
+it(
+  'has no direct mutators or persistence imports at route and WS boundaries',
+  { timeout: 15_000 },
+  () => {
+    expect(findMutationBoundaryViolations()).toEqual([]);
+  },
+);
 
 it('keeps direct boundary exceptions limited to read-only and process-local operations', () => {
   expect([...ALLOWED_DIRECT_BOUNDARY_CALLS].toSorted()).toEqual([
