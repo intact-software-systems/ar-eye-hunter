@@ -29,9 +29,7 @@ interface OnMessageCallback {
 
 export interface FormationTimerWorkHandlerOptions {
   readonly findGroupSnapshotByRef: (ref: GroupRef) => Promise<GroupSnapshot | undefined>;
-  readonly readPlannedTopology: (
-    ref: GroupRef,
-  ) => Promise<RallarOverlayTopologySnapshot | null>;
+  readonly readPlannedTopology: (ref: GroupRef) => Promise<RallarOverlayTopologySnapshot | null>;
   readonly topologyPlanning: Pick<GroupTopologyPlanningService, 'readTopologyPlanningAuthority'>;
   readonly readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
   readonly submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
@@ -39,11 +37,13 @@ export interface FormationTimerWorkHandlerOptions {
 }
 
 /**
- * The time leg's consumer. Entries become visible at their due time (the
- * queue's next_ts filter), so anything dequeued here is due; the only checks
- * left are staleness -- the group moved on (epoch or state mismatch), and the
- * entry is a cheap drop -- and the criterion itself, evaluated by the same
- * function the evidence leg uses.
+ * The time leg's consumer. Every queue backend holds entries invisible until
+ * their next_ts, so a dequeued entry is normally due; the not-due throw is
+ * defense against clock skew between the queue's clock and this node's --
+ * the retry release walks the entry forward until this clock agrees. Once
+ * due, the only checks left are staleness -- the group moved on (epoch or
+ * state mismatch) is a cheap drop -- and the criterion itself, evaluated by
+ * the same function the evidence leg uses.
  */
 export function createFormationTimerWorkHandler(
   options: FormationTimerWorkHandlerOptions,
@@ -59,6 +59,9 @@ async function processFormationTimerWork(
   options: FormationTimerWorkHandlerOptions,
   work: GroupFormationTimerWork,
 ): Promise<void> {
+  if (options.nowEpochMs() < work.notBeforeEpochMs) {
+    throw new Error('Formation timer is not due yet; retry release will walk it forward');
+  }
   const snapshot = await options.findGroupSnapshotByRef(work.groupRef);
   if (!snapshot || snapshot.group.formationEpoch !== work.formationEpoch) {
     return;

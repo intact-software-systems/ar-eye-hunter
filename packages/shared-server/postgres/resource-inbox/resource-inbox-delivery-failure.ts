@@ -26,7 +26,7 @@ export async function requeueObservedResourceInboxDeliveryFailure(
           and ri_resource = ${observed.resource}
           and ri_attempts = ${observed.dequeueAudit.attempts}
           and (ri_status = ${EntityStatus.RESERVED} or ri_status = ${EntityStatus.COMPLETED})
-          and expire_ts > now()
+          and expire_ts > (now() at time zone 'UTC')
         returning *
     `;
     return rows.length === 1 ? toDomain(rows[0]) : null;

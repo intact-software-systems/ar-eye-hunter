@@ -67,7 +67,7 @@ export class ResourceInboxResultsRepository {
                               created_by   = excluded.created_by,
                               created_ts   = excluded.created_ts,
                               expire_ts    = excluded.expire_ts
-            where resource_inbox_results.expire_ts <= now()
+            where resource_inbox_results.expire_ts <= (now() at time zone 'UTC')
             returning *
         `;
 
@@ -160,7 +160,7 @@ export class ResourceInboxResultsRepository {
         const rows = await this.sql<{ ris_row_id: bigint }[]>`
             delete
             from resource_inbox_results
-            where expire_ts <= now()
+            where expire_ts <= (now() at time zone 'UTC')
             returning ris_row_id
         `;
 

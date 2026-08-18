@@ -165,3 +165,23 @@ early — each entry carries `formationEpoch`, and a stale epoch is a cheap drop
 Hybrid for 3b: evidence-driven evaluation in the topology work handler; deadline and backoff work
 scheduled by the transitions themselves into a dedicated queue with a minimal consumer. One
 evaluation function, two producers — one via data, one via time.
+
+## Implementation notes (2026-08-18, time-leg landing)
+
+Two corrections to the caveats above, discovered while landing the time leg:
+
+- The "not due yet → requeue with remaining delay" contract was not needed as the primary
+  mechanism: `dequeueAudit.nextTs` is honored by every queue backend's reservation filter, so
+  entries are inserted with their due time and stay invisible until then — native scheduling, no
+  requeue loop. The consumer keeps a not-due throw purely as clock-skew defense (queue clock vs
+  consumer clock); the retry release walks a skew-caught entry forward.
+- Landing this exposed a pre-existing scheduling defect in the resource-inbox SQL: the naive
+  `timestamp` columns hold UTC wall clocks, but `next_ts <= now()` (and the `expire_ts`
+  comparisons) promoted the column through the *session* time zone. Docker Postgres defaults to
+  UTC so CI never saw it; PGlite inherits the host zone, so under `pglite-memory` every scheduled
+  entry appeared hours in the past — released immediately, retry delays void, and the fairness
+  lane's stale threshold trivially satisfied (a deadline timer burned all 20 retry attempts in
+  seconds). Fixed by comparing against `(now() at time zone 'UTC')` throughout the resource-inbox
+  SQL — behavior-identical on UTC sessions, correct on skewed ones — and pinned by
+  `apps/api-v1/test/db/pglite-queue-schedule-timezone.test.ts`, which runs the reservation gate
+  under deliberately skewed sessions in both directions.
