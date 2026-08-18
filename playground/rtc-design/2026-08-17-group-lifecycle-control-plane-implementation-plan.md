@@ -1,6 +1,6 @@
 # Group Lifecycle Control Plane — Implementation Plan (2026-08-17)
 
-Status: **planned, not started.** Implements
+Status: **in execution — slices 1–3 delivered** (slice 2 as PRs #263/#264/#266/#268/#270/#272, slice 3 as #277/#282). Implements
 `2026-08-08-group-lifecycle-and-policy-model.md` and, with it, Phase 5's formation window (M7) from
 `2026-08-08-group-formation-implementation-plan.md`. These are one workstream, not two: Phase 5's
 formation window is this document's FORMING state with a policy-driven trigger instead of a timer.
@@ -64,6 +64,10 @@ into the slices below.
    **Fix:** admission binds on **entry to the phase it names**, not on activation.
 6. **Policy mutability was unspecified per field.** **Fix:** each field declares one of `immutable`,
    `mutable-any-phase`, or `mutable-with-supersession`; the last re-evaluates the running phase.
+   *Execution note (2026-08-18): v1 ships no policy-update surface at all — the document is written
+   once at group creation, so every field is effectively immutable and this correction stays
+   unbound. The per-field declarations land with the first policy-update surface, which no current
+   slice owns.*
 
 ## Slices
 
@@ -99,7 +103,7 @@ admission rules extend that vocabulary rather than paralleling it.**
 
 Risk: none realized. No behaviour change by construction.
 
-### Slice 2 — Lifecycle state, transitions, and the FORMING gate
+### Slice 2 — Lifecycle state, transitions, and the FORMING gate — **delivered**
 
 The intent enum (`FORMING`/`ESTABLISHING`/`ACTIVE`/`RECONFIGURING`) and activation epoch on the group
 aggregate. AppInbox transition commands — `start-establishment`, `activate`, `reopen-establishment` —
@@ -133,7 +137,7 @@ paralleling it, per the slice 1 finding.
 | --- | --- |
 | 2.4 | **Only FORMING holds topology planning.** The gate is one predicate (`isGroupTopologyPlannableAt`) at the single planning choke point; a forming group takes the same removed-topology branch as an archived one. ESTABLISHING, ACTIVE, and RECONFIGURING all plan — RECONFIGURING exists precisely to redo establishment work, so holding planning there would defeat its purpose. Commanded dials follow the plan automatically: with no planned overlay there is nothing to materialize into `overlay.topology` broadcasts. The admin `reconfigureGroupTopology` path deliberately bypasses the gate as an operator escape hatch. |
 
-### Slice 3 — Activation criterion and readiness
+### Slice 3 — Activation criterion and readiness — **delivered**
 
 `threshold` / `deadline` / `manual` / `threshold-or-deadline`, evaluated against two rates:
 `successRate` for full activation and `minimumViableRate` as the floor below which the group does not
@@ -151,12 +155,28 @@ Scope note: this builds **only the readiness derivation**, not the full six-stat
 projection (`INACTIVE`…`FAILED`), which has no implementation today and remains a separate concern.
 Intent is authoritative; this observation feeds the criterion and nothing else.
 
+#### Decisions taken during slice 3 execution (2026-08-18)
+
+| # | Decision |
+| --- | --- |
+| 3.1 | **Delivered as 3a (PR #277) and 3b (PR #282).** 3a: `formationAttemptCount`, `lastFormationOutcome`, `establishmentStartedAtEpochMs` on the aggregate, the pure readiness derivation, and the `GET .../formation` view. 3b: the pure criterion, the `fail-formation` transition, and both evaluation legs. |
+| 3.2 | **One evaluation function, two producers** (recorded in `2026-08-18-activation-evaluator-placement-analysis.md`): the topology work handler petitions the criterion on evidence, and the transitions themselves schedule deadline/backoff entries into a dedicated `FORMATION_TIMER` outbox consumed by a minimal handler. Entries are epoch-keyed; criterion command ids are idempotent per (decision, epoch), so racing producers replay instead of double-transitioning. |
+| 3.3 | **Criterion commands run under internal authority `formation-criterion`**, limited to activate / fail-formation / retry-establish; `failGroupFormation` is criterion-commanded only and principals are rejected. Operator activation carries no criterion fields — absence, like null, means operator activation, and it records no outcome. |
+| 3.4 | **Native `next_ts` scheduling replaced the planned requeue contract.** Landing it exposed a pre-existing skew: naive timestamp columns hold UTC wall clocks but the queue SQL compared them with session-zone `now()`; fixed with `(now() at time zone 'UTC')` throughout the resource-inbox SQL, pinned under deliberately skewed PGlite sessions. The timer consumer keeps a not-due throw as clock-skew defense. |
+| 3.5 | **The operator-driven transitions recipe pins `activation.mode: manual`** — the managed preset's default `threshold-or-deadline` would auto-activate underneath its deterministic state walk now that the evidence leg is live. |
+
 ### Slice 4 — Manager role
 
 `ManagerPolicy` (`selection`, `count`, `succession`), building on the existing
 `GROUP_DIRECTOR_APPOINT` command and payload contracts rather than new trust machinery. Election uses
 the existing `rendezvous-score.ts` primitive, pinned to the formation epoch (correction 4). Zero-manager
 fallback is explicit: manager absence blocks only manager-assigned actions, never group safety.
+
+This slice also switches the shipped presets' manager dimension on: every preset currently ships
+`selection: 'none'` (deliberate — decision 2.2's honest unavailability applied to defaults), so
+`managed` moving to creator-with-succession and `match` to elected-by-rank is where preset users
+first see manager behaviour. The no-policy property is untouched: `optimistic` keeps
+`selection: 'none'`.
 
 ### Slice 5 — Admission and data policies
 
@@ -171,7 +191,10 @@ enforcement point, never a parallel path.
 ### Slice 6 — Read surface and scenario matrix
 
 Lifecycle state joins the group snapshot and read APIs beside the readiness derivation, so
-applications and tests read intent and observation side by side. The design document's ten named
+applications and tests read intent and observation side by side. *Largely delivered early: the
+aggregate has carried the lifecycle fields in every group response since slice 2, and the
+`GET .../formation` view landed with 3a. What remains here is the scenario matrix and the
+`strict-confirmation` negative recipe.* The design document's ten named
 scenarios land as black-box recipes at the 6/20/50 tiers where scale matters.
 
 `strict-confirmation` becomes a negative test in v1: setting `strictConfirmation: true` returns the
@@ -195,7 +218,8 @@ typed unsupported rejection.
 ## Validation
 
 Per-slice: focused unit tests, then black-box recipes for any REST surface change in the same change
-per repo rule, then the api-v1 mutation-path gates for slices 2 and 5.
+per repo rule, then the api-v1 mutation-path gates for every slice that touches the mutation path —
+in practice all of 2 through 5 (slice 3 already ran them).
 
 Whole-workstream acceptance is the design document's scenario matrix, plus one property asserted at
 every slice boundary: **a group with no policy document behaves exactly as it does on `main` today.**
@@ -207,3 +231,7 @@ every slice boundary: **a group with no policy document behaves exactly as it do
   default.
 - Rank source for `elected-by-rank`. Application-supplied member metadata is the least-coupled
   default.
+- Where the epoch-pinned electorate lives (correction 4). Nothing currently records the member set
+  at an epoch boundary, so slice 4 must either persist the electorate (or the election result) on
+  the aggregate at each epoch-advancing transition, or define the electorate derivably. Decide at
+  slice 4 planning.
