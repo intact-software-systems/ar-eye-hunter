@@ -4,6 +4,7 @@ import {
   createDefaultRtcBaselineEnvelope,
   runRtcBaselineCli,
 } from '../../../baseline/command/rtc-baseline-cli.ts';
+import { writeRtcBaselineCliOutput } from '../../../baseline/command/write-rtc-baseline-cli-output.ts';
 import type { RtcBaselineEnvelope } from '../../../baseline/runtime/rtc-baseline-envelope.ts';
 
 const conclusiveComparison = {
@@ -50,6 +51,30 @@ async function run(args: readonly string[], envelope = createEnvelope()) {
 }
 
 describe('RTC baseline CLI application', () => {
+  it('writes the complete encoded value across partial synchronous writes', () => {
+    const chunks: string[] = [];
+    const decoder = new TextDecoder();
+
+    writeRtcBaselineCliOutput(
+      {
+        writeSync(bytes) {
+          const written = Math.min(2, bytes.byteLength);
+          chunks.push(decoder.decode(bytes.subarray(0, written)));
+          return written;
+        },
+      },
+      'complete',
+    );
+
+    expect(chunks.join('')).toBe('complete');
+  });
+
+  it('rejects a synchronous writer that makes no progress', () => {
+    expect(() => writeRtcBaselineCliOutput({ writeSync: () => 0 }, 'blocked')).toThrow(
+      'Synchronous output writer made no progress.',
+    );
+  });
+
   it('emits exactly four external-attempt TSV columns without inputKey', async () => {
     const envelope = createEnvelope({
       ok: true,
