@@ -9,6 +9,11 @@ const repositoryRoot = path.resolve(import.meta.dirname, '..');
 const projectPath = 'packages/tests/tsconfig.json';
 const debtPath = 'packages/tests/typecheck-debt.json';
 const updateCommand = 'npm run typecheck:tests -- --update';
+// The Deno apps are not npm workspaces, so `npm ci` never creates their node_modules and CI never
+// sees this cache. A machine that has run the Deno tasks resolves a second copy of shared npm
+// packages from it, and the resulting duplicate-identity errors are reported against enforced test
+// files rather than against a node_modules path -- they name the cache in the message instead.
+const denoCacheSegment = 'node_modules/.deno/';
 
 const shouldUpdate = process.argv.slice(2).includes('--update');
 const currentErrorCounts = readCurrentErrorCounts();
@@ -47,6 +52,10 @@ function toErrorCounts(compilerOutput) {
   for (const line of compilerOutput.split('\n')) {
     const match = diagnosticPattern.exec(line);
     if (match === null) {
+      continue;
+    }
+    const diagnostic = line.split(path.sep).join('/');
+    if (diagnostic.includes(denoCacheSegment)) {
       continue;
     }
     const file = match[1].split(path.sep).join('/');

@@ -1,8 +1,8 @@
 {
   "description": "Files under the packages/tests TypeScript project that still fail to compile. This list may only shrink: CI fails when a file gains errors or is absent from it. Regenerate with `npm run typecheck:tests -- --update` after fixing files.",
   "project": "packages/tests/tsconfig.json",
-  "totalErrors": 1562,
-  "fileCount": 444,
+  "totalErrors": 1560,
+  "fileCount": 442,
   "files": {
     "apps/api-v1/src/db/database-config.ts": 3,
     "apps/api-v1/src/db/database-pubsub-config.ts": 2,
@@ -343,9 +343,7 @@
     "packages/tests/shared-server/rallar-system/topology/planning/group-topology-planning-service.test.ts": 3,
     "packages/tests/shared-server/rallar-system/topology/reconfigure/group-topology-reconfigure-mutation.test.ts": 11,
     "packages/tests/shared-server/rtc-topology-coalesced-group-revision-work.test.ts": 6,
-    "packages/tests/shared-server/rtc-topology-delivery-log.test.ts": 1,
     "packages/tests/shared-server/rtc-topology-outbox-work.test.ts": 6,
-    "packages/tests/shared-server/rtc-topology-replay-repository.test.ts": 1,
     "packages/tests/shared-server/runtime-state-conditional-writes.test.ts": 1,
     "packages/tests/shared-server/runtime-state-guarded-batch.test.ts": 1,
     "packages/tests/shared-server/state-sync-event-replay-characterization.test.ts": 2,
