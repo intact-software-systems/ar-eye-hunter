@@ -118,7 +118,7 @@ function createSqlHarness(seedRows: ResourceInboxRow[]) {
             query.includes('update resource_inbox') &&
             query.includes('set ri_status =') &&
             query.includes('ri_attempts =') &&
-            query.includes('expire_ts > now()')
+            query.includes("expire_ts > (now() at time zone 'utc')")
         ) {
             const [status, attempts, endTs, nextTs, topicId, resourceId, contextId, maxAttempts] =
                 values;
