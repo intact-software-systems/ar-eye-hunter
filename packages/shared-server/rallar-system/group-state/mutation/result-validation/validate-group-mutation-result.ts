@@ -201,7 +201,9 @@ function validateAppliedReceipt({
   }
   requirePositiveSafeInteger(receipt.snapshotVersion, `${label} applied snapshotVersion`);
   requirePositiveSafeInteger(causalRevision.groupRevision, `${label} applied groupRevision`);
-  if (outboxIds.length > 1) {
+  // One presence-summary id, plus the formation timers a lifecycle transition
+  // arms; the entries themselves are verified canonically at compute time.
+  if (outboxIds.slice(1).some((outboxId) => !outboxId.startsWith('ft-'))) {
     throw new TypeError(`${label} outboxIds differs from applied outcome`);
   }
 }

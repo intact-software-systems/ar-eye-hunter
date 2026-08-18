@@ -32,6 +32,10 @@ import {
   toExpiredPresenceEnqueue,
   toGroupSessionCleanupEnqueue,
 } from '../group-state/presence/group-presence-service.ts';
+// prettier-ignore
+import type {
+  GroupMutationCommand,
+} from '../group-state/mutation/group-mutation-contracts.ts';
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
 // prettier-ignore
 import type {
@@ -183,6 +187,22 @@ class AppGroupInboxService extends AppInboxService {
       await super.enqueue(toExpiredPresenceEnqueue(preparation));
     }
     return preparations.length;
+  }
+
+  public async enqueueFormationCriterionCommand(
+    command: GroupMutationCommand,
+    atEpochMs: number,
+  ): Promise<void> {
+    const preparation = await this.groupStateService.prepareFormationCriterionMutation(
+      command,
+      atEpochMs,
+    );
+    await super.enqueue({
+      type: AppInboxType.GROUP_FORMATION_CRITERION,
+      resourceId: preparation.queueResourceId,
+      authority: preparation,
+      data: { commandId: preparation.command.commandId },
+    });
   }
 
   public async enqueueGroupSessionCleanup(

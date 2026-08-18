@@ -4,10 +4,10 @@
       "env": "RALLAR_API_BASE_URL",
       "default": "http://127.0.0.1:18080"
     },
-    "applicationId": "group-transitions-{runId}",
+    "applicationId": "formation-criterion-{runId}",
     "workspaceId": "default-{runId}",
-    "managedGroupId": "managed-room-{runId}",
-    "plainGroupId": "plain-room-{runId}",
+    "autoGroupId": "auto-room-{runId}",
+    "deadlineGroupId": "deadline-room-{runId}",
     "aliceUsername": {
       "env": "RALLAR_ALICE_USERNAME",
       "default": "alice"
@@ -140,7 +140,7 @@
         "body": {
           "requestId": "client-create-alice-{runId}",
           "username": "{aliceUsername}",
-          "displayName": "Lifecycle manager {runId}",
+          "displayName": "Criterion manager {runId}",
           "status": "active",
           "roles": []
         }
@@ -150,7 +150,7 @@
       }
     },
     {
-      "name": "createManagedGroup",
+      "name": "createAutoGroup",
       "type": "http",
       "connection": "primary",
       "request": {
@@ -161,16 +161,18 @@
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-managed-{runId}",
-          "groupId": "{managedGroupId}",
-          "displayName": "Managed group {runId}",
+          "requestId": "group-create-auto-{runId}",
+          "groupId": "{autoGroupId}",
+          "displayName": "Auto-activating group {runId}",
           "kind": "room",
           "joinMode": "open",
           "createdByPrincipalId": "{aliceClientId}",
           "lifecyclePolicy": {
             "preset": "managed",
             "activation": {
-              "mode": "manual"
+              "mode": "threshold",
+              "successRate": 1,
+              "minimumViableRate": 0
             }
           }
         }
@@ -179,7 +181,7 @@
         "status": 201,
         "body": {
           "group": {
-            "groupId": "{managedGroupId}",
+            "groupId": "{autoGroupId}",
             "lifecycleState": "forming",
             "formationEpoch": 0
           }
@@ -187,85 +189,18 @@
       }
     },
     {
-      "name": "topologyHeldWhileForming",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/topology",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "bodyAnyOf": [
-          {
-            "snapshot": null
-          },
-          {
-            "snapshot": {
-              "state": "removed"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "formationViewWhileForming",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/formation",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "lifecycleState": "forming",
-          "formationEpoch": 0,
-          "formationAttemptCount": 0,
-          "establishmentStartedAtEpochMs": null
-        }
-      }
-    },
-    {
-      "name": "bobCannotStartEstablishment",
+      "name": "startAutoEstablishment",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/establish",
-        "headers": {
-          "Authorization": "{bobAuthHeader}",
-          "x-client-id": "{bobClientId}"
-        },
-        "body": {
-          "requestId": "bob-start-{runId}"
-        }
-      },
-      "expect": {
-        "status": 403
-      }
-    },
-    {
-      "name": "startEstablishment",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{autoGroupId}/lifecycle/establish",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "start-establishment-{runId}"
+          "requestId": "establish-auto-{runId}"
         }
       },
       "expect": {
@@ -279,12 +214,12 @@
       }
     },
     {
-      "name": "topologyPlannedAfterEstablish",
+      "name": "formationAutoActivated",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/topology",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{autoGroupId}/formation",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -299,134 +234,18 @@
       "expect": {
         "status": 200,
         "body": {
-          "snapshot": {
-            "state": "active"
-          }
-        }
-      }
-    },
-    {
-      "name": "formationViewAfterEstablish",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/formation",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "lifecycleState": "establishing",
-          "formationEpoch": 1,
-          "establishmentStartedAtEpochMs": "integer",
-          "readiness": {
-            "plannedEdgeCount": 0,
-            "observedEdgeCount": 0,
+          "lifecycleState": "active",
+          "formationEpoch": 2,
+          "formationAttemptCount": 0,
+          "lastFormationOutcome": {
+            "outcome": "activated",
             "observedRate": 1
           }
         }
       }
     },
     {
-      "name": "activateGroup",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/activate",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "body": {
-          "requestId": "activate-{runId}"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "group": {
-            "lifecycleState": "active",
-            "formationEpoch": 2
-          }
-        }
-      }
-    },
-    {
-      "name": "reopenEstablishment",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/reopen",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "body": {
-          "requestId": "reopen-{runId}"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "group": {
-            "lifecycleState": "reconfiguring",
-            "formationEpoch": 3
-          }
-        }
-      }
-    },
-    {
-      "name": "reactivateGroup",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/activate",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "body": {
-          "requestId": "reactivate-{runId}"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "group": {
-            "lifecycleState": "active",
-            "formationEpoch": 4
-          }
-        }
-      }
-    },
-    {
-      "name": "startFromActiveIsDenied",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/establish",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "body": {
-          "requestId": "start-from-active-{runId}"
-        }
-      },
-      "expect": {
-        "status": 403
-      }
-    },
-    {
-      "name": "createPlainGroup",
+      "name": "createDeadlineGroup",
       "type": "http",
       "connection": "primary",
       "request": {
@@ -437,21 +256,148 @@
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-plain-{runId}",
-          "groupId": "{plainGroupId}",
-          "displayName": "Plain group {runId}",
+          "requestId": "group-create-deadline-{runId}",
+          "groupId": "{deadlineGroupId}",
+          "displayName": "Deadline group {runId}",
           "kind": "room",
           "joinMode": "open",
-          "createdByPrincipalId": "{aliceClientId}"
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "activation": {
+              "mode": "deadline",
+              "successRate": 1,
+              "minimumViableRate": 1,
+              "deadlineMs": 3000,
+              "maxFormationAttempts": 1
+            }
+          }
         }
       },
       "expect": {
         "status": 201,
         "body": {
           "group": {
-            "groupId": "{plainGroupId}",
-            "lifecycleState": "active",
+            "groupId": "{deadlineGroupId}",
+            "lifecycleState": "forming",
             "formationEpoch": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "joinBobToDeadlineGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/join",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "join-bob-deadline-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectAliceDeadlinePresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/sessions/{aliceSessionId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "presence-alice-deadline-{runId}",
+          "generationId": "generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectBobDeadlinePresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/sessions/{bobSessionId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "presence-bob-deadline-{runId}",
+          "generationId": "generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "startDeadlineEstablishment",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/lifecycle/establish",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "establish-deadline-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "establishing",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "formationBelowFloorAtDeadline",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 250,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "forming",
+          "formationEpoch": 2,
+          "formationAttemptCount": 1,
+          "lastFormationOutcome": {
+            "outcome": "below-floor",
+            "observedRate": 0
           }
         }
       }

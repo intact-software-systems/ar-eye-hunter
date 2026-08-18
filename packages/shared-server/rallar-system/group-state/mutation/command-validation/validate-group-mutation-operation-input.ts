@@ -32,6 +32,7 @@ type AggregateOperation = Extract<
   | 'startGroupEstablishment'
   | 'activateGroup'
   | 'reopenGroupEstablishment'
+  | 'failGroupFormation'
 >;
 
 function validateAggregateMutationInput(
@@ -71,11 +72,17 @@ function validateAggregateMutationInput(
     optionalPositiveInteger('heartbeatTtlMs');
     return;
   }
-  if (
-    operation === 'startGroupEstablishment' ||
-    operation === 'activateGroup' ||
-    operation === 'reopenGroupEstablishment'
-  ) {
+  if (operation === 'startGroupEstablishment' || operation === 'reopenGroupEstablishment') {
+    return;
+  }
+  if (operation === 'activateGroup') {
+    validateActivateGroupInput(input);
+    return;
+  }
+  if (operation === 'failGroupFormation') {
+    if (!isUnitIntervalNumber(input.observedRate)) {
+      throw new TypeError('Group failGroupFormation observedRate must be within [0, 1]');
+    }
     return;
   }
   optionalString('joinCode');
@@ -173,6 +180,7 @@ function isAggregateOperation(
     'startGroupEstablishment',
     'activateGroup',
     'reopenGroupEstablishment',
+    'failGroupFormation',
   ].includes(operation);
 }
 
@@ -182,4 +190,21 @@ function isPresenceOperation(
   operation: GroupMutationCommand['operation'],
 ): operation is PresenceOperation {
   return ['connectPresence', 'heartbeatPresence', 'disconnectPresence'].includes(operation);
+}
+
+// This validator sees both raw requests and built commands. Requests never
+// carry the criterion fields (the exact-key check excludes them), so absence,
+// like null, means operator activation.
+function validateActivateGroupInput(input: Record<string, unknown>): void {
+  const { observedRate, degraded } = input;
+  if (observedRate !== undefined && observedRate !== null && !isUnitIntervalNumber(observedRate)) {
+    throw new TypeError('Group activateGroup observedRate must be within [0, 1]');
+  }
+  if (degraded !== undefined && degraded !== null && typeof degraded !== 'boolean') {
+    throw new TypeError('Group activateGroup degraded must be boolean or null');
+  }
+}
+
+function isUnitIntervalNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
 }

@@ -67,6 +67,20 @@ describe('reviewed repository style dispositions', () => {
       },
       {
         path:
+          'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
+          'validate-group-mutation-operation-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateActivateGroupInput',
+      },
+      {
+        path:
+          'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
+          'validate-group-mutation-operation-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isUnitIntervalNumber',
+      },
+      {
+        path:
           'packages/shared-server/rallar-system/rtc-topology/persistence/' +
           'rtc-rtt-persistence-validation-primitives.ts',
         rule: 'boundary.unknown',

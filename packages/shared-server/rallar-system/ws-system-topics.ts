@@ -39,6 +39,20 @@ import {
 } from './rtc-topology/topic/init-rtc-rtt-topic.ts';
 import type { RtcRttRefinementGate } from './rtc-topology/topic/rtc-rtt-refinement-gate.ts';
 import type { RtcRttRefinementService } from './rtc-topology/topic/rtc-rtt-refinement-service.ts';
+// prettier-ignore
+import type {
+  GroupLifecyclePolicyRead,
+} from './group-state/persistence/group-lifecycle-policy-repository.ts';
+// prettier-ignore
+import type {
+  GroupMutationCommand,
+} from './group-state/mutation/group-mutation-contracts.ts';
+// prettier-ignore
+import {
+  createFormationTimerWorkHandler,
+} from './topology/replay/create-formation-timer-work-handler.ts';
+import { AppOutboxType } from './services/AppOutboxService.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
 // Two rebuilds per five seconds. The RTT rebuild debounce defaults to 250 ms,
 // so an uncapped sustained stream permits four per second of synchronous
@@ -75,6 +89,10 @@ export type InitRallarSystemWsTopicsOptions = Readonly<{
     findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader;
     executionRepository: RtcTopologyExecutionRepository;
     topologyDelivery?: RtcTopologyDeliveryOptions;
+    formationCriterion?: Readonly<{
+      readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
+      submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
+    }>;
   }>;
   enqueueRtcRttMutation?: (
     input: Readonly<{
@@ -159,6 +177,24 @@ export function initRallarSystemWsTopics(
     if (!rtcTopologyManagement) {
       throw new TypeError('RTC topology AppOutbox requires topology management');
     }
+    if (rtcTopologyAppOutboxOptions.formationCriterion) {
+      rtcTopologyAppOutboxOptions.outboxQueueReader.onOutboxMessageDo(
+        AppOutboxType.FORMATION_TIMER,
+        createFormationTimerWorkHandler({
+          findGroupSnapshotByRef: async (ref) => await findGroupSnapshotByRef(ref),
+          readPlannedTopology: async (ref) => {
+            const view = (await rtcTopologyManagement.readTopologyView(ref)) as Readonly<{
+              snapshot: RallarOverlayTopologySnapshot | null;
+            }>;
+            return view.snapshot;
+          },
+          topologyPlanning: rtcTopologyManagement.planningService,
+          readLifecyclePolicy: rtcTopologyAppOutboxOptions.formationCriterion.readLifecyclePolicy,
+          submitCommand: rtcTopologyAppOutboxOptions.formationCriterion.submitCommand,
+          nowEpochMs: options.rtcTopologyOptions?.now ?? (() => Date.now()),
+        }),
+      );
+    }
     rtcTopologyAppOutboxOptions.outboxQueueReader.onOutboxMessageDo(
       rtcTopologyAppOutbox.workType,
       createRtcTopologyWorkHandler({
@@ -168,6 +204,7 @@ export function initRallarSystemWsTopics(
         executionRepository: rtcTopologyAppOutboxOptions.executionRepository,
         rttRefinementService: options.rttRefinementService,
         topologyDelivery: rtcTopologyAppOutboxOptions.topologyDelivery,
+        formationCriterion: rtcTopologyAppOutboxOptions.formationCriterion,
         wakeQueue: rtcTopologyAppOutboxOptions.wake,
         wakeReplay: rtcTopologyAppOutboxOptions.wakeReplay,
         onInactiveOverlay: (overlayId) =>

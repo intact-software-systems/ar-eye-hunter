@@ -31,6 +31,7 @@ import { GroupMutationRejectedError } from './group-mutation-contracts.ts';
 import type {
   InitialGroupPresenceSummaryCandidate,
 } from '../presence/group-initial-presence-summary.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
@@ -45,6 +46,7 @@ export interface GroupMutationWriteInput {
   readonly eventType: GroupEventType;
   readonly eventGroup?: Group;
   readonly presenceSummaryWork: 'enqueue' | 'none';
+  readonly extraOutboxEntries?: readonly ResourceEntry[];
 }
 
 export interface RejectedGroupMutationInput {
@@ -91,7 +93,7 @@ export function computeGroupMutationWriteResult(
     command,
     facts,
   });
-  const outboxEntries =
+  const summaryOutboxEntries =
     input.presenceSummaryWork === 'none'
       ? []
       : [
@@ -108,6 +110,7 @@ export function computeGroupMutationWriteResult(
             facts.serviceId,
           ),
         ];
+  const outboxEntries = [...summaryOutboxEntries, ...(input.extraOutboxEntries ?? [])];
   const receipt = receiptFor(command, facts, {
     outcome: 'applied',
     causalRevision,

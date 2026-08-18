@@ -42,6 +42,8 @@ export function createCachedGroupStateService(
       await options.durable.prepareExpiredPresenceMutations(atEpochMs),
     prepareSessionCleanupMutations: async (input) =>
       await options.durable.prepareSessionCleanupMutations(input),
+    prepareFormationCriterionMutation: async (command, atEpochMs) =>
+      await options.durable.prepareFormationCriterionMutation(command, atEpochMs),
     read: async (command) => await options.durable.read(command),
     compute: (command, read) => options.durable.compute(command, read),
     validate: (command, read, computed) => options.durable.validate(command, read, computed),

@@ -200,6 +200,7 @@ const GROUP_MUTATION_OPERATIONS = new Set([
   'startGroupEstablishment',
   'activateGroup',
   'reopenGroupEstablishment',
+  'failGroupFormation',
   'joinGroup',
   'acceptGroupInvite',
   'createGroupInvite',
@@ -243,6 +244,7 @@ const AGGREGATE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operat
   'startGroupEstablishment',
   'activateGroup',
   'reopenGroupEstablishment',
+  'failGroupFormation',
 ]);
 
 const GROUP_MUTATION_INPUT_KEYS: Readonly<
@@ -280,8 +282,9 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<
   ],
   appointDirector: [...ACTOR_INPUT_KEYS, 'heartbeatTtlMs'],
   startGroupEstablishment: [...ACTOR_INPUT_KEYS],
-  activateGroup: [...ACTOR_INPUT_KEYS],
+  activateGroup: [...ACTOR_INPUT_KEYS, 'observedRate', 'degraded'],
   reopenGroupEstablishment: [...ACTOR_INPUT_KEYS],
+  failGroupFormation: [...ACTOR_INPUT_KEYS, 'observedRate'],
   joinGroup: [...ACTOR_INPUT_KEYS, 'inviteToken', 'joinCode'],
   acceptGroupInvite: [...ACTOR_INPUT_KEYS, 'inviteToken', 'joinCode'],
   createGroupInvite: [...ACTOR_INPUT_KEYS, 'invitationExpiresAtEpochMs'],

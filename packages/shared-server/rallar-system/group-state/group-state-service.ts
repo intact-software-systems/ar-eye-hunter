@@ -164,7 +164,10 @@ function createPreparationOperations(
   owners: GroupStateRuntimeOwners,
 ): Pick<
   GroupStateService,
-  'prepareMutation' | 'prepareExpiredPresenceMutations' | 'prepareSessionCleanupMutations'
+  | 'prepareMutation'
+  | 'prepareExpiredPresenceMutations'
+  | 'prepareSessionCleanupMutations'
+  | 'prepareFormationCriterionMutation'
 > {
   const { dependencies, repositoryFor, authorityDependencies, prepareInternalMutation } = owners;
   const runtime = dependencies.runtimeRepository;
@@ -182,6 +185,8 @@ function createPreparationOperations(
         ),
       );
     },
+    prepareFormationCriterionMutation: async (command, atEpochMs) =>
+      await prepareInternalMutation(command, 'formation-criterion', atEpochMs),
     prepareSessionCleanupMutations: async (input) => {
       const candidates = await readGroupSessionCleanupCandidates(
         repositoryFor(runtime),

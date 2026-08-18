@@ -52,6 +52,21 @@ export const reviewedDispositions = Object.freeze([
     rule: 'layout.primary-export-name',
     symbol: 'createRtcBaselineRepeatInitializer',
   }),
+  // Group mutation operation-input validation narrows raw request fields at
+  // the HTTP/WS boundary. Both listed owners validate their unknown input
+  // before any domain use, mirroring the persisted-JSON decoder entries below.
+  Object.freeze({
+    path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
+      'validate-group-mutation-operation-input.ts',
+    rule: 'boundary.unknown',
+    symbol: 'validateActivateGroupInput',
+  }),
+  Object.freeze({
+    path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
+      'validate-group-mutation-operation-input.ts',
+    rule: 'boundary.unknown',
+    symbol: 'isUnitIntervalNumber',
+  }),
   // RTC RTT persistence decoders own the untrusted persisted-JSON boundary.
   // Each listed owner validates or narrows its unknown input before domain use;
   // keep these exact symbols reviewed while the checker treats all unknown

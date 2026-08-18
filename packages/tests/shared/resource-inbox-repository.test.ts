@@ -50,7 +50,7 @@ describe('ResourceInboxRepository', () => {
 
         expect(capture.queries).toHaveLength(1);
         expect(capture.queries[0]?.query).toContain('ri_status <>');
-        expect(capture.queries[0]?.query).toContain('expire_ts > now()');
+        expect(capture.queries[0]?.query).toContain("expire_ts > (now() at time zone 'utc')");
         expect(capture.queries[0]?.query).toContain('next_ts <=');
         expect(capture.queries[0]?.query).toContain('ri_attempts <');
         expect(capture.queries[0]?.query).toContain('for update skip locked');
@@ -70,7 +70,7 @@ describe('ResourceInboxRepository', () => {
 
         expect(capture.queries).toHaveLength(1);
         expect(capture.queries[0]?.query).toContain('ri_status =');
-        expect(capture.queries[0]?.query).toContain('expire_ts > now()');
+        expect(capture.queries[0]?.query).toContain("expire_ts > (now() at time zone 'utc')");
         expect(capture.queries[0]?.query).toContain('next_ts <=');
         expect(capture.queries[0]?.query).toContain('ri_attempts <');
         expect(capture.queries[0]?.query).toContain('order by next_ts asc, ri_row_id asc');
@@ -106,8 +106,8 @@ describe('ResourceInboxRepository', () => {
         );
 
         expect(capture.queries).toHaveLength(1);
-        expect(capture.queries[0]?.query).toContain('expire_ts > now()');
-        expect(capture.queries[0]?.query).toContain('next_ts <= now()');
+        expect(capture.queries[0]?.query).toContain("expire_ts > (now() at time zone 'utc')");
+        expect(capture.queries[0]?.query).toContain("next_ts <= (now() at time zone 'utc')");
         expect(capture.queries[0]?.values).toContain(2);
         expect(capture.queries[0]?.values.some(value => value instanceof Date)).toBe(false);
     });
@@ -123,7 +123,7 @@ describe('ResourceInboxRepository', () => {
         );
 
         expect(capture.queries).toHaveLength(1);
-        expect(capture.queries[0]?.query).toContain('expire_ts > now()');
+        expect(capture.queries[0]?.query).toContain("expire_ts > (now() at time zone 'utc')");
         expect(capture.queries[0]?.query).toContain('start_ts < (now() -');
         expect(capture.queries[0]?.query).toContain("interval '1 millisecond'");
         expect(capture.queries[0]?.values).toContain(30_000);
@@ -142,7 +142,7 @@ describe('ResourceInboxRepository', () => {
         );
 
         expect(capture.queries).toHaveLength(1);
-        expect(capture.queries[0]?.query).toContain('expire_ts > now()');
+        expect(capture.queries[0]?.query).toContain("expire_ts > (now() at time zone 'utc')");
         expect(capture.queries[0]?.query).toContain('start_ts < (now() -');
         expect(capture.queries[0]?.query).toContain("interval '1 millisecond'");
         expect(capture.queries[0]?.values).toContain(30_000);
@@ -193,7 +193,7 @@ describe('ResourceInboxRepository', () => {
         const query = capture.queries[0]!;
         expect(query.query).toContain('ri_type_id =');
         expect(query.query).toContain('ri_status =');
-        expect(query.query).toContain('expire_ts > now()');
+        expect(query.query).toContain("expire_ts > (now() at time zone 'utc')");
         expect(query.query).toContain('ri_attempts >=');
         expect(query.query).toContain('ri_attempts <');
         expect(query.query).toContain('start_ts <= (now() -');
@@ -227,7 +227,7 @@ describe('ResourceInboxRepository', () => {
         const query = capture.queries[0]!;
         expect(query.query).toContain('ri_attempts = ri_attempts + 1');
         expect(query.query).toContain('start_ts = now()');
-        expect(query.query).toContain('expire_ts > now()');
+        expect(query.query).toContain("expire_ts > (now() at time zone 'utc')");
         expect(query.query).toContain('ri_attempts =');
         expect(query.query).toContain('ri_attempts >=');
         expect(query.query).toContain('ri_type_id =');
@@ -249,7 +249,7 @@ describe('ResourceInboxRepository', () => {
         );
 
         const query = capture.queries[0]!;
-        expect(query.query).toContain('expire_ts > now()');
+        expect(query.query).toContain("expire_ts > (now() at time zone 'utc')");
         expect(query.query).toContain('start_ts <= (now() -');
         expect(query.query).toContain('ri_attempts >=');
         expect(query.values).toContain(300_000);
@@ -1044,7 +1044,7 @@ function createSqlHarness() {
 
         if (
             query.includes('insert into resource_inbox') &&
-            query.includes('where resource_inbox.expire_ts <= now()')
+            query.includes("where resource_inbox.expire_ts <= (now() at time zone 'utc')")
         ) {
             const incoming = toRowFromInsert(values, nextRowId);
             const key = toCompositeKey(incoming);
@@ -1072,7 +1072,7 @@ function createSqlHarness() {
             query.includes('insert into resource_inbox') &&
             query.includes('on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id)') &&
             query.includes('created_by = excluded.created_by') &&
-            !query.includes('where resource_inbox.expire_ts <= now()')
+            !query.includes("where resource_inbox.expire_ts <= (now() at time zone 'utc')")
         ) {
             const incoming = toRowFromInsert(values, nextRowId);
             const key = toCompositeKey(incoming);
@@ -1095,7 +1095,7 @@ function createSqlHarness() {
         if (
             query.includes('insert into resource_inbox') &&
             query.includes('on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id)') &&
-            !query.includes('where resource_inbox.expire_ts <= now()')
+            !query.includes("where resource_inbox.expire_ts <= (now() at time zone 'utc')")
         ) {
             const incoming = toRowFromInsert(values, nextRowId);
             const key = toCompositeKey(incoming);
@@ -1196,7 +1196,7 @@ function createSqlHarness() {
             query.includes('update resource_inbox') &&
             query.includes('set ri_status =') &&
             query.includes('ri_attempts =') &&
-            query.includes('expire_ts > now()')
+            query.includes("expire_ts > (now() at time zone 'utc')")
         ) {
             const usesDatabaseStart = query.includes('start_ts = now()');
             const [status, attempts, ...remaining] = values;
@@ -1224,7 +1224,7 @@ function createSqlHarness() {
 
         if (
             query.includes('delete from resource_inbox') &&
-            query.includes('where expire_ts <= now()')
+            query.includes("where expire_ts <= (now() at time zone 'utc')")
         ) {
             const deleted: Array<{ ri_row_id: bigint }> = [];
 

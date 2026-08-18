@@ -30,7 +30,7 @@ function toQueueKeyPart(value: string, maxLength: number): string {
   return `${prefix}${separator}${hash}`.slice(0, maxLength);
 }
 
-function fnv1a64(value: string): string {
+export function fnv1a64(value: string): string {
   let hash = 0xcbf29ce484222325n;
   const prime = 0x100000001b3n;
 

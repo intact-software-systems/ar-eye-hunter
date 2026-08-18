@@ -387,7 +387,7 @@ export class ResourceInboxRepository {
                               end_ts      = excluded.end_ts,
                               next_ts     = excluded.next_ts,
                               ri_attempts = excluded.ri_attempts
-            where resource_inbox.expire_ts <= now()
+            where resource_inbox.expire_ts <= (now() at time zone 'UTC')
             returning *
         `;
 
@@ -497,12 +497,13 @@ export class ResourceInboxRepository {
             where ri_type_id in ${this.sql([...typeIds])}
               and ri_status in ${this.sql([...statusIds])}
               and ri_status <> ${EntityStatus.FAILED}
-              and expire_ts > now()
+              and expire_ts > (now() at time zone 'UTC')
               and ri_attempts < ${maxAttempts}
               and (
-                  (ri_status = ${EntityStatus.RETRY} and next_ts <= now())
+                  (ri_status = ${EntityStatus.RETRY} and next_ts <= (now() at time zone 'UTC'))
                   or
-                  (ri_status <> ${EntityStatus.RETRY} and start_ts is null and (next_ts is null or next_ts <= now()))
+                  (ri_status <> ${EntityStatus.RETRY} and start_ts is null
+                      and (next_ts is null or next_ts <= (now() at time zone 'UTC')))
               )
             order by next_ts asc nulls first, ri_row_id asc
                 for update skip locked
@@ -531,7 +532,7 @@ export class ResourceInboxRepository {
             from resource_inbox
             where ri_type_id in ${this.sql([...typeIds])}
               and ri_status = ${EntityStatus.RETRY}
-              and expire_ts > now()
+              and expire_ts > (now() at time zone 'UTC')
               and next_ts <= ${overdueBefore}
               and ri_attempts < ${maxAttempts}
             order by next_ts asc, ri_row_id asc
@@ -563,7 +564,7 @@ export class ResourceInboxRepository {
             from resource_inbox
             where ri_type_id in ${this.sql([...typeIds])}
               and ri_status = ${EntityStatus.RESERVED}
-              and expire_ts > now()
+              and expire_ts > (now() at time zone 'UTC')
               and ri_attempts < ${maxAttempts}
               and start_ts is not null
               and start_ts < (now() - (${timeSinceStartMs} * interval '1 millisecond')) at time zone 'UTC'
@@ -595,7 +596,7 @@ export class ResourceInboxRepository {
             from resource_inbox
             where ri_type_id = ${EnqueuedType.APP_INBOX}
               and ri_status = ${EntityStatus.RESERVED}
-              and expire_ts > now()
+              and expire_ts > (now() at time zone 'UTC')
               and ri_attempts >= ${options.processingAttempts}
               and ri_attempts < ${Number.MAX_SAFE_INTEGER}
               and start_ts is not null
@@ -630,12 +631,13 @@ export class ResourceInboxRepository {
             where ri_type_id in ${this.sql([...typeIds])}
               and ri_status in ${this.sql([...statusIds])}
               and ri_status <> ${EntityStatus.FAILED}
-              and expire_ts > now()
+              and expire_ts > (now() at time zone 'UTC')
               and ri_attempts < ${maxAttempts}
               and (
-                  (ri_status = ${EntityStatus.RETRY} and next_ts <= now())
+                  (ri_status = ${EntityStatus.RETRY} and next_ts <= (now() at time zone 'UTC'))
                   or
-                  (ri_status <> ${EntityStatus.RETRY} and start_ts is null and (next_ts is null or next_ts <= now()))
+                  (ri_status <> ${EntityStatus.RETRY} and start_ts is null
+                      and (next_ts is null or next_ts <= (now() at time zone 'UTC')))
               )
             limit 1
         `;
@@ -685,7 +687,7 @@ export class ResourceInboxRepository {
                     from resource_inbox
                     where ri_type_id in ${this.sql([...typeIds])}
                       and ri_status in ${this.sql([EntityStatus.RESERVED])}
-                      and expire_ts > now()
+                      and expire_ts > (now() at time zone 'UTC')
                       and ri_attempts < ${maxAttempts}
                       and start_ts is not null
                       and start_ts < (now() - (${timeoutMs} * interval '1 millisecond')) at time zone 'UTC'
@@ -706,7 +708,7 @@ export class ResourceInboxRepository {
             from resource_inbox
             where ri_type_id = ${EnqueuedType.APP_INBOX}
               and ri_status = ${EntityStatus.RESERVED}
-              and expire_ts > now()
+              and expire_ts > (now() at time zone 'UTC')
               and ri_attempts >= ${processingAttempts}
               and ri_attempts < ${Number.MAX_SAFE_INTEGER}
               and start_ts is not null
@@ -757,7 +759,7 @@ export class ResourceInboxRepository {
             where ri_topic_id = ${entry.key.topicId}
               and ri_resource_id = ${entry.key.resourceId}
               and fk_ext_bank_id = ${entry.key.contextId}
-              and expire_ts > now()
+              and expire_ts > (now() at time zone 'UTC')
               and ri_attempts < ${maxAttempts}
             returning *
         `;
@@ -788,7 +790,7 @@ export class ResourceInboxRepository {
               and fk_ext_bank_id = ${entry.key.contextId}
               and ri_type_id = ${EnqueuedType.APP_INBOX}
               and ri_status = ${EntityStatus.RESERVED}
-              and expire_ts > now()
+              and expire_ts > (now() at time zone 'UTC')
               and ri_attempts = ${entry.dequeueAudit.attempts}
               and ri_attempts >= ${processingAttempts}
               and ri_attempts < ${Number.MAX_SAFE_INTEGER}
@@ -857,7 +859,7 @@ export class ResourceInboxRepository {
               and fk_ext_bank_id = ${key.contextId}
               and ri_status = ${EntityStatus.RESERVED}
               and ri_attempts = ${options.expectedAttempts}
-              and expire_ts > now()
+              and expire_ts > (now() at time zone 'UTC')
             returning *
         `;
 
@@ -901,7 +903,7 @@ export class ResourceInboxRepository {
               and fk_ext_bank_id = ${key.contextId}
               and ri_status = 'RESERVED'
               and ri_attempts = ${expectedAttempts}
-              and expire_ts > now()
+              and expire_ts > (now() at time zone 'UTC')
             returning ri_row_id
         `;
 
@@ -983,7 +985,7 @@ export class ResourceInboxRepository {
         const rows = await this.sql<{ ri_row_id: bigint }[]>`
             delete
             from resource_inbox
-            where expire_ts <= now()
+            where expire_ts <= (now() at time zone 'UTC')
             returning ri_row_id
         `;
 

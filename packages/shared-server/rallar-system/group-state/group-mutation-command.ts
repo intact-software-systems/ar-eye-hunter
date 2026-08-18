@@ -55,10 +55,6 @@ export function toAggregateMutationCommand(
       return toUpdateCommand(descriptor, randomId);
     case 'appointDirector':
       return toDirectorCommand(descriptor, randomId);
-    case 'startGroupEstablishment':
-    case 'activateGroup':
-    case 'reopenGroupEstablishment':
-      return toLifecycleTransitionCommand(descriptor.operation, descriptor, randomId);
     case 'rotateGroupJoinCode':
       return toRotateCommand(descriptor, randomId);
     default:
@@ -173,20 +169,6 @@ function toDirectorCommand(
       ),
       ...toGroupMutationActorInput(request),
     },
-  };
-}
-
-function toLifecycleTransitionCommand(
-  operation: 'startGroupEstablishment' | 'activateGroup' | 'reopenGroupEstablishment',
-  descriptor: GroupMutationDescriptor,
-  randomId: () => string,
-): GroupMutationCommand {
-  const request = descriptor.request as MutationActorInput;
-  return {
-    operation,
-    aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
-    ...toGroupMutationIdentity(request.requestId, randomId),
-    input: toGroupMutationActorInput(request),
   };
 }
 

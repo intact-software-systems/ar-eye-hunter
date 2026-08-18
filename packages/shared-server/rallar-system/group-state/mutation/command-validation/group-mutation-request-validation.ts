@@ -186,6 +186,9 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<
   startGroupEstablishment: [...MUTATION_REQUEST_KEYS],
   activateGroup: [...MUTATION_REQUEST_KEYS],
   reopenGroupEstablishment: [...MUTATION_REQUEST_KEYS],
+  // Internal-only: never reaches the HTTP request validator, listed for the
+  // Record's completeness. The criterion payload carries the observed rate.
+  failGroupFormation: [...MUTATION_REQUEST_KEYS, 'observedRate'],
   joinGroup: [...MUTATION_REQUEST_KEYS, 'inviteToken', 'joinCode'],
   acceptGroupInvite: MUTATION_REQUEST_KEYS,
   createGroupInvite: [...MUTATION_REQUEST_KEYS, 'invitationExpiresAtEpochMs'],
