@@ -1328,9 +1328,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#repairs known Deno lockfile drift before the controlled rollout dirty checkout guard"
     },
     {
-      "id": "test-structure-coupling-0a1cd607030839cb",
+      "id": "test-structure-coupling-460946f4a393acd9",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts",
-      "line": 73,
+      "line": 78,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-collections--rejects-a-crdt-type-removed-from-its-imported-live-registration-",
@@ -1796,9 +1796,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a membership route constant swapped to the presence path"
     },
     {
-      "id": "test-structure-coupling-62a137c454ed4aa1",
+      "id": "test-structure-coupling-a6d917893e39c448",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
-      "line": 83,
+      "line": 89,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-predicates--narrows-the-imported-crdt-collection-with-an-exact-equality-filt",
@@ -1848,9 +1848,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app"
     },
     {
-      "id": "test-structure-coupling-6dfda4a637579910",
+      "id": "test-structure-coupling-9b7f0cf6745b5d05",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts",
-      "line": 80,
+      "line": 85,
       "column": 24,
       "kind": "production-source-read",
       "contract": "mutation-registration-collections--rejects-a-crdt-type-removed-from-its-imported-live-registration-",
@@ -1900,9 +1900,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects an extra root-to-family argument"
     },
     {
-      "id": "test-structure-coupling-73308e24266bf2b3",
+      "id": "test-structure-coupling-5e0a3a647bc71ebc",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
-      "line": 68,
+      "line": 73,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-predicates--narrows-the-auth-registration-array-with-an-exact-equality-filte",
@@ -1952,9 +1952,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
     },
     {
-      "id": "test-structure-coupling-786f66e97640824a",
+      "id": "test-structure-coupling-d03beed5c5efcd0e",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts",
-      "line": 92,
+      "line": 97,
       "column": 19,
       "kind": "production-source-read",
       "contract": "mutation-registration-collections--binds-topology-loops-to-their-live-types",
@@ -1965,9 +1965,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts#binds topology loops to their live types"
     },
     {
-      "id": "test-structure-coupling-78c588b97aca4fac",
+      "id": "test-structure-coupling-1c6a23dcf6e6e6b0",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts",
-      "line": 49,
+      "line": 54,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-collections--rejects-group-create-removed-from-the-imported-live-group-regist",
@@ -2017,9 +2017,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#observes committed socket authorization before clustered WS effects"
     },
     {
-      "id": "test-structure-coupling-7ff401b49afb7583",
+      "id": "test-structure-coupling-91496f02dbb053de",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
-      "line": 98,
+      "line": 105,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-predicates--fails-closed-for-an-opaque-registration-predicate",
@@ -2186,9 +2186,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps mutable state-cache access inside the state store"
     },
     {
-      "id": "test-structure-coupling-944da5d76ef196b1",
+      "id": "test-structure-coupling-60ab1835d5ff4dde",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts",
-      "line": 103,
+      "line": 108,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-collections--binds-direct-client-registrations-to-their-live-types",
@@ -2316,9 +2316,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#defines a no-browser three-server topology convergence recipe"
     },
     {
-      "id": "test-structure-coupling-a268845cf4b958c7",
+      "id": "test-structure-coupling-11ff1ddd4a8bbeca",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
-      "line": 114,
+      "line": 121,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-predicates--evaluates-safe-logical-includes-and-identity-map-chains-exactly",
@@ -2498,9 +2498,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/api-v1-medium-scale-recipe-routing.test.ts#names every group poll for the API node that executes it"
     },
     {
-      "id": "test-structure-coupling-d31a3190c19623b1",
+      "id": "test-structure-coupling-61b46cc23a8a3f38",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
-      "line": 38,
+      "line": 43,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-predicates--narrows-the-group-registration-array-with-an-exact-equality-filt",
@@ -2511,9 +2511,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#narrows the group registration array with an exact equality filter"
     },
     {
-      "id": "test-structure-coupling-d369671acfc79f49",
+      "id": "test-structure-coupling-9fcf3c8894a57f1c",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts",
-      "line": 61,
+      "line": 66,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-collections--rejects-an-auth-registration-loop-replaced-with-an-empty-iterabl",
@@ -2550,9 +2550,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/auth-server-compatibility-governance.test.ts#rejects export kind, target, and second-hop changes"
     },
     {
-      "id": "test-structure-coupling-dcbdd6335044f080",
+      "id": "test-structure-coupling-acd737fcce76e714",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
-      "line": 53,
+      "line": 58,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-predicates--rejects-a-group-registration-filter-that-is-always-false",
