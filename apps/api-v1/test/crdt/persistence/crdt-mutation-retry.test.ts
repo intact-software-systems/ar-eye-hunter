@@ -20,6 +20,24 @@ import {
 import { waitForPGliteQueueRow, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 import { appendCommand, queueNow, update, withCompetingWrite } from '../crdt-api-test-fixtures.ts';
 
+interface MigratedSnapshotContractRow {
+  readonly document_key: string;
+  readonly document_revision: string | number;
+  readonly reason: string | null;
+  readonly snapshot_envelope: string;
+  readonly reason_nullable: string;
+}
+
+interface RetryMutationCountsRow {
+  readonly updates: string;
+  readonly owner_updates: string;
+  readonly outbox: string;
+}
+
+interface ResourceInboxResultPayloadRow {
+  readonly ris_resource: string;
+}
+
 Deno.test('configured production factory resolves absent CRDT policy to disabled and denies writes', async () => {
   const previous = Deno.env.get('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
   Deno.env.delete('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
@@ -156,13 +174,7 @@ Deno.test('compatible migration binds omitted legacy snapshot reasons in row and
     );
     await sql.exec(migration);
 
-    const rows = await sql<{
-      document_key: string;
-      document_revision: string | number;
-      reason: string | null;
-      snapshot_envelope: string;
-      reason_nullable: string;
-    }[]>`
+    const rows = await sql<MigratedSnapshotContractRow[]>`
             select d.document_key, d.document_revision, s.reason, s.snapshot_envelope,
                    c.is_nullable as reason_nullable
             from crdt_documents d
@@ -273,11 +285,7 @@ Deno.test('real SQL CAS conflict retries from revoked room membership and commit
       toResilienceDto(),
     );
 
-    const [counts] = await sql<{
-      updates: string;
-      owner_updates: string;
-      outbox: string;
-    }[]>`
+    const [counts] = await sql<RetryMutationCountsRow[]>`
             select
                 (select count(*) from crdt_updates)::text as updates,
                 (select count(*) from crdt_updates where update_id = 'owner-update')::text
@@ -287,7 +295,7 @@ Deno.test('real SQL CAS conflict retries from revoked room membership and commit
         `;
     assert.deepEqual(counts, { updates: '1', owner_updates: '0', outbox: '0' });
     assert.equal(documentAuthorityReads, 2);
-    const [completion] = await sql<{ ris_resource: string }[]>`
+    const [completion] = await sql<ResourceInboxResultPayloadRow[]>`
             select ris_resource from resource_inbox_results
             where ris_topic_id = 'app-inbox.crdt-state'
               and ris_resource_id = 'owner-delivery'

@@ -22,6 +22,11 @@ export interface CurrentMutationSession {
   readonly expiresAtEpochMs: number;
 }
 
+export interface CurrentMutationDocumentAuthorization {
+  readonly allowed: boolean;
+  readonly code: string;
+}
+
 export interface CurrentMutationAuthority {
   readonly readSession: (sessionId: string) => Promise<
     | CurrentMutationSession
@@ -31,7 +36,7 @@ export interface CurrentMutationAuthority {
   readonly authorizeDocument: (
     command: Crdt.CrdtMutationCommand,
     session: CurrentMutationSession,
-  ) => Promise<Readonly<{ allowed: boolean; code: string }>>;
+  ) => Promise<CurrentMutationDocumentAuthorization>;
   readonly adminClientIds: readonly string[];
 }
 

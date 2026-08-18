@@ -35,6 +35,15 @@ import type { ApiV1Runtime } from './api-v1-runtime.ts';
 import type { ApiV1AdminServices } from './create-api-v1-admin-services.ts';
 import type { ApiV1TopologyServices } from './create-api-v1-topology-services.ts';
 
+export interface ApiV1WsAuthRequestFacts {
+  readonly requestId: string;
+  readonly capturedAtEpochMs: number;
+}
+
+interface ApiV1RouteAuthRequest {
+  readonly header: (name: string) => string | undefined;
+}
+
 export interface CreateApiV1RouteInstallersInput {
   readonly runtime: ApiV1Runtime;
   readonly topology: Pick<ApiV1TopologyServices, 'topologyManagement' | 'adminClientIds'>;
@@ -48,10 +57,7 @@ export interface CreateApiV1RouteInstallersInput {
   readonly readEnv: (name: string) => string | undefined;
   readonly nowEpochMs: () => number;
   readonly createTokenId: () => string;
-  readonly createWsAuthRequestFacts: () => Readonly<{
-    requestId: string;
-    capturedAtEpochMs: number;
-  }>;
+  readonly createWsAuthRequestFacts: () => ApiV1WsAuthRequestFacts;
 }
 
 export interface ApiV1RouteInstallers {
@@ -64,7 +70,7 @@ export function createApiV1RouteInstallers(
 ): ApiV1RouteInstallers {
   const runtime = input.runtime;
   const topology = input.topology;
-  const requireSession = (request: Readonly<{ header(name: string): string | undefined }>) =>
+  const requireSession = (request: ApiV1RouteAuthRequest) =>
     requireApiAuthSession(request, runtime.authSessionRepository);
   const snapshots = createStateSnapshotReadRouteRegistrars(runtime);
   return {

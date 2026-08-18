@@ -234,11 +234,19 @@ function validateReadSet(input: ValidateReadSetInput): void {
   }
 }
 
+interface ActorUpdatesInWindowRow {
+  readonly actor_updates_in_window: number | string;
+}
+
+interface DocumentKeyRow {
+  readonly document_key: string;
+}
+
 async function readActorUpdatesInWindow(
   sql: PSqlSql,
   command: Extract<CrdtMutationCommand, { operation: 'append' }>,
-): Promise<Readonly<{ actor_updates_in_window: number | string }>[]> {
-  return await sql<Readonly<{ actor_updates_in_window: number | string }>[]>`
+): Promise<readonly ActorUpdatesInWindowRow[]> {
+  return await sql<ActorUpdatesInWindowRow[]>`
         select count(*) as actor_updates_in_window
         from crdt_updates
         where document_key = ${command.documentKey}
@@ -252,7 +260,7 @@ async function insertDocument(
   sql: PSqlSql,
   metadata: RallarCrdtDocumentMetadata,
 ): Promise<boolean> {
-  const rows = await sql<{ document_key: string }[]>`
+  const rows = await sql<DocumentKeyRow[]>`
         insert into crdt_documents (
             document_key, application_id, workspace_id, document_scope, document_type,
             document_id, document_ref, document_revision, lifecycle, created_at_ts,
@@ -289,7 +297,7 @@ async function updateDocument(input: UpdateDocumentInput): Promise<boolean> {
   if (expectedLifecycle === 'absent' || expectedAppendSequence === 'absent') {
     return false;
   }
-  const rows = await sql<{ document_key: string }[]>`
+  const rows = await sql<DocumentKeyRow[]>`
         update crdt_documents
         set document_revision = ${metadata.documentRevision}, lifecycle = ${metadata.lifecycle},
             updated_at_ts = ${new Date(metadata.updatedAtEpochMs)},

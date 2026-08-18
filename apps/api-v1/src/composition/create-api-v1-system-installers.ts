@@ -34,14 +34,14 @@ export interface CreateApiV1SystemInstallersInput {
 }
 
 export interface ApiV1SystemInstallerOperations {
-  initialiseSystemTopics: typeof initRallarSystemWsTopics;
-  createCrdtMutationIngress(
+  readonly initialiseSystemTopics: typeof initRallarSystemWsTopics;
+  readonly createCrdtMutationIngress: (
     appCrdt: NonNullable<ApiV1Runtime['appCrdtInboxService']>,
     serviceId: string,
-  ): RallarCrdtServerMutationIngress;
-  installCrdtTopics: typeof installRallarCrdtWsTopics;
-  initWebSocketLifecycle: typeof initWsLifecycle;
-  scheduleWebSocketLifecycleRetry: typeof scheduleWsLifecycleRetry;
+  ) => RallarCrdtServerMutationIngress;
+  readonly installCrdtTopics: typeof installRallarCrdtWsTopics;
+  readonly initWebSocketLifecycle: typeof initWsLifecycle;
+  readonly scheduleWebSocketLifecycleRetry: typeof scheduleWsLifecycleRetry;
 }
 
 export function createApiV1SystemInstallers(

@@ -450,17 +450,61 @@ export class AdminSupportService {
   }
 }
 
-function clientFacts(
-  input: Readonly<{
-    snapshot: ClientSnapshot | undefined;
-    presence: ClientPresenceSnapshot | undefined;
-    recentEvents: readonly ClientEvent[];
-    session: ClientSession | undefined;
-    sessionId: string | undefined;
-    clientInstanceId: string | undefined;
-    wsStatus: AdminSupportWsStatus | undefined;
-  }>,
-): readonly AdminSupportFact[] {
+interface ClientFactsInput {
+  readonly snapshot: ClientSnapshot | undefined;
+  readonly presence: ClientPresenceSnapshot | undefined;
+  readonly recentEvents: readonly ClientEvent[];
+  readonly session: ClientSession | undefined;
+  readonly sessionId: string | undefined;
+  readonly clientInstanceId: string | undefined;
+  readonly wsStatus: AdminSupportWsStatus | undefined;
+}
+
+interface ClientWarningsInput {
+  readonly hasClientStateService: boolean;
+  readonly snapshot: ClientSnapshot | undefined;
+  readonly session: ClientSession | undefined;
+  readonly sessionId: string | undefined;
+  readonly wsStatus: AdminSupportWsStatus | undefined;
+}
+
+interface GroupFactsInput {
+  readonly snapshot: GroupSnapshot | undefined;
+  readonly recentEvents: readonly GroupEvent[];
+  readonly topologyView: unknown;
+  readonly principalId: string | undefined;
+  readonly sessionId: string | undefined;
+  readonly session: GroupPresenceSession | undefined;
+}
+
+interface GroupWarningsInput {
+  readonly hasGroupStateService: boolean;
+  readonly hasTopologyManagement: boolean;
+  readonly snapshot: GroupSnapshot | undefined;
+  readonly principalId: string | undefined;
+  readonly sessionId: string | undefined;
+  readonly session: GroupPresenceSession | undefined;
+  readonly topologyView: unknown;
+}
+
+interface CrdtFactsInput {
+  readonly metadata: RallarCrdtDocumentMetadata | undefined;
+  readonly integrity: RallarCrdtIntegrityReport | undefined;
+  readonly debugBundle: RallarCrdtDebugBundle | undefined;
+}
+
+interface CrdtWarningsInput {
+  readonly hasRepository: boolean;
+  readonly hasMetadataReader: boolean;
+  readonly requestedIntegrity: boolean;
+  readonly hasIntegrityReader: boolean;
+  readonly requestedDebugBundle: boolean;
+  readonly hasDebugBundleReader: boolean;
+  readonly metadata: RallarCrdtDocumentMetadata | undefined;
+  readonly integrity: RallarCrdtIntegrityReport | undefined;
+}
+
+function clientFacts(input: ClientFactsInput): readonly AdminSupportFact[] {
   const facts: AdminSupportFact[] = [
     {
       label: 'client.snapshot',
@@ -570,15 +614,7 @@ function clientTimeline(events: readonly ClientEvent[]): readonly AdminSupportTi
   }));
 }
 
-function clientWarnings(
-  input: Readonly<{
-    hasClientStateService: boolean;
-    snapshot: ClientSnapshot | undefined;
-    session: ClientSession | undefined;
-    sessionId: string | undefined;
-    wsStatus: AdminSupportWsStatus | undefined;
-  }>,
-): readonly AdminSupportWarning[] {
+function clientWarnings(input: ClientWarningsInput): readonly AdminSupportWarning[] {
   const warnings: AdminSupportWarning[] = [];
   if (!input.hasClientStateService) {
     warnings.push({
@@ -671,16 +707,7 @@ function clientSuggestedActions(
   return actions;
 }
 
-function groupFacts(
-  input: Readonly<{
-    snapshot: GroupSnapshot | undefined;
-    recentEvents: readonly GroupEvent[];
-    topologyView: unknown;
-    principalId: string | undefined;
-    sessionId: string | undefined;
-    session: GroupPresenceSession | undefined;
-  }>,
-): readonly AdminSupportFact[] {
+function groupFacts(input: GroupFactsInput): readonly AdminSupportFact[] {
   const facts: AdminSupportFact[] = [
     {
       label: 'group.snapshot',
@@ -767,17 +794,7 @@ function groupTimeline(events: readonly GroupEvent[]): readonly AdminSupportTime
   }));
 }
 
-function groupWarnings(
-  input: Readonly<{
-    hasGroupStateService: boolean;
-    hasTopologyManagement: boolean;
-    snapshot: GroupSnapshot | undefined;
-    principalId: string | undefined;
-    sessionId: string | undefined;
-    session: GroupPresenceSession | undefined;
-    topologyView: unknown;
-  }>,
-): readonly AdminSupportWarning[] {
+function groupWarnings(input: GroupWarningsInput): readonly AdminSupportWarning[] {
   const warnings: AdminSupportWarning[] = [];
   if (!input.hasGroupStateService) {
     warnings.push({
@@ -854,13 +871,7 @@ function groupSuggestedActions(
   return actions;
 }
 
-function crdtFacts(
-  input: Readonly<{
-    metadata: RallarCrdtDocumentMetadata | undefined;
-    integrity: RallarCrdtIntegrityReport | undefined;
-    debugBundle: RallarCrdtDebugBundle | undefined;
-  }>,
-): readonly AdminSupportFact[] {
+function crdtFacts(input: CrdtFactsInput): readonly AdminSupportFact[] {
   const facts: AdminSupportFact[] = [
     {
       label: 'crdt.metadata',
@@ -974,18 +985,7 @@ function crdtTimeline(
   ].filter((item): item is AdminSupportTimelineItem => item !== undefined);
 }
 
-function crdtWarnings(
-  input: Readonly<{
-    hasRepository: boolean;
-    hasMetadataReader: boolean;
-    requestedIntegrity: boolean;
-    hasIntegrityReader: boolean;
-    requestedDebugBundle: boolean;
-    hasDebugBundleReader: boolean;
-    metadata: RallarCrdtDocumentMetadata | undefined;
-    integrity: RallarCrdtIntegrityReport | undefined;
-  }>,
-): readonly AdminSupportWarning[] {
+function crdtWarnings(input: CrdtWarningsInput): readonly AdminSupportWarning[] {
   const warnings: AdminSupportWarning[] = [];
   if (!input.hasRepository) {
     warnings.push({

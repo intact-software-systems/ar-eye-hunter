@@ -136,7 +136,7 @@ export interface RallarCrdtServerLiveValidationContext {
   readonly roomId?: string;
   readonly roomRef?: GroupRef;
 }
-export interface RallarCrdtServerLiveValidationInput {
+interface ValidateRallarCrdtServerLiveEnvelopeInput {
   readonly kind: RallarCrdtServerEnvelopeKind;
   readonly topicScope: RallarCrdtServerTopicScope;
   readonly value: unknown;
@@ -185,7 +185,17 @@ export function installRallarCrdtWsTopics(
 }
 
 export function validateRallarCrdtServerLiveEnvelope(
-  input: RallarCrdtServerLiveValidationInput,
+  kind: RallarCrdtServerEnvelopeKind,
+  topicScope: RallarCrdtServerTopicScope,
+  value: unknown,
+  context: RallarCrdtServerLiveValidationContext,
+  options: RallarCrdtServerTopicBridgeOptions = {},
+): RallarCrdtValidationResult {
+  return validateRallarCrdtServerLiveEnvelopeInput({ kind, topicScope, value, context, options });
+}
+
+function validateRallarCrdtServerLiveEnvelopeInput(
+  input: ValidateRallarCrdtServerLiveEnvelopeInput,
 ): RallarCrdtValidationResult {
   const { kind, topicScope, value, context, options = {} } = input;
   const validationOptions = toSharedValidationOptions(options);
@@ -242,18 +252,18 @@ function createRallarCrdtTopicDefinition(
         ? 'none'
         : (options.fanout ?? 'live-only'),
     validate: (value, context) =>
-      validateRallarCrdtServerLiveEnvelope({
+      validateRallarCrdtServerLiveEnvelope(
         kind,
         topicScope,
         value,
-        context: {
+        {
           topicId: context.definition?.topicId ?? toTopicId(topicScope),
           typeId,
           roomId: context.roomId,
           roomRef: context.roomRef,
         },
         options,
-      }).valid,
+      ).valid,
     authorize:
       options.authorizeDocument || options.policies?.length
         ? async (message, context) =>
@@ -671,7 +681,7 @@ function readEnvelopeDocument(value: unknown): RallarCrdtDocumentRef | undefined
     return undefined;
   }
 
-  const document = (value as { document?: unknown }).document;
+  const document = Reflect.get(value, 'document');
   return document && typeof document === 'object' ? (document as RallarCrdtDocumentRef) : undefined;
 }
 
@@ -679,16 +689,16 @@ function toTrustedMetadata(
   message: RallarServerWsMessage<unknown>,
   context: RallarServerWsMessageContext<unknown>,
 ): RallarCrdtServerTrustedMetadata {
-  const envelope = message.payload as {
-    actorId?: string;
-    sessionId?: string;
-  };
+  const envelope =
+    message.payload && typeof message.payload === 'object' ? message.payload : undefined;
+  const actorId = envelope ? Reflect.get(envelope, 'actorId') : undefined;
+  const sessionId = envelope ? Reflect.get(envelope, 'sessionId') : undefined;
 
   return {
     senderId: context.senderId,
     sessionId: context.senderId,
-    claimedActorId: envelope.actorId,
-    claimedSessionId: envelope.sessionId ?? message.raw.id.sessionId,
+    claimedActorId: typeof actorId === 'string' ? actorId : undefined,
+    claimedSessionId: typeof sessionId === 'string' ? sessionId : message.raw.id.sessionId,
     receivedAtEpochMs: message.receivedAtEpochMs,
     topicId: message.raw.route.topicId,
     typeId: message.raw.payload.typeId,

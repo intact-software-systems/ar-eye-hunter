@@ -25,6 +25,15 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   },
 };
 
+interface PersistedSnapshotReasonRow {
+  readonly snapshot_envelope: string;
+  readonly reason: string;
+}
+
+interface DocumentKeyRow {
+  readonly document_key: string;
+}
+
 Deno.test('public CRDT catch-up and debug export decode exact persisted rows', async () => {
   await withPGliteSql(async (sql) => {
     await append(sql);
@@ -147,7 +156,7 @@ Deno.test('mutation write persists one canonical snapshot reason in row and enve
     const computed = service.compute({ command: compact, read });
     assert.deepEqual(service.validate({ command: compact, read, computed }), []);
     await sql.begin(async (transaction) => await service.write(transaction, computed));
-    const [stored] = await sql<{ snapshot_envelope: string; reason: string }[]>`
+    const [stored] = await sql<PersistedSnapshotReasonRow[]>`
       select snapshot_envelope, reason from crdt_snapshots
     `;
 
@@ -222,7 +231,7 @@ async function insertSnapshot(
   sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
 ): Promise<void> {
   const snapshot = snapshotEnvelope('test-snapshot');
-  const [{ document_key: documentKey }] = await sql<{ document_key: string }[]>`
+  const [{ document_key: documentKey }] = await sql<DocumentKeyRow[]>`
         select document_key from crdt_documents
     `;
   await sql`

@@ -24,6 +24,16 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
 };
 
+interface ColumnNullabilityRow {
+  readonly column_name: string;
+  readonly is_nullable: string;
+}
+
+interface CrdtDocumentCounterRow {
+  readonly update_count: string | number;
+  readonly last_append_sequence: string | number;
+}
+
 Deno.test('production CRDT mutation repository denies an explicit fail-closed authority decision', async () => {
   await withPGliteSql(async (sql) => {
     const read = await new PSqlCrdtMutationRepository(
@@ -116,7 +126,7 @@ Deno.test('CRDT update decoding binds physical update_id to the envelope updateI
 
 Deno.test('CRDT durable trusted identity columns are mandatory', async () => {
   await withPGliteSql(async (sql) => {
-    const rows = await sql<{ column_name: string; is_nullable: string }[]>`
+    const rows = await sql<ColumnNullabilityRow[]>`
       select column_name, is_nullable from information_schema.columns
       where table_name = 'crdt_updates'
         and column_name in ('actor_id', 'principal_id', 'session_id', 'server_id')
@@ -233,8 +243,8 @@ Deno.test('CRDT read includes current actor-rate and snapshot-byte policy facts'
     const second = await command('rate-second', 'rate-second', 11_000);
     const observed = await service.read(second);
     const computed = service.compute({ command: second, read: observed });
-    assert.equal((observed as { actorUpdatesInWindow?: number }).actorUpdatesInWindow, 1);
-    assert.ok((observed as { storedSnapshotBytes?: number }).storedSnapshotBytes! > 1_000);
+    assert.equal(observed.actorUpdatesInWindow, 1);
+    assert.ok(observed.storedSnapshotBytes > 1_000);
     assert.deepEqual(
       { outcome: computed.outcome, code: 'code' in computed ? computed.code : null },
       {
@@ -264,9 +274,7 @@ Deno.test('overlapping CRDT transaction writers keep one winner and no lost coun
     );
     assert.equal(writes.filter((result) => result.status === 'fulfilled').length, 1);
     assert.equal(writes.filter((result) => result.status === 'rejected').length, 1);
-    const [metadata] = await sql<
-      { update_count: string | number; last_append_sequence: string | number }[]
-    >`
+    const [metadata] = await sql<CrdtDocumentCounterRow[]>`
       select update_count, last_append_sequence from crdt_documents
     `;
     assert.equal(Number(metadata?.update_count), 2);

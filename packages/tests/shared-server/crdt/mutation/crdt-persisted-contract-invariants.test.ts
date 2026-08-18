@@ -37,6 +37,11 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   principalId: 'principal-1',
 };
 
+interface CrdtTopicFanoutDefinition {
+  readonly typeId: string;
+  readonly fanout: string;
+}
+
 describe('CRDT persisted mutation contract invariants', () => {
   it('rejects extra fields on every command document reference', async () => {
     const command = await lifecycleCommand();
@@ -183,7 +188,7 @@ describe('CRDT persisted mutation contract invariants', () => {
   });
 
   it('never configures update topics for live-only fanout without mutation ingress', () => {
-    const definitions: Array<{ typeId: string; fanout: string }> = [];
+    const definitions: CrdtTopicFanoutDefinition[] = [];
     installRallarCrdtWsTopics({
       defineTopic: (definition) => {
         definitions.push({ typeId: definition.typeId, fanout: definition.fanout });

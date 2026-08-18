@@ -263,13 +263,12 @@ export interface RallarCrdtBundleIntegrity {
   readonly sequenceGaps: readonly number[];
 }
 
-export type RallarCrdtIntegrityReport = RallarCrdtValidationResult &
-  Readonly<{
-    documentKey: string;
-    checkedUpdateCount: number;
-    sequenceGaps: readonly number[];
-    bundleHash?: string;
-  }>;
+export interface RallarCrdtIntegrityReport extends RallarCrdtValidationResult {
+  readonly documentKey: string;
+  readonly checkedUpdateCount: number;
+  readonly sequenceGaps: readonly number[];
+  readonly bundleHash?: string;
+}
 
 export interface RallarCrdtBackupBundle<
   TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
@@ -293,6 +292,20 @@ export interface RallarCrdtRestoreResult {
   readonly lastAppendSequence?: number;
 }
 
+export interface RallarCrdtDebugBundleExportOptions {
+  readonly reason?: string;
+  readonly exportedAtEpochMs?: number;
+  readonly redaction?: RallarCrdtDebugBundleRedaction;
+}
+
+export interface RallarCrdtBackupBundleExportOptions {
+  readonly exportedAtEpochMs?: number;
+}
+
+export interface RallarCrdtRestoreBackupBundleOptions {
+  readonly overwrite?: boolean;
+}
+
 export interface RallarCrdtAdminReadRepository<
   TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
   TValue = RallarCrdtSnapshotEnvelope['value'],
@@ -307,53 +320,38 @@ export interface RallarCrdtAdminReadRepository<
   listDocuments(input?: RallarCrdtListDocumentsInput): Promise<RallarCrdtDocumentAdminPage>;
   exportDebugBundle(
     document: RallarCrdtDocumentRef,
-    options?: Readonly<{
-      reason?: string;
-      exportedAtEpochMs?: number;
-      redaction?: RallarCrdtDebugBundleRedaction;
-    }>,
+    options?: RallarCrdtDebugBundleExportOptions,
   ): Promise<RallarCrdtDebugBundle<TPayload>>;
   exportBackupBundle(
     document: RallarCrdtDocumentRef,
-    options?: Readonly<{
-      exportedAtEpochMs?: number;
-    }>,
+    options?: RallarCrdtBackupBundleExportOptions,
   ): Promise<RallarCrdtBackupBundle<TPayload> | undefined>;
   verifyIntegrity(document: RallarCrdtDocumentRef): Promise<RallarCrdtIntegrityReport>;
 }
 
-export type RallarCrdtAdminLogRepository<
+export interface RallarCrdtAdminLogRepository<
   TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
   TValue = RallarCrdtSnapshotEnvelope['value'],
-> = RallarCrdtUpdateLogRepository<TPayload, TValue> &
-  Readonly<{
-    listDocuments(input?: RallarCrdtListDocumentsInput): Promise<RallarCrdtDocumentAdminPage>;
-    exportDebugBundle(
-      document: RallarCrdtDocumentRef,
-      options?: Readonly<{
-        reason?: string;
-        exportedAtEpochMs?: number;
-        redaction?: RallarCrdtDebugBundleRedaction;
-      }>,
-    ): Promise<RallarCrdtDebugBundle<TPayload>>;
-    exportBackupBundle(
-      document: RallarCrdtDocumentRef,
-      options?: Readonly<{
-        exportedAtEpochMs?: number;
-      }>,
-    ): Promise<RallarCrdtBackupBundle<TPayload> | undefined>;
-    restoreBackupBundle(
-      bundle: RallarCrdtBackupBundle<TPayload>,
-      options?: Readonly<{
-        overwrite?: boolean;
-      }>,
-    ): Promise<RallarCrdtRestoreResult>;
-    verifyIntegrity(document: RallarCrdtDocumentRef): Promise<RallarCrdtIntegrityReport>;
-    rebuildProjection(
-      document: RallarCrdtDocumentRef,
-      projectionId?: string,
-    ): Promise<RallarCrdtIntegrityReport>;
-  }>;
+> extends RallarCrdtUpdateLogRepository<TPayload, TValue> {
+  listDocuments(input?: RallarCrdtListDocumentsInput): Promise<RallarCrdtDocumentAdminPage>;
+  exportDebugBundle(
+    document: RallarCrdtDocumentRef,
+    options?: RallarCrdtDebugBundleExportOptions,
+  ): Promise<RallarCrdtDebugBundle<TPayload>>;
+  exportBackupBundle(
+    document: RallarCrdtDocumentRef,
+    options?: RallarCrdtBackupBundleExportOptions,
+  ): Promise<RallarCrdtBackupBundle<TPayload> | undefined>;
+  restoreBackupBundle(
+    bundle: RallarCrdtBackupBundle<TPayload>,
+    options?: RallarCrdtRestoreBackupBundleOptions,
+  ): Promise<RallarCrdtRestoreResult>;
+  verifyIntegrity(document: RallarCrdtDocumentRef): Promise<RallarCrdtIntegrityReport>;
+  rebuildProjection(
+    document: RallarCrdtDocumentRef,
+    projectionId?: string,
+  ): Promise<RallarCrdtIntegrityReport>;
+}
 
 export interface RallarCrdtSpatialMetadata {
   readonly coordinateFrameId: string;
@@ -573,12 +571,48 @@ export function selectRallarCrdtDocumentTypePolicy(
   });
 }
 
-export function createRallarCrdtAdminDocumentStatus(input: {
-  metadata: RallarCrdtDocumentMetadata;
-  rollout?: RallarCrdtRolloutLabel;
-  health?: RallarCrdtDocumentHealth;
-  quarantineReason?: string;
-}): RallarCrdtAdminDocumentStatus {
+export interface CreateRallarCrdtAdminDocumentStatusInput {
+  readonly metadata: RallarCrdtDocumentMetadata;
+  readonly rollout?: RallarCrdtRolloutLabel;
+  readonly health?: RallarCrdtDocumentHealth;
+  readonly quarantineReason?: string;
+}
+
+export interface CreateRallarCrdtDebugBundleInput<
+  TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
+> {
+  readonly exportedAtEpochMs: number;
+  readonly reason: string;
+  readonly document: RallarCrdtDocumentRef;
+  readonly metadata?: RallarCrdtDocumentMetadata;
+  readonly snapshot?: RallarCrdtSnapshotEnvelope;
+  readonly records: readonly RallarCrdtDurableUpdateRecord<TPayload>[];
+  readonly health?: RallarCrdtDocumentHealth;
+  readonly redaction?: RallarCrdtDebugBundleRedaction;
+}
+
+export interface CreateRallarCrdtCompactedSnapshotInput<
+  TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
+> {
+  readonly document: RallarCrdtDocumentRef;
+  readonly records: readonly RallarCrdtDurableUpdateRecord<TPayload>[];
+  readonly replicaId?: string;
+  readonly reason?: string;
+  readonly now?: () => number;
+  readonly createSnapshotId?: () => string;
+}
+
+export interface EvaluateRallarCrdtDestructiveCompactionSafetyInput<
+  TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
+> {
+  readonly snapshot?: RallarCrdtSnapshotEnvelope;
+  readonly records: readonly RallarCrdtDurableUpdateRecord<TPayload>[];
+  readonly allowEncryptedWithSuppliedState?: boolean;
+}
+
+export function createRallarCrdtAdminDocumentStatus(
+  input: CreateRallarCrdtAdminDocumentStatusInput,
+): RallarCrdtAdminDocumentStatus {
   return {
     document: input.metadata.document,
     documentKey: input.metadata.documentKey,
@@ -596,16 +630,7 @@ export function createRallarCrdtAdminDocumentStatus(input: {
 }
 
 export function createRallarCrdtDebugBundle<TPayload extends RallarCrdtOperationBatch>(
-  input: Readonly<{
-    exportedAtEpochMs: number;
-    reason: string;
-    document: RallarCrdtDocumentRef;
-    metadata?: RallarCrdtDocumentMetadata;
-    snapshot?: RallarCrdtSnapshotEnvelope;
-    records: readonly RallarCrdtDurableUpdateRecord<TPayload>[];
-    health?: RallarCrdtDocumentHealth;
-    redaction?: RallarCrdtDebugBundleRedaction;
-  }>,
+  input: CreateRallarCrdtDebugBundleInput<TPayload>,
 ): RallarCrdtDebugBundle<TPayload> {
   const documentKey = toRallarCrdtDocumentKey(input.document);
   const redaction = input.redaction ?? {
@@ -633,16 +658,7 @@ export function createRallarCrdtDebugBundle<TPayload extends RallarCrdtOperation
 export function createRallarCrdtCompactedSnapshot<
   TValue = RallarCrdtSnapshotEnvelope['value'],
   TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
->(
-  input: Readonly<{
-    document: RallarCrdtDocumentRef;
-    records: readonly RallarCrdtDurableUpdateRecord<TPayload>[];
-    replicaId?: string;
-    reason?: string;
-    now?: () => number;
-    createSnapshotId?: () => string;
-  }>,
-): RallarCrdtSnapshotEnvelope<TValue> {
+>(input: CreateRallarCrdtCompactedSnapshotInput<TPayload>): RallarCrdtSnapshotEnvelope<TValue> {
   if (input.records.some((record) => isRallarCrdtEncryptedOperationBatch(record.update.payload))) {
     throw new Error(
       'Cannot server-compact encrypted CRDT logs without a supplied compact snapshot.',
@@ -668,11 +684,7 @@ export function createRallarCrdtCompactedSnapshot<
 export function evaluateRallarCrdtDestructiveCompactionSafety<
   TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
 >(
-  input: Readonly<{
-    snapshot?: RallarCrdtSnapshotEnvelope;
-    records: readonly RallarCrdtDurableUpdateRecord<TPayload>[];
-    allowEncryptedWithSuppliedState?: boolean;
-  }>,
+  input: EvaluateRallarCrdtDestructiveCompactionSafetyInput<TPayload>,
 ): RallarCrdtDestructiveCompactionSafety {
   const snapshot = input.snapshot;
   if (!snapshot) {
@@ -782,12 +794,14 @@ export function createRallarCrdtErasureAuditEvent(
   };
 }
 
+export interface SummarizeRallarCrdtScheduledHealthInput {
+  readonly documents: readonly RallarCrdtDocumentMetadata[];
+  readonly nowEpochMs: number;
+  readonly staleSnapshotAfterMs?: number;
+}
+
 export function summarizeRallarCrdtScheduledHealth(
-  input: Readonly<{
-    documents: readonly RallarCrdtDocumentMetadata[];
-    nowEpochMs: number;
-    staleSnapshotAfterMs?: number;
-  }>,
+  input: SummarizeRallarCrdtScheduledHealthInput,
 ): RallarCrdtScheduledHealthSummary {
   const staleSnapshotAfterMs = input.staleSnapshotAfterMs ?? 24 * 60 * 60 * 1_000;
   const documents = input.documents.map((metadata) => {
@@ -857,14 +871,18 @@ export function validateRallarCrdtEncryptionMetadata(
   };
 }
 
+export interface CreateRallarCrdtBackupBundleInput<
+  TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
+> {
+  readonly exportedAtEpochMs: number;
+  readonly document: RallarCrdtDocumentRef;
+  readonly metadata: RallarCrdtDocumentMetadata;
+  readonly snapshot?: RallarCrdtSnapshotEnvelope;
+  readonly records: readonly RallarCrdtDurableUpdateRecord<TPayload>[];
+}
+
 export function createRallarCrdtBackupBundle<TPayload extends RallarCrdtOperationBatch>(
-  input: Readonly<{
-    exportedAtEpochMs: number;
-    document: RallarCrdtDocumentRef;
-    metadata: RallarCrdtDocumentMetadata;
-    snapshot?: RallarCrdtSnapshotEnvelope;
-    records: readonly RallarCrdtDurableUpdateRecord<TPayload>[];
-  }>,
+  input: CreateRallarCrdtBackupBundleInput<TPayload>,
 ): RallarCrdtBackupBundle<TPayload> {
   const documentKey = toRallarCrdtDocumentKey(input.document);
   const withoutIntegrity = {
@@ -1026,12 +1044,16 @@ export function fromRallarCrdtDocumentKeyCursor(cursor: string | undefined): str
   return cursor?.startsWith('key:') ? decodeURIComponent(cursor.slice(4)) : undefined;
 }
 
-export function toRallarCrdtTransportMetricTags(input: {
-  transport?: RallarCrdtTransportStrategy;
-  scope?: RallarCrdtDocumentScope;
-  status?: string;
-  reason?: string;
-}): Readonly<Record<string, string>> {
+export interface RallarCrdtTransportMetricTagsInput {
+  readonly transport?: RallarCrdtTransportStrategy;
+  readonly scope?: RallarCrdtDocumentScope;
+  readonly status?: string;
+  readonly reason?: string;
+}
+
+export function toRallarCrdtTransportMetricTags(
+  input: RallarCrdtTransportMetricTagsInput,
+): Readonly<Record<string, string>> {
   return Object.fromEntries(
     Object.entries(input).filter(([, value]) => value !== undefined) as [string, string][],
   );

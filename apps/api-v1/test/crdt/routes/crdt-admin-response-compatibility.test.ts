@@ -30,6 +30,78 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
 };
 
+interface CompactAdminDocumentResponse {
+  readonly documentId: string;
+}
+
+interface CompactAdminSnapshotResponse {
+  readonly document: CompactAdminDocumentResponse;
+}
+
+interface CompactAdminResultResponse {
+  readonly appendSequence: number;
+  readonly snapshot: CompactAdminSnapshotResponse;
+}
+
+interface CompactAdminResponse {
+  readonly ok: boolean;
+  readonly result: CompactAdminResultResponse;
+}
+
+interface LifecycleAdminResultResponse {
+  readonly lifecycle: string;
+  readonly documentKey: string;
+  readonly retention: unknown;
+  readonly quota: unknown;
+  readonly projectionIds: string[];
+}
+
+interface LifecycleAdminResponse {
+  readonly result: LifecycleAdminResultResponse;
+}
+
+interface EraseAdminRequestResponse {
+  readonly mode: string;
+}
+
+interface EraseAdminAuditEventResponse {
+  readonly kind: string;
+}
+
+interface EraseAdminMetadataResponse {
+  readonly lifecycle: string;
+}
+
+interface EraseAdminResultResponse {
+  readonly request: EraseAdminRequestResponse;
+  readonly auditEvent: EraseAdminAuditEventResponse;
+  readonly metadata: EraseAdminMetadataResponse;
+}
+
+interface EraseAdminResponse {
+  readonly result: EraseAdminResultResponse;
+}
+
+interface SqlCountRow {
+  readonly count: string | number;
+}
+
+interface MutationCountsRow {
+  readonly revision: string | number;
+  readonly snapshots: string | number;
+  readonly updates: string | number;
+  readonly outbox: string | number;
+}
+
+interface PostAndProcessRawBody {
+  readonly ok: boolean;
+}
+
+interface PostAndProcessRawResult<T> {
+  readonly response: Response;
+  readonly body: T;
+}
+
 Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses and post-commit audit', async () => {
   await withPGliteSql(async (sql) => {
     // PGlite's timestamp-without-zone comparison follows the host offset in this suite.
@@ -174,13 +246,7 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
       where document_key = ${initial.documentKey}
     `;
 
-    const compact = await postAndProcess<{
-      ok: boolean;
-      result: {
-        appendSequence: number;
-        snapshot: { document: { documentId: string } };
-      };
-    }>({
+    const compact = await postAndProcess<CompactAdminResponse>({
       app,
       inbox,
       sql,
@@ -195,15 +261,7 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
     assert.equal(compact.result.appendSequence, 1);
     assert.equal(compact.result.snapshot.document.documentId, DOCUMENT.documentId);
 
-    const lifecycle = await postAndProcess<{
-      result: {
-        lifecycle: string;
-        documentKey: string;
-        retention: unknown;
-        quota: unknown;
-        projectionIds: string[];
-      };
-    }>({
+    const lifecycle = await postAndProcess<LifecycleAdminResponse>({
       app,
       inbox,
       sql,
@@ -220,13 +278,7 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
     assert.deepEqual(lifecycle.result.quota, { maxDocumentBytes: 100000 });
     assert.deepEqual(lifecycle.result.projectionIds, ['existing-projection']);
 
-    const erase = await postAndProcess<{
-      result: {
-        request: { mode: string };
-        auditEvent: { kind: string };
-        metadata: { lifecycle: string };
-      };
-    }>({
+    const erase = await postAndProcess<EraseAdminResponse>({
       app,
       inbox,
       sql,
@@ -242,7 +294,7 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
     assert.equal(erase.result.auditEvent.kind, 'erase');
     assert.equal(erase.result.metadata.lifecycle, 'destroyed');
     assert.equal(audit.length, 0);
-    const [durableAudit] = await sql<{ count: string | number }[]>`
+    const [durableAudit] = await sql<SqlCountRow[]>`
       select count(*) as count from resource_inbox where ri_type_id = 'APP_OUTBOX'
     `;
     assert.equal(Number(durableAudit?.count), 1);
@@ -253,7 +305,7 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
     );
     assert.equal(auditAttempts, 2);
     assert.equal(audit.length, 1);
-    const [completedAudit] = await sql<{ count: string | number }[]>`
+    const [completedAudit] = await sql<SqlCountRow[]>`
       select count(*) as count from resource_inbox
       where ri_type_id = 'APP_OUTBOX' and ri_status = 'COMPLETED'
     `;
@@ -324,12 +376,7 @@ async function mutationCounts(
   sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
   documentKey: string,
 ) {
-  const [counts] = await sql<{
-    revision: string | number;
-    snapshots: string | number;
-    updates: string | number;
-    outbox: string | number;
-  }[]>`
+  const [counts] = await sql<MutationCountsRow[]>`
       select
         (select document_revision from crdt_documents where document_key = ${documentKey})
           as revision,
@@ -368,9 +415,9 @@ async function postAndProcess<T>(input: PostAndProcessInput): Promise<T> {
   return await (await responsePending).json() as T;
 }
 
-async function postAndProcessRaw<T extends object = { ok: boolean }>(
+async function postAndProcessRaw<T extends object = PostAndProcessRawBody>(
   input: PostAndProcessInput,
-): Promise<{ response: Response; body: T }> {
+): Promise<PostAndProcessRawResult<T>> {
   const { app, inbox, sql, path, body } = input;
   const responsePending = app.request(path, {
     method: 'POST',

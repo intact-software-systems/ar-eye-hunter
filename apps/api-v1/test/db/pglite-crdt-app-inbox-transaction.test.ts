@@ -30,6 +30,19 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   },
 };
 
+interface CrdtDocumentRevisionRow {
+  readonly document_revision: string;
+  readonly update_count: string;
+}
+
+interface ResourceInboxTypeRow {
+  readonly ri_type_id: string;
+}
+
+interface SqlCountRow {
+  readonly count: string;
+}
+
 Deno.test('CRDT mutation CAS commits state and logical WS outbox atomically', async () => {
   await withPGliteSql(async (sql) => {
     const repository = new PSqlCrdtMutationRepository(
@@ -48,14 +61,11 @@ Deno.test('CRDT mutation CAS commits state and logical WS outbox atomically', as
     const first = await command('command-1', 'update-1', 1_000);
     await apply(sql, service, first);
 
-    const [document] = await sql<{
-      document_revision: string;
-      update_count: string;
-    }[]>`
+    const [document] = await sql<CrdtDocumentRevisionRow[]>`
       select document_revision, update_count from crdt_documents
       where document_key = ${first.documentKey}
     `;
-    const outbox = await sql<{ ri_type_id: string }[]>`
+    const outbox = await sql<ResourceInboxTypeRow[]>`
       select ri_type_id from resource_inbox
       where ri_type_id = 'WS_OUTBOX' order by ri_resource_id
     `;
@@ -115,7 +125,7 @@ Deno.test('CRDT mutation rolls metadata and update back when outbox write fails'
     );
     assert.equal(
       Number(
-        (await sql<{ count: string }[]>`
+        (await sql<SqlCountRow[]>`
       select count(*) as count from crdt_documents
     `)[0]?.count,
       ),
@@ -123,7 +133,7 @@ Deno.test('CRDT mutation rolls metadata and update back when outbox write fails'
     );
     assert.equal(
       Number(
-        (await sql<{ count: string }[]>`
+        (await sql<SqlCountRow[]>`
       select count(*) as count from crdt_updates
     `)[0]?.count,
       ),
@@ -175,15 +185,15 @@ Deno.test('CRDT mutation rejects an identical final WS outbox collision and roll
       (error: unknown) => error,
     );
     const [document, update, durableResult, collision] = await Promise.all([
-      sql<{ count: string }[]>`select count(*) as count from crdt_documents`,
-      sql<{ count: string }[]>`select count(*) as count from crdt_updates`,
-      sql<{ count: string }[]>`
+      sql<SqlCountRow[]>`select count(*) as count from crdt_documents`,
+      sql<SqlCountRow[]>`select count(*) as count from crdt_updates`,
+      sql<SqlCountRow[]>`
         select count(*) as count from resource_inbox
         where ri_resource_id = ${resultEntry.key.resourceId}
           and ri_topic_id = ${resultEntry.key.topicId}
           and fk_ext_bank_id = ${resultEntry.key.contextId}
       `,
-      sql<{ count: string }[]>`
+      sql<SqlCountRow[]>`
         select count(*) as count from resource_inbox
         where ri_resource_id = ${collisionEntry.key.resourceId}
           and ri_topic_id = ${collisionEntry.key.topicId}

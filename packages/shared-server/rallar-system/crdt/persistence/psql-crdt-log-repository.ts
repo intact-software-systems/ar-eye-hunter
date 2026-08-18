@@ -8,8 +8,9 @@ import {
   type RallarCrdtAuditEventKind,
   type RallarCrdtAuditSink,
   type RallarCrdtBackupBundle,
+  type RallarCrdtBackupBundleExportOptions,
   type RallarCrdtDebugBundle,
-  type RallarCrdtDebugBundleRedaction,
+  type RallarCrdtDebugBundleExportOptions,
   type RallarCrdtDocumentAdminPage,
   type RallarCrdtDocumentMetadata,
   type RallarCrdtDocumentRef,
@@ -194,11 +195,7 @@ export class PSqlCrdtLogRepository<
 
   async exportDebugBundle(
     document: RallarCrdtDocumentRef,
-    options: Readonly<{
-      reason?: string;
-      exportedAtEpochMs?: number;
-      redaction?: RallarCrdtDebugBundleRedaction;
-    }> = {},
+    options: RallarCrdtDebugBundleExportOptions = {},
   ): Promise<RallarCrdtDebugBundle<TPayload>> {
     const [metadata, snapshot, records] = await Promise.all([
       this.readDocumentMetadata(document),
@@ -223,9 +220,7 @@ export class PSqlCrdtLogRepository<
 
   async exportBackupBundle(
     document: RallarCrdtDocumentRef,
-    options: Readonly<{
-      exportedAtEpochMs?: number;
-    }> = {},
+    options: RallarCrdtBackupBundleExportOptions = {},
   ): Promise<RallarCrdtBackupBundle<TPayload> | undefined> {
     const [metadata, snapshot, records] = await Promise.all([
       this.readDocumentMetadata(document),

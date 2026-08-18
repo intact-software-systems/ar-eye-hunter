@@ -32,6 +32,12 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
 };
 
+interface PersistedSnapshotResultRow {
+  readonly snapshot_envelope: string;
+  readonly reason: string;
+  readonly ris_resource: string;
+}
+
 Deno.test('modern compact normalizes one reason before compute and persists it atomically', async () => {
   await withPGliteSql(async (sql) => {
     const now = await readPGliteDatabaseEpochMs(sql) + 12 * 60 * 60 * 1_000;
@@ -71,11 +77,7 @@ Deno.test('modern compact normalizes one reason before compute and persists it a
 
     service.processCrdtCommandNoWaiting(command);
     await drain(service, sql);
-    const [stored] = await sql<{
-      snapshot_envelope: string;
-      reason: string;
-      ris_resource: string;
-    }[]>`
+    const [stored] = await sql<PersistedSnapshotResultRow[]>`
       select s.snapshot_envelope, s.reason, r.ris_resource
       from crdt_snapshots s
       join resource_inbox_results r on r.ris_resource_id = 'compact-command'

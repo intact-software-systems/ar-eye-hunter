@@ -70,6 +70,12 @@ interface ProcessCrdtAdminMutationInput {
   readonly request: unknown;
 }
 
+interface CrdtAdminDebugExportRequest {
+  readonly document?: RallarCrdtDocumentRef;
+  readonly reason?: string;
+  readonly redactPayloads?: boolean;
+}
+
 export function registerCrdtAdminRoutes(
   app: Hono,
   options: RallarCrdtAdminRoutesOptions,
@@ -131,11 +137,7 @@ export function registerCrdtAdminRoutes(
 
   app.post('/api/crdt/admin/documents/debug-export', (c) =>
     withAdminError(c, async () => {
-      const body = await readJson<{
-        document?: RallarCrdtDocumentRef;
-        reason?: string;
-        redactPayloads?: boolean;
-      }>(c);
+      const body = await readJson<CrdtAdminDebugExportRequest>(c);
       return await options.repository.exportDebugBundle(
         readDocument(body),
         {
@@ -283,12 +285,10 @@ async function readJson<T>(c: Context): Promise<T> {
 }
 
 function readDocument(input: unknown): RallarCrdtDocumentRef {
-  const candidate = input &&
-      typeof input === 'object' &&
-      'document' in input &&
-      (input as { document?: unknown }).document
-    ? (input as { document?: unknown }).document
-    : input;
+  const requestDocument = input && typeof input === 'object' && 'document' in input
+    ? Reflect.get(input, 'document')
+    : undefined;
+  const candidate = requestDocument ?? input;
 
   if (!candidate || typeof candidate !== 'object') {
     throw new Error('CRDT admin request requires a document ref.');

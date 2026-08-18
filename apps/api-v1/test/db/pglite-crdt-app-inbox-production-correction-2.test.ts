@@ -30,6 +30,28 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
 };
 
+interface CrdtMutationRollbackCountsRow {
+  readonly documents: string;
+  readonly updates: string;
+  readonly outbox: string;
+  readonly results: string;
+}
+
+interface CrdtMutationCountsRow {
+  readonly documents: string;
+  readonly updates: string;
+  readonly outbox: string;
+}
+
+interface ResourceInboxResultRow {
+  readonly ris_resource: string;
+}
+
+interface ResourceInboxCompletionRow {
+  readonly ris_status: string;
+  readonly ris_resource: string;
+}
+
 Deno.test('production CRDT factory fails closed when document policies are unavailable', async () => {
   await withPGliteSql(async (sql) => {
     const now = await pgliteQueueNow(sql);
@@ -77,9 +99,7 @@ for (const stage of FAILURE_STAGES) {
       await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
       await service.inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
 
-      const [domain] = await sql<
-        { documents: string; updates: string; outbox: string; results: string }[]
-      >`
+      const [domain] = await sql<CrdtMutationRollbackCountsRow[]>`
         select
           (select count(*) from crdt_documents)::text as documents,
           (select count(*) from crdt_updates)::text as updates,
@@ -119,14 +139,14 @@ Deno.test('production AppCrdt accepts a new session replay and rejects changed-c
       capturedAtEpochMs: now + 2,
     });
 
-    const [counts] = await sql<{ documents: string; updates: string; outbox: string }[]>`
+    const [counts] = await sql<CrdtMutationCountsRow[]>`
       select
         (select count(*) from crdt_documents)::text as documents,
         (select count(*) from crdt_updates)::text as updates,
         (select count(*) from resource_inbox where ri_type_id = 'WS_OUTBOX')::text as outbox
     `;
     assert.deepEqual(counts, { documents: '1', updates: '1', outbox: '4' });
-    const results = await sql<{ ris_resource: string }[]>`
+    const results = await sql<ResourceInboxResultRow[]>`
       select ris_resource from resource_inbox_results
       where ris_topic_id = 'app-inbox.crdt-state'
       order by ris_row_id
@@ -168,14 +188,14 @@ Deno.test('production AppInbox retries a CRDT conflict from a fresh revoked auth
       capturedAtEpochMs: now,
     });
 
-    const [counts] = await sql<{ documents: string; updates: string; outbox: string }[]>`
+    const [counts] = await sql<CrdtMutationCountsRow[]>`
       select
         (select count(*) from crdt_documents)::text as documents,
         (select count(*) from crdt_updates)::text as updates,
         (select count(*) from resource_inbox where ri_type_id = 'WS_OUTBOX')::text as outbox
     `;
     assert.deepEqual(counts, { documents: '0', updates: '0', outbox: '0' });
-    const [completion] = await sql<{ ris_status: string; ris_resource: string }[]>`
+    const [completion] = await sql<ResourceInboxCompletionRow[]>`
       select ris_status, ris_resource from resource_inbox_results
       where ris_topic_id = 'app-inbox.crdt-state'
         and ris_resource_id = 'revoked-delivery'

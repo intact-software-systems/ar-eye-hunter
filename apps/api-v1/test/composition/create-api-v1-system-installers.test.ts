@@ -65,11 +65,17 @@ Deno.test('websocket lifecycle preserves translations, retry policy, and stop ow
   const calls: RuntimeCalls = {};
   const runtime = createRuntime(events, true, calls);
   let handlers: RallarWsLifecycleHandlers | undefined;
-  const operations = createOperations(events);
-  operations.initWebSocketLifecycle = (_service, input) => {
-    events.push('ws-lifecycle');
-    handlers = input;
-    return { getPendingCloseCount: () => 0, retryPending: () => Promise.resolve(), stop: () => {} };
+  const operations: ApiV1SystemInstallerOperations = {
+    ...createOperations(events),
+    initWebSocketLifecycle: (_service, input) => {
+      events.push('ws-lifecycle');
+      handlers = input;
+      return {
+        getPendingCloseCount: () => 0,
+        retryPending: () => Promise.resolve(),
+        stop: () => {},
+      };
+    },
   };
   const installers = constructApiV1SystemInstallers(createInput(), operations);
   installers.installWebSocketLifecycle?.(runtime, {} as RallarServerWsFacade);

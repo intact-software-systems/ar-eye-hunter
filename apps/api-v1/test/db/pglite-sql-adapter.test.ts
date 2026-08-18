@@ -140,6 +140,128 @@ const FUTURE_INSTANT = Temporal.Instant.from('9999-12-31T23:59:59.999Z');
 const PAST_INSTANT = Temporal.Instant.from('2000-01-01T00:00:00.000Z');
 const CREATED_TS = Temporal.PlainDateTime.from('2026-06-01T12:00:00');
 
+interface ResourceInboxStatusRow {
+  readonly ri_type_id: string;
+  readonly ri_status: string;
+}
+
+interface NumericCountRow {
+  readonly count: string | number;
+}
+
+interface StringCountRow {
+  readonly count: string;
+}
+
+interface ResourceInboxLifecycleRow {
+  readonly ri_resource_id: string;
+  readonly ri_topic_id: string;
+  readonly ri_type_id: string;
+  readonly ri_status: string;
+  readonly ri_resource: string;
+}
+
+interface ResourceInboxForeignKeyRow {
+  readonly ri_topic_id: string;
+  readonly ri_resource_id: string;
+  readonly fk_ext_bank_id: string;
+}
+
+interface ResourceInboxTopicTypeRow {
+  readonly ri_topic_id: string;
+  readonly ri_type_id: string;
+}
+
+interface NumericValueRow {
+  readonly value: number;
+}
+
+interface StringValueRow {
+  readonly value: string;
+}
+
+interface RuntimeStateExpiryRow {
+  readonly store_key: string;
+  readonly expire_at_ts: string;
+}
+
+interface ResourceInboxAttemptStatusRow {
+  readonly ri_attempts: string | number;
+  readonly ri_status: string;
+}
+
+interface ResourceInboxPayloadRow {
+  readonly ri_resource: string;
+}
+
+interface EpochMillisecondsRow {
+  readonly epoch_ms: string | number;
+}
+
+interface GroupEventWorkspaceRow {
+  readonly workspace_key: string;
+}
+
+interface CreatedTimestampRow {
+  readonly created_ts: string;
+}
+
+interface ExpireTimestampRow {
+  readonly expire_ts: string;
+}
+
+interface StartTimestampRow {
+  readonly start_ts: string;
+}
+
+interface EndTimestampRow {
+  readonly end_ts: string;
+}
+
+interface TopologyCommandPayload {
+  readonly data: TopologyAppInboxCommand;
+}
+
+interface AcceptedTopologyHttpCommand {
+  readonly command: TopologyAppInboxCommand;
+  readonly requestPayload: TopologyAppInboxRequestPayload;
+  readonly divergentPayload: TopologyAppInboxRequestPayload;
+  readonly result: unknown;
+}
+
+interface DurableTopologyAuthorityProof {
+  readonly principalId: string;
+  readonly sessionId: string;
+  readonly sessionIssuedAtEpochMs: number;
+}
+
+interface DurableTopologyAuthorityValue {
+  readonly proof: DurableTopologyAuthorityProof;
+}
+
+interface DurableTopologyAuthority {
+  readonly authority: DurableTopologyAuthorityValue;
+}
+
+interface ResourceInboxKeyFields {
+  readonly topicId: string;
+  readonly resourceId: string;
+  readonly contextId: string;
+}
+
+interface RtcTopologyDeliveryState {
+  readonly headSequence: number;
+  readonly sequences: readonly number[];
+}
+
+interface RtcTopologyDeliveryStreamRow {
+  readonly head_sequence: number;
+}
+
+interface RtcTopologyDeliveryEntryRow {
+  readonly sequence: number;
+}
+
 Deno.test('PGlite AppInbox decodes exact legacy failure versions without weakening canonical rows', async () => {
   await withPGliteSql(async (sql) => {
     const baseFailure = {
@@ -272,7 +394,7 @@ Deno.test('PGlite AppInbox decodes exact legacy failure versions without weakeni
       );
       assert.ok(result.typed.left, testCase.name);
       assert.equal(
-        (result.typed.left as typeof result.typed.left & { version?: string }).version,
+        Reflect.get(result.typed.left, 'version'),
         testCase.version,
         testCase.name,
       );
@@ -395,7 +517,7 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
       'Vertical Group',
     );
     assert.equal((await new PSqlGroupStateEventRepository(sql).listGroupEvents(ref)).length, 1);
-    const beforeSummary = await sql<{ ri_type_id: string; ri_status: string }[]>`
+    const beforeSummary = await sql<ResourceInboxStatusRow[]>`
       select ri_type_id, ri_status from resource_inbox order by ri_row_id
     `;
     assert.equal(
@@ -415,7 +537,7 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
     assert.equal(beforeSummary.filter((row) => row.ri_type_id === 'WS_OUTBOX').length, 0);
     assert.equal(
       Number(
-        (await sql<{ count: string | number }[]>`
+        (await sql<NumericCountRow[]>`
       select count(*) as count from resource_inbox_results
     `)[0]?.count,
       ),
@@ -426,13 +548,7 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
       OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
       toResilienceDto(),
     );
-    const afterSummary = await sql<{
-      ri_resource_id: string;
-      ri_topic_id: string;
-      ri_type_id: string;
-      ri_status: string;
-      ri_resource: string;
-    }[]>`
+    const afterSummary = await sql<ResourceInboxLifecycleRow[]>`
       select ri_resource_id, ri_topic_id, ri_type_id, ri_status, ri_resource
       from resource_inbox order by ri_row_id
     `;
@@ -524,11 +640,7 @@ Deno.test('PGlite summary reservation fence rolls back CAS and every downstream 
     );
     assert.equal((await pending).right !== undefined, true);
 
-    const [summaryKey] = await sql<{
-      ri_topic_id: string;
-      ri_resource_id: string;
-      fk_ext_bank_id: string;
-    }[]>`
+    const [summaryKey] = await sql<ResourceInboxForeignKeyRow[]>`
       select ri_topic_id, ri_resource_id, fk_ext_bank_id
       from resource_inbox
       where ri_topic_id = ${APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC}
@@ -579,7 +691,7 @@ Deno.test('PGlite summary reservation fence rolls back CAS and every downstream 
     const stillReserved = await resourceInbox.findAnyByKey(key);
     assert.equal(stillReserved?.status, EntityStatus.RESERVED);
     assert.equal(stillReserved?.dequeueAudit.attempts, 1);
-    const downstream = await sql<{ ri_topic_id: string; ri_type_id: string }[]>`
+    const downstream = await sql<ResourceInboxTopicTypeRow[]>`
       select ri_topic_id, ri_type_id
       from resource_inbox
       where ri_type_id in ('WS_OUTBOX', 'APP_OUTBOX')
@@ -616,13 +728,13 @@ Deno.test('group event workspace keys preserve ordinary values and isolate senti
 
 Deno.test('PGlite SQL adapter supports tagged templates, array interpolation, and transactions', async () => {
   await withPGliteSql(async (sql) => {
-    const scalarRows = await sql<{ value: number }[]>`
+    const scalarRows = await sql<NumericValueRow[]>`
             select ${1}::int as value
         `;
 
     assert.deepEqual(scalarRows, [{ value: 1 }]);
 
-    const arrayRows = await sql<{ value: string }[]>`
+    const arrayRows = await sql<StringValueRow[]>`
             select value
             from (values ('a'), ('b'), ('c')) as t(value)
             where value in ${sql(['a', 'c'])}
@@ -647,7 +759,7 @@ Deno.test('PGlite SQL adapter supports tagged templates, array interpolation, an
       /rollback smoke/,
     );
 
-    const rowsAfterRollback = await sql<{ count: string }[]>`
+    const rowsAfterRollback = await sql<StringCountRow[]>`
             select count(*)
             from runtime_state_store
             where store_namespace = ${'tx'}
@@ -1350,7 +1462,7 @@ Deno.test(
         });
       });
 
-      const rows = await sql<Array<{ store_key: string; expire_at_ts: string }>>`
+      const rows = await sql<RuntimeStateExpiryRow[]>`
         select store_key, expire_at_ts::text as expire_at_ts
         from runtime_state_store
         where store_namespace = ${'guarded-expiry'}
@@ -1625,10 +1737,7 @@ Deno.test('PGlite AppGroup retries cross-target topology CAS conflicts through R
     assert.equal(staleReadCount, 1);
     assert.ok(delegatedReadCount >= 2);
     assert.equal(retryReleaseCount, 1);
-    const [retriedEntry] = await sql<{
-      ri_attempts: string | number;
-      ri_status: string;
-    }[]>`
+    const [retriedEntry] = await sql<ResourceInboxAttemptStatusRow[]>`
       select ri_attempts, ri_status from resource_inbox
       where ri_type_id = 'APP_INBOX'
         and ri_resource_id = 'pglite-topology-b'
@@ -1652,7 +1761,7 @@ Deno.test('PGlite AppGroup retries cross-target topology CAS conflicts through R
       configRepository.invariantGenerationKey(groupRef),
     );
     assert.equal(invariantGeneration?.entry.revision, 1);
-    const outboxRows = await sql<{ ri_resource: string }[]>`
+    const outboxRows = await sql<ResourceInboxPayloadRow[]>`
       select ri_resource
       from resource_inbox
       where ri_type_id = 'APP_OUTBOX'
@@ -1746,12 +1855,7 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
     );
     const firstResult = await firstPending;
     assert.ok(firstResult.right);
-    const acceptedHttpCommands: Array<{
-      command: TopologyAppInboxCommand;
-      requestPayload: TopologyAppInboxRequestPayload;
-      divergentPayload: TopologyAppInboxRequestPayload;
-      result: unknown;
-    }> = [{
+    const acceptedHttpCommands: AcceptedTopologyHttpCommand[] = [{
       command: first,
       requestPayload: { operation: 'putConfig', config: { topologyKind: 'tree' } },
       divergentPayload: { operation: 'putConfig', config: { topologyKind: 'mesh' } },
@@ -1773,18 +1877,18 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
     );
     assert.deepEqual(replayResult.right, firstResult.right);
 
-    const [persisted] = await sql<{ ri_resource: string }[]>`
+    const [persisted] = await sql<ResourceInboxPayloadRow[]>`
       select ri_resource from resource_inbox
       where ri_type_id = 'APP_INBOX'
         and ri_resource_id = ${first.requestId}
     `;
     assert.ok(persisted);
     const message = JSON.parse(persisted.ri_resource) as ALMessage;
-    const envelope = JSON.parse(message.payload.resource) as { data: TopologyAppInboxCommand };
+    const envelope = JSON.parse(message.payload.resource) as TopologyCommandPayload;
     assert.equal(envelope.data.capturedAtEpochMs, 1_000);
     assert.equal(
       Number(
-        (await sql<{ count: string | number }[]>`
+        (await sql<NumericCountRow[]>`
         select count(*) as count from resource_inbox
         where ri_type_id = 'APP_INBOX'
           and ri_resource_id = ${first.requestId}
@@ -1855,7 +1959,7 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
       });
     }
 
-    const [outboxCountBeforeReplay] = await sql<{ count: string | number }[]>`
+    const [outboxCountBeforeReplay] = await sql<NumericCountRow[]>`
       select count(*) as count from resource_inbox where ri_type_id = 'APP_OUTBOX'
     `;
     let freshProofRevision = 0;
@@ -1886,7 +1990,7 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
       assert.deepEqual(replayAfterChange.right, accepted.result);
       assert.equal(
         Number(
-          (await sql<{ count: string | number }[]>`
+          (await sql<NumericCountRow[]>`
             select count(*) as count from resource_inbox
             where ri_type_id = 'APP_INBOX'
               and ri_resource_id = ${accepted.command.requestId}
@@ -1911,22 +2015,16 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
     }
     assert.equal(freshProofRevision, 5);
     for (const accepted of acceptedHttpCommands) {
-      const [durable] = await sql<{ ri_resource: string }[]>`
+      const [durable] = await sql<ResourceInboxPayloadRow[]>`
         select ri_resource from resource_inbox
         where ri_type_id = 'APP_INBOX'
           and ri_resource_id = ${accepted.command.requestId}
       `;
       assert.ok(durable);
       const durableMessage = JSON.parse(durable.ri_resource) as ALMessage;
-      const durableEnvelope = JSON.parse(durableMessage.payload.resource) as {
-        authority: {
-          proof: {
-            principalId: string;
-            sessionId: string;
-            sessionIssuedAtEpochMs: number;
-          };
-        };
-      };
+      const durableEnvelope = JSON.parse(
+        durableMessage.payload.resource,
+      ) as DurableTopologyAuthority;
       assert.equal(
         durableEnvelope.authority.proof.principalId,
         authority.clientId,
@@ -1943,7 +2041,7 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
     await authSessions.putSession(authority);
     assert.equal(
       Number(
-        (await sql<{ count: string | number }[]>`
+        (await sql<NumericCountRow[]>`
           select count(*) as count from resource_inbox where ri_type_id = 'APP_OUTBOX'
         `)[0]?.count,
       ),
@@ -2121,7 +2219,7 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
 
     assert.equal(
       Number(
-        (await sql<{ count: string | number }[]>`
+        (await sql<NumericCountRow[]>`
         select count(*) as count from resource_inbox
         where ri_type_id = 'APP_INBOX' and ri_status = 'COMPLETED'
       `)[0]?.count,
@@ -2369,7 +2467,7 @@ Deno.test('PGlite topology route preserves structured AppInbox terminal and unav
     );
     assert.equal(conflict.status, 409);
     assert.equal(
-      (await conflict.json() as { code?: string }).code,
+      Reflect.get(await conflict.json(), 'code'),
       'app-inbox-idempotency-conflict',
     );
 
@@ -2674,7 +2772,7 @@ Deno.test('PGlite topology authority fence rejects an archive overlapping the st
     assert.equal((await groupState.findGroup(groupRef))?.status, 'archived');
     assert.equal(
       Number(
-        (await sql<{ count: string | number }[]>`
+        (await sql<NumericCountRow[]>`
         select count(*) as count
         from resource_inbox
         where ri_type_id = 'APP_OUTBOX'
@@ -2955,10 +3053,7 @@ Deno.test('PGlite topology worker rereads terminal authority and the topology pr
       toResilienceDto(),
     );
 
-    const [work] = await sql<{
-      ri_attempts: string | number;
-      ri_status: string;
-    }[]>`
+    const [work] = await sql<ResourceInboxAttemptStatusRow[]>`
       select ri_attempts, ri_status from resource_inbox
       where ri_type_id = 'APP_OUTBOX'
         and ri_topic_id = ${APP_OUTBOX_RTC_TOPOLOGY_TOPIC}
@@ -3003,7 +3098,7 @@ Deno.test('PGlite topology worker classifies exact WS outbox replay as idempoten
     );
     assert.equal(
       Number(
-        (await sql<{ count: string | number }[]>`
+        (await sql<NumericCountRow[]>`
         select count(*) as count
         from resource_inbox
         where ri_type_id = 'WS_OUTBOX'
@@ -3810,7 +3905,7 @@ Deno.test('PSql group events isolate ordinary and sentinel workspaces without ev
       );
     }
 
-    const rows = await sql<{ workspace_key: string }[]>`
+    const rows = await sql<GroupEventWorkspaceRow[]>`
       select workspace_key
       from group_state_events
       where application_id = ${ordinaryRef.applicationId}
@@ -3893,7 +3988,7 @@ Deno.test('PGlite group event collision rolls back the authoritative mutation tr
       await repository.findIdempotentGroupMutationReceipt(ref, 'collision-request'),
       undefined,
     );
-    const collisionRows = await sql<{ count: string }[]>`
+    const collisionRows = await sql<StringCountRow[]>`
       select count(*) as count
       from group_state_events
       where application_id = ${ref.applicationId}
@@ -3902,7 +3997,7 @@ Deno.test('PGlite group event collision rolls back the authoritative mutation tr
         and event_id = ${updatePreparation.facts.eventId}
     `;
     assert.equal(Number(collisionRows[0]?.count), 1);
-    const [summaryRows] = await sql<{ count: string | number }[]>`
+    const [summaryRows] = await sql<NumericCountRow[]>`
       select count(*) as count
       from resource_inbox
       where ri_topic_id = ${APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC}
@@ -3993,7 +4088,7 @@ Deno.test('PGlite group summary outbox collision rolls back state event and rece
       await repository.findIdempotentGroupMutationReceipt(ref, 'summary-collision-request'),
       undefined,
     );
-    const [eventRows] = await sql<{ count: string | number }[]>`
+    const [eventRows] = await sql<NumericCountRow[]>`
       select count(*) as count
       from group_state_events
       where application_id = ${ref.applicationId}
@@ -4594,7 +4689,7 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
         },
       };
       assert.equal(await inbox.writeIfAbsentOrMatch(creationEntry), 'inserted');
-      const creationRows = await sql<{ created_ts: string }[]>`
+      const creationRows = await sql<CreatedTimestampRow[]>`
         select created_ts::text as created_ts
         from resource_inbox
         where ri_topic_id = ${creationEntry.key.topicId}
@@ -4613,7 +4708,7 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
         expiryTs: Temporal.Instant.from(`9998-06-01T12:00:00.${fraction}Z`),
       });
       assert.equal(await inbox.writeIfAbsentOrMatch(expiryEntry), 'inserted');
-      const expiryRows = await sql<{ expire_ts: string }[]>`
+      const expiryRows = await sql<ExpireTimestampRow[]>`
         select expire_ts::text as expire_ts
         from resource_inbox
         where ri_topic_id = ${expiryEntry.key.topicId}
@@ -4652,7 +4747,7 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     assert.equal(reserved.right?.dequeueAudit.attempts, 1);
     assert.equal(await inbox.writeIfAbsentOrMatch(active), 'matched');
 
-    const reservedStartRows = await sql<{ start_ts: string }[]>`
+    const reservedStartRows = await sql<StartTimestampRow[]>`
       select start_ts::text as start_ts
       from resource_inbox
       where ri_topic_id = ${active.key.topicId}
@@ -4684,7 +4779,7 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
       releasedAt,
       disposition: { status: EntityStatus.COMPLETED, delayMs: null },
     });
-    const releaseRows = await sql<{ end_ts: string }[]>`
+    const releaseRows = await sql<EndTimestampRow[]>`
       select end_ts::text as end_ts
       from resource_inbox
       where ri_topic_id = ${active.key.topicId}
@@ -4797,7 +4892,7 @@ Deno.test('Coalesced APP_OUTBOX RTC topology work fits the durable resource inbo
       reason: 'rtt',
     });
     const stored = await queue.getItem(updated.entry.key);
-    const rowCount = await sql<{ count: string }[]>`
+    const rowCount = await sql<StringCountRow[]>`
       select count(*) as count
       from resource_inbox
       where fk_ext_bank_id = ${updated.entry.key.contextId}
@@ -5335,11 +5430,7 @@ async function createPGliteTopologyWorkFixture(
   const reserved = await resourceInbox.findAnyByKey(workEntry.key);
   assert.ok(reserved);
   const message = JSON.parse(reserved.resource) as ALMessage;
-  const envelope = JSON.parse(message.payload.resource) as {
-    topicId: string;
-    resourceId: string;
-    contextId: string;
-  };
+  const envelope = JSON.parse(message.payload.resource) as ResourceInboxKeyFields;
   const workId = [
     envelope.topicId,
     envelope.contextId,
@@ -5432,13 +5523,13 @@ async function createPGliteTopologyWorkFixture(
 async function readRtcTopologyDeliveryState(
   sql: PGliteSql,
   publisherStreamId: string,
-): Promise<Readonly<{ headSequence: number; sequences: readonly number[] }>> {
-  const streams = await sql<Readonly<{ head_sequence: number }>[]>`
+): Promise<RtcTopologyDeliveryState> {
+  const streams = await sql<RtcTopologyDeliveryStreamRow[]>`
     select head_sequence::double precision as head_sequence
     from rtc_topology_delivery_stream
     where stream_id = ${publisherStreamId}
   `;
-  const entries = await sql<Readonly<{ sequence: number }>[]>`
+  const entries = await sql<RtcTopologyDeliveryEntryRow[]>`
     select sequence::double precision as sequence
     from rtc_topology_delivery_log
     where publisher_stream_id = ${publisherStreamId}
@@ -5603,14 +5694,16 @@ function activeTopologySnapshot(input: ActiveTopologySnapshotInput): RallarOverl
   };
 }
 
+interface CreatePGliteRemovalPlanningScenarioInput {
+  readonly name: string;
+  readonly status: 'active' | 'archived';
+  readonly expiresAtEpochMs: number | null;
+  readonly updatedAtEpochMs: number;
+}
+
 async function createPGliteRemovalPlanningScenario(
   sql: PGliteSql,
-  input: Readonly<{
-    name: string;
-    status: 'active' | 'archived';
-    expiresAtEpochMs: number | null;
-    updatedAtEpochMs: number;
-  }>,
+  input: CreatePGliteRemovalPlanningScenarioInput,
 ) {
   const nowEpochMs = 1_000;
   const groupRef = {
@@ -5688,7 +5781,7 @@ async function createPGliteRemovalPlanningScenario(
 }
 
 async function readPGliteDatabaseEpochMs(sql: PGliteSql): Promise<number> {
-  const [clock] = await sql<{ epoch_ms: string | number }[]>`
+  const [clock] = await sql<EpochMillisecondsRow[]>`
     select floor(extract(epoch from now()) * 1000)::bigint as epoch_ms
   `;
   assert.ok(clock);
@@ -5760,7 +5853,7 @@ async function waitForPGliteQueueRow(
   status: string,
 ): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    const [row] = await sql<{ count: string }[]>`
+    const [row] = await sql<StringCountRow[]>`
       select count(*) as count
       from resource_inbox
       where ri_type_id = ${typeId} and ri_status = ${status}
@@ -5912,16 +6005,18 @@ const CRDT_DOCUMENT_REF: RallarCrdtDocumentRef = {
   roomRef: CRDT_ROOM_REF,
 };
 
+interface CreateResourceEntryOptions {
+  readonly topicId?: string;
+  readonly contextId?: string;
+  readonly typeId?: string;
+  readonly status?: EntityStatus;
+  readonly payload?: unknown;
+  readonly expiryTs?: Temporal.Instant;
+}
+
 function createResourceEntry(
   resourceId: string,
-  options: Readonly<{
-    topicId?: string;
-    contextId?: string;
-    typeId?: string;
-    status?: EntityStatus;
-    payload?: unknown;
-    expiryTs?: Temporal.Instant;
-  }> = {},
+  options: CreateResourceEntryOptions = {},
 ): ResourceEntry {
   return {
     key: {
