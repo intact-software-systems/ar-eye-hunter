@@ -13,6 +13,9 @@ export function toGroupMutationDescriptor(
     case AppInboxType.GROUP_CREATE:
     case AppInboxType.GROUP_UPDATE:
     case AppInboxType.GROUP_DIRECTOR_APPOINT:
+    case AppInboxType.GROUP_ESTABLISHMENT_START:
+    case AppInboxType.GROUP_ACTIVATE:
+    case AppInboxType.GROUP_ESTABLISHMENT_REOPEN:
     case AppInboxType.GROUP_JOIN_CODE_ROTATE:
       return toAggregateMutationDescriptor(enqueue);
     case AppInboxType.GROUP_JOIN:
@@ -48,6 +51,9 @@ function toAggregateMutationDescriptor(
     | { readonly type: typeof AppInboxType.GROUP_CREATE }
     | { readonly type: typeof AppInboxType.GROUP_UPDATE }
     | { readonly type: typeof AppInboxType.GROUP_DIRECTOR_APPOINT }
+    | { readonly type: typeof AppInboxType.GROUP_ESTABLISHMENT_START }
+    | { readonly type: typeof AppInboxType.GROUP_ACTIVATE }
+    | { readonly type: typeof AppInboxType.GROUP_ESTABLISHMENT_REOPEN }
     | { readonly type: typeof AppInboxType.GROUP_JOIN_CODE_ROTATE }
   >,
 ): GroupMutationDescriptor {
@@ -72,6 +78,30 @@ function toAggregateMutationDescriptor(
     case AppInboxType.GROUP_DIRECTOR_APPOINT: {
       return mutationDescriptor(
         'appointDirector',
+        enqueue.data.scope,
+        enqueue.data.groupId,
+        enqueue.data.request,
+      );
+    }
+    case AppInboxType.GROUP_ESTABLISHMENT_START: {
+      return mutationDescriptor(
+        'startGroupEstablishment',
+        enqueue.data.scope,
+        enqueue.data.groupId,
+        enqueue.data.request,
+      );
+    }
+    case AppInboxType.GROUP_ACTIVATE: {
+      return mutationDescriptor(
+        'activateGroup',
+        enqueue.data.scope,
+        enqueue.data.groupId,
+        enqueue.data.request,
+      );
+    }
+    case AppInboxType.GROUP_ESTABLISHMENT_REOPEN: {
+      return mutationDescriptor(
+        'reopenGroupEstablishment',
         enqueue.data.scope,
         enqueue.data.groupId,
         enqueue.data.request,

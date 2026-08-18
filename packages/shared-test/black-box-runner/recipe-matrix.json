@@ -1090,6 +1090,31 @@
       "description": "Three-server REST point-read convergence with scalar and causal floor/header evidence."
     },
     {
+      "id": "api-v1-group-lifecycle-transitions",
+      "recipe": "tests/api-v1/api-v1-group-lifecycle-transitions.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-lifecycle-transitions",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Drives the three lifecycle transition commands on a managed-preset group -- forming to establishing to active to reconfiguring and back -- with formation-epoch assertions, a non-manager denial, and an illegal-transition denial."
+    },
+    {
       "id": "api-v1-group-lifecycle-policy",
       "recipe": "tests/api-v1/api-v1-group-lifecycle-policy.json",
       "category": "api-v1-black-box",

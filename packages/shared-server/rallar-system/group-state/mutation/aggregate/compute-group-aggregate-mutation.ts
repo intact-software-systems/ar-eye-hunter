@@ -75,17 +75,18 @@ export function computeCreate(
       message: `Group already exists: ${command.aggregateRef.groupId}`,
     });
   }
-  const policyIssues = command.input.lifecyclePolicy === undefined
-    ? []
-    : validateGroupLifecyclePolicy(command.input.lifecyclePolicy).left ?? [];
+  const policyIssues =
+    command.input.lifecyclePolicy === undefined
+      ? []
+      : (validateGroupLifecyclePolicy(command.input.lifecyclePolicy).left ?? []);
   if (policyIssues.length > 0) {
     return rejected({
       command,
       read,
       facts,
-      message: `Group lifecycle policy is not coherent: ${
-        policyIssues.map((issue) => `${issue.field} ${issue.code}`).join('; ')
-      }`,
+      message: `Group lifecycle policy is not coherent: ${policyIssues
+        .map((issue) => `${issue.field} ${issue.code}`)
+        .join('; ')}`,
     });
   }
   const audit = auditStamp(command, facts, command.input.createdByPrincipalId);

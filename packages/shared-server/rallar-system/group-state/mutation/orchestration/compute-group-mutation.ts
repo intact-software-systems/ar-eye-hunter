@@ -16,6 +16,10 @@ import {
   computeRotateJoinCode,
   computeUpdate,
 } from '../aggregate/compute-group-aggregate-mutation.ts';
+// prettier-ignore
+import {
+  computeLifecycleTransition,
+} from '../aggregate/compute-lifecycle-transition.ts';
 import {
   computeGovernedMember,
   computeInvite,
@@ -59,6 +63,10 @@ export function computeGroupMutation(
       return computeUpdate(command, read, facts);
     case 'appointDirector':
       return computeDirector(command, read, facts);
+    case 'startGroupEstablishment':
+    case 'activateGroup':
+    case 'reopenGroupEstablishment':
+      return computeLifecycleTransition(command, read, facts);
     case 'joinGroup':
     case 'acceptGroupInvite':
       return computeJoin(command, read, facts);

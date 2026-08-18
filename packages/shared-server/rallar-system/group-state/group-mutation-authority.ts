@@ -184,6 +184,9 @@ export function toDescriptorCommand(
     case 'createGroup':
     case 'updateGroup':
     case 'appointDirector':
+    case 'startGroupEstablishment':
+    case 'activateGroup':
+    case 'reopenGroupEstablishment':
     case 'rotateGroupJoinCode':
       return toAggregateMutationCommand(descriptor, randomId);
     case 'connectPresence':

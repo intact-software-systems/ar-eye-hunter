@@ -1,6 +1,7 @@
 import type {
   AcceptGroupInviteRequest,
   AppointGroupDirectorRequest,
+  MutationActorInput,
   BanGroupMemberRequest,
   ConnectGroupPresenceSessionRequest,
   CreateGroupInviteRequest,
@@ -36,6 +37,12 @@ export type GroupDirectorAppointAppInboxPayload = Readonly<{
   scope: StateScope;
   groupId: string;
   request: AppointGroupDirectorRequest;
+}>;
+
+export type GroupLifecycleTransitionAppInboxPayload = Readonly<{
+  scope: StateScope;
+  groupId: string;
+  request: MutationActorInput;
 }>;
 
 export type GroupJoinAppInboxPayload = Readonly<{
@@ -136,6 +143,9 @@ export interface AuthenticatedGroupMutationPayloadByType {
   [AppInboxType.GROUP_CREATE]: GroupCreateAppInboxPayload;
   [AppInboxType.GROUP_UPDATE]: GroupUpdateAppInboxPayload;
   [AppInboxType.GROUP_DIRECTOR_APPOINT]: GroupDirectorAppointAppInboxPayload;
+  [AppInboxType.GROUP_ESTABLISHMENT_START]: GroupLifecycleTransitionAppInboxPayload;
+  [AppInboxType.GROUP_ACTIVATE]: GroupLifecycleTransitionAppInboxPayload;
+  [AppInboxType.GROUP_ESTABLISHMENT_REOPEN]: GroupLifecycleTransitionAppInboxPayload;
   [AppInboxType.GROUP_JOIN]: GroupJoinAppInboxPayload;
   [AppInboxType.GROUP_INVITE_CREATE]: GroupInviteCreateAppInboxPayload;
   [AppInboxType.GROUP_INVITE_REVOKE]: GroupInviteRevokeAppInboxPayload;
@@ -170,6 +180,9 @@ export const AUTHENTICATED_GROUP_INBOX_TYPES = [
   AppInboxType.GROUP_CREATE,
   AppInboxType.GROUP_UPDATE,
   AppInboxType.GROUP_DIRECTOR_APPOINT,
+  AppInboxType.GROUP_ESTABLISHMENT_START,
+  AppInboxType.GROUP_ACTIVATE,
+  AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
   AppInboxType.GROUP_JOIN,
   AppInboxType.GROUP_INVITE_CREATE,
   AppInboxType.GROUP_INVITE_REVOKE,

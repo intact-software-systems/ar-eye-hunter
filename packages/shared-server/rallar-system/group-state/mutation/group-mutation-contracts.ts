@@ -23,6 +23,10 @@ import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepos
 import type {
   InitialGroupPresenceSummaryCandidate,
 } from '../presence/group-initial-presence-summary.ts';
+// prettier-ignore
+import type {
+  GroupLifecyclePolicyRead,
+} from '../persistence/group-lifecycle-policy-repository.ts';
 
 type NullableActorInput = Readonly<{
   actorPrincipalId: string | null;
@@ -80,6 +84,11 @@ export type GroupMutationCommand =
       Readonly<{
         operation: 'appointDirector';
         input: NullableActorInput & Readonly<{ heartbeatTtlMs: number }>;
+      }>)
+  | (GroupMutationCommandBase &
+      Readonly<{
+        operation: 'startGroupEstablishment' | 'activateGroup' | 'reopenGroupEstablishment';
+        input: NullableActorInput;
       }>)
   | (GroupMutationCommandBase &
       Readonly<{
@@ -226,6 +235,8 @@ export type GroupMutationRead = Readonly<{
   authorityPresenceSessions: readonly GroupPresenceSession[];
   authorityPresenceSessionEntries: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
   presenceSummary: RuntimeStateEntryValue<GroupPresenceSummary> | null;
+  /** Loaded only for the lifecycle transition operations; null everywhere else. */
+  lifecyclePolicy: GroupLifecyclePolicyRead | null;
 }>;
 
 export type GroupMutationFacts = Readonly<{
@@ -315,6 +326,21 @@ export type GroupMutationComputed =
     }>;
 
 export type GroupMutationComputedWrite = Extract<GroupMutationComputed, { outcome: 'write' }>;
+
+export type GroupLifecycleTransitionOperation = Extract<
+  GroupMutationCommand['operation'],
+  'startGroupEstablishment' | 'activateGroup' | 'reopenGroupEstablishment'
+>;
+
+export function isGroupLifecycleTransitionOperation(
+  operation: GroupMutationCommand['operation'],
+): operation is GroupLifecycleTransitionOperation {
+  return (
+    operation === 'startGroupEstablishment' ||
+    operation === 'activateGroup' ||
+    operation === 'reopenGroupEstablishment'
+  );
+}
 
 export type GroupMutationIdempotencyProbe =
   | Readonly<{ outcome: 'miss' }>

@@ -1,0 +1,228 @@
+import { describe, expect, it } from 'vitest';
+
+import type { AuditStamp, Group } from '@shared/api/group-types.ts';
+// prettier-ignore
+import {
+  resolveGroupLifecyclePolicyPreset,
+} from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+// prettier-ignore
+import {
+  computeGroupMutation,
+} from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import type {
+  GroupMutationCommand,
+  GroupMutationFacts,
+  GroupMutationRead,
+} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
+
+import {
+  groupMemberStorageKey,
+  groupRef,
+  groupStorageKey,
+  storedEntry,
+} from './group-mutation-test-runtime.ts';
+
+describe('group lifecycle transition computation', () => {
+  it('starts establishment from forming and advances the formation epoch', () => {
+    const computed = computeGroupMutation({
+      command: transitionCommand('startGroupEstablishment'),
+      read: transitionRead({ lifecycleState: 'forming', formationEpoch: 2 }),
+      facts: transitionFacts(),
+    });
+
+    expect(computed.outcome).toBe('write');
+    if (computed.outcome !== 'write') return;
+    expect(computed.guard.kind).toBe('group');
+    const written = computed.guard.value as Group;
+    expect(written.lifecycleState).toBe('establishing');
+    expect(written.formationEpoch).toBe(3);
+    expect(written.snapshotVersion).toBe(2);
+    expect(computed.event.eventType).toBe('group-updated');
+  });
+
+  it('activates from establishing and from reconfiguring', () => {
+    for (const from of ['establishing', 'reconfiguring'] as const) {
+      const computed = computeGroupMutation({
+        command: transitionCommand('activateGroup'),
+        read: transitionRead({ lifecycleState: from, formationEpoch: 1 }),
+        facts: transitionFacts(),
+      });
+      expect(computed.outcome).toBe('write');
+      if (computed.outcome !== 'write') continue;
+      const written = computed.guard.value as Group;
+      expect(written.lifecycleState).toBe('active');
+      expect(written.formationEpoch).toBe(2);
+    }
+  });
+
+  it('reopens establishment only from active', () => {
+    const computed = computeGroupMutation({
+      command: transitionCommand('reopenGroupEstablishment'),
+      read: transitionRead({ lifecycleState: 'active', formationEpoch: 4 }),
+      facts: transitionFacts(),
+    });
+    expect(computed.outcome).toBe('write');
+    if (computed.outcome !== 'write') return;
+    const written = computed.guard.value as Group;
+    expect(written.lifecycleState).toBe('reconfiguring');
+    expect(written.formationEpoch).toBe(5);
+  });
+
+  it('denies an illegal transition as a typed policy denial', () => {
+    expect(() =>
+      computeGroupMutation({
+        command: transitionCommand('startGroupEstablishment'),
+        read: transitionRead({ lifecycleState: 'active', formationEpoch: 1 }),
+        facts: transitionFacts(),
+      }),
+    ).toThrowError(GroupPolicyDeniedError);
+  });
+
+  it('denies a non-manager under the managed policy', () => {
+    const read = transitionRead(
+      { lifecycleState: 'forming', formationEpoch: 0, ownerPrincipalId: 'owner-alice' },
+      { policyStatus: 'managed', actorPrincipalId: 'bob' },
+    );
+    expect(() =>
+      computeGroupMutation({
+        command: transitionCommand('startGroupEstablishment', 'bob'),
+        read,
+        facts: transitionFacts('bob'),
+      }),
+    ).toThrowError(GroupPolicyDeniedError);
+  });
+
+  it('rejects on a corrupt stored policy instead of failing open', () => {
+    const computed = computeGroupMutation({
+      command: transitionCommand('startGroupEstablishment'),
+      read: transitionRead(
+        { lifecycleState: 'forming', formationEpoch: 0 },
+        { policyStatus: 'corrupt' },
+      ),
+      facts: transitionFacts(),
+    });
+    expect(computed.outcome).toBe('rejected');
+  });
+
+  it('treats an absent policy as the optimistic preset', () => {
+    // optimistic is any-member initiated, so a plain member may command.
+    const computed = computeGroupMutation({
+      command: transitionCommand('startGroupEstablishment'),
+      read: transitionRead(
+        { lifecycleState: 'forming', formationEpoch: 0 },
+        { policyStatus: 'absent' },
+      ),
+      facts: transitionFacts(),
+    });
+    expect(computed.outcome).toBe('write');
+  });
+});
+
+function transitionCommand(
+  operation: 'startGroupEstablishment' | 'activateGroup' | 'reopenGroupEstablishment',
+  actorPrincipalId = 'alice',
+): GroupMutationCommand {
+  return {
+    operation,
+    aggregateRef: groupRef('pure-room'),
+    commandId: 'lifecycle-command',
+    requestId: 'lifecycle-command',
+    input: {
+      actorPrincipalId,
+      actorSessionId: `${actorPrincipalId}-session`,
+      reason: null,
+      traceId: null,
+    },
+  } as GroupMutationCommand;
+}
+
+interface TransitionReadOptions {
+  readonly policyStatus?: 'absent' | 'present' | 'managed' | 'corrupt';
+  readonly actorPrincipalId?: string;
+}
+
+function transitionRead(
+  groupOverrides: Partial<Group>,
+  options: TransitionReadOptions = {},
+): GroupMutationRead {
+  const actorPrincipalId = options.actorPrincipalId ?? 'alice';
+  const audit = lifecycleAuditStamp(1_000, actorPrincipalId);
+  const group = createTestGroup({ ...groupRef('pure-room'), ...groupOverrides });
+  const actorMember = {
+    ...groupRef('pure-room'),
+    principalId: actorPrincipalId,
+    role: 'member' as const,
+    status: 'active' as const,
+    invitedByPrincipalId: null,
+    invitationExpiresAtEpochMs: null,
+    left: null,
+    removed: null,
+    banned: null,
+    joined: audit,
+    updated: audit,
+  };
+  const policyStatus = options.policyStatus ?? 'absent';
+  const lifecyclePolicy = policyStatus === 'corrupt'
+    ? { status: 'corrupt' as const, reason: 'stored policy is not an object' }
+    : policyStatus === 'absent'
+      ? { status: 'absent' as const }
+      : {
+        status: 'present' as const,
+        policy: resolveGroupLifecyclePolicyPreset(
+          policyStatus === 'managed' ? 'managed' : 'optimistic',
+        ),
+      };
+  return {
+    idempotency: null,
+    group: storedEntry(groupStorageKey(), group),
+    expiredGroupEntry: null,
+    actorMember,
+    targetMember: null,
+    authorityMember: null,
+    directorMember: null,
+    actorMemberEntry: storedEntry(groupMemberStorageKey(actorPrincipalId), actorMember),
+    targetMemberEntry: null,
+    authorityMemberEntry: null,
+    directorMemberEntry: null,
+    targetPresence: null,
+    expiredTargetPresenceEntry: null,
+    targetAdmission: null,
+    authorityAdmission: null,
+    directorAdmission: null,
+    authorityPresenceSessions: [],
+    authorityPresenceSessionEntries: [],
+    presenceSummary: null,
+    lifecyclePolicy,
+  } as GroupMutationRead;
+}
+
+function transitionFacts(principalId = 'alice'): GroupMutationFacts {
+  return {
+    nowEpochMs: 2_000,
+    expireAtEpochMs: 253_402_300_799_999,
+    serviceId: 'group-service',
+    eventId: 'event-1',
+    commandHash: `sha256:${'a'.repeat(64)}`,
+    attemptCount: 1,
+    resolvedJoinCode: null,
+    joinCodeVerifier: null,
+    internalAuthority: 'none',
+    formationDamping: 'legacy',
+    authenticatedAuthority: {
+      principalId,
+      sessionId: `${principalId}-session`,
+    },
+  };
+}
+
+function lifecycleAuditStamp(atEpochMs: number, principalId: string): AuditStamp {
+  return {
+    atEpochMs,
+    actor: { kind: 'principal', principalId },
+    reason: null,
+    traceId: null,
+    requestId: 'seed',
+  };
+}

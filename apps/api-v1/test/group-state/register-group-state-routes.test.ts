@@ -104,7 +104,7 @@ const GROUP_STATE_ROUTE_MATCHES: readonly GroupStateRouteMatch[] = [
 ];
 
 Deno.test(
-  'group state route registration retains all 21 Hono handlers in predecessor order',
+  'group state route registration retains all 24 Hono handlers in predecessor order',
   () => {
     const runtime = createGroupStateRouteTestRuntime({ installStateAuthentication: false });
     const registeredRoutes = (runtime.app as unknown as {
@@ -119,6 +119,9 @@ Deno.test(
       `POST ${GROUP_STATE_ROUTE_BASE}`,
       `PUT ${GROUP_ROUTE_PATH}`,
       `POST ${GROUP_ROUTE_PATH}/director/appoint`,
+      `POST ${GROUP_ROUTE_PATH}/lifecycle/establish`,
+      `POST ${GROUP_ROUTE_PATH}/lifecycle/activate`,
+      `POST ${GROUP_ROUTE_PATH}/lifecycle/reopen`,
       `POST ${GROUP_ROUTE_PATH}/join`,
       `POST ${GROUP_ROUTE_PATH}/invites/accept`,
       `POST ${GROUP_ROUTE_PATH}/join-code/rotate`,
