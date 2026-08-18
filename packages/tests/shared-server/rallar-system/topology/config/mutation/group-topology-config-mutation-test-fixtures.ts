@@ -5,6 +5,7 @@ import type {
   GroupTopologyConfigMutationFacts,
   GroupTopologyConfigMutationRead,
 } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 export interface CreateTopologyConfigMutationTestInput {
   readonly operation?: 'putConfig' | 'putOverride';
@@ -63,31 +64,18 @@ export function createTopologyTestGroupSnapshot(): GroupSnapshot {
   return {
     stateRevision: 1,
     causalRevision: { groupRevision: 1, presenceRevision: 0 },
-    group: {
+    group: createTestGroup({
       ...groupRef,
-      slug: null,
       displayName: 'Room 1',
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       snapshotVersion: 1,
       metadataVersion: 0,
       rosterVersion: 1,
       presenceVersion: 0,
       activeMemberCount: 1,
       ownerPrincipalId: 'owner',
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
       created: topologyTestAuditStamp(),
       updated: topologyTestAuditStamp(),
-    },
+    }),
     members: [
       {
         ...groupRef,

@@ -24,6 +24,7 @@ import {
 import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('createGroupRoomWsAuthorizer', () => {
     afterEach(() => {
@@ -747,21 +748,11 @@ function createGroupSnapshot(
             groupRevision: snapshotVersion,
             presenceRevision: snapshotVersion,
         },
-        group: {
+        group: createTestGroup({
             applicationId,
             workspaceId,
             groupId,
-            slug: null,
             displayName: groupId,
-            description: null,
-            kind: 'room',
-            status: 'active',
-            archived: null,
-            deleted: null,
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             snapshotVersion,
             metadataVersion: 1,
             rosterVersion: 1,
@@ -770,10 +761,7 @@ function createGroupSnapshot(
             activeMemberCount: sessionIds.length,
             created,
             updated,
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-        },
+        }),
         members: sessionIds.map((sessionId, index) => ({
             applicationId,
             workspaceId,

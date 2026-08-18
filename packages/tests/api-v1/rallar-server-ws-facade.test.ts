@@ -18,6 +18,7 @@ import type {
 import { createRallarServerFacade } from '@shared-server/rallar-facade/RallarServer.ts';
 import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/services/ws-topic-room-authorizer.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('RallarServerWsFacade', () => {
     it('fans out implicit app topics to their declared targets', async () => {
@@ -597,21 +598,12 @@ function createGroupSnapshot(
             groupRevision: snapshotVersion,
             presenceRevision: snapshotVersion,
         },
-        group: {
+        group: createTestGroup({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId,
             slug: groupId,
             displayName: groupId,
-            description: null,
-            kind: 'room',
-            status: 'active',
-            archived: null,
-            deleted: null,
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             activeMemberCount: sessionIds.length,
             ownerPrincipalId,
             snapshotVersion,
@@ -620,10 +612,7 @@ function createGroupSnapshot(
             presenceVersion: snapshotVersion,
             created: createAuditStamp(1, ownerPrincipalId),
             updated: createAuditStamp(snapshotVersion, ownerPrincipalId),
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-        },
+        }),
         members: sessionIds.map((sessionId): GroupMember => ({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',

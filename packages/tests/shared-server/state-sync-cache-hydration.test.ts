@@ -9,6 +9,7 @@ import {
 } from '@shared/repository/group-state-snapshots-repository.ts';
 import { hydrateStateSyncSnapshotCaches } from '@shared-server/mod.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('state sync cache hydration', () => {
     beforeEach(() => {
@@ -84,21 +85,11 @@ function createGroupSnapshot(groupId: string): GroupSnapshot {
     return {
         stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 0 },
-        group: {
+        group: createTestGroup({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId,
-            slug: null,
             displayName: groupId,
-            description: null,
-            kind: 'room',
-            status: 'active',
-            archived: null,
-            deleted: null,
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             activeMemberCount: 0,
             ownerPrincipalId: 'owner',
             snapshotVersion: 1,
@@ -107,10 +98,7 @@ function createGroupSnapshot(groupId: string): GroupSnapshot {
             presenceVersion: 0,
             created: audit,
             updated: audit,
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-        },
+        }),
         members: [],
         activeSessions: [],
         memberCount: 0,

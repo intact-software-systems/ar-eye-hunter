@@ -45,6 +45,7 @@ const STORED_GROUP_KEYS = [
   'expiresAtEpochMs',
   'emptySinceEpochMs',
   'purgeAfterEpochMs',
+  'lifecycleState',
 ] as const;
 
 const STORED_MEMBER_KEYS = [

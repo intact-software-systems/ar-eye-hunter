@@ -13,6 +13,7 @@ import { toOverlayInfoForSession } from '@shared/api/overlay-topology.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const scope: StateScope = {
   applicationId: DEFAULT_STATE_APPLICATION_ID,
@@ -156,33 +157,20 @@ function createGroupSnapshot(groupId: string, sessionIds: readonly string[]): Gr
   return {
     stateRevision: 2,
     causalRevision: { groupRevision: 1, presenceRevision: 1 },
-    group: {
+    group: createTestGroup({
       applicationId: DEFAULT_STATE_APPLICATION_ID,
       workspaceId: DEFAULT_STATE_WORKSPACE_ID,
       groupId,
-      slug: null,
       displayName: groupId,
-      description: null,
-      kind: 'room',
-      status: 'active',
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       snapshotVersion: 1,
       metadataVersion: 1,
       rosterVersion: 1,
       presenceVersion: 1,
       created: auditStamp(1),
       updated: auditStamp(1),
-      archived: null,
-      deleted: null,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
       activeMemberCount: sessionIds.length,
       ownerPrincipalId,
-    },
+    }),
     members: sessionIds.map((sessionId) => ({
       principalId: sessionId,
       role: 'member',

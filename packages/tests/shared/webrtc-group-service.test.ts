@@ -9,6 +9,7 @@ import type {
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { WebRtcGroupService } from '@shared/services/WebRtcGroupService.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('WebRtcGroupService', () => {
     it('accepts newer snapshots, filters self from targets, and ignores stale updates', async () => {
@@ -250,21 +251,12 @@ function createGroupSnapshot(
             groupRevision: membershipVersion,
             presenceRevision: membershipVersion,
         },
-        group: {
+        group: createTestGroup({
             applicationId,
             workspaceId,
             groupId,
             slug: groupId,
             displayName: groupId,
-            description: null,
-            kind: 'room',
-            status: 'active',
-            archived: null,
-            deleted: null,
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             activeMemberCount: memberSessionIds.length,
             ownerPrincipalId,
             snapshotVersion: membershipVersion,
@@ -273,10 +265,7 @@ function createGroupSnapshot(
             presenceVersion: 0,
             created: createAuditStamp(1, ownerPrincipalId),
             updated: createAuditStamp(membershipVersion, ownerPrincipalId),
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-        },
+        }),
         members: memberSessionIds.map((sessionId): GroupMember => ({
             applicationId,
             workspaceId,

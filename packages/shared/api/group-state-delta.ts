@@ -75,6 +75,7 @@ const GROUP_KEYS = [
   'expiresAtEpochMs',
   'emptySinceEpochMs',
   'purgeAfterEpochMs',
+  'lifecycleState',
 ];
 const GROUP_MEMBER_KEYS = [
   'applicationId',

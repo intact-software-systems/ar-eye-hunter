@@ -25,6 +25,7 @@ import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/rep
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('Rallar system websocket topics RTC topology', () => {
   it('does not run a process-local topology fallback for inbound group snapshots', async () => {
@@ -503,33 +504,20 @@ function createGroupSnapshot(groupId: string, memberSessionIds: readonly string[
       groupRevision: 1,
       presenceRevision: 0,
     },
-    group: {
+    group: createTestGroup({
       applicationId,
       workspaceId,
       groupId,
-      slug: null,
       displayName: groupId,
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       snapshotVersion: 1,
       metadataVersion: 1,
       rosterVersion: 1,
       presenceVersion: 0,
       activeMemberCount: memberSessionIds.length,
       ownerPrincipalId: memberSessionIds[0]!,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
       created: audit(1),
       updated: audit(1),
-    },
+    }),
     members: memberSessionIds.map((sessionId, index) => ({
       applicationId,
       workspaceId,

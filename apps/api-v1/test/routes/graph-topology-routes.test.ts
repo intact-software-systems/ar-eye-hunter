@@ -6,6 +6,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import type { GraphDiagnosticReadResponse } from '@shared/api/graph-topology-management-types.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const TEST_SCOPE: StateScope = {
   applicationId: 'app-1',
@@ -690,18 +691,10 @@ function createGroupSnapshot(
   return {
     stateRevision: 1,
     causalRevision: { groupRevision: 1, presenceRevision: 0 },
-    group: {
+    group: createTestGroup({
       ...scope,
       groupId,
-      slug: null,
       displayName: groupId,
-      description: null,
-      kind: 'room',
-      status: 'active',
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       snapshotVersion: 1,
       metadataVersion: 0,
       rosterVersion: 1,
@@ -710,12 +703,7 @@ function createGroupSnapshot(
       ownerPrincipalId: 'owner',
       created: createPrincipalAuditStamp(1, 'owner'),
       updated: createPrincipalAuditStamp(1, 'owner'),
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-      archived: null,
-      deleted: null,
-    },
+    }),
     members: memberPrincipalIds.map((principalId, index) => ({
       ...scope,
       groupId,

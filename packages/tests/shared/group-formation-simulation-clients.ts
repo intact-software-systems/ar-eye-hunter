@@ -8,6 +8,7 @@ import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { configureOverlayRepository, readableOverlayCache } from '@shared/repository/overlays-repository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 export type SimulatedClient = Readonly<{
     sessionId: string;
@@ -138,33 +139,20 @@ export function createSimulationGroupSnapshot(
             groupRevision: snapshotVersion,
             presenceRevision: snapshotVersion,
         },
-        group: {
+        group: createTestGroup({
             applicationId,
             workspaceId,
             groupId,
-            slug: null,
             displayName: groupId,
-            description: null,
-            kind: 'room',
-            status: 'active',
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             snapshotVersion,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: snapshotVersion,
             created: simulationAuditStamp(1),
             updated: simulationAuditStamp(snapshotVersion),
-            archived: null,
-            deleted: null,
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
             activeMemberCount: sessionIds.length,
             ownerPrincipalId,
-        },
+        }),
         members: sessionIds.map((sessionId, index) => ({
             applicationId,
             workspaceId,

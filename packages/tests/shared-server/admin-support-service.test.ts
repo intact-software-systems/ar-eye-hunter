@@ -15,6 +15,7 @@ import {
   type AdminSupportQueueEntryRead,
   AdminSupportService,
 } from '@shared-server/rallar-system/admin-support/AdminSupportService.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
 const SCOPE = {
@@ -783,19 +784,9 @@ function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
   return {
     stateRevision: 7,
     causalRevision: { groupRevision: 7, presenceRevision: 3 },
-    group: {
+    group: createTestGroup({
       ...groupRef,
-      slug: null,
       displayName: 'Room 1',
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       activeMemberCount: 1,
       ownerPrincipalId: 'player-1',
       snapshotVersion: 7,
@@ -804,10 +795,7 @@ function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
       presenceVersion: 3,
       created,
       updated,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-    },
+    }),
     members: [{
       ...groupRef,
       principalId: 'player-1',

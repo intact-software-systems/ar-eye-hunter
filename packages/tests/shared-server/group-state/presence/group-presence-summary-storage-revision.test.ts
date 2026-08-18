@@ -19,6 +19,7 @@ import {
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { createService, seedOpenGroup } from './group-presence-test-runtime.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const ref: GroupRef = {
   applicationId: 'cross-process-app',
@@ -140,17 +141,11 @@ describe('group presence-summary causal identity', () => {
 });
 
 function mutationRead(storageRevision: number): GroupMutationRead {
-  const group: Group = {
+  const group: Group = createTestGroup({
     ...ref,
-    slug: null,
     displayName: 'Cross-process group',
-    description: null,
-    kind: 'room',
-    status: 'active',
-    joinMode: 'open',
     maxMembers: 100,
     maxSessionsPerMember: 4,
-    metadata: {},
     activeMemberCount: 1,
     ownerPrincipalId: 'owner',
     snapshotVersion: 1,
@@ -159,12 +154,7 @@ function mutationRead(storageRevision: number): GroupMutationRead {
     presenceVersion: 0,
     created: seedAudit,
     updated: seedAudit,
-    archived: null,
-    deleted: null,
-    expiresAtEpochMs: null,
-    emptySinceEpochMs: null,
-    purgeAfterEpochMs: null,
-  };
+  });
   const owner = member('owner', 'owner');
   return {
     idempotency: null,

@@ -15,6 +15,7 @@ import {
 } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 
 import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 export type TestExecuteRtcRttMutationInput = Readonly<{
   repository: RtcRttRepository;
@@ -136,19 +137,11 @@ export function createRttGroupSnapshot(
   return {
     stateRevision: 2,
     causalRevision: { groupRevision: 1, presenceRevision: 1 },
-    group: {
+    group: createTestGroup({
       applicationId,
       workspaceId,
       groupId,
-      slug: null,
       displayName: groupId,
-      description: null,
-      kind: 'room',
-      status: 'active',
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       snapshotVersion: 1,
       metadataVersion: 1,
       rosterVersion: 1,
@@ -157,12 +150,7 @@ export function createRttGroupSnapshot(
       ownerPrincipalId: sessionIds[0] ?? 'owner',
       created: createPrincipalAuditStamp(1, 'owner'),
       updated: createPrincipalAuditStamp(1, 'owner'),
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-      archived: null,
-      deleted: null,
-    },
+    }),
     members: sessionIds.map((sessionId, index) => ({
       applicationId,
       workspaceId,

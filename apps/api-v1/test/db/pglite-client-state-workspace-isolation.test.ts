@@ -7,6 +7,7 @@ import { PSqlClientStateEventRepository } from '@shared-server/postgres/rallar-s
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { delayAdminRuntimeFactQueries } from './pglite-admin-query-scheduling-test-boundary.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const WORKSPACE_CASES = [
   { workspaceId: '_', workspaceKey: '%5F' },
@@ -389,22 +390,14 @@ async function insertActiveGroup(
 ): Promise<void> {
   const audit = {
     atEpochMs: 1_700_000_000_000,
-    actor: { kind: 'principal', principalId: 'boundary-owner' },
+    actor: { kind: 'principal' as const, principalId: 'boundary-owner' },
     reason: null,
     traceId: null,
     requestId: 'shared-cutoff-request',
   };
-  const value = JSON.stringify({
+  const value = JSON.stringify(createTestGroup({
     ...input,
-    slug: null,
     displayName: input.groupId,
-    description: null,
-    kind: 'room',
-    status: 'active',
-    joinMode: 'open',
-    maxMembers: null,
-    maxSessionsPerMember: null,
-    metadata: {},
     activeMemberCount: 1,
     ownerPrincipalId: 'boundary-owner',
     snapshotVersion: 1,
@@ -413,11 +406,7 @@ async function insertActiveGroup(
     presenceVersion: 0,
     created: audit,
     updated: audit,
-    archived: null,
-    deleted: null,
-    emptySinceEpochMs: null,
-    purgeAfterEpochMs: null,
-  });
+  }));
   await sql`
     insert into runtime_state_store (
       store_namespace, store_key, store_value, expire_at_ts

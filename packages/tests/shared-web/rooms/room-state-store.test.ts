@@ -5,6 +5,7 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const stateMocks = vi.hoisted(() => ({
   session: {
@@ -112,19 +113,11 @@ describe('room state store summaries', () => {
     facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
 
     expect(facade.rooms.state().rooms.map((room) => room.roomId)).toEqual(['selected-room']);
-    expect(facade.rooms.state().currentRoomRef).toEqual({
+    expect(facade.rooms.state().currentRoomRef).toEqual(createTestGroup({
       applicationId: 'app-1',
       workspaceId: 'workspace-1',
       groupId: 'selected-room',
-      slug: null,
       displayName: 'Selected Room',
-      description: null,
-      kind: 'room',
-      status: 'active',
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       activeMemberCount: 1,
       ownerPrincipalId: 'session-1',
       snapshotVersion: 1,
@@ -133,12 +126,7 @@ describe('room state store summaries', () => {
       presenceVersion: 1,
       created: selected.group.created,
       updated: selected.group.updated,
-      archived: null,
-      deleted: null,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-    });
+    }));
   });
 
   it('orders active room summaries by display name and omits archived rooms', async () => {

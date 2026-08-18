@@ -139,6 +139,7 @@ import {
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
 import { toPersistedAuthSessionFixture, withPGliteSql } from './pglite-auth-test-harness.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 const PAST_MS = Date.parse('2000-01-01T00:00:00.000Z');
@@ -597,17 +598,9 @@ Deno.test('PGlite summary reservation fence rolls back CAS and every downstream 
 
 function groupFixture(ref: GroupRef, displayName: string): Group {
   const audit = canonicalAuditStamp(1);
-  return {
+  return createTestGroup({
     ...ref,
-    slug: null,
     displayName,
-    description: null,
-    kind: 'room',
-    status: 'active',
-    joinMode: 'open',
-    maxMembers: null,
-    maxSessionsPerMember: null,
-    metadata: {},
     activeMemberCount: 1,
     ownerPrincipalId: 'alice',
     snapshotVersion: 1,
@@ -616,12 +609,7 @@ function groupFixture(ref: GroupRef, displayName: string): Group {
     presenceVersion: 0,
     created: audit,
     updated: audit,
-    expiresAtEpochMs: null,
-    emptySinceEpochMs: null,
-    purgeAfterEpochMs: null,
-    archived: null,
-    deleted: null,
-  };
+  });
 }
 
 Deno.test('group event workspace keys preserve ordinary values and isolate sentinels and lookalikes', () => {
@@ -3352,6 +3340,9 @@ Deno.test('PGlite group-state reads fail closed on a directly seeded legacy wron
       workspaceId: 'main',
       groupId: 'pglite-legacy-scope-group',
     };
+    // Deliberately degenerate: a legacy row carrying the sentinel workspace and
+    // partial audit stamps. It must stay a hand-built payload, because the point
+    // of the test is the exact stored shape a current writer would never produce.
     const storedGroup = {
       ...ref,
       workspaceId: '_',

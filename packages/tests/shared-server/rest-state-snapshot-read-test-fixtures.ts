@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 export function createClientSnapshot(stateRevision: number): ClientSnapshot {
   const audit = createAuditStamp(stateRevision);
@@ -43,21 +44,11 @@ export function createGroupSnapshot(
   return {
     stateRevision: Math.max(groupRevision, presenceRevision),
     causalRevision: { groupRevision, presenceRevision },
-    group: {
+    group: createTestGroup({
       applicationId: 'app-1',
       workspaceId: 'workspace-1',
       groupId: 'group-1',
-      slug: null,
       displayName: 'Group 1',
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       snapshotVersion: groupRevision,
       metadataVersion: groupRevision,
       rosterVersion: groupRevision,
@@ -66,10 +57,7 @@ export function createGroupSnapshot(
       ownerPrincipalId: 'alice',
       created: audit,
       updated: audit,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-    },
+    }),
     members: [],
     activeSessions: [],
     memberCount: 0,

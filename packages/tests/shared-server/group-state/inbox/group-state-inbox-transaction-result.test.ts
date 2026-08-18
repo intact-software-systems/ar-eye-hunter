@@ -27,7 +27,8 @@ const EXPECTED_CREATE_GROUP_DURABLE_JSON =
   '"sessionId":"owner-session","principalId":"owner"},"reason":null,' +
   '"traceId":null,"requestId":"create-transaction-boundary-room"},' +
   '"archived":null,"deleted":null,"expiresAtEpochMs":null,' +
-  '"emptySinceEpochMs":null,"purgeAfterEpochMs":null},"members":[' +
+  '"emptySinceEpochMs":null,"purgeAfterEpochMs":null,' +
+  '"lifecycleState":"active"},"members":[' +
   '{"applicationId":"ar-eye-hunter","workspaceId":"default",' +
   '"groupId":"transaction-boundary-room","principalId":"owner","role":"owner",' +
   '"status":"active","joined":{"atEpochMs":1785628800000,' +

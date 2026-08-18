@@ -9,6 +9,7 @@ import type {
     ClientSession,
     ClientSnapshot,
 } from '@shared/api/client-types.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 export function createAuditStampFixture(
     atEpochMs: number,
@@ -90,19 +91,11 @@ export function createGroupSnapshotFixture(input: Readonly<{
             groupRevision: 1,
             presenceRevision: input.sessionIds.length,
         },
-        group: {
+        group: createTestGroup({
             applicationId: input.applicationId,
             workspaceId: input.workspaceId,
             groupId: input.groupId,
-            slug: null,
             displayName: input.groupId,
-            description: null,
-            kind: 'room',
-            status: 'active',
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             activeMemberCount: memberPrincipalIds.length,
             ownerPrincipalId,
             snapshotVersion: 1,
@@ -111,12 +104,7 @@ export function createGroupSnapshotFixture(input: Readonly<{
             presenceVersion: input.sessionIds.length,
             created: createAuditStampFixture(1, 'creator'),
             updated: createAuditStampFixture(1, 'creator'),
-            archived: null,
-            deleted: null,
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-        },
+        }),
         members: memberPrincipalIds.map((principalId) =>
             createActiveGroupMemberFixture({
                 applicationId: input.applicationId,

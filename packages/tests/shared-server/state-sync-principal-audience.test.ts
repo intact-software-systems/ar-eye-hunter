@@ -6,6 +6,7 @@ import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { computeClientStateSyncEntries } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync-routing.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const NOW_EPOCH_MS = 1_800_000_000_000;
 
@@ -210,19 +211,9 @@ function createGroupSnapshot(
   return {
     stateRevision: 3,
     causalRevision: { groupRevision: 2, presenceRevision: 1 },
-    group: {
+    group: createTestGroup({
       ...ref,
-      slug: null,
       displayName: 'Room 1',
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       activeMemberCount: principalIds.length,
       ownerPrincipalId: principalIds[0]!,
       snapshotVersion: 2,
@@ -231,10 +222,7 @@ function createGroupSnapshot(
       presenceVersion: 1,
       created: audit,
       updated: audit,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-    },
+    }),
     members: principalIds.map((principalId, index) => ({
       ...ref,
       principalId,

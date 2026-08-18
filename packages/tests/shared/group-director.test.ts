@@ -15,6 +15,7 @@ import type {
     GroupPresenceSession,
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('Rallar group director metadata', () => {
     it('creates appointments with incremented epochs and preserves metadata', () => {
@@ -224,20 +225,12 @@ function createSnapshot(
     return {
         stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 1 },
-        group: {
+        group: createTestGroup({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId: 'room-1',
             slug: 'room-1',
             displayName: 'room-1',
-            description: null,
-            kind: 'room',
-            status: 'active',
-            archived: null,
-            deleted: null,
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
             metadata: { rallarDirector: appointment },
             activeMemberCount: 1,
             ownerPrincipalId: 'principal-1',
@@ -247,10 +240,7 @@ function createSnapshot(
             presenceVersion: 1,
             created: createAuditStamp(1, 'principal-1'),
             updated: createAuditStamp(1, 'principal-1'),
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-        },
+        }),
         members: [{
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -322,20 +312,12 @@ function createPolicySnapshot(
     return {
         stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 1 },
-        group: {
+        group: createTestGroup({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId: 'room-1',
             slug: 'room-1',
             displayName: 'room-1',
-            description: null,
-            kind: 'room',
-            status: 'active',
-            archived: null,
-            deleted: null,
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
             metadata: appointment ? { rallarDirector: appointment } : {},
             activeMemberCount,
             ownerPrincipalId: owner.principalId,
@@ -345,10 +327,7 @@ function createPolicySnapshot(
             presenceVersion: 1,
             created: createAuditStamp(1, owner.principalId),
             updated: createAuditStamp(1, owner.principalId),
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-        },
+        }),
         members: input.members.map((member) => createMember(member, owner.principalId)),
         activeSessions: input.activeSessions.map((session): GroupPresenceSession => ({
             applicationId: 'app-1',

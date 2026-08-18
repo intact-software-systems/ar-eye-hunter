@@ -19,6 +19,11 @@ server facade.
 - `rallar-bb-test/docs/` documents schema contracts, distributed-run handoff,
   composite primitives, runtime diagnostics, and companion coverage boundaries.
 - `json-compare/` and fixtures support stable artifact and result comparisons.
+- `create-test-group.ts` is the single construction point for `Group` in tests.
+  Its defaults are annotated `Group`, so a new required field on the aggregate
+  fails to compile here instead of failing at runtime in every test that omits
+  it. It lives in this package rather than `packages/tests` because the root
+  `tsconfig.json` excludes `packages/tests` from type checking.
 
 ## Provider Truth
 

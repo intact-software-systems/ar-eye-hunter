@@ -13,6 +13,7 @@ import {
 } from '@shared-server/rallar-system/group-state/persistence/assemble-group-state-snapshot.ts';
 import { canSendRoomMessage } from '@shared-server/rallar-system/group-policy.ts';
 import { isGroupSnapshotPresenceFresh } from '@shared-server/rallar-system/snapshot-presence.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const REF = {
   applicationId: 'app-1',
@@ -132,19 +133,9 @@ function createSession(
 
 function createGroup(): Group {
   const audit = createAuditStamp();
-  return {
+  return createTestGroup({
     ...REF,
-    slug: null,
     displayName: 'Room 1',
-    description: null,
-    kind: 'room',
-    status: 'active',
-    archived: null,
-    deleted: null,
-    joinMode: 'open',
-    maxMembers: null,
-    maxSessionsPerMember: null,
-    metadata: {},
     activeMemberCount: 1,
     ownerPrincipalId: 'alice',
     snapshotVersion: 1,
@@ -153,10 +144,7 @@ function createGroup(): Group {
     presenceVersion: 1,
     created: audit,
     updated: audit,
-    expiresAtEpochMs: null,
-    emptySinceEpochMs: null,
-    purgeAfterEpochMs: null,
-  };
+  });
 }
 
 function createMember(): GroupMember {

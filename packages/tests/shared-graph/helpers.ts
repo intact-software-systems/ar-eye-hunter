@@ -15,6 +15,7 @@ import {
     VertexType,
     type WeightedGraph,
 } from '@shared-graph/graph/graph-props.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 export function createGraph(
     nodes: ReadonlyArray<readonly [string, VertexState, number]>,
@@ -61,21 +62,12 @@ export function createGroupSnapshot(
             groupRevision: membershipVersion,
             presenceRevision: membershipVersion,
         },
-        group: {
+        group: createTestGroup({
             applicationId,
             workspaceId,
             groupId,
             slug: groupId,
             displayName: groupId,
-            description: null,
-            kind: 'room',
-            status: 'active',
-            archived: null,
-            deleted: null,
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             activeMemberCount: memberSessionIds.length,
             ownerPrincipalId,
             snapshotVersion: membershipVersion,
@@ -84,10 +76,7 @@ export function createGroupSnapshot(
             presenceVersion: 0,
             created: createAuditStamp(1, ownerPrincipalId),
             updated: createAuditStamp(membershipVersion, ownerPrincipalId),
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-        },
+        }),
         members: memberSessionIds.map((sessionId): GroupMember => ({
             applicationId,
             workspaceId,

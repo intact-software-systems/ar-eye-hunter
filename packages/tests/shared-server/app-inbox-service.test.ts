@@ -62,6 +62,7 @@ import {
     ClientStateEventCollisionError,
     GroupStateEventCollisionError,
 } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'ar-eye-hunter',
@@ -864,20 +865,10 @@ function createGroupWritten(groupId: string): GroupWritten {
     const snapshot: GroupSnapshot = {
         stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 0 },
-        group: {
+        group: createTestGroup({
             ...SCOPE,
             groupId,
-            slug: null,
             displayName: groupId,
-            description: null,
-            kind: 'room',
-            status: 'active',
-            archived: null,
-            deleted: null,
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             activeMemberCount: 1,
             ownerPrincipalId: '3e1be4ce-9a29-47bb-9d63-ef7752d31234',
             snapshotVersion: 1,
@@ -886,10 +877,7 @@ function createGroupWritten(groupId: string): GroupWritten {
             presenceVersion: 0,
             created: audit,
             updated: audit,
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-        },
+        }),
         members: [
             {
                 ...SCOPE,

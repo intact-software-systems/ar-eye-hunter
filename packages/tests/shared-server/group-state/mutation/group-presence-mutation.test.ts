@@ -16,6 +16,7 @@ import {
   storagePart,
   storedEntry,
 } from './group-mutation-test-runtime.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('group presence mutation computation', () => {
   it('rejects a canonical target session whose value belongs to another principal', () => {
@@ -256,31 +257,18 @@ function auditStamp(atEpochMs: number, principalId: string, requestId: string | 
 
 function createMutationRead(): GroupMutationRead {
   const audit = auditStamp(1_000, 'alice', 'seed');
-  const group = {
+  const group = createTestGroup({
     ...groupRef('pure-room'),
-    slug: null,
     displayName: 'Before',
-    description: null,
-    kind: 'room' as const,
-    status: 'active' as const,
-    archived: null,
-    deleted: null,
-    joinMode: 'open' as const,
-    maxMembers: null,
-    maxSessionsPerMember: null,
-    metadata: {},
     activeMemberCount: 1,
     ownerPrincipalId: 'alice',
     snapshotVersion: 1,
     metadataVersion: 1,
     rosterVersion: 1,
     presenceVersion: 0,
-    expiresAtEpochMs: null,
-    emptySinceEpochMs: null,
-    purgeAfterEpochMs: null,
     created: audit,
     updated: audit,
-  };
+  });
   const actorMember = {
     ...groupRef('pure-room'),
     principalId: 'alice',

@@ -5,6 +5,7 @@ import {
 } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 // Phase 4 (M6) incremental-evolution contract, exercised through the planning
 // kernel exactly as the durable group-revision work path drives it: seeded
@@ -220,33 +221,20 @@ function createGroupSnapshot(
     return {
         stateRevision: presenceRevision,
         causalRevision: { groupRevision: 1, presenceRevision },
-        group: {
+        group: createTestGroup({
             applicationId,
             workspaceId,
             groupId,
-            slug: null,
             displayName: groupId,
-            description: null,
-            kind: 'room',
-            status: 'active',
-            archived: null,
-            deleted: null,
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             activeMemberCount: memberSessionIds.length,
             ownerPrincipalId,
             snapshotVersion: presenceRevision,
             metadataVersion: 0,
             rosterVersion: 1,
             presenceVersion: presenceRevision,
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
             created: audit(1),
             updated: audit(presenceRevision),
-        },
+        }),
         members: memberSessionIds.map((sessionId) => ({
             applicationId,
             workspaceId,

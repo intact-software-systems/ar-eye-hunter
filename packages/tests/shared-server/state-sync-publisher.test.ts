@@ -10,6 +10,7 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/services/ti
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('createWsStateSyncPublisher', () => {
     beforeEach(() => {
@@ -308,21 +309,11 @@ function createGroupSnapshot(
     return {
         stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: sessionIds.length },
-        group: {
+        group: createTestGroup({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId,
-            slug: null,
             displayName: groupId,
-            description: null,
-            kind: 'room',
-            status: 'active',
-            archived: null,
-            deleted: null,
-            joinMode: 'open',
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: {},
             activeMemberCount: sessionIds.length,
             ownerPrincipalId: 'owner',
             snapshotVersion: 1,
@@ -331,10 +322,7 @@ function createGroupSnapshot(
             presenceVersion: sessionIds.length,
             created: audit,
             updated: audit,
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-        },
+        }),
         members: sessionIds.map((sessionId) => ({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',

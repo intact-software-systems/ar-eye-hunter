@@ -5,6 +5,7 @@ import type {
   GroupPresenceSession,
   GroupSnapshot,
 } from '@shared/api/group-types.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 interface SnapshotConstruction {
   readonly snapshotVersion: number;
@@ -90,33 +91,20 @@ function createSnapshotMembers(construction: SnapshotConstruction): readonly Gro
 function createSnapshotGroup(construction: SnapshotGroupConstruction): Group {
   const { snapshotVersion, memberCount } = construction;
 
-  return {
+  return createTestGroup({
     applicationId: 'app-1',
     workspaceId: 'workspace-1',
     groupId: 'group-1',
-    slug: null,
     displayName: 'Group 1',
-    description: null,
-    kind: 'room',
-    status: 'active',
-    archived: null,
-    deleted: null,
-    joinMode: 'open',
-    maxMembers: null,
-    maxSessionsPerMember: null,
-    metadata: {},
     activeMemberCount: memberCount,
     ownerPrincipalId: 'alice',
     snapshotVersion,
     metadataVersion: 1,
     rosterVersion: 1,
     presenceVersion: snapshotVersion,
-    expiresAtEpochMs: null,
-    emptySinceEpochMs: null,
-    purgeAfterEpochMs: null,
     created: audit(1),
     updated: audit(snapshotVersion),
-  };
+  });
 }
 
 function createSnapshotPresenceSessions(

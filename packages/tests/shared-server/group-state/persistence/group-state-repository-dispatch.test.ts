@@ -13,6 +13,7 @@ import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/Runtim
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('GroupStateRepository facade dispatch', () => {
   it('dispatches every persistence read through the protected facade decoder', async () => {
@@ -280,19 +281,9 @@ function createFixture(): DispatchFixture {
 }
 
 function createDispatchGroup(context: DispatchFixtureContext): Group {
-  return {
+  return createTestGroup({
     ...context.ref,
-    slug: null,
     displayName: 'Facade dispatch group',
-    description: null,
-    kind: 'room',
-    status: 'active',
-    archived: null,
-    deleted: null,
-    joinMode: 'open',
-    maxMembers: null,
-    maxSessionsPerMember: null,
-    metadata: {},
     activeMemberCount: 1,
     ownerPrincipalId: 'owner',
     snapshotVersion: 1,
@@ -301,10 +292,7 @@ function createDispatchGroup(context: DispatchFixtureContext): Group {
     presenceVersion: 0,
     created: context.audit,
     updated: context.audit,
-    expiresAtEpochMs: null,
-    emptySinceEpochMs: null,
-    purgeAfterEpochMs: null,
-  };
+  });
 }
 
 function createDispatchOwner(context: DispatchFixtureContext): GroupMember {

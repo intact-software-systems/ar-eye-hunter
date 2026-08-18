@@ -36,6 +36,7 @@ import type { ClientStateRepository } from '@shared-server/rallar-system/reposit
 import type { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import type { AuditStamp, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('createRallarMiddleware', () => {
   it('constructs queuebox runtime services around supplied repositories', () => {
@@ -1126,21 +1127,11 @@ function createGroupSnapshot(
       groupRevision: snapshotVersion,
       presenceRevision: snapshotVersion,
     },
-    group: {
+    group: createTestGroup({
       applicationId,
       workspaceId,
       groupId,
-      slug: null,
       displayName: groupId,
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       activeMemberCount: activeMembers.length,
       ownerPrincipalId: members[0].principalId,
       snapshotVersion,
@@ -1149,10 +1140,7 @@ function createGroupSnapshot(
       presenceVersion: snapshotVersion,
       created,
       updated,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-    },
+    }),
     members: members.map((member) =>
       createGroupMember(
         applicationId,

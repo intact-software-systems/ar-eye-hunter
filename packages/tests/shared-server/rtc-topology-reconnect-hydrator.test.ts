@@ -6,6 +6,7 @@ import {
   takeRtcTopologyHydrationBatch,
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-reconnect-hydrator.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 describe('RtcTopologyReconnectHydrator', () => {
   afterEach(() => {
@@ -438,18 +439,11 @@ function createGroupSnapshot(
   return {
     stateRevision: 1,
     causalRevision: { groupRevision, presenceRevision: 4 },
-    group: {
+    group: createTestGroup({
       applicationId: 'app-1',
       workspaceId: 'workspace-1',
       groupId,
-      slug: null,
       displayName: 'Group',
-      description: null,
-      kind: 'room',
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       activeMemberCount: 1,
       ownerPrincipalId: 'principal-1',
       snapshotVersion: 3,
@@ -458,13 +452,7 @@ function createGroupSnapshot(
       presenceVersion: 4,
       created: audit,
       updated: audit,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-      status: 'active',
-      archived: null,
-      deleted: null,
-    },
+    }),
     members: [
       {
         applicationId: 'app-1',

@@ -37,7 +37,7 @@ const GROUP_KEYS = [
     'maxSessionsPerMember', 'metadata', 'activeMemberCount', 'ownerPrincipalId',
     'snapshotVersion', 'metadataVersion', 'rosterVersion', 'presenceVersion',
     'created', 'updated', 'archived', 'deleted', 'expiresAtEpochMs',
-    'emptySinceEpochMs', 'purgeAfterEpochMs',
+    'emptySinceEpochMs', 'purgeAfterEpochMs', 'lifecycleState',
 ];
 const GROUP_MEMBER_KEYS = [
     'applicationId', 'workspaceId', 'groupId', 'principalId', 'role', 'status',

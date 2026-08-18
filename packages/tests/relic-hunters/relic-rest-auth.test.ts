@@ -12,6 +12,7 @@ import {
   authorizeRelicSnapshotRead,
   readRelicRestAuthMode,
 } from '../../../apps/relic-hunter-server-v1/src/relic-rest-auth.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const SESSION = {
   clientId: 'alice',
@@ -129,19 +130,11 @@ function snapshot(
   const activeSessions = options.activeSessions ?? [];
   const groupRevision = 1;
   const presenceRevision = activeSessions.length;
-  const group: Group = {
+  const group: Group = createTestGroup({
     applicationId: 'rallar-server',
     workspaceId: 'default',
     groupId: 'room-1',
-    slug: null,
     displayName: 'Room 1',
-    description: null,
-    kind: 'room',
-    status: 'active',
-    joinMode: 'open',
-    maxMembers: null,
-    maxSessionsPerMember: null,
-    metadata: {},
     activeMemberCount: members.length,
     ownerPrincipalId: 'alice',
     snapshotVersion: groupRevision,
@@ -150,12 +143,7 @@ function snapshot(
     presenceVersion: presenceRevision,
     created: auditStamp,
     updated: auditStamp,
-    expiresAtEpochMs: null,
-    emptySinceEpochMs: null,
-    purgeAfterEpochMs: null,
-    archived: null,
-    deleted: null,
-  };
+  });
 
   return {
     stateRevision: groupRevision + presenceRevision,
