@@ -12,6 +12,7 @@ import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { CrdtMutationConflictError } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiCrdtInboxService } from '../../src/services/create-api-crdt-inbox-service.ts';
@@ -95,7 +96,7 @@ for (const stage of FAILURE_STAGES) {
         },
         capturedAtEpochMs: now,
         expireAtEpochMs: now + 60_000,
-      } as never);
+      });
       await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
       await service.inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
 
@@ -220,11 +221,14 @@ function productionService(input: ProductionServiceInput) {
   const resourceInbox = new ResourceInboxRepository(queueSql);
   return createApiCrdtInboxService({
     inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(resourceInbox)),
+    outboxQueueReader: new OutboxQueueReader(new PSqlQueueBox(resourceInbox)),
     resourceInboxRepository: resourceInbox,
     resourceInboxResultsRepository: new ResourceInboxResultsRepository(queueSql),
     database,
     serviceId: 'server-1',
+    timing: undefined,
     options: { nowEpochMs: () => now },
+    wakeQueueEngine: () => undefined,
     currentAuthority: {
       readSession: (sessionId) =>
         Promise.resolve({
@@ -331,7 +335,7 @@ function withOneCrdtConflict(database: PSqlSql, onConflict: () => void): PSqlSql
   let injected = false;
   const wrapped =
     ((parts: TemplateStringsArray | readonly unknown[], ...values: unknown[]) =>
-      database(parts as never, ...values)) as PSqlSql;
+      executeSql(database, parts, values)) as PSqlSql;
   wrapped.begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) =>
     await database.begin(async (transaction) => {
       const conflicting =
@@ -342,7 +346,7 @@ function withOneCrdtConflict(database: PSqlSql, onConflict: () => void): PSqlSql
             onConflict();
             throw new CrdtMutationConflictError('injected-document');
           }
-          return transaction(parts as never, ...values);
+          return executeSql(transaction, parts, values);
         }) as PSqlTransactionSql;
       conflicting.begin = transaction.begin.bind(transaction);
       return await write(conflicting);
@@ -356,7 +360,7 @@ function withInjectedTransactionFailure(
 ): PSqlSql {
   const wrapped =
     ((parts: TemplateStringsArray | readonly unknown[], ...values: unknown[]) =>
-      database(parts as never, ...values)) as PSqlSql;
+      executeSql(database, parts, values)) as PSqlSql;
   wrapped.begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) =>
     await database.begin(async (transaction) => {
       let wsOutboxWrites = 0;
@@ -375,10 +379,20 @@ function withInjectedTransactionFailure(
         if (fail) {
           throw new Error(`injected ${stage} failure`);
         }
-        return transaction(parts as never, ...values);
+        return executeSql(transaction, parts, values);
       }) as PSqlTransactionSql;
       failing.begin = transaction.begin.bind(transaction);
       return await write(failing);
     });
   return wrapped;
+}
+
+function executeSql(
+  sql: PSqlSql,
+  parts: TemplateStringsArray | readonly unknown[],
+  values: readonly unknown[],
+): unknown {
+  return Array.isArray(parts) && 'raw' in parts
+    ? sql(parts as TemplateStringsArray, ...values)
+    : sql(parts);
 }

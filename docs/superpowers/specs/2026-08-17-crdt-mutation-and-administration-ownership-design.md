@@ -391,6 +391,11 @@ write path:
 - fix final-outbox collision matching so every collision rolls the transaction back;
 - remove vacated old files and directories after exact consumer searches.
 
+When one old owner is split across several canonical owners, the exact structural-lineage manifest
+authenticates style-finding provenance and aggregate capacity from the recorded source blob. It
+does not retain or authorize the obsolete source path. The checker must accept the manifest after
+that source is deleted while continuing to validate every source, target, and aggregate constraint.
+
 The slice is complete only when a developer can start at the package-root CRDT export or the CRDT
 README and reach protocol ingress, one mutation attempt, guarded persistence, and durable effects
 without searching a generic services directory.

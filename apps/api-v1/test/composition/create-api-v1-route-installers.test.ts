@@ -7,6 +7,7 @@ import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.
 
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
 import type { ApiV1AdminServices } from '../../src/composition/create-api-v1-admin-services.ts';
+import type { ApiV1TopologyServices } from '../../src/composition/create-api-v1-topology-services.ts';
 import {
   createApiV1RouteInstallers,
   type CreateApiV1RouteInstallersInput,
@@ -17,7 +18,9 @@ Deno.test('route installers mount representative API and websocket behavior in o
   const installers = createApiV1RouteInstallers(createInput());
 
   installers.ws(app);
-  for (const install of installers.rest) install(app);
+  for (const install of installers.rest) {
+    install(app);
+  }
 
   assert.equal((await app.request('/api/ws/session-1')).status, 426);
   assert.equal((await app.request('/api/config')).status, 200);
@@ -64,18 +67,16 @@ function createInput(): CreateApiV1RouteInstallersInput {
   } as ApiV1Runtime;
   return {
     runtime,
-    topology: {
-      topologyManagement: {},
-      adminClientIds: ['admin'],
-    } as never,
+    topology: createTopology(),
     admin: {
       operations: {},
       support: {},
       statistics: {},
     } as ApiV1AdminServices,
     crdtLogRepository: new InMemoryRallarCrdtLogRepository({ now: () => 1_000 }),
-    crdtMutations: {} as never,
-    crdtAuditSink: undefined,
+    crdtMutations: {
+      writeCrdtAdminMutation: () => Promise.reject(new Error('mutation not used')),
+    },
     authUserRepository: {} as AuthUserRepository,
     staticClients: [],
     authRegistrationMode: 'public',
@@ -86,5 +87,22 @@ function createInput(): CreateApiV1RouteInstallersInput {
       requestId: 'request-id',
       capturedAtEpochMs: 1_000,
     }),
+  };
+}
+
+function createTopology(): ApiV1TopologyServices {
+  return {
+    rtcTopologyService: {} as ApiV1TopologyServices['rtcTopologyService'],
+    rtcTopologyOptions: {},
+    topologyManagement: {} as ApiV1TopologyServices['topologyManagement'],
+    topologyConfigRepository: {} as ApiV1TopologyServices['topologyConfigRepository'],
+    groupStateRepository: {} as ApiV1TopologyServices['groupStateRepository'],
+    topologySnapshotRepository: {} as ApiV1TopologyServices['topologySnapshotRepository'],
+    rttRepository: {} as ApiV1TopologyServices['rttRepository'],
+    rttRefinementGate: {} as ApiV1TopologyServices['rttRefinementGate'],
+    rttRefinementService: {} as ApiV1TopologyServices['rttRefinementService'],
+    adminClientIds: ['admin'],
+    readRtcTopologyMetrics: () => ({}),
+    resetRtcTopologyMetrics: () => undefined,
   };
 }

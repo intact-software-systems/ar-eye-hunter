@@ -15,12 +15,17 @@ import {
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
+import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
+import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import { computeCrdtMutation } from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
 import { appendRejectionReason } from '@shared-server/rallar-system/crdt/mutation/crdt-append-rejection.ts';
+import type { CrdtAppendMutationResult } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
@@ -78,8 +83,7 @@ describe('CRDT append and administration result invariants', () => {
       serviceId: 'server-1',
     });
     expect(rejected.outcome).toBe('rejected');
-    const appendResult = (rejected.result as { appendResult: Record<string, unknown> })
-      .appendResult;
+    const appendResult = (rejected.result as CrdtAppendMutationResult).appendResult;
 
     const { update: _update, ...missingUpdate } = appendResult;
     expect(() =>
@@ -228,23 +232,37 @@ describe('CRDT append and administration result invariants', () => {
 });
 
 function appCrdt(): AppCrdtInboxService {
+  const database = createUnusedDatabase();
   const repository = {
     readMutation: () => Promise.reject(new Error('not processed')),
     writeMutation: () => Promise.reject(new Error('not processed')),
     writeOutbox: () => Promise.reject(new Error('not processed')),
   };
-  return new AppCrdtInboxService({
-    inbox: new InboxQueueReader(new InMemoryQueueBox()),
-    resourceInbox: {} as never,
-    resourceInboxResults: {} as never,
-    database: {} as never,
-    mutationService: createCrdtMutationService({
-      repository,
-      createWriter: () => repository,
-      serviceId: 'server-1',
-    }),
-    serviceId: 'server-1',
-  });
+  return new AppCrdtInboxService(
+    {
+      inboxQueueReader: new InboxQueueReader(new InMemoryQueueBox()),
+      outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+      resourceInboxRepository: new ResourceInboxRepository(database),
+      resourceInboxResultsRepository: new ResourceInboxResultsRepository(database),
+      database,
+      mutationService: createCrdtMutationService({
+        repository,
+        createWriter: () => repository,
+        serviceId: 'server-1',
+      }),
+      readCurrentSession: () => Promise.reject(new Error('not read')),
+      wakeQueueEngine: () => undefined,
+    },
+    { serviceId: 'server-1', timing: undefined, appInbox: {} },
+  );
+}
+
+function createUnusedDatabase(): PSqlSql {
+  const database = (() =>
+    Promise.reject(new Error('Unexpected SQL execution in mutation invariant test'))) as PSqlSql;
+  database.begin = () =>
+    Promise.reject(new Error('Unexpected transaction in mutation invariant test'));
+  return database;
 }
 
 function actor() {

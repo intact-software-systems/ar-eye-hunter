@@ -13,6 +13,7 @@ import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { toResilienceDto } from '../../../src/middleware-resilience.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { createApiCrdtInboxService } from '../../../src/services/create-api-crdt-inbox-service.ts';
@@ -75,7 +76,7 @@ Deno.test('modern compact normalizes one reason before compute and persists it a
     assert.deepEqual(service.mutationService.validate({ command, read, computed }), []);
     assert.deepEqual(decodeCrdtMutationResult(computed.result), computed.result);
 
-    service.processCrdtCommandNoWaiting(command);
+    service.writeCrdtCommandNoWaiting(command);
     await drain(service, sql);
     const [stored] = await sql<PersistedSnapshotResultRow[]>`
       select s.snapshot_envelope, s.reason, r.ris_resource
@@ -138,11 +139,14 @@ function createService(sql: PGliteSql, now: number) {
   const resourceInbox = new ResourceInboxRepository(sql);
   return createApiCrdtInboxService({
     inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(resourceInbox)),
+    outboxQueueReader: new OutboxQueueReader(new PSqlQueueBox(resourceInbox)),
     resourceInboxRepository: resourceInbox,
     resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
     database: sql,
     serviceId: 'server-1',
+    timing: undefined,
     options: { nowEpochMs: () => now },
+    wakeQueueEngine: () => undefined,
     currentAuthority: {
       readSession: (sessionId) =>
         Promise.resolve({

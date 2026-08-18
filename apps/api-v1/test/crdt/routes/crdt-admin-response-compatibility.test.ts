@@ -3,6 +3,7 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 import {
   RALLAR_CRDT_OPERATION_VERSION,
   RALLAR_CRDT_PROTOCOL_VERSION,
+  type RallarCrdtAdminReadRepository,
   type RallarCrdtAuditEvent,
   type RallarCrdtDocumentRef,
   type RallarCrdtUpdateEnvelope,
@@ -12,12 +13,13 @@ import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persist
 import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
+import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { toResilienceDto } from '../../../src/middleware-resilience.ts';
+import { createCrdtAdminMutations } from '../../../src/crdt/create-crdt-admin-mutations.ts';
 import * as routes from '../../../src/routes/crdt-admin-routes.ts';
 import { waitForPGliteQueueRow, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
@@ -159,37 +161,52 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
 
     const audit: RallarCrdtAuditEvent[] = [];
     let auditAttempts = 0;
-    const appCrdt = new AppCrdtInboxService({
-      inbox,
-      resourceInbox,
-      resourceInboxResults: results,
-      database: sql,
-      mutationService,
-      serviceId: 'server-1',
-      options: {
-        waitMaxElapsedMsecs: 5_000,
-        waitRetryIntervalMsecs: 1,
-        waitMaxRetryIntervalMsecs: 4,
-        waitJitterRatio: 0,
-        nowEpochMs: () => now + 1,
+    const auditSink = {
+      record: (event: RallarCrdtAuditEvent) => {
+        auditAttempts += 1;
+        if (auditAttempts === 1) {
+          throw new Error('audit sink unavailable');
+        }
+        audit.push(event);
       },
-      effects: {
-        audit: {
-          record: (event: RallarCrdtAuditEvent) => {
-            auditAttempts += 1;
-            if (auditAttempts === 1) {
-              throw new Error('audit sink unavailable');
-            }
-            audit.push(event);
-          },
-        },
+    };
+    const appCrdt = new AppCrdtInboxService(
+      {
+        inboxQueueReader: inbox,
         outboxQueueReader: outbox,
+        resourceInboxRepository: resourceInbox,
+        resourceInboxResultsRepository: results,
+        database: sql,
+        mutationService,
+        readCurrentSession: () => Promise.reject(new Error('not read')),
+        wakeQueueEngine: () => undefined,
+        auditDelivery: {
+          auditSink,
+          outboxQueueReader: outbox,
+        },
       },
+      {
+        serviceId: 'server-1',
+        timing: undefined,
+        appInbox: {
+          waitMaxElapsedMsecs: 5_000,
+          waitRetryIntervalMsecs: 1,
+          waitMaxRetryIntervalMsecs: 4,
+          waitJitterRatio: 0,
+          nowEpochMs: () => now + 1,
+        },
+      },
+    );
+    const crdtAdminMutations = createCrdtAdminMutations({
+      appCrdtInboxService: appCrdt,
+      nowEpochMs: () => now + 1,
+      createId: () => crypto.randomUUID(),
+      serviceId: 'server-1',
     });
     const app = new Hono();
     routes.registerCrdtAdminRoutes(app, {
       repository: new PSqlCrdtLogRepository(sql),
-      mutations: appCrdt,
+      mutations: crdtAdminMutations,
       requireAuth: false,
       requireApiAdminSession: () =>
         Promise.resolve({
@@ -316,12 +333,12 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
 Deno.test('actual CRDT admin Hono routes preserve 401 and 403 denials', async () => {
   const unauthorized = new Hono();
   routes.registerCrdtAdminRoutes(unauthorized, {
-    repository: {} as never,
+    repository: createUnusedCrdtReadRepository(),
     mutations: {
-      processAdminMutationUntilCompletion: () => {
+      writeCrdtAdminMutation: () => {
         throw new Error('mutation must not run');
       },
-    } as never,
+    },
     requireAuth: false,
     requireApiAdminSession: () => {
       throw Object.assign(new Error('Unauthorized: expired session'), { status: 401 });
@@ -341,12 +358,12 @@ Deno.test('actual CRDT admin Hono routes preserve 401 and 403 denials', async ()
 
   const forbidden = new Hono();
   routes.registerCrdtAdminRoutes(forbidden, {
-    repository: {} as never,
+    repository: createUnusedCrdtReadRepository(),
     mutations: {
-      processAdminMutationUntilCompletion: () => {
+      writeCrdtAdminMutation: () => {
         throw new Error('mutation must not run');
       },
-    } as never,
+    },
     requireAuth: false,
     requireApiAdminSession: () =>
       Promise.resolve({
@@ -371,6 +388,19 @@ Deno.test('actual CRDT admin Hono routes preserve 401 and 403 denials', async ()
   assert.equal(forbiddenResponse.status, 403);
   assert.equal((await forbiddenResponse.json()).ok, false);
 });
+
+function createUnusedCrdtReadRepository(): RallarCrdtAdminReadRepository {
+  const unused = () => Promise.reject(new Error('CRDT read operation is unused'));
+  return {
+    listAfter: unused,
+    readSnapshot: unused,
+    readDocumentMetadata: unused,
+    listDocuments: unused,
+    exportDebugBundle: unused,
+    exportBackupBundle: unused,
+    verifyIntegrity: unused,
+  };
+}
 
 async function mutationCounts(
   sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],

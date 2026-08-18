@@ -261,12 +261,6 @@ function validateSource(input, lineage, issues) {
   } else if (sourceResult.stdout.trim() !== lineage.source.blob) {
     issues.push(`${lineage.location}: source blob does not match: ${lineage.source.path}`);
   }
-  if (lineage.targets.length > 1 && !targetPathExists(input, lineage.source.path)) {
-    issues.push(
-      `${lineage.location}: source compatibility path does not exist in target: ` +
-        lineage.source.path,
-    );
-  }
 }
 
 function validateTargets({ input, lineage, targetLocations, issues }) {

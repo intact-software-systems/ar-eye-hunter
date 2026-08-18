@@ -343,7 +343,7 @@ describe('changed repository style structural lineage', () => {
     expect(result.stdout).toContain('PASS: no new repository style findings');
   });
 
-  it('fails closed when a split owner lacks its target compatibility path', () => {
+  it('authenticates split findings after the obsolete source owner is removed', () => {
     const fixture = createSplitFixture({
       baseFindings: [overlongSource('alpha'), overlongSource('bravo')],
       targetFindings: [[overlongSource('gamma')], [overlongSource('delta')]],
@@ -354,8 +354,8 @@ describe('changed repository style structural lineage', () => {
 
     const result = runChangedChecker({ root: fixture.root, mergeBase: fixture.mergeBase });
 
-    expect(result.status).toBe(2);
-    expect(result.stderr).toContain('source compatibility path does not exist in target');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('PASS: no new repository style findings');
   });
 
   it('reports malformed manifests and manifest traversal deterministically', () => {

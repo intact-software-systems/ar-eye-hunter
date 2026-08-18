@@ -17,6 +17,7 @@ import {
 } from '@shared/crdt/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/crdt/RallarCrdtServer.ts';
@@ -31,7 +32,7 @@ import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-rout
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import { createApiCrdtDocumentAuthorizer } from '../../src/services/create-api-crdt-document-authorizer.ts';
 import { createApiCrdtInboxService } from '../../src/services/create-api-crdt-inbox-service.ts';
-import { createCrdtWsMutationIngress } from '../../src/services/create-crdt-ws-mutation-ingress.ts';
+import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
 import {
   toPersistedAuthSessionFixture,
   waitForPGliteQueueRow,
@@ -43,6 +44,37 @@ const CLIENT_ID = 'client-42';
 const USERNAME = 'alice';
 const SESSION_A = 'session-99';
 const SESSION_B = 'session-100';
+
+interface PersistedActorRow {
+  readonly actor_id: string;
+  readonly principal_id: string;
+  readonly session_id: string;
+}
+
+interface CountRow {
+  readonly count: string;
+}
+
+interface PersistedResult {
+  readonly commandId: string;
+  readonly status: string;
+  readonly code: string | null;
+}
+
+interface PersistedResultRow {
+  readonly ris_resource: string;
+}
+
+interface DurableEffects {
+  readonly mutations: number;
+  readonly work: number;
+}
+
+interface DurableEffectsRow {
+  readonly mutations: string;
+  readonly work: string;
+}
+
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
   scope: 'app',
@@ -65,11 +97,7 @@ Deno.test('browser WS ingress resolves real auth identity and rereads revoke thr
     await fixture.send(SESSION_A, message(SESSION_A, 'transport-1', update('update-1')));
     await drain(fixture.service, sql, 1);
 
-    const [persisted] = await sql<{
-      actor_id: string;
-      principal_id: string;
-      session_id: string;
-    }[]>`
+    const [persisted] = await sql<PersistedActorRow[]>`
             select actor_id, principal_id, session_id from crdt_updates
         `;
     assert.deepEqual(persisted, {
@@ -98,7 +126,7 @@ Deno.test('browser WS ingress resolves real auth identity and rereads revoke thr
     const revoked = (await readResults(sql)).at(-1);
     assert.equal(revoked?.status, 'rejected');
     assert.match(String(revoked?.code), /authentication|authorization/);
-    const [count] = await sql<{ count: string }[]>`select count(*) as count from crdt_updates`;
+    const [count] = await sql<CountRow[]>`select count(*) as count from crdt_updates`;
     assert.equal(Number(count?.count), 1);
   });
 });
@@ -122,7 +150,7 @@ Deno.test('production app-scope authorization rejects a foreign application cont
     const [result] = await readResults(sql);
     assert.equal(result?.status, 'rejected');
     assert.match(String(result?.code), /scope|authorization/);
-    const [count] = await sql<{ count: string }[]>`select count(*) as count from crdt_updates`;
+    const [count] = await sql<CountRow[]>`select count(*) as count from crdt_updates`;
     assert.equal(Number(count?.count), 0);
   });
 });
@@ -137,11 +165,14 @@ async function createFixture(
   const resourceInbox = new ResourceInboxRepository(sql);
   const service = createApiCrdtInboxService({
     inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(resourceInbox)),
+    outboxQueueReader: new OutboxQueueReader(new PSqlQueueBox(resourceInbox)),
     resourceInboxRepository: resourceInbox,
     resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
     database: sql,
     serviceId: 'server-1',
+    timing: undefined,
     options: { nowEpochMs: () => NOW },
+    wakeQueueEngine: () => undefined,
     currentAuthority: {
       readSession: (sessionId) => auth.findBySessionId(sessionId),
       authorizeDocument: createApiCrdtDocumentAuthorizer({
@@ -168,7 +199,7 @@ async function createFixture(
   );
   const facade = new RallarServerWsFacade(wsService).install();
   installRallarCrdtWsTopics(facade, {
-    mutationIngress: createCrdtWsMutationIngress(service, 'server-1'),
+    mutationIngress: createCrdtWsMutationIngress(service),
     allowAppDocuments: true,
     policies: [{
       documentType: 'checklist',
@@ -197,7 +228,7 @@ async function createFixture(
       await clients.insertSession(clientSession(sessionId));
       const socket = new FakeSocket();
       sockets.set(sessionId, socket);
-      socketServer.addConnection(new ConnectionContext(sessionId, socket as never));
+      socketServer.addConnection(new ConnectionContext(sessionId, socket));
     },
     revokeAuthSession: async (sessionId: string) => {
       const stored = await auth.findSessionBySessionIdEntry(sessionId);
@@ -215,31 +246,27 @@ async function drain(
   await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
   await service.inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
   for (let attempt = 0; attempt < 50; attempt += 1) {
-    if ((await readResults(sql)).length >= expectedResults) return;
+    if ((await readResults(sql)).length >= expectedResults) {
+      return;
+    }
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   throw new Error('Timed out waiting for CRDT AppInbox results');
 }
 
 async function readResults(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]) {
-  const rows = await sql<{ ris_resource: string }[]>`
+  const rows = await sql<PersistedResultRow[]>`
         select ris_resource from resource_inbox_results
         where ris_topic_id = 'app-inbox.crdt-state'
         order by ris_row_id
     `;
-  return rows.map((row) =>
-    JSON.parse(row.ris_resource) as {
-      commandId: string;
-      status: string;
-      code: string | null;
-    }
-  );
+  return rows.map((row) => JSON.parse(row.ris_resource) as PersistedResult);
 }
 
 async function readDurableEffects(
   sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
-): Promise<Readonly<{ mutations: number; work: number }>> {
-  const [row] = await sql<{ mutations: string; work: string }[]>`
+): Promise<DurableEffects> {
+  const [row] = await sql<DurableEffectsRow[]>`
         select
           (select count(*) from crdt_updates)::text as mutations,
           (select count(*) from resource_inbox
@@ -367,23 +394,29 @@ function audit(): AuditStamp {
   };
 }
 
-class FakeSocket {
+class FakeSocket extends EventTarget implements WebSocket {
+  readonly CONNECTING = WebSocket.CONNECTING;
+  readonly OPEN = WebSocket.OPEN;
+  readonly CLOSING = WebSocket.CLOSING;
+  readonly CLOSED = WebSocket.CLOSED;
+  readonly bufferedAmount = 0;
+  readonly extensions = '';
+  readonly protocol = '';
   readonly readyState = WebSocket.OPEN;
-  private readonly listeners = new Map<string, Array<(event: MessageEvent) => void>>();
+  readonly url = 'ws://test.invalid';
+  binaryType: BinaryType = 'blob';
+  onclose: ((this: WebSocket, event: CloseEvent) => unknown) | null = null;
+  onerror: ((this: WebSocket, event: Event) => unknown) | null = null;
+  onmessage: ((this: WebSocket, event: MessageEvent) => unknown) | null = null;
+  onopen: ((this: WebSocket, event: Event) => unknown) | null = null;
 
-  addEventListener(type: string, listener: (event: MessageEvent) => void): void {
-    const listeners = this.listeners.get(type) ?? [];
-    listeners.push(listener);
-    this.listeners.set(type, listeners);
-  }
+  close(): void {}
 
   send(_data: string): void {
   }
 
   async dispatchMessage(value: ReturnType<typeof message>): Promise<void> {
-    const event = { data: JSON.stringify(value) } as MessageEvent;
-    for (const listener of this.listeners.get('message') ?? []) {
-      await listener(event);
-    }
+    this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(value) }));
+    await Promise.resolve();
   }
 }

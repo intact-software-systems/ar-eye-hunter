@@ -47,6 +47,7 @@ import {
 import { createRuntimeStateExpiryLifecycle } from '../services/runtime-state-expiry-startup.ts';
 import { getApiAppInboxServiceOptions, getApiTimingSink } from '../services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from '../services/ws-topic-room-authorizer.ts';
+import { createCrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
 import { createApiV1BackgroundTaskLifecycle } from './api-v1-background-task-lifecycle.ts';
 import type { ApiV1Runtime } from './api-v1-runtime.ts';
 import {
@@ -114,6 +115,12 @@ export function createDefaultRallarServer(
   if (!appAdminInboxService || !appCrdtInboxService) {
     throw new Error('Admin database mutations require AppInbox services');
   }
+  const crdtAdminMutations = createCrdtAdminMutations({
+    appCrdtInboxService,
+    nowEpochMs,
+    createId: () => crypto.randomUUID(),
+    serviceId: myServerId,
+  });
   const admin = createApiV1AdminServices({
     database,
     databaseConfig,
@@ -131,7 +138,7 @@ export function createDefaultRallarServer(
     clientStateService: runtime.clientStateService,
     groupStateService: runtime.groupStateService,
     appAdminInboxService,
-    appCrdtInboxService,
+    crdtAdminMutations,
     appGroupInboxService: runtime.appGroupInboxService,
   });
 
@@ -149,8 +156,7 @@ export function createDefaultRallarServer(
     topology,
     admin,
     crdtLogRepository,
-    crdtMutations: appCrdtInboxService,
-    crdtAuditSink: undefined,
+    crdtMutations: crdtAdminMutations,
     authUserRepository,
     staticClients: readAuthorisedClients(Deno.env),
     authRegistrationMode: readAuthRegistrationMode(Deno.env),

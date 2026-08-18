@@ -237,11 +237,14 @@ Deno.test('real SQL CAS conflict retries from revoked room membership and commit
     const resourceInbox = new ResourceInboxRepository(sql);
     const service = createApiCrdtInboxService({
       inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(resourceInbox)),
+      outboxQueueReader: new OutboxQueueReader(new PSqlQueueBox(resourceInbox)),
       resourceInboxRepository: resourceInbox,
       resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
       database,
       serviceId: 'server-1',
+      timing: undefined,
       options: { nowEpochMs: () => now },
+      wakeQueueEngine: () => undefined,
       currentAuthority: {
         readSession: (sessionId: string) =>
           Promise.resolve({
@@ -258,7 +261,7 @@ Deno.test('real SQL CAS conflict retries from revoked room membership and commit
             code: membershipAllowed ? 'allowed' : 'authorization-scope-denied',
           });
         },
-      } as never,
+      },
       policies: [{ documentType: 'checklist', rollout: 'production' }],
     });
     await service.createAndEnqueueAppend({

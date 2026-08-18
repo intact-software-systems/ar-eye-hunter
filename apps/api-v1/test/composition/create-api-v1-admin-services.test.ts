@@ -7,7 +7,6 @@ import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/formation-metrics.ts';
 import type { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import type { AppAdminInboxService } from '@shared-server/rallar-system/services/AppAdminInboxService.ts';
-import type { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
 import type { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 
 import {
@@ -137,7 +136,9 @@ function createInput(
       listEvents: () => Promise.resolve([]),
     },
     appAdminInboxService: {} as AppAdminInboxService,
-    appCrdtInboxService: {} as AppCrdtInboxService,
+    crdtAdminMutations: {
+      writeCrdtAdminMutation: () => Promise.reject(new Error('mutation not used')),
+    },
     appGroupInboxService: {} as AppGroupInboxService,
   };
 }
@@ -155,10 +156,32 @@ function createDatabase(): PSqlSql {
   ) as PSqlSql;
 }
 
-function createSocket(readyState: number): WebSocket {
-  return {
-    readyState,
-    addEventListener: () => {},
-    close: () => {},
-  } as never;
+function createSocket(readyState: WebSocket['readyState']): WebSocket {
+  return new TestWebSocket(readyState);
+}
+
+class TestWebSocket extends EventTarget implements WebSocket {
+  readonly CONNECTING = WebSocket.CONNECTING;
+  readonly OPEN = WebSocket.OPEN;
+  readonly CLOSING = WebSocket.CLOSING;
+  readonly CLOSED = WebSocket.CLOSED;
+  readonly bufferedAmount = 0;
+  readonly extensions = '';
+  readonly protocol = '';
+  readonly url = 'ws://test.invalid';
+  readonly readyState: WebSocket['readyState'];
+  binaryType: BinaryType = 'blob';
+  onclose: ((this: WebSocket, event: CloseEvent) => unknown) | null = null;
+  onerror: ((this: WebSocket, event: Event) => unknown) | null = null;
+  onmessage: ((this: WebSocket, event: MessageEvent) => unknown) | null = null;
+  onopen: ((this: WebSocket, event: Event) => unknown) | null = null;
+
+  constructor(readyState: WebSocket['readyState']) {
+    super();
+    this.readyState = readyState;
+  }
+
+  close(): void {}
+
+  send(): void {}
 }

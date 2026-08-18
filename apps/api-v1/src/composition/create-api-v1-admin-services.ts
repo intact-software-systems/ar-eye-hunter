@@ -26,9 +26,6 @@ group-state-service.ts';
 import type { AppAdminInboxService } from '@shared-server/rallar-system/services/\
 AppAdminInboxService.ts';
 // prettier-ignore
-import type { AppCrdtInboxService } from '@shared-server/rallar-system/services/\
-AppCrdtInboxService.ts';
-// prettier-ignore
 import type { AppGroupInboxService } from '@shared-server/rallar-system/services/\
 AppGroupInboxService.ts';
 // prettier-ignore
@@ -42,6 +39,7 @@ import type { RallarServerWsStatus } from '@shared-server/rallar-facade/ws-topic
 
 import type { ApiV1DatabaseBackendConfig } from '../db/database-config.ts';
 import type { ApiV1DatabasePubSubConfig } from '../db/database-pubsub-config.ts';
+import type { CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
 import { createApiAdminMutationGateway } from '../services/create-api-admin-mutation-gateway.ts';
 
 export interface CreateApiV1AdminServicesInput {
@@ -71,7 +69,7 @@ export interface CreateApiV1AdminServicesInput {
     | 'listEvents'
   >;
   readonly appAdminInboxService: AppAdminInboxService;
-  readonly appCrdtInboxService: AppCrdtInboxService;
+  readonly crdtAdminMutations: CrdtAdminMutations;
   readonly appGroupInboxService: AppGroupInboxService;
 }
 
@@ -103,7 +101,7 @@ export function createApiV1AdminServices(
       crdtAdminRepository: input.crdtAdminRepository,
       mutationGateway: createApiAdminMutationGateway({
         appAdmin: input.appAdminInboxService,
-        appCrdt: input.appCrdtInboxService,
+        crdtAdminMutations: input.crdtAdminMutations,
         appGroup: input.appGroupInboxService,
         now: input.nowEpochMs,
       }),

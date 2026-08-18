@@ -1,25 +1,24 @@
-import type { RallarCrdtServerMutationIngress } from '@shared-server/crdt/RallarCrdtServer.ts';
-import type {
-  AppCrdtInboxService,
-} from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
+import type { RallarCrdtServerMutationIngress } from '../../../crdt/RallarCrdtServer.ts';
+
+import type { AppCrdtInboxService } from './app-crdt-inbox-service.ts';
 
 export function createCrdtWsMutationIngress(
-  appCrdt: AppCrdtInboxService,
-  _serverId: string,
+  appCrdtInboxService: AppCrdtInboxService,
 ): RallarCrdtServerMutationIngress {
   return {
     enqueueUpdate: async (accepted) => {
       const trusted = accepted.trusted;
-      await appCrdt.createAndEnqueueAuthenticatedAppend({
+      await appCrdtInboxService.createAndEnqueueAuthenticatedAppend({
         update: accepted.envelope,
         deliveryId: accepted.raw.id.msgId,
         trustedSessionId: trusted.sessionId,
         responseAudience: {
-          kind: accepted.envelope.document.scope === 'room'
-            ? 'room'
-            : accepted.envelope.document.scope === 'principal'
-            ? 'principal'
-            : 'app',
+          kind:
+            accepted.envelope.document.scope === 'room'
+              ? 'room'
+              : accepted.envelope.document.scope === 'principal'
+                ? 'principal'
+                : 'app',
           topicId: accepted.raw.route.topicId,
           contextId: accepted.raw.route.contextId,
         },

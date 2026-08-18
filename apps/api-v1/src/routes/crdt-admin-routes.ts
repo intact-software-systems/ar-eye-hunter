@@ -1,7 +1,6 @@
 import { type Context, Hono } from 'jsr:@hono/hono@4.11.9';
 import type {
   RallarCrdtAdminReadRepository,
-  RallarCrdtAuditSink,
   RallarCrdtCatchUpRequestEnvelope,
   RallarCrdtCatchUpResponseEnvelope,
   RallarCrdtDocumentRef,
@@ -13,24 +12,10 @@ import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { toAuthErrorResponse, toAuthSession } from '../services/request-auth-service.ts';
-
-export type RallarCrdtAdminMutationOperation =
-  | 'rebuild-projection'
-  | 'compact'
-  | 'lifecycle'
-  | 'erase';
-
-export interface RallarCrdtAdminMutationInput {
-  readonly adminSession: AuthSession;
-  readonly request: unknown;
-}
-
-export interface RallarCrdtAdminMutations {
-  readonly processAdminMutationUntilCompletion: (
-    operation: RallarCrdtAdminMutationOperation,
-    input: RallarCrdtAdminMutationInput,
-  ) => Promise<unknown>;
-}
+import type {
+  CrdtAdminMutationOperation,
+  CrdtAdminMutations,
+} from '../crdt/create-crdt-admin-mutations.ts';
 
 export interface RallarCrdtAdminAuthorizationInput {
   readonly session: AuthSession;
@@ -48,8 +33,7 @@ export interface RallarCrdtCatchUpAuthorizationDecision {
 
 export interface RallarCrdtAdminRoutesOptions {
   readonly repository: RallarCrdtAdminReadRepository;
-  readonly mutations?: RallarCrdtAdminMutations;
-  readonly audit?: RallarCrdtAuditSink;
+  readonly mutations?: CrdtAdminMutations;
   readonly now?: () => number;
   readonly requireAuth?: boolean;
   readonly adminClientIds?: readonly string[];
@@ -66,7 +50,7 @@ export interface RallarCrdtAdminRoutesOptions {
 interface ProcessCrdtAdminMutationInput {
   readonly context: Context;
   readonly options: RallarCrdtAdminRoutesOptions;
-  readonly operation: RallarCrdtAdminMutationOperation;
+  readonly operation: CrdtAdminMutationOperation;
   readonly request: unknown;
 }
 
@@ -212,10 +196,11 @@ async function processCrdtAdminMutation(
     throw new Error('CRDT AppInbox mutations are not configured.');
   }
   const adminSession = await requireCrdtAdminSession(input.context, input.options);
-  return await input.options.mutations.processAdminMutationUntilCompletion(
-    input.operation,
-    { adminSession, request: input.request },
-  );
+  return await input.options.mutations.writeCrdtAdminMutation({
+    operation: input.operation,
+    adminSession,
+    request: input.request,
+  });
 }
 
 function forbidden(message: string): Error {

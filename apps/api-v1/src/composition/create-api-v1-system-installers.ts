@@ -18,7 +18,9 @@ import {
   type InitRallarSystemWsTopicsOptions,
 } from '@shared-server/rallar-system/ws-system-topics.ts';
 
-import { createCrdtWsMutationIngress } from '../services/create-crdt-ws-mutation-ingress.ts';
+// prettier-ignore
+import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/\
+create-crdt-ws-mutation-ingress.ts';
 import * as wsRoutes from '../routes/ws-routes.ts';
 import type { ApiV1Runtime } from './api-v1-runtime.ts';
 import type { ApiV1TopologyServices } from './create-api-v1-topology-services.ts';
@@ -37,7 +39,6 @@ export interface ApiV1SystemInstallerOperations {
   readonly initialiseSystemTopics: typeof initRallarSystemWsTopics;
   readonly createCrdtMutationIngress: (
     appCrdt: NonNullable<ApiV1Runtime['appCrdtInboxService']>,
-    serviceId: string,
   ) => RallarCrdtServerMutationIngress;
   readonly installCrdtTopics: typeof installRallarCrdtWsTopics;
   readonly initWebSocketLifecycle: typeof initWsLifecycle;
@@ -74,10 +75,7 @@ export function constructApiV1SystemInstallers(
       }
       operations.installCrdtTopics(ws, {
         logRepository: input.crdtLogRepository,
-        mutationIngress: operations.createCrdtMutationIngress(
-          appCrdtInboxService,
-          input.serviceId,
-        ),
+        mutationIngress: operations.createCrdtMutationIngress(appCrdtInboxService),
         allowPrincipalDocuments: true,
         allowAppDocuments: true,
         policies: input.crdtPolicies,

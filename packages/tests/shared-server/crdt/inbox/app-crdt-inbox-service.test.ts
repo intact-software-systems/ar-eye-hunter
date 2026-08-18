@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import type { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 import { CRDT_MUTATION_INBOX_TYPES } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import {
   createCrdtMutationCommand,
@@ -26,6 +27,13 @@ const DOCUMENT: RallarCrdtDocumentRef = {
 };
 
 describe('CRDT AppInbox mutation contracts', () => {
+  it('does not expose mutable audit sink registration', () => {
+    const hasMutableAuditSetter: 'setAuditSink' extends keyof AppCrdtInboxService ? true : false =
+      false;
+
+    expect(hasMutableAuditSetter).toBe(false);
+  });
+
   it('defines the complete DB-mutating CRDT AppInbox inventory', () => {
     expect(CRDT_MUTATION_INBOX_TYPES).toEqual([
       AppInboxType.CRDT_UPDATE_APPEND,

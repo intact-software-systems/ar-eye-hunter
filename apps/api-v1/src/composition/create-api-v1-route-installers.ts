@@ -1,5 +1,5 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
-import type { RallarCrdtAdminReadRepository, RallarCrdtAuditSink } from '@shared/crdt/mod.ts';
+import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 import type {
   RallarServerRouteInstaller,
 } from '@shared-server/rallar-facade/RallarServerApplication.ts';
@@ -9,9 +9,6 @@ import type {
 import type {
   LoginClientData,
 } from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
-// prettier-ignore
-import type { AppCrdtInboxService } from '@shared-server/rallar-system/services/\
-AppCrdtInboxService.ts';
 import {
   readGroupGraphDiagnostic,
   readScopedGlobalGraphDiagnostic,
@@ -31,6 +28,7 @@ import * as swaggerRoutes from '../routes/swagger-routes.ts';
 import * as wsRoutes from '../routes/ws-routes.ts';
 import { authorizeCrdtDocumentAccess } from '../services/create-api-crdt-document-authorizer.ts';
 import { requireApiAuthSession, requireWsAuthSession } from '../services/request-auth-service.ts';
+import type { CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
 import type { ApiV1Runtime } from './api-v1-runtime.ts';
 import type { ApiV1AdminServices } from './create-api-v1-admin-services.ts';
 import type { ApiV1TopologyServices } from './create-api-v1-topology-services.ts';
@@ -49,8 +47,7 @@ export interface CreateApiV1RouteInstallersInput {
   readonly topology: Pick<ApiV1TopologyServices, 'topologyManagement' | 'adminClientIds'>;
   readonly admin: ApiV1AdminServices;
   readonly crdtLogRepository: RallarCrdtAdminReadRepository;
-  readonly crdtMutations: AppCrdtInboxService;
-  readonly crdtAuditSink: RallarCrdtAuditSink | undefined;
+  readonly crdtMutations: CrdtAdminMutations;
   readonly authUserRepository: AuthUserRepository;
   readonly staticClients: readonly LoginClientData[];
   readonly authRegistrationMode: 'public' | 'admin';
@@ -131,7 +128,6 @@ export function createApiV1RouteInstallers(
         crdtAdminRoutes.registerCrdtAdminRoutes(app, {
           repository: input.crdtLogRepository,
           mutations: input.crdtMutations,
-          audit: input.crdtAuditSink,
           adminClientIds: topology.adminClientIds,
           requireApiAdminSession: async (context) => await requireSession(context.req),
           requireApiUserSession: async (context) => await requireSession(context.req),

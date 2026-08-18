@@ -885,6 +885,9 @@ and has no `setAuditSink`; this task owns only the later audit-delivery registra
 - Create: `packages/shared-server/rallar-system/crdt/inbox/register-crdt-audit-delivery.ts`
 - Create: `apps/api-v1/src/crdt/create-crdt-admin-mutations.ts`
 - Create: `plans/repo-style-lineages/crdt-ownership.json`
+- Modify: `plans/repo-style-lineages/crdt-mutation-ownership.json`
+- Modify: `scripts/repo-style-check/structural-lineage.mjs`
+- Modify/Test: `packages/tests/repo/repo-style-structural-lineage.test.ts`
 - Modify: `apps/api-v1/src/routes/crdt-admin-routes.ts`
 - Modify: `apps/api-v1/src/services/create-api-admin-mutation-gateway.ts`
 - Modify: `apps/api-v1/src/services/create-api-crdt-inbox-service.ts`
@@ -981,8 +984,20 @@ packages/shared-server/rallar-system/crdt/inbox/register-crdt-audit-delivery.ts
 apps/api-v1/src/crdt/create-crdt-admin-mutations.ts
 ```
 
-This authenticates responsibility recovery to the changed-style checker; it is not a source-file
-inventory, progress record, or waiver.
+This authenticates responsibility recovery and aggregate finding capacity to the changed-style
+checker; it is not a source-file inventory, progress record, compatibility requirement, or waiver.
+The obsolete source path is removed atomically after consumer closure. A discovered checker bug
+previously required that source to remain for one-to-many lineages; focused regression coverage now
+proves that an exact source blob and two valid targets pass after the obsolete owner is deleted.
+The checker still validates the exact merge base, source blob, production paths, target existence,
+target uniqueness and conflicts, stale bases, malformed manifests, aggregate capacity, and Git
+rename conflicts.
+
+The five existing mutation-codec lineages are also re-anchored from the branch-internal planning
+commit `224c850bf1e3632532b49c17995a6183c8c4c7a3` to the actual pull-request merge base
+`22bb4919c92f96d785ff65d7f308a6d2fd3318e7`. Their source blobs are byte-identical at both commits,
+so the existing blob values remain exact. This is a provenance correction, not new finding
+capacity.
 
 - [ ] **Step 3: Move the established named constructor owner and separate mixed responsibilities**
 

@@ -1,8 +1,10 @@
 import type { RallarCrdtUpdateEnvelope } from '@shared/crdt/mod.ts';
+
 import type {
   CrdtAppendCommand,
+  CrdtMutationActor,
   CrdtMutationResponseAudience,
-} from '../crdt/mutation/crdt-mutation-contracts.ts';
+} from '../mutation/crdt-mutation-contracts.ts';
 
 export interface CurrentCrdtMutationSession {
   readonly clientId: string;
@@ -10,9 +12,13 @@ export interface CurrentCrdtMutationSession {
   readonly sessionId: string;
 }
 
-export type ResolveCurrentCrdtMutationSession = (
-  sessionId: string,
-  atEpochMs: number,
+export interface ReadCurrentCrdtMutationSessionInput {
+  readonly sessionId: string;
+  readonly atEpochMs: number;
+}
+
+export type ReadCurrentCrdtMutationSession = (
+  input: ReadCurrentCrdtMutationSessionInput,
 ) => Promise<CurrentCrdtMutationSession>;
 
 export interface AuthenticatedCrdtAppendInput {
@@ -24,35 +30,29 @@ export interface AuthenticatedCrdtAppendInput {
   readonly expireAtEpochMs: number;
 }
 
+export interface EnqueueAuthenticatedCrdtAppendInput {
+  readonly update: RallarCrdtUpdateEnvelope;
+  readonly deliveryId: string;
+  readonly actor: CrdtMutationActor;
+  readonly responseAudience: CrdtMutationResponseAudience;
+  readonly capturedAtEpochMs: number;
+  readonly expireAtEpochMs: number;
+}
+
+export interface CreateAndEnqueueAuthenticatedCrdtAppendDependencies {
+  readonly serviceId: string;
+  readonly readCurrentSession: ReadCurrentCrdtMutationSession;
+  readonly enqueue: (input: EnqueueAuthenticatedCrdtAppendInput) => Promise<CrdtAppendCommand>;
+}
+
 export async function createAndEnqueueAuthenticatedCrdtAppend(
   input: AuthenticatedCrdtAppendInput,
-  dependencies: Readonly<{
-    serviceId: string;
-    resolveCurrentSession?: ResolveCurrentCrdtMutationSession;
-    enqueue(
-      input: Readonly<{
-        update: RallarCrdtUpdateEnvelope;
-        deliveryId: string;
-        actor: Readonly<{
-          actorId: string;
-          principalId: string;
-          sessionId: string;
-          serverId: string;
-        }>;
-        responseAudience: CrdtMutationResponseAudience;
-        capturedAtEpochMs: number;
-        expireAtEpochMs: number;
-      }>,
-    ): Promise<CrdtAppendCommand>;
-  }>,
+  dependencies: CreateAndEnqueueAuthenticatedCrdtAppendDependencies,
 ): Promise<CrdtAppendCommand> {
-  if (!dependencies.resolveCurrentSession) {
-    throw authenticationError('CRDT current session resolver is unavailable', 401);
-  }
-  const session = await dependencies.resolveCurrentSession(
-    input.trustedSessionId,
-    input.capturedAtEpochMs,
-  );
+  const session = await dependencies.readCurrentSession({
+    sessionId: input.trustedSessionId,
+    atEpochMs: input.capturedAtEpochMs,
+  });
   if (session.sessionId !== input.trustedSessionId) {
     throw authenticationError('CRDT current session identity differs', 403);
   }
@@ -74,9 +74,9 @@ export async function createAndEnqueueAuthenticatedCrdtAppend(
   });
 }
 
-function authenticationError(message: string, status: 401 | 403): Error {
+function authenticationError(message: string, status: 403): Error {
   return Object.assign(new Error(message), {
-    code: status === 401 ? 'authentication-missing' : 'authorization-forbidden',
+    code: 'authorization-forbidden',
     status,
   });
 }

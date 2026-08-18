@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "22bb4919c92f96d785ff65d7f308a6d2fd3318e7",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/AppCrdtInboxService.ts",
+        "blob": "492c477c67c182cd27657ac47218890e01a1cae7"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts",
+        "packages/shared-server/rallar-system/crdt/inbox/register-crdt-audit-delivery.ts",
+        "apps/api-v1/src/crdt/create-crdt-admin-mutations.ts"
+      ]
+    }
+  ]
+}

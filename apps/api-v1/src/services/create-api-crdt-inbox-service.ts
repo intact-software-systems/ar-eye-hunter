@@ -10,8 +10,8 @@ ResourceInboxRepository.ts';
 import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
 ResourceInboxResultsRepository.ts';
 // prettier-ignore
-import { AppCrdtInboxService } from '@shared-server/rallar-system/services/\
-AppCrdtInboxService.ts';
+import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/\
+app-crdt-inbox-service.ts';
 // prettier-ignore
 import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/\
 AppInboxService.ts';
@@ -30,12 +30,13 @@ export interface CreateApiCrdtInboxServiceInput {
   readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
   readonly database: PSqlSql;
   readonly serviceId: string;
-  readonly timing?: RallarTimingSink;
-  readonly options?: AppInboxServiceOptions;
+  readonly timing: RallarTimingSink | undefined;
+  readonly options: AppInboxServiceOptions;
   readonly currentAuthority: CurrentMutationAuthority;
   readonly policies: readonly RallarCrdtDocumentTypePolicy[];
-  readonly outboxQueueReader?: OutboxQueueReader;
-  readonly wakeQueueEngine?: () => void;
+  readonly outboxQueueReader: OutboxQueueReader;
+  readonly wakeQueueEngine: () => void;
+  readonly auditDelivery?: AppCrdtInboxService.AuditDelivery;
 }
 
 export function createApiCrdtInboxService(
@@ -69,24 +70,20 @@ export function createApiCrdtInboxService(
     { sql: input.database, authorize },
     { policies },
   );
-  return new AppCrdtInboxService({
-    inbox: input.inboxQueueReader,
-    resourceInbox: input.resourceInboxRepository,
-    resourceInboxResults: input.resourceInboxResultsRepository,
-    database: input.database,
-    mutationService: createCrdtMutationService({
-      repository,
-      createWriter: (transaction: PSqlTransactionSql) =>
-        new PSqlCrdtMutationRepository({ sql: transaction, authorize }, { policies }),
-      serviceId: input.serviceId,
-    }),
-    serviceId: input.serviceId,
-    timing: input.timing,
-    options: input.options,
-    effects: {
+  return new AppCrdtInboxService(
+    {
+      inboxQueueReader: input.inboxQueueReader,
       outboxQueueReader: input.outboxQueueReader,
-      wakeQueueEngine: input.wakeQueueEngine,
-      resolveCurrentSession: async (sessionId, atEpochMs) => {
+      resourceInboxRepository: input.resourceInboxRepository,
+      resourceInboxResultsRepository: input.resourceInboxResultsRepository,
+      database: input.database,
+      mutationService: createCrdtMutationService({
+        repository,
+        createWriter: (transaction: PSqlTransactionSql) =>
+          new PSqlCrdtMutationRepository({ sql: transaction, authorize }, { policies }),
+        serviceId: input.serviceId,
+      }),
+      readCurrentSession: async ({ sessionId, atEpochMs }) => {
         const session = await currentAuthority.readSession(sessionId);
         if (!session || session.expiresAtEpochMs <= atEpochMs) {
           throw Object.assign(new Error('CRDT current session is unavailable'), {
@@ -102,6 +99,13 @@ export function createApiCrdtInboxService(
         }
         return session;
       },
+      wakeQueueEngine: input.wakeQueueEngine,
+      auditDelivery: input.auditDelivery,
     },
-  });
+    {
+      serviceId: input.serviceId,
+      timing: input.timing,
+      appInbox: input.options,
+    },
+  );
 }

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
+import type { RallarCrdtAdminReadRepository, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
+import type { CrdtAdminMutationInput } from '../../src/crdt/create-crdt-admin-mutations.ts';
 import * as crdtAdminRoutes from '../../src/routes/crdt-admin-routes.ts';
 
 const NOW = 1_700_000_000_000;
@@ -29,29 +29,40 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   },
 };
 
+interface CrdtAdminMutationCall {
+  readonly operation: string;
+  readonly input: CrdtAdminMutationInput;
+}
+
 Deno.test('CRDT admin mutating routes use AppCrdt while read operations stay direct', async () => {
   const directCalls: string[] = [];
-  const mutationCalls: Array<{ operation: string; input: unknown }> = [];
+  const mutationCalls: CrdtAdminMutationCall[] = [];
   const app = new Hono();
   crdtAdminRoutes.registerCrdtAdminRoutes(app, {
-    repository: {
+    repository: createCrdtReadRepository({
       listDocuments: () => {
         directCalls.push('list');
         return Promise.resolve({ documents: [], nextCursor: undefined, hasMore: false });
       },
       verifyIntegrity: () => {
         directCalls.push('integrity');
-        return Promise.resolve({ valid: true });
+        return Promise.resolve({
+          documentKey: 'app-1:workspace-1:room:checklist:doc-1',
+          valid: true,
+          checkedUpdateCount: 0,
+          sequenceGaps: [],
+          issues: [],
+        });
       },
       exportDebugBundle: () => Promise.reject(new Error('unused')),
       exportBackupBundle: () => Promise.reject(new Error('unused')),
       listAfter: () => Promise.reject(new Error('unused')),
       readSnapshot: () => Promise.reject(new Error('unused')),
-    } as never,
+    }),
     mutations: {
-      processAdminMutationUntilCompletion: (operation, input) => {
-        mutationCalls.push({ operation, input });
-        return Promise.resolve({ operation, status: 'completed' });
+      writeCrdtAdminMutation: (input) => {
+        mutationCalls.push({ operation: input.operation, input });
+        return Promise.resolve({ operation: input.operation, status: 'completed' });
       },
     },
     requireApiAdminSession: () => Promise.resolve(SESSION),
@@ -98,33 +109,29 @@ Deno.test('CRDT admin mutating routes use AppCrdt while read operations stay dir
     'lifecycle',
     'erase',
   ]);
-  assert.ok(
-    mutationCalls.every((call) =>
-      (call.input as { adminSession: AuthSession }).adminSession === SESSION
-    ),
-  );
+  assert.ok(mutationCalls.every((call) => call.input.adminSession === SESSION));
 });
 
 Deno.test('CRDT admin routes never fall back to direct mutation methods', async () => {
   let directMutationCalls = 0;
   const app = new Hono();
   crdtAdminRoutes.registerCrdtAdminRoutes(app, {
-    repository: {
+    repository: Object.assign(createCrdtReadRepository(), {
       writeSnapshot: () => {
         directMutationCalls += 1;
         return Promise.resolve();
       },
       updateDocumentLifecycle: () => {
         directMutationCalls += 1;
-        return Promise.resolve({} as never);
+        return Promise.reject(new Error('direct lifecycle mutation must not run'));
       },
       rebuildProjection: () => {
         directMutationCalls += 1;
-        return Promise.resolve({} as never);
+        return Promise.reject(new Error('direct projection mutation must not run'));
       },
-    } as never,
+    }),
     mutations: {
-      processAdminMutationUntilCompletion: () => Promise.resolve({ status: 'queued' }),
+      writeCrdtAdminMutation: () => Promise.resolve({ status: 'queued' }),
     },
     requireApiAdminSession: () => Promise.resolve(SESSION),
     requireApiUserSession: () => Promise.resolve(SESSION),
@@ -150,6 +157,22 @@ Deno.test('CRDT admin routes never fall back to direct mutation methods', async 
   }
   assert.equal(directMutationCalls, 0);
 });
+
+function createCrdtReadRepository(
+  overrides: Partial<RallarCrdtAdminReadRepository> = {},
+): RallarCrdtAdminReadRepository {
+  const unused = () => Promise.reject(new Error('CRDT read operation is unused'));
+  return {
+    listAfter: unused,
+    readSnapshot: unused,
+    readDocumentMetadata: unused,
+    listDocuments: unused,
+    exportDebugBundle: unused,
+    exportBackupBundle: unused,
+    verifyIntegrity: unused,
+    ...overrides,
+  };
+}
 
 async function post(app: Hono, path: string, body: unknown): Promise<Response> {
   return await app.request(path, {

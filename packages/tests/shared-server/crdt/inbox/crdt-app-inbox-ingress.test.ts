@@ -10,7 +10,11 @@ import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
+import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -22,7 +26,7 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
 };
 
-describe('Task 9 CRDT production AppInbox ingress', () => {
+describe('CRDT production AppInbox ingress', () => {
   it('propagates a durable AppInbox enqueue failure to WS ingress', async () => {
     const reader = new CapturingInboxReader(true);
     const service = appCrdt(reader);
@@ -97,29 +101,44 @@ class CapturingInboxReader extends InboxQueueReader {
 
   override async enqueueIfAbsent(message: ALMessage): Promise<ResourceEntry> {
     this.messages.push(structuredClone(message));
-    if (this.fail) throw new Error('injected durable enqueue failure');
+    if (this.fail) {
+      throw new Error('injected durable enqueue failure');
+    }
     return await super.enqueueIfAbsent(message);
   }
 }
 
 function appCrdt(inbox: InboxQueueReader): AppCrdtInboxService {
+  const database = createUnusedDatabase();
   const repository = {
     readMutation: () => Promise.reject(new Error('not processed')),
     writeMutation: () => Promise.reject(new Error('not processed')),
     writeOutbox: () => Promise.reject(new Error('not processed')),
   };
-  return new AppCrdtInboxService({
-    inbox,
-    resourceInbox: {} as never,
-    resourceInboxResults: {} as never,
-    database: {} as never,
-    mutationService: createCrdtMutationService({
-      repository,
-      createWriter: () => repository,
-      serviceId: 'server-1',
-    }),
-    serviceId: 'server-1',
-  });
+  return new AppCrdtInboxService(
+    {
+      inboxQueueReader: inbox,
+      outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+      resourceInboxRepository: new ResourceInboxRepository(database),
+      resourceInboxResultsRepository: new ResourceInboxResultsRepository(database),
+      database,
+      mutationService: createCrdtMutationService({
+        repository,
+        createWriter: () => repository,
+        serviceId: 'server-1',
+      }),
+      readCurrentSession: () => Promise.reject(new Error('not read')),
+      wakeQueueEngine: () => undefined,
+    },
+    { serviceId: 'server-1', timing: undefined, appInbox: {} },
+  );
+}
+
+function createUnusedDatabase(): PSqlSql {
+  const database = (() =>
+    Promise.reject(new Error('Unexpected SQL execution in ingress unit test'))) as PSqlSql;
+  database.begin = () => Promise.reject(new Error('Unexpected transaction in ingress unit test'));
+  return database;
 }
 
 interface CrdtInboxInput {

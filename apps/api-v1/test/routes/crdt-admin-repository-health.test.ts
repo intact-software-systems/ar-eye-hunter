@@ -36,7 +36,6 @@ Deno.test('CRDT admin routes expose read-only repository health operations', asy
   const app = new Hono();
   registerCrdtAdminRoutes(app, {
     repository,
-    audit,
     now: () => 12_000,
     requireAuth: false,
     requireApiAdminSession: () => Promise.reject(new Error('auth disabled')),
@@ -108,16 +107,38 @@ function createCrdtUpdate(updateId: string): RallarCrdtUpdateEnvelope {
   };
 }
 
+interface CrdtAdminDocumentJson {
+  readonly updateCount: number;
+}
+
+interface CrdtAdminRedactionJson {
+  readonly payloadsRedacted: boolean;
+}
+
+interface CrdtAdminUpdatePayloadJson {
+  readonly operations: readonly unknown[];
+}
+
+interface CrdtAdminUpdateJson {
+  readonly payload: CrdtAdminUpdatePayloadJson;
+}
+
+interface CrdtAdminRecordJson {
+  readonly update: CrdtAdminUpdateJson;
+}
+
+interface CrdtAdminRouteResultJson {
+  readonly documents: readonly CrdtAdminDocumentJson[];
+  readonly valid: boolean;
+  readonly checkedUpdateCount: number;
+  readonly format: string;
+  readonly redaction: CrdtAdminRedactionJson;
+  readonly records: readonly CrdtAdminRecordJson[];
+}
+
 interface CrdtAdminRouteJson {
   readonly ok: boolean;
-  readonly result: Readonly<{
-    documents: Array<{ updateCount: number }>;
-    valid: boolean;
-    checkedUpdateCount: number;
-    format: string;
-    redaction: { payloadsRedacted: boolean };
-    records: Array<{ update: { payload: { operations: unknown[] } } }>;
-  }>;
+  readonly result: CrdtAdminRouteResultJson;
 }
 
 async function postJson(
