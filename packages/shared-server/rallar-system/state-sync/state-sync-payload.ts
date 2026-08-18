@@ -53,6 +53,20 @@ export function readGroupSnapshotStateSyncPayload(
         : undefined;
 }
 
+/**
+ * The authoritative client snapshot carried by a state-sync row, when the row
+ * is a client snapshot. Delivery-time audience resolution may use it when a
+ * process-local cache lags the row: the mutation that produced the row may
+ * have committed on another server, so the local cache does not yet list the
+ * very session the snapshot announces.
+ */
+export function readClientSnapshotStateSyncPayload(
+    message: ALMessage,
+): ClientSnapshot | undefined {
+    const payload = parseStateSyncPayload(message);
+    return payload && payload.kind === 'client' ? payload.snapshot : undefined;
+}
+
 export function parseStateSyncPayload(message: ALMessage): StateSyncPayload | undefined {
     try {
         switch (message.payload.typeId) {

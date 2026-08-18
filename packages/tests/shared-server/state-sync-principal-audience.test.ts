@@ -73,6 +73,50 @@ describe('principal state-sync audience', () => {
     ]);
   });
 
+  // Regression: in a cluster, the connect mutation can commit on a server other
+  // than the one hosting the socket. That host's cache then still predates the
+  // row, and resolving from the cache alone drops the snapshot that would have
+  // installed it (observed as the api-v1-rtc-topology-convergence CI flake).
+  it('resolves the row payload sessions when the local cache lags the mutation', () => {
+    const message = toPrincipalStampedMessage('alice', ['alice-session-1']);
+    const webSocketServer = createOpenConnections(['alice-session-1']);
+
+    const recipients = resolveStateSyncRecipients(webSocketServer, message, {
+      readClientSnapshots: () => [],
+      readGroupSnapshots: () => [],
+      now: () => NOW_EPOCH_MS,
+    });
+
+    expect(recipients).toBeDefined();
+    expect(recipients!.map((recipient) => recipient.connectionId)).toEqual(['alice-session-1']);
+  });
+
+  it('ignores a payload snapshot whose principal differs from the stamped target', () => {
+    const message = toPrincipalStampedMessage('alice', ['alice-session-1']);
+    const forged: ALMessage = {
+      ...message,
+      targets: {
+        mode: 'broadcast',
+        scope: 'principal',
+        principalRef: {
+          applicationId: 'app-1',
+          workspaceId: 'workspace-1',
+          principalId: 'bob',
+        },
+      },
+    };
+    const webSocketServer = createOpenConnections(['alice-session-1']);
+
+    const recipients = resolveStateSyncRecipients(webSocketServer, forged, {
+      readClientSnapshots: () => [],
+      readGroupSnapshots: () => [],
+      now: () => NOW_EPOCH_MS,
+    });
+
+    expect(recipients).toBeDefined();
+    expect(recipients).toEqual([]);
+  });
+
   it('never falls through to every open connection, even for an unknown payload type', () => {
     const message = toPrincipalStampedMessage('alice', ['alice-session-1']);
     const forged: ALMessage = {
