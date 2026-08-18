@@ -52,6 +52,7 @@ describe('GroupStateService guarded batch atomicity', () => {
       runtime.forceNextConflict(conflictTarget);
       const service = createTestGroupStateService({
         runtimeRepository: runtime,
+        formationDamping: 'damped',
         createGroupStateEventStore: () => eventStore,
         now: () => 1_000,
         randomId: () => `retry-${conflictTarget}-id`,
@@ -91,6 +92,7 @@ describe('GroupStateService guarded batch atomicity', () => {
     let generatedId = 0;
     const service = createTestGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: () => eventStore,
       now: () => nowEpochMs,
       randomId: () => `admission-retry-id-${++generatedId}`,
@@ -164,6 +166,7 @@ describe('GroupStateService guarded batch atomicity', () => {
     runtime.forceNextConflict('guard');
     const service = createTestGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: () => eventStore,
       now: () => 1_000,
       randomId: () => 'guard-exhaustion-id',
@@ -195,6 +198,7 @@ describe('GroupStateService guarded batch atomicity', () => {
     const sleep = vi.fn();
     const service = createTestGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: () => eventStore,
       now: () => 1_000,
       randomId: () => 'event-conflict-id',
@@ -220,6 +224,7 @@ describe('GroupStateService guarded batch atomicity', () => {
     runtime.omitNextEffectResult('member:alice');
     const service = createTestGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: () => eventStore,
       now: () => 1_000,
       randomId: () => 'missing-member-result-id',

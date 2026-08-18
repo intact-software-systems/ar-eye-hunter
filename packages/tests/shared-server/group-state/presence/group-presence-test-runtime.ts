@@ -26,6 +26,7 @@ export function createService(
   return createTestGroupStateService({
     runtimeRepository,
     syncPublisher: createPublisher(),
+    formationDamping: 'damped',
     now: currentNow,
     randomId: injectedRandomId ?? (() => `id-${currentNow()}-${++id}`),
     sleep,
@@ -41,6 +42,7 @@ export function createMaintenance(
 ) {
   return createTestGroupStateRuntime({
     runtimeRepository,
+    formationDamping: 'damped',
     now: () => nowEpochMs,
     randomId: () => `maintenance-${nowEpochMs}`,
     sleep,

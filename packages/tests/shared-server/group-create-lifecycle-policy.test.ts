@@ -25,7 +25,7 @@ function toCreateCommand(lifecyclePolicy?: CreateGroupRequest['lifecyclePolicy']
         ...(lifecyclePolicy === undefined ? {} : { lifecyclePolicy }),
     } as CreateGroupRequest;
 
-    return toAggregateMutationCommand(
+    const command = toAggregateMutationCommand(
         {
             operation: 'createGroup',
             scope: SCOPE,
@@ -34,6 +34,11 @@ function toCreateCommand(lifecyclePolicy?: CreateGroupRequest['lifecyclePolicy']
         } as never,
         () => 'command-1',
     );
+    if (command.operation !== 'createGroup') {
+        throw new Error('Expected a createGroup command');
+    }
+
+    return command;
 }
 
 describe('createGroup lifecycle policy input', () => {

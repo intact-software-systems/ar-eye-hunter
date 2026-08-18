@@ -57,10 +57,9 @@ export type AuthorityHarness = Readonly<{
   queue: TestResourceInbox;
   results: TestResourceInboxResults;
   sessions: Readonly<Record<string, IssuedAuthSession>>;
-  queueEntries(): readonly ResourceEntry[];
+  queueEntries(): Promise<readonly ResourceEntry[]>;
 }>;
 type HarnessOptions = Readonly<{ wakeQueue?: () => void; serviceOptions?: AppInboxServiceOptions }>;
-type QueueFixture = TestResourceInbox & { data: Map<string, ResourceEntry> };
 
 export type OperationMatrixCase = Readonly<{
   type: AppInboxType;
@@ -108,7 +107,7 @@ export function createGovernedOperationCase(
       actorPrincipalId: string;
       actorSessionId: string;
     }>;
-    type: AppInboxType.GROUP_MEMBER_BAN | AppInboxType.GROUP_MEMBER_UNBAN;
+    type: typeof AppInboxType.GROUP_MEMBER_BAN | typeof AppInboxType.GROUP_MEMBER_UNBAN;
     operation: 'banGroupMember' | 'unbanGroupMember';
     requestId: string;
     status: 'banned' | 'left';
@@ -212,11 +211,9 @@ export async function runOperationMatrix(
     expect(command?.facts.commandHash).toMatch(/^sha256:/u);
     expect(harness.database.outboxEntries.size).toBe(previousOutboxCount + 1);
     expect(
-      harness
-        .queueEntries()
-        .some(
-          (entry) => entry.status === EntityStatus.COMPLETED && entry.dequeueAudit.attempts === 1,
-        ),
+      (await harness.queueEntries()).some(
+        (entry) => entry.status === EntityStatus.COMPLETED && entry.dequeueAudit.attempts === 1,
+      ),
     ).toBe(true);
     await testCase.assertDomain();
   }
@@ -277,7 +274,12 @@ export async function createAuthorityHarness(
     queue,
     results,
     sessions,
-    queueEntries: () => [...(queue as unknown as QueueFixture).data.values()],
+    queueEntries: async () => {
+      const entries = await Promise.all(
+        (await queue.getAllKeys()).map((key) => queue.getItem(key)),
+      );
+      return entries.filter((entry): entry is ResourceEntry => entry !== undefined);
+    },
   };
 }
 

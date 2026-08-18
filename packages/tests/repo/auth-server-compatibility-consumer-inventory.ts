@@ -152,6 +152,7 @@ export const authCompatibilityConsumerInventory = [
       'packages/shared-server/rallar-system/client-state/client-state-service.ts',
       'packages/shared-server/rallar-system/client-state/mutation/read/read-client-mutation.ts',
       'packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts',
+      'packages/tests/shared-server/app-inbox-service.test.ts',
       'packages/tests/shared-server/app-inbox-ws-close-test-harness.ts',
       'packages/tests/shared-server/client-state/app-client-inbox-authentication.test.ts',
       'packages/tests/shared-server/client-state/app-client-inbox-authorised-ws.test.ts',

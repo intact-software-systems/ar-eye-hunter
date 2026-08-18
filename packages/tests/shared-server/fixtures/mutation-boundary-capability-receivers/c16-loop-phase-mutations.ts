@@ -16,5 +16,5 @@ export function mutatePostLoopAfterBreak(repository: ClientStateRepository): voi
   for (;; repository.updatePrincipal({} as never, 0)) {
     break;
   }
-  void repository.deletePrincipal({} as never);
+  void repository.deletePrincipal({} as never, 0);
 }

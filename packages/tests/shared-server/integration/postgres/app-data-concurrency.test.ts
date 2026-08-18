@@ -1,19 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppDataRepository.ts';
 import { RallarServerDataFacade } from '@shared-server/rallar-facade/RallarServer.ts';
-
-type PostgresSql = PSqlSql & Readonly<{
-    end(): Promise<void>;
-}>;
-
-type PostgresModule = Readonly<{
-    default: (
-        databaseUrl: string,
-        options: Readonly<{ max: number; idle_timeout: number }>,
-    ) => PostgresSql;
-}>;
+import { createRuntimeStatePostgresSql } from '../../postgres-runtime-state-client-fixtures.ts';
 
 type GlobalEnv = Readonly<{
     Deno?: Readonly<{
@@ -35,7 +24,7 @@ describe('Postgres app-data concurrency', () => {
         'does not lose concurrent updateOrCreate increments',
         async () => {
             const databaseUrl = requireDatabaseUrl();
-            const sql = await createSql(databaseUrl);
+            const sql = await createRuntimeStatePostgresSql(databaseUrl, 5);
             const repository = new PSqlAppDataRepository(sql);
             const namespace = `app-data-concurrency-${Date.now()}-${Math.random()}`;
 
@@ -82,11 +71,6 @@ describe('Postgres app-data concurrency', () => {
         60_000,
     );
 });
-
-async function createSql(databaseUrl: string): Promise<PostgresSql> {
-    const postgres = await import('postgres') as PostgresModule;
-    return postgres.default(databaseUrl, { max: 5, idle_timeout: 1 });
-}
 
 function requireDatabaseUrl(): string {
     const databaseUrl = readEnv('DATABASE_URL');

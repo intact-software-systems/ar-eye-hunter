@@ -19,7 +19,7 @@ export function ignoreLabeledForUpdateAfterBreak(
 export function ignoreDoTestAfterBreak(repository: ClientStateRepository): void {
   do {
     break;
-  } while (repository.deletePrincipal({} as never) as never);
+  } while (repository.deletePrincipal({} as never, 0) as never);
 }
 
 export function ignoreForUpdateAfterReturn(repository: ClientStateRepository): void {

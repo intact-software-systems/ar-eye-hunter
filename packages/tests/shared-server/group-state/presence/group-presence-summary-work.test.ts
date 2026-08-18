@@ -63,22 +63,22 @@ const INVALID_SUMMARY_SCENARIOS: readonly InvalidSummaryScenario[] = [
   workScenario('divergent accepted causal revision', (work) => ({
     ...work,
     acceptedCausalRevision: {
-      ...asWork(work).acceptedCausalRevision,
-      presenceRevision: asWork(work).acceptedCausalRevision.presenceRevision + 1,
+      ...CANONICAL_SUMMARY_WORK.acceptedCausalRevision,
+      presenceRevision: CANONICAL_SUMMARY_WORK.acceptedCausalRevision.presenceRevision + 1,
     },
   })),
   workScenario('divergent event identity', (work) => ({
     ...work,
     event: {
-      ...asWork(work).event,
+      ...CANONICAL_SUMMARY_WORK.event,
       groupId: 'wrong-event-group',
     },
   })),
   workScenario('divergent event body', (work) => ({
     ...work,
     event: {
-      ...asWork(work).event,
-      occurredAtEpochMs: asWork(work).createdAtEpochMs + 1,
+      ...CANONICAL_SUMMARY_WORK.event,
+      occurredAtEpochMs: CANONICAL_SUMMARY_WORK.createdAtEpochMs + 1,
     },
   })),
   messageScenario('message timestamp mismatch', (message) => ({
@@ -186,41 +186,42 @@ describe('GroupPresenceSummaryWork canonical persisted command', () => {
   });
 });
 
-function createCanonicalReservation(): ReservedSummary {
-  const work: GroupPresenceSummaryWorkData = {
-    effectKind: 'group-presence-summary',
-    aggregateRef: {
-      applicationId: 'summary-app',
-      workspaceId: 'main',
-      groupId: 'summary-group',
-    },
-    commandId: 'summary-command',
-    createdAtEpochMs: 1_000,
-    expireAtEpochMs: 100_000,
-    acceptedCausalRevision: {
+const CANONICAL_SUMMARY_WORK: GroupPresenceSummaryWorkData = {
+  effectKind: 'group-presence-summary',
+  aggregateRef: {
+    applicationId: 'summary-app',
+    workspaceId: 'main',
+    groupId: 'summary-group',
+  },
+  commandId: 'summary-command',
+  createdAtEpochMs: 1_000,
+  expireAtEpochMs: 100_000,
+  acceptedCausalRevision: {
+    groupRevision: 4,
+    presenceRevision: 3,
+  },
+  event: {
+    applicationId: 'summary-app',
+    workspaceId: 'main',
+    groupId: 'summary-group',
+    eventId: 'summary-event',
+    eventType: 'session-connected',
+    snapshotVersion: 4,
+    causalRevision: {
       groupRevision: 4,
       presenceRevision: 3,
     },
-    event: {
-      applicationId: 'summary-app',
-      workspaceId: 'main',
-      groupId: 'summary-group',
-      eventId: 'summary-event',
-      eventType: 'session-connected',
-      snapshotVersion: 4,
-      causalRevision: {
-        groupRevision: 4,
-        presenceRevision: 3,
-      },
-      occurredAtEpochMs: 1_000,
-      actor: { kind: 'service', serviceId: 'summary-handler' },
-      reason: null,
-      traceId: null,
-      requestId: 'summary-command',
-      payload: {},
-    },
-  };
-  const queued = computeGroupPresenceSummaryEntry(work, 'summary-handler');
+    occurredAtEpochMs: 1_000,
+    actor: { kind: 'service', serviceId: 'summary-handler' },
+    reason: null,
+    traceId: null,
+    requestId: 'summary-command',
+    payload: {},
+  },
+};
+
+function createCanonicalReservation(): ReservedSummary {
+  const queued = computeGroupPresenceSummaryEntry(CANONICAL_SUMMARY_WORK, 'summary-handler');
   const entry: ResourceEntry = {
     ...queued,
     status: EntityStatus.RESERVED,
@@ -308,6 +309,3 @@ function entryScenario(
   };
 }
 
-function asWork(value: Record<string, unknown>): GroupPresenceSummaryWorkData {
-  return value as GroupPresenceSummaryWorkData;
-}

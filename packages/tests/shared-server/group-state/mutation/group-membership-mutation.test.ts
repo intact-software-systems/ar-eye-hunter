@@ -11,6 +11,7 @@ function createService(runtimeRepository: GroupBarrierRepository, nowEpochMs: nu
   let id = 0;
   return createTestGroupStateService({
     runtimeRepository,
+    formationDamping: 'damped',
     now: () => nowEpochMs,
     randomId: () => `id-${nowEpochMs}-${++id}`,
     serviceId: 'group-service',

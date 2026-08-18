@@ -21,6 +21,11 @@ import {
 } from '@shared-server/rallar-system/ws-system-topics.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+// prettier-ignore
+import type {
+  GroupTopologyGroupSnapshotReader,
+} from
+'@shared-server/rallar-system/topology/group-topology-management-contracts.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import * as vivaldiService from '@shared-graph/vivaldi-service.ts';
 import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
@@ -599,9 +604,7 @@ function createTopologyExecutionDependencies(runtimeRepository: FakeRuntimeState
 
 function createTopologyManagement(
   topologyService = new RallarRtcTopologyService(),
-  findGroupSnapshotByRef: (
-    ref: GroupSnapshot['group'],
-  ) => GroupSnapshot | undefined | Promise<GroupSnapshot | undefined> = () => undefined,
+  findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader = () => undefined,
 ): GroupTopologyManagementService {
   return new GroupTopologyManagementService({
     findGroupSnapshotByRef,
@@ -610,11 +613,13 @@ function createTopologyManagement(
 }
 
 function createUnusedDatabase(): PSqlSql {
-  const database = (() =>
-    Promise.reject(new Error('Unexpected SQL execution in WS routing unit test'))) as PSqlSql;
-  database.begin = () =>
-    Promise.reject(new Error('Unexpected transaction in WS routing unit test'));
-  return database;
+  return Object.assign(
+    (..._values: readonly unknown[]) =>
+      Promise.reject(new Error('Unexpected SQL execution in WS routing unit test')),
+    {
+      begin: () => Promise.reject(new Error('Unexpected transaction in WS routing unit test')),
+    },
+  );
 }
 
 function createCentralRttMeasurements(

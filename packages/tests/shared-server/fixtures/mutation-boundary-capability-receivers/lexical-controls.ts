@@ -24,7 +24,11 @@ export function captureReadOnlyMembers(repository: ClientStateRepository): void 
 }
 
 class NestedOrdinaryFunctionControl {
-  constructor(private readonly repository: ClientStateRepository) {}
+  private readonly repository: ClientStateRepository;
+
+  constructor(repository: ClientStateRepository) {
+    this.repository = repository;
+  }
 
   run(): void {
     function saveDomain(this: { repository: DomainRepository }): void {

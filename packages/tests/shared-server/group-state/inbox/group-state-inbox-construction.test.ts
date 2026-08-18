@@ -25,6 +25,7 @@ import {
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { toGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
+import type { GroupFormationGroupMutationSink } from '@shared-server/rallar-system/formation-metrics.ts';
 import type { WsSessionGenerationLifecycleService } from '@shared-server/rallar-system/services/ws-session-generation-lifecycle.ts';
 
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
@@ -50,6 +51,7 @@ type ExpectedHandlerDependencies = {
   readonly snapshotObserver: Pick<GroupStateService, 'observeSnapshot'>;
   readonly transactionWriter: AppInboxMutationTransactionWriter;
   readonly wakeQueue?: () => void;
+  readonly formationMetrics?: GroupFormationGroupMutationSink;
 };
 type ExpectedComputedWrite = (input: GroupMutationWriteInput) => GroupMutationComputed;
 

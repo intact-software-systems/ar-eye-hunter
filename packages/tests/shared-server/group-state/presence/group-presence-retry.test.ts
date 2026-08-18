@@ -22,12 +22,13 @@ describe('Group presence lifecycle retry', () => {
 
     let now = 4_000;
     const publisher = createPublisher();
-    const service = createGroupStateService({
+    const service = createTestGroupStateRuntime({
       runtimeRepository,
       syncPublisher: publisher,
+      formationDamping: 'damped',
       now: () => now,
       serviceId: 'group-service',
-    });
+    }).service;
     const groupRef = toGroupRef('room-4');
     const request = {
       principalId: 'alice',
@@ -97,6 +98,7 @@ describe('Group presence lifecycle retry', () => {
     const runtime = createTestGroupStateRuntime({
       runtimeRepository,
       syncPublisher: publisher,
+      formationDamping: 'damped',
       now: () => 5_000,
       serviceId: 'group-service',
     });
@@ -121,6 +123,7 @@ describe('Group presence lifecycle retry', () => {
     const runtime = createTestGroupStateRuntime({
       runtimeRepository,
       syncPublisher: publisher,
+      formationDamping: 'damped',
       now: () => 5_000,
       serviceId: 'group-service',
     });
@@ -157,6 +160,7 @@ describe('Group presence lifecycle retry', () => {
     const runtime = createTestGroupStateRuntime({
       runtimeRepository,
       syncPublisher: createPublisher(),
+      formationDamping: 'damped',
       now: () => now,
       serviceId: 'group-service',
     });
@@ -203,6 +207,7 @@ describe('Group presence lifecycle retry', () => {
     const runtime = createTestGroupStateRuntime({
       runtimeRepository,
       syncPublisher: createPublisher(),
+      formationDamping: 'damped',
       now: () => now,
       serviceId: 'group-service',
     });
@@ -244,7 +249,7 @@ describe('Group presence lifecycle retry', () => {
     const before = await repository.readSnapshot(groupRef);
     const service = createGroupStateService({
       runtimeRepository,
-      syncPublisher: createPublisher(),
+      formationDamping: 'damped',
       now: () => 2_000,
       serviceId: 'group-service',
     });
@@ -277,6 +282,7 @@ describe('Group presence lifecycle retry', () => {
     });
     const service = createGroupStateService({
       runtimeRepository,
+      formationDamping: 'damped',
       now: () => lateHeartbeatAtEpochMs,
       serviceId: 'group-service',
     });
@@ -317,6 +323,7 @@ describe('Group presence lifecycle retry', () => {
     await seedPresenceSession(runtimeRepository, 'room-session-principal-invariant');
     const service = createGroupStateService({
       runtimeRepository,
+      formationDamping: 'damped',
       now: () => 3_000,
       serviceId: 'group-service',
     });

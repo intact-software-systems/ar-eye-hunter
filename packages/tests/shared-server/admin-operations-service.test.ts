@@ -247,7 +247,22 @@ describe('AdminOperationsService', () => {
       crdtAdminRepository: {
         exportDebugBundle: (document, options) => {
           calls.push({ document, options });
-          return Promise.resolve({ document, payloadsRedacted: true });
+          return Promise.resolve({
+            format: 'rallar.crdt.debug-bundle.v1',
+            exportedAtEpochMs: NOW_EPOCH_MS,
+            reason: 'api-v1-admin-operations-debug-export',
+            document,
+            documentKey: 'app-1/workspace-1/room/map/doc-1',
+            records: [],
+            redaction: { payloadsRedacted: true },
+            integrity: {
+              bundleHash: `sha256:${'a'.repeat(64)}`,
+              documentRefHash: `sha256:${'b'.repeat(64)}`,
+              updateHashes: {},
+              updateCount: 0,
+              sequenceGaps: [],
+            },
+          });
         },
       },
     });
@@ -267,7 +282,10 @@ describe('AdminOperationsService', () => {
         },
       },
     }]);
-    expect(result).toMatchObject({ document: CRDT_DOCUMENT, payloadsRedacted: true });
+    expect(result).toMatchObject({
+      document: CRDT_DOCUMENT,
+      redaction: { payloadsRedacted: true },
+    });
   });
 });
 

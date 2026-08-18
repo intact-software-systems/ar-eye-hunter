@@ -20,7 +20,10 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+import {
+  GroupTopologyManagementService,
+  type GroupTopologyGroupSnapshotReader,
+} from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
@@ -403,9 +406,7 @@ function createTopologyExecutionDependencies(runtimeRepository: FakeRuntimeState
 
 function createTopologyManagement(
   topologyService = new RallarRtcTopologyService(),
-  findGroupSnapshotByRef: (
-    ref: GroupSnapshot['group'],
-  ) => GroupSnapshot | undefined | Promise<GroupSnapshot | undefined> = () => undefined,
+  findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader = () => undefined,
 ): GroupTopologyManagementService {
   return new GroupTopologyManagementService({
     findGroupSnapshotByRef,
@@ -414,11 +415,13 @@ function createTopologyManagement(
 }
 
 function createUnusedDatabase(): PSqlSql {
-  const database = (() =>
-    Promise.reject(new Error('Unexpected SQL execution in WS routing unit test'))) as PSqlSql;
-  database.begin = () =>
-    Promise.reject(new Error('Unexpected transaction in WS routing unit test'));
-  return database;
+  return Object.assign(
+    () => Promise.reject(new Error('Unexpected SQL execution in WS routing unit test')),
+    {
+      begin: () =>
+        Promise.reject(new Error('Unexpected transaction in WS routing unit test')),
+    },
+  );
 }
 
 function createResilience(): ResilienceDto {

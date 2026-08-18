@@ -3,7 +3,9 @@ import type { ClientStateRepository } from '@shared-server/mod.ts';
 export function invokeCapturedWriterBeforeLaterRebind(
   repository: ClientStateRepository,
 ): void {
-  let invoke = repository.readSnapshot;
+  let invoke:
+    | ClientStateRepository['deletePrincipal']
+    | ClientStateRepository['readSnapshot'] = repository.readSnapshot;
   const writers = {
     run: () => {
       invoke = repository.deletePrincipal;
@@ -26,7 +28,9 @@ export function invokeCapturedWriterBeforeLaterRebind(
 export function invokeCapturedWriterAfterEarlierRebind(
   repository: ClientStateRepository,
 ): void {
-  let invoke = repository.readSnapshot;
+  let invoke:
+    | ClientStateRepository['insertPrincipal']
+    | ClientStateRepository['readSnapshot'] = repository.readSnapshot;
   const readers = {
     run: () => {
       invoke = repository.readSnapshot;

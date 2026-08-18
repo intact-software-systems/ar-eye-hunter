@@ -7,7 +7,7 @@ export function invokeUnknownLocalMethod(
   let invoke:
     | ClientStateRepository['insertPrincipal']
     | ClientStateRepository['readSnapshot'] = repository.readSnapshot;
-  const selection = {
+  const selection: Readonly<Record<string, () => void>> = {
     selectRead(): void {
       invoke = repository.readSnapshot;
     },

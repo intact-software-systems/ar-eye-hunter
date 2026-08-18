@@ -3,6 +3,7 @@ import {
   EntityStatus,
   isExpiredResourceEntry,
   type Key,
+  NOT_COMPLETED_RETRYABLE_STATUSES,
   type ResourceEntry,
   toKeyAsString,
 } from '@shared/queuebox/ResourceEntry.ts';
@@ -54,9 +55,7 @@ export async function readClientExpiryTestEntries(
 export function listActiveClientExpiryTestEntries(
   entries: readonly ResourceEntry[],
 ): ResourceEntry[] {
-  return entries.filter((entry) =>
-    new Set([EntityStatus.NEW, EntityStatus.RESERVED, EntityStatus.RETRY]).has(entry.status),
-  );
+  return entries.filter((entry) => NOT_COMPLETED_RETRYABLE_STATUSES.has(entry.status));
 }
 
 export function readClientExpiryTestEnqueueData<V>(entry: ResourceEntry): V {

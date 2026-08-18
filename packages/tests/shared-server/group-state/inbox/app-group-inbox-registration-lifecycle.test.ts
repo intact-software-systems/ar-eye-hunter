@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, type Mock, vi } from 'vitest';
 
 import type { AppInboxMessageContext } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
@@ -114,7 +114,7 @@ const TOPOLOGY_REGISTRATION_ORDER = [
   AppInboxType.TOPOLOGY_RECONFIGURE,
 ] as const;
 
-type RegistrationSpy = ReturnType<typeof vi.spyOn<AppInboxService, 'onStateMessage'>>;
+type RegistrationSpy = Mock<AppInboxService['onStateMessage']>;
 
 function groupRegistrationOrder(): readonly AppInboxType[] {
   return [

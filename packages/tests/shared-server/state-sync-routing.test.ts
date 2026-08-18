@@ -353,7 +353,10 @@ function toGroupMember(
     if (input.status === 'banned') {
         return { ...common, status: 'banned', left: null, removed: null, banned: createAuditStamp() };
     }
-    return { ...common, status: input.status, left: null, removed: null, banned: null };
+    if (input.status === 'invited') {
+        return { ...common, status: 'invited', joined: null, left: null, removed: null, banned: null };
+    }
+    return { ...common, status: 'active', left: null, removed: null, banned: null };
 }
 
 function toGroupPresenceSession(

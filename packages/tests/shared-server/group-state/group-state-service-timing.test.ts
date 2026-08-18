@@ -38,6 +38,7 @@ describe('group-state service timing boundary', () => {
     const timingEvents: RallarTimingEvent[] = [];
     const runtime = createTestGroupStateRuntime({
       runtimeRepository: new FakeRuntimeStateRepository(),
+      formationDamping: 'damped',
       now: () => 1_000,
       serviceId: 'timing-service',
       timing: (event) => timingEvents.push(event),
@@ -60,6 +61,7 @@ describe('group-state service timing boundary', () => {
     const timingEvents: RallarTimingEvent[] = [];
     const runtime = createTestGroupStateRuntime({
       runtimeRepository: new FakeRuntimeStateRepository(),
+      formationDamping: 'damped',
       now: () => 1_000,
       serviceId: 'timing-service',
       timing: (event) => timingEvents.push(event),
@@ -76,6 +78,7 @@ describe('group-state service timing boundary', () => {
     const timingEvents: RallarTimingEvent[] = [];
     const runtime = createTestGroupStateRuntime({
       runtimeRepository: new FakeRuntimeStateRepository(),
+      formationDamping: 'damped',
       now: () => 1_000,
       serviceId: 'timing-service',
       timing: (event) => timingEvents.push(event),

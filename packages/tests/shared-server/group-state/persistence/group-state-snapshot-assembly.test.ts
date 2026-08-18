@@ -65,6 +65,9 @@ describe('GroupStateRepository persistence', () => {
       ...ref,
       status: 'invited',
       joined: null,
+      left: null,
+      removed: null,
+      banned: null,
       invitedByPrincipalId: 'alice',
       invitationExpiresAtEpochMs: 10_000,
     };
@@ -97,7 +100,7 @@ describe('GroupStateRepository persistence', () => {
       ownerPrincipalId: 'alice',
     };
     const completeMember: GroupMember = {
-      ...createSnapshotAssemblyMutationRead().actorMember!,
+      ...requireActiveMember(createSnapshotAssemblyMutationRead().actorMember),
       ...ref,
       principalId: 'alice',
       role: 'owner',
@@ -366,6 +369,15 @@ function requireMutationGroupAndActor(read: GroupMutationRead): asserts read is 
   if (!read.group || !read.actorMember) {
     throw new Error('Mutation test fixture requires a group and actor member.');
   }
+}
+
+function requireActiveMember(
+  member: GroupMember | null,
+): Extract<GroupMember, { status: 'active' }> {
+  if (member?.status !== 'active') {
+    throw new Error('Mutation test fixture requires an active actor member.');
+  }
+  return member;
 }
 
 function memberFor(principalId: string): GroupMember {

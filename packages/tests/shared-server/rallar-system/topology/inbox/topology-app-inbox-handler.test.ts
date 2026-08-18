@@ -60,6 +60,7 @@ describe('TopologyAppInboxHandler', () => {
           phases.push('validate');
         }),
       },
+      reconfigureMutation: {} as never,
     } satisfies TopologyAppInboxMutationOwners;
     vi.mocked(writeTopologyConfigMutation).mockImplementationOnce(
       async () => (phases.push('write'), {} as never),

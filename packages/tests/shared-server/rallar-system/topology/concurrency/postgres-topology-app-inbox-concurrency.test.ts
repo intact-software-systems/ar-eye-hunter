@@ -144,6 +144,7 @@ describe('Postgres topology AppInbox concurrency', () => {
           snapshotVersion: current!.value.snapshotVersion + 1,
           updated: { ...current!.value.updated, atEpochMs: 2 },
           archived: { ...current!.value.updated, atEpochMs: 2 },
+          deleted: null,
         };
         expect(await groups.updateGroup(archived, current!.entry.revision)).toMatchObject({
           status: 'applied',

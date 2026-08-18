@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   RtcTopologyReplayConsumerInput,
   RtcTopologyReplayCursorCasInput,
+  RtcTopologyReplayCursorCasResult,
   RtcTopologyReplayPageInput,
+  RtcTopologyReplayPageResult,
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-contracts.ts';
 import type {
   RtcTopologyReplayEntryHandler,
@@ -101,16 +103,22 @@ function replayRepository(): RtcTopologyReplayPort & {
   return {
     initializeConsumer: vi.fn(async (_input: RtcTopologyReplayConsumerInput) => []),
     discoverPublishers: vi.fn(async (_input: RtcTopologyReplayConsumerInput) => []),
-    capturePage: vi.fn(async (_input: RtcTopologyReplayPageInput) => ({
-      status: 'caught-up',
-      cursorSequence: 0,
-      capturedHeadSequence: 0,
-      retainedFromSequence: 1,
-      databaseNowEpochMs: 1_000,
-    })),
-    compareAndSetCursor: vi.fn(async (_input: RtcTopologyReplayCursorCasInput) => ({
-      status: 'advanced',
-    })),
+    capturePage: vi.fn(
+      async (_input: RtcTopologyReplayPageInput): Promise<RtcTopologyReplayPageResult> => ({
+        status: 'caught-up',
+        cursorSequence: 0,
+        capturedHeadSequence: 0,
+        retainedFromSequence: 1,
+        databaseNowEpochMs: 1_000,
+      }),
+    ),
+    compareAndSetCursor: vi.fn(
+      async (
+        _input: RtcTopologyReplayCursorCasInput,
+      ): Promise<RtcTopologyReplayCursorCasResult> => ({
+        status: 'advanced',
+      }),
+    ),
   };
 }
 

@@ -69,7 +69,7 @@ describe('black-box operator token', () => {
             expiresAtEpochMs,
             tokenId: 'token-1',
             claims: {
-                scope: 'wrong-scope',
+                scope: 'wrong-scope' as never,
             },
         });
         const wrongAudienceToken = await signRallarBlackBoxOperatorToken({
@@ -80,7 +80,7 @@ describe('black-box operator token', () => {
             expiresAtEpochMs,
             tokenId: 'token-1',
             claims: {
-                aud: 'wrong-audience',
+                aud: 'wrong-audience' as never,
             },
         });
 

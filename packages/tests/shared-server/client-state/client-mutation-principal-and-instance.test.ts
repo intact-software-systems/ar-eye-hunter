@@ -4,6 +4,7 @@ import { computeClientInstanceMutation } from '@shared-server/rallar-system/clie
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { computeClientPrincipalMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-principal-mutation.ts';
 import { computeClientMutation as legacyComputeClientMutation } from '@shared-server/rallar-system/services/client-state-mutations.ts';
+import type { ClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 
 import {
   emptyRead,
@@ -23,9 +24,26 @@ import {
 } from './client-mutation-concurrency-test-runtime.ts';
 import { CLIENT_MUTATION_TEST_SCOPE as SCOPE } from './client-mutation-validation-test-fixtures.ts';
 
+type PrincipalCommand = Extract<ClientMutationCommand, { operation: 'upsertPrincipal' }>;
+type InstanceCommand = Extract<ClientMutationCommand, { operation: 'upsertInstance' }>;
+
+function requirePrincipalCommand(command: ClientMutationCommand): PrincipalCommand {
+  if (command.operation !== 'upsertPrincipal') {
+    throw new Error(`Expected an upsertPrincipal command, received ${command.operation}`);
+  }
+  return command;
+}
+
+function requireInstanceCommand(command: ClientMutationCommand): InstanceCommand {
+  if (command.operation !== 'upsertInstance') {
+    throw new Error(`Expected an upsertInstance command, received ${command.operation}`);
+  }
+  return command;
+}
+
 describe('client principal and instance mutation compute', () => {
   it('creates the exact principal candidate through its named family owner', async () => {
-    const command = await principalCommand();
+    const command = requirePrincipalCommand(await principalCommand());
     const read = emptyRead(command);
 
     const direct = computeClientPrincipalMutation({ command, read });
@@ -58,7 +76,7 @@ describe('client principal and instance mutation compute', () => {
         read: emptyRead(firstCommand),
       }),
     );
-    const sameCommand = await principalCommand('principal-same');
+    const sameCommand = requirePrincipalCommand(await principalCommand('principal-same'));
     const sameRead = readAfterWrite(sameCommand, first);
 
     expect(computeClientPrincipalMutation({ command: sameCommand, read: sameRead })).toMatchObject({
@@ -67,7 +85,7 @@ describe('client principal and instance mutation compute', () => {
       event: null,
     });
 
-    const nextCommand = await instanceCommand();
+    const nextCommand = requireInstanceCommand(await instanceCommand());
     const nextRead = readAfterWrite(nextCommand, first);
     const direct = computeClientInstanceMutation({ command: nextCommand, read: nextRead });
     expect(computeClientMutation({ command: nextCommand, read: nextRead })).toEqual(direct);
@@ -80,7 +98,7 @@ describe('client principal and instance mutation compute', () => {
   });
 
   it('emits canonical principal property order from a valid noncanonical aggregate ref', async () => {
-    const canonical = await principalCommand('principal-property-order');
+    const canonical = requirePrincipalCommand(await principalCommand('principal-property-order'));
     const command = {
       ...canonical,
       aggregateRef: {

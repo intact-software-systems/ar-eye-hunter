@@ -1,6 +1,6 @@
 import type { ClientStateRepository } from '@shared-server/mod.ts';
 
-declare const unknownFactory: () => unknown;
+declare const unknownFactory: () => ClientStateRepository;
 
 export function mutatePossibleFactory(enabled: boolean): void {
   const selected = enabled ? createRepository : unknownFactory;

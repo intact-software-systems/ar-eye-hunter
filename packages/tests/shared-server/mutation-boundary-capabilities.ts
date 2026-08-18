@@ -2,7 +2,6 @@ import { parse } from '@babel/parser';
 
 import {
   asCapabilityNode as asNode,
-  type MutationBoundaryCapabilityAstNode as AstNode,
   walkCapabilityAst as walk,
 } from './mutation-boundary-capability-ast.ts';
 import {
@@ -46,11 +45,14 @@ export function findCapabilityMutationCalls(
   source: string,
   filePath: string,
 ): readonly string[] {
-  const program = parse(source, {
-    sourceType: 'module',
-    sourceFilename: filePath,
-    plugins: ['typescript', 'importAttributes'],
-  }).program as AstNode;
+  const program = asNode(
+    parse(source, {
+      sourceType: 'module',
+      sourceFilename: filePath,
+      plugins: ['typescript'],
+    }).program,
+  );
+  if (!program) throw new TypeError(`Unparsable capability source: ${filePath}`);
   const resolver = createCapabilityTypeResolver(program, filePath);
   const lexical = createMutationBoundaryLexicalValues(program);
   const shapes = new Map<string, CapabilityTypeShape>();

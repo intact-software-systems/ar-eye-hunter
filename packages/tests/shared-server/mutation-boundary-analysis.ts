@@ -97,7 +97,7 @@ export function analyzeMutationBoundarySource(
     sourceType: 'module',
     sourceFilename: filePath,
     createImportExpressions: true,
-    plugins: ['typescript', 'importAttributes'],
+    plugins: ['typescript'],
   }).program;
   const directMutatorCalls = new Set<string>();
   const mutatingImports = new Set<string>();

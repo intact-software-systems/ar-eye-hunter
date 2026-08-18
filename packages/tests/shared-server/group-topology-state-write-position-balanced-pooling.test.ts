@@ -37,6 +37,29 @@ const MIRRORED_DESCRIPTORS = [
   { key: 'candidateFourth', position: 4, role: 'candidate' },
 ] as const;
 
+/** Outer manifest position record emitted by createOuterManifest in the balanced pooler. */
+interface BalancedOuterManifestPosition {
+  readonly globalPosition: number;
+  readonly role: 'approved-base' | 'candidate';
+  readonly sourcePath: string;
+  readonly environmentPath: string;
+  readonly artifactSha256: string;
+  readonly environmentSha256: string;
+  readonly gitCommit: string;
+  readonly gitTree: string;
+  readonly generatedAt: string;
+}
+
+/** Inner block manifest position record emitted by the api-v1 state-write pooler. */
+interface BalancedBlockManifestPosition {
+  readonly position: number;
+  readonly role: 'approved-base' | 'candidate';
+  readonly sourceName: string;
+  readonly artifactSha256: string;
+  readonly gitCommit: string;
+  readonly generatedAt: string;
+}
+
 describe('group-topology position-balanced state-write pooling', { timeout: 120_000 }, () => {
   it('keeps A-B-B-A and B-A-A-B as separate validated 18-sample evidence blocks', () => {
     const input = createInput();
@@ -44,7 +67,9 @@ describe('group-topology position-balanced state-write pooling', { timeout: 120_
     expect(pooled.manifest.schemaVersion).toBe(
       'rallar.group-topology.state-write-position-balanced-abba-baab.v1',
     );
-    expect(pooled.manifest.positions.map(({ role }) => role)).toEqual([
+    expect(
+      pooled.manifest.positions.map(({ role }: BalancedOuterManifestPosition) => role),
+    ).toEqual([
       'approved-base',
       'candidate',
       'candidate',
@@ -54,7 +79,11 @@ describe('group-topology position-balanced state-write pooling', { timeout: 120_
       'approved-base',
       'candidate',
     ]);
-    expect(pooled.blocks.map(({ manifest }) => manifest.positions.map(({ role }) => role))).toEqual(
+    expect(
+      pooled.blocks.map(({ manifest }) =>
+        manifest.positions.map(({ role }: BalancedBlockManifestPosition) => role),
+      ),
+    ).toEqual(
       [
         ['approved-base', 'candidate', 'candidate', 'approved-base'],
         ['candidate', 'approved-base', 'approved-base', 'candidate'],
@@ -77,10 +106,18 @@ describe('group-topology position-balanced state-write pooling', { timeout: 120_
     ]);
     expectPooledSources(pooled.blocks[1].candidate, input, ['candidateThird', 'candidateFourth']);
     expect(
-      new Set(pooled.manifest.positions.map(({ artifactSha256 }) => artifactSha256)).size,
+      new Set(
+        pooled.manifest.positions.map(
+          ({ artifactSha256 }: BalancedOuterManifestPosition) => artifactSha256,
+        ),
+      ).size,
     ).toBe(8);
     expect(
-      new Set(pooled.manifest.positions.map(({ environmentSha256 }) => environmentSha256)).size,
+      new Set(
+        pooled.manifest.positions.map(
+          ({ environmentSha256 }: BalancedOuterManifestPosition) => environmentSha256,
+        ),
+      ).size,
     ).toBe(1);
     expect(pooled.manifest.blocks[1].descriptors).toEqual(
       MIRRORED_DESCRIPTORS.map(({ key, position, role }, index) => ({
@@ -185,7 +222,7 @@ function createInput(): any {
       reasons: createReasons(),
     }),
     sources: Object.fromEntries(
-      [
+      ([
         ['approvedBaseFirst', false, 'a1', '00:01:00'],
         ['candidateFirst', true, 'b1', '00:02:00'],
         ['candidateSecond', true, 'b2', '00:03:00'],
@@ -194,7 +231,7 @@ function createInput(): any {
         ['approvedBaseThird', false, 'a3', '00:06:00'],
         ['approvedBaseFourth', false, 'a4', '00:07:00'],
         ['candidateFourth', true, 'b4', '00:08:00'],
-      ].map(([key, candidate, id, time]) => [key, createSource(candidate, id, time)]),
+      ] as const).map(([key, candidate, id, time]) => [key, createSource(candidate, id, time)]),
     ),
     outputs: { ...OUTPUTS },
     toolSha256: { ...HASHES },

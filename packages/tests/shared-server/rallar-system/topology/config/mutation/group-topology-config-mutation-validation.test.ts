@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import type { AuditStamp } from '@shared/api/group-types.ts';
+
 import { GroupTopologyConfigValidationError } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { computeTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/compute-topology-config-mutation.ts';
 import { validateTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation.ts';
@@ -64,9 +66,16 @@ describe('topology config mutation validation', () => {
       ...mutation.read.groupSnapshot,
       group: { ...mutation.read.groupSnapshot.group, expiresAtEpochMs: 1_500 },
     };
+    const deleted: AuditStamp = {
+      atEpochMs: 1_500,
+      actor: { kind: 'principal', principalId: 'owner' },
+      reason: null,
+      traceId: null,
+      requestId: null,
+    };
     const terminal = {
       ...mutation.read.groupSnapshot,
-      group: { ...mutation.read.groupSnapshot.group, status: 'deleted' as const },
+      group: { ...mutation.read.groupSnapshot.group, status: 'deleted' as const, deleted },
     };
 
     for (const [groupSnapshot, denialCode] of [
@@ -97,7 +106,7 @@ describe('topology config mutation validation', () => {
     expect(() =>
       computeTopologyConfigMutation({
         ...mutation,
-        facts: { ...mutation.facts, policyNowEpochMs: 7_000, deleteTarget: null },
+        facts: { ...mutation.facts, policyNowEpochMs: 7_000 },
       }),
     ).toThrow(GroupTopologyConfigValidationError);
   });

@@ -30,6 +30,10 @@ import {
   type ClientStateWritten,
   createClientStateService,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
+// prettier-ignore
+import {
+  createWsSessionGenerationLifecycleService,
+} from '@shared-server/rallar-system/services/ws-session-generation-lifecycle.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
@@ -232,6 +236,9 @@ export function createClientStateServiceStub(
   overrides: Partial<ClientStateService>,
 ): ClientStateService {
   return {
+    sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(
+      new FakeRuntimeStateRepository(),
+    ),
     formationDamping: 'damped',
     listSnapshots: vi.fn(),
     readSnapshot: vi.fn(),

@@ -9,7 +9,7 @@ export function ignoreNestedBreak(repository: ClientStateRepository): void {
       }
     }
     /* falls through */
-    case 'write':
+    default:
       void repository.insertPrincipal({} as never);
   }
 }
@@ -23,7 +23,7 @@ export function ignoreNestedReturn(repository: ClientStateRepository): void {
       }
     }
     /* falls through */
-    case 'write':
+    default:
       void repository.updatePrincipal({} as never, 0);
   }
 }
@@ -37,7 +37,7 @@ export function ignoreNestedThrow(repository: ClientStateRepository): void {
       }
     }
     /* falls through */
-    case 'write':
-      void repository.deletePrincipal({} as never);
+    default:
+      void repository.deletePrincipal({} as never, 0);
   }
 }

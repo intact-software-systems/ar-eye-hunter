@@ -198,6 +198,7 @@ function createService({
   let generatedId = 0;
   return createTestGroupStateService({
     runtimeRepository: runtime,
+    formationDamping: 'damped',
     createGroupStateEventStore: () => eventStore,
     now: () => nowEpochMs,
     randomId: () => `${instanceId}-id-${++generatedId}`,

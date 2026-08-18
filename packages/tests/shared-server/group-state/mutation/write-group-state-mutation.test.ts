@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import {
   groupStateGroupStorageKey,
@@ -56,6 +56,7 @@ describe('GroupStateService guarded runtime-state batch', () => {
     const runtime = new BeginOnlyGuardedBatchRepository();
     const service = createTestGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       now: () => 1_000,
       randomId: () => 'group-batch-id',
       serviceId: 'group-batch-service',
@@ -79,6 +80,7 @@ describe('GroupStateService guarded runtime-state batch', () => {
     let generatedId = 0;
     const service = createTestGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: () => eventStore,
       now: () => 1_000,
       randomId: () => `group-batch-id-${++generatedId}`,
@@ -105,7 +107,9 @@ describe('GroupStateService guarded runtime-state batch', () => {
       ref,
       'group-insert-request',
     );
-    const owner = accepted.snapshot.members.find(({ principalId }) => principalId === 'alice');
+    const owner = accepted.snapshot.members.find(
+      ({ principalId }: GroupMember) => principalId === 'alice',
+    );
     if (!summary || !idempotency || !owner) {
       throw new Error('Expected the complete group insert bundle');
     }
@@ -156,6 +160,7 @@ describe('GroupStateService guarded runtime-state batch', () => {
     let generatedId = 0;
     const service = createTestGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: () => eventStore,
       now: () => 1_000,
       randomId: () => `group-recreate-id-${++generatedId}`,

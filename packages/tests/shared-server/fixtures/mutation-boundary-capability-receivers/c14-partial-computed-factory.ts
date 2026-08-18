@@ -1,6 +1,6 @@
 import * as factories from './factory-capability-provider.ts';
 
-declare const dynamicName: string;
+declare const dynamicName: keyof typeof factories;
 declare const enabled: boolean;
 
 export function mutateConditionalFactory(): void {
@@ -12,12 +12,12 @@ export function mutateConditionalFactory(): void {
 export function mutateLogicalFactory(): void {
   const factoryName = (enabled && 'createRepository') || dynamicName;
   const repository = factories[factoryName]();
-  void repository.updatePrincipal({} as never);
+  void repository.updatePrincipal({} as never, 0);
 }
 
 export function mutateJoinedFactory(): void {
-  let factoryName = 'createRepository';
+  let factoryName: keyof typeof factories = 'createRepository';
   if (enabled) factoryName = dynamicName;
   const repository = factories[factoryName]();
-  void repository.deletePrincipal({} as never);
+  void repository.deletePrincipal({} as never, 0);
 }

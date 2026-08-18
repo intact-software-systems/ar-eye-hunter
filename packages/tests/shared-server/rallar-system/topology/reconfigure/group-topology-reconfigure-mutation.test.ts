@@ -110,6 +110,7 @@ function createRead() {
     authority: {
       group: createTopologyTestGroupSnapshot(),
       config: resolveGroupTopologyConfig({}),
+      kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
       rttMeasurements: [],
       nowEpochMs: 1_000,
     },

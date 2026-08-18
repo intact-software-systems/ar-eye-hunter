@@ -9,6 +9,7 @@ import {
   toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
 import {
+  type CrdtAppendCommand,
   type CrdtMutationCommand,
   type CrdtMutationComputed,
   type CrdtMutationRead,
@@ -57,7 +58,7 @@ describe('Task 9 CRDT correction contracts', () => {
 
     const denied = compute(command, read({ authorized: false }));
     expect(denied.outboxEntries).toHaveLength(0);
-    expect(denied.result.appendResult).toMatchObject({
+    expect(toAppendResult(denied)).toMatchObject({
       status: 'rejected',
       update: command.update,
       code: 'authorization-denied',
@@ -205,8 +206,8 @@ function read(overrides: Partial<CrdtMutationRead> = {}): CrdtMutationRead {
   };
 }
 
-async function appendCommand(input: RallarCrdtUpdateEnvelope) {
-  return await createCrdtMutationCommand({
+async function appendCommand(input: RallarCrdtUpdateEnvelope): Promise<CrdtAppendCommand> {
+  const command = await createCrdtMutationCommand({
     operation: 'append',
     commandId: input.updateId,
     actor: {
@@ -227,6 +228,18 @@ async function appendCommand(input: RallarCrdtUpdateEnvelope) {
     update: input,
     authorizationScope: 'room',
   });
+  if (command.operation !== 'append') {
+    throw new TypeError(`Expected an append command, got ${command.operation}`);
+  }
+  return command;
+}
+
+function toAppendResult(computed: CrdtMutationComputed) {
+  const { result } = computed;
+  if (result.operation !== 'append') {
+    throw new TypeError(`Expected an append result, got ${result.operation}`);
+  }
+  return result.appendResult;
 }
 
 function adminBase(commandId: string) {

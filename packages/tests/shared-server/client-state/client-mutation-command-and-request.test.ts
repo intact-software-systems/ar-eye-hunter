@@ -16,6 +16,7 @@ import {
 } from '@shared-server/rallar-system/client-state-storage-keys.ts';
 import { ClientStateRepository as compatibilityClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import {
+  type ClientMutationPersistedFacts,
   toClientMutationCommand,
   toConnectCommandInput,
   toExpiryCommandInput,
@@ -25,7 +26,10 @@ import {
   toClientMutationIssuedSessionAuthority,
   toClientMutationSystemAuthority,
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
-import { hashMutationCommand } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import {
+  hashMutationCommand,
+  type JsonWireValue,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import {
   toClientMutationCommand as legacyToClientMutationCommand,
   toConnectCommandInput as legacyToConnectCommandInput,
@@ -97,6 +101,8 @@ describe('client mutation command and request projection', () => {
     const authority = toClientMutationIssuedSessionAuthority(
       {
         clientId: 'alice',
+        accessToken: 'alice-token',
+        username: 'alice',
         sessionId: 'auth-session',
         issuedAtEpochMs: 1_000,
         expiresAtEpochMs: 9_000,
@@ -104,7 +110,7 @@ describe('client mutation command and request projection', () => {
       scope,
       'connectSession',
     );
-    const facts = {
+    const facts: ClientMutationPersistedFacts = {
       nowEpochMs: 2_000,
       serviceId: 'client-state',
       eventId: 'event-1',
@@ -114,10 +120,13 @@ describe('client mutation command and request projection', () => {
     };
 
     const command = await toClientMutationCommand(input, facts, authority);
+    if (command.operation !== 'connectSession') {
+      throw new Error(`Expected a connectSession command, received ${command.operation}`);
+    }
 
     expect(command.facts).toEqual({
       ...facts,
-      commandHash: await hashMutationCommand({ ...input, authority }),
+      commandHash: await hashMutationCommand({ ...input, authority } as JsonWireValue),
     });
     expect(command.input.instanceCapabilities).toEqual(['rtc']);
     expect(command.input.principalRoles).toEqual(['member']);

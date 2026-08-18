@@ -655,6 +655,7 @@ function withMemberStatus(
         principalId: 'fixture-owner',
         role: 'owner',
         status: 'active',
+        joined: target.updated,
         left: null,
         removed: null,
         banned: null,

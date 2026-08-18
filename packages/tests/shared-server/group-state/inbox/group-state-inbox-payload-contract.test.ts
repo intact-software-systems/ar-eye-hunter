@@ -15,13 +15,13 @@ import { toGroupMutationDescriptor } from '@shared-server/rallar-system/group-st
 describe('authenticated group mutation enqueue payload contract', () => {
   it('maps each membership inbox discriminator to its declared payload type', () => {
     expectTypeOf<
-      AuthenticatedGroupMutationPayloadByType[AppInboxType.GROUP_MEMBER_REMOVE]
+      AuthenticatedGroupMutationPayloadByType[typeof AppInboxType.GROUP_MEMBER_REMOVE]
     >().toEqualTypeOf<GroupMemberRemoveAppInboxPayload>();
     expectTypeOf<
-      AuthenticatedGroupMutationPayloadByType[AppInboxType.GROUP_MEMBER_BAN]
+      AuthenticatedGroupMutationPayloadByType[typeof AppInboxType.GROUP_MEMBER_BAN]
     >().toEqualTypeOf<GroupMemberBanAppInboxPayload>();
     expectTypeOf<
-      AuthenticatedGroupMutationPayloadByType[AppInboxType.GROUP_MEMBER_UNBAN]
+      AuthenticatedGroupMutationPayloadByType[typeof AppInboxType.GROUP_MEMBER_UNBAN]
     >().toEqualTypeOf<GroupMemberUnbanAppInboxPayload>();
   });
 });
@@ -90,7 +90,7 @@ function assertAuthenticatedGroupMutationEnqueueTypes(): void {
 function assertRemoveEnqueue(
   enqueue: Extract<
     AuthenticatedGroupMutationEnqueue,
-    { readonly type: AppInboxType.GROUP_MEMBER_REMOVE }
+    { readonly type: typeof AppInboxType.GROUP_MEMBER_REMOVE }
   >,
 ): void {
   void enqueue;

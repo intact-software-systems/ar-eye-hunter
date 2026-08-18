@@ -535,21 +535,18 @@ function createTransactionalSql(
     captured: CapturedQuery[],
     resultRows: readonly unknown[],
 ): PSqlSql {
-    const transactionSql = ((
-        strings: TemplateStringsArray,
-        ...values: unknown[]
-    ) => {
-        captured.push({ source: strings.join('?'), values });
-        return Promise.resolve(resultRows);
-    }) as unknown as PSqlTransactionSql & Readonly<{
+    const runNested = async <T>(
+        fn: (sql: PSqlTransactionSql) => Promise<T>,
+    ): Promise<T> => await fn(transactionSql);
+    const transactionSql = Object.assign(
+        (strings: TemplateStringsArray, ...values: unknown[]) => {
+            captured.push({ source: strings.join('?'), values });
+            return Promise.resolve(resultRows);
+        },
+        { begin: runNested, savepoint: runNested },
+    ) as unknown as PSqlTransactionSql & Readonly<{
         savepoint<T>(fn: (sql: PSqlTransactionSql) => Promise<T>): Promise<T>;
     }>;
-    transactionSql.begin = async <T>(
-        fn: (sql: PSqlTransactionSql) => Promise<T>,
-    ): Promise<T> => await fn(transactionSql);
-    transactionSql.savepoint = async <T>(
-        fn: (sql: PSqlTransactionSql) => Promise<T>,
-    ): Promise<T> => await fn(transactionSql);
 
     const rootSql = (() => {
         throw new Error('Root SQL should not be called.');

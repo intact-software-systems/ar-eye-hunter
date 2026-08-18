@@ -16,6 +16,7 @@ export async function seedGroup(
 ): Promise<void> {
   await createGroupStateService({
     runtimeRepository,
+    formationDamping: 'damped',
     syncPublisher: createPublisher(),
     now: () => 1_000,
     serviceId: 'group-service',
@@ -41,6 +42,7 @@ export async function seedPresenceSession(
   const expiresAtEpochMs = overrides.expiresAtEpochMs ?? Date.now() + 60_000;
   await createGroupStateService({
     runtimeRepository,
+    formationDamping: 'damped',
     syncPublisher: createPublisher(),
     now: () => Math.max(2_000, lastHeartbeatAtEpochMs),
     serviceId: 'group-service',

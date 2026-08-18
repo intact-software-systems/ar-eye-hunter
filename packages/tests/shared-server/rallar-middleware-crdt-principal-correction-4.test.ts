@@ -43,11 +43,7 @@ describe('Task 9 correction 4 production principal fanout', () => {
             const sent: string[] = [];
             sockets.set(id, sent);
             webSocketServer.addConnection(
-                new ConnectionContext(id, {
-                    readyState: WebSocket.OPEN,
-                    addEventListener: () => undefined,
-                    send: (value: string) => sent.push(value),
-                } as WebSocket),
+                new ConnectionContext(id, new RecordingWebSocket(sent)),
             );
         }
         const queue = new InMemoryQueueBox();
@@ -195,6 +191,36 @@ function clientSnapshot(): ClientSnapshot {
         activeSessionCount: 2,
         lastSeenAtEpochMs: NOW,
     };
+}
+
+class RecordingWebSocket extends EventTarget implements WebSocket {
+    readonly CONNECTING = WebSocket.CONNECTING;
+    readonly OPEN = WebSocket.OPEN;
+    readonly CLOSING = WebSocket.CLOSING;
+    readonly CLOSED = WebSocket.CLOSED;
+    readonly binaryType = 'blob' as const;
+    readonly bufferedAmount = 0;
+    readonly extensions = '';
+    readonly protocol = '';
+    readonly url = 'ws://recording-test-socket';
+    readonly readyState = WebSocket.OPEN;
+    onclose = null;
+    onerror = null;
+    onmessage = null;
+    onopen = null;
+
+    private readonly sent: string[];
+
+    constructor(sent: string[]) {
+        super();
+        this.sent = sent;
+    }
+
+    send(data: string): void {
+        this.sent.push(data);
+    }
+
+    close(): void {}
 }
 
 function audit(): AuditStamp {

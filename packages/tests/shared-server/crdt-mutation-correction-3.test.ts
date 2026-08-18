@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+    InMemoryQueueBox,
+    JsonWebSocketServer,
+    WsQueueBoxServerService,
+} from '@shared/mod.ts';
+import {
     hashRallarCrdtJson,
     hashRallarCrdtUpdateEnvelope,
     RALLAR_CRDT_OPERATION_VERSION,
@@ -16,6 +21,10 @@ import {
 import {
     installRallarCrdtWsTopics,
 } from '@shared-server/crdt/RallarCrdtServer.ts';
+import {
+    RallarServerWsFacade,
+    type RallarServerWsFanout,
+} from '@shared-server/rallar-facade/ws-topic-router.ts';
 import {
     type DocumentRow,
     toMetadata,
@@ -165,12 +174,16 @@ describe('Task 9 correction 3 exact mutation contracts', () => {
     });
 
     it('never configures update topics for live-only fanout without mutation ingress', () => {
-        const definitions: Array<{ typeId: string; fanout: string }> = [];
+        const facade = createWsFacade();
+        const definitions: Array<
+            { typeId: string | undefined; fanout: RallarServerWsFanout | undefined }
+        > = [];
         installRallarCrdtWsTopics({
             defineTopic: (definition) => {
                 definitions.push({ typeId: definition.typeId, fanout: definition.fanout });
+                return facade;
             },
-            on: () => () => undefined,
+            on: () => () => true,
         });
 
         expect(definitions.filter((definition) => definition.typeId === 'rallar.crdt.update.v1'))
@@ -180,6 +193,17 @@ describe('Task 9 correction 3 exact mutation contracts', () => {
             ]);
     });
 });
+
+function createWsFacade(): RallarServerWsFacade {
+    return new RallarServerWsFacade(
+        new WsQueueBoxServerService(
+            new InMemoryQueueBox(new Map()),
+            new InMemoryQueueBox(new Map()),
+            new JsonWebSocketServer(),
+            'crdt-mutation-correction-3',
+        ),
+    );
+}
 
 function actor() {
     return {

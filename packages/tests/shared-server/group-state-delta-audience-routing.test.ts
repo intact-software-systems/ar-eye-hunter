@@ -4,7 +4,7 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
-import type { AuditStamp, GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync-routing.ts';
 import {
@@ -152,15 +152,5 @@ function createClientSnapshot(principalId: string, sessionId: string): ClientSna
     isOnline: true,
     activeSessionCount: 1,
     lastSeenAtEpochMs: DELTA_ENVELOPE_FIXTURE_NOW,
-  };
-}
-
-function createDeltaEnvelopeFixtureAuditStamp(): AuditStamp {
-  return {
-    atEpochMs: 1,
-    actor: { kind: 'service', serviceId: 'test' },
-    reason: null,
-    traceId: null,
-    requestId: null,
   };
 }

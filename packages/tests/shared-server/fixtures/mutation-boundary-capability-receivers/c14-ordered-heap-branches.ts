@@ -5,7 +5,9 @@ declare const enabled: boolean;
 export function invokeWriterAtBranchJoin(
   repository: ClientStateRepository,
 ): void {
-  let invoke = repository.readSnapshot;
+  let invoke:
+    | ClientStateRepository['insertPrincipal']
+    | ClientStateRepository['readSnapshot'] = repository.readSnapshot;
   const readers = {
     run: () => {
       invoke = repository.readSnapshot;
@@ -27,7 +29,9 @@ export function invokeWriterAtBranchJoin(
 export function retainWriterAcrossPossibleLoop(
   repository: ClientStateRepository,
 ): void {
-  let invoke = repository.readSnapshot;
+  let invoke:
+    | ClientStateRepository['readSnapshot']
+    | ClientStateRepository['updatePrincipal'] = repository.readSnapshot;
   const readers = {
     run: () => {
       invoke = repository.readSnapshot;

@@ -157,11 +157,14 @@ async function createTransactionBoundaryGroupStateService(
     authSessionRepository: authSessions,
   });
   const observedSnapshots: GroupSnapshot[] = [];
-  groupStateService.observeSnapshot = async (snapshot) => {
-    observedSnapshots.push(snapshot);
-    return snapshot;
+  const service: GroupStateService = {
+    ...groupStateService,
+    observeSnapshot: (snapshot: GroupSnapshot) => {
+      observedSnapshots.push(snapshot);
+      return Promise.resolve(snapshot);
+    },
   };
-  return { service: groupStateService, observedSnapshots };
+  return { service, observedSnapshots };
 }
 
 function createOwnerAuthority(): IssuedAuthSession {

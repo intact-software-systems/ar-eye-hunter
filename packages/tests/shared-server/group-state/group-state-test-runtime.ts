@@ -208,7 +208,7 @@ function createTestGroupStateMaintenanceService(
 }
 
 export function createTestGroupStateService(
-  dependencies: Omit<GroupStateServiceDependencies, 'authSessionRepository'>,
+  dependencies: TestGroupStateServiceDependencies,
 ): TestAuthenticatedGroupStateService {
   return createTestGroupStateRuntime(dependencies).service;
 }

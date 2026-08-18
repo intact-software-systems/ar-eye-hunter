@@ -61,6 +61,7 @@ describe('group presence summary evaluation time', () => {
         ref: REF,
         read,
         computed,
+        formationDamping: 'legacy',
       }),
     ).not.toThrow();
   });
@@ -202,6 +203,7 @@ describe('group presence summary evaluation time', () => {
           current: rekey(current, `${groupPresenceSummaryStorageKey()}:wrong`),
         },
         computed: { outcome: 'no-op', evaluatedAtEpochMs: 2_000, summary: base },
+        formationDamping: 'legacy',
       }),
     ).toThrow(/canonical|key/i);
   });
@@ -261,7 +263,7 @@ function createExpiryCrossingGroup(audit: Group['created']): Group {
   });
 }
 
-function createExpiryCrossingMember(audit: GroupMember['joined']): GroupMember {
+function createExpiryCrossingMember(audit: GroupMember['updated']): GroupMember {
   return {
     ...REF,
     principalId: 'alice',

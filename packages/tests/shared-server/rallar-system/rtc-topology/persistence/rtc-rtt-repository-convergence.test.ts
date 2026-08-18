@@ -17,7 +17,11 @@ import type {
 } from '@shared-server/rallar-system/rtc-topology/mutation/rtc-rtt-mutation-contracts.ts';
 import { writeRtcRttMutation } from '@shared-server/rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import { hashMutationCommand } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import {
+  hashMutationCommand,
+  type JsonWireValue,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 
 import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
 import {
@@ -106,15 +110,15 @@ describe('RTC RTT repository convergence', () => {
   it.each(rttWriteCandidateCorruptions)(
     'rejects $label before opening the RTT write transaction',
     async ({ corrupt }) => {
-      const runtimeRepository = new FakeRuntimeStateRepository();
-      const begin = vi.spyOn(runtimeRepository, 'begin');
+      const transaction = createUnopenedTransactionSql();
+      const begin = vi.spyOn(transaction, 'begin');
       const malformed = corrupt(
         structuredClone(createValidRttWriteCandidate()) as unknown as MutableRttWriteCandidate,
       );
 
       await expect(
         writeRtcRttMutation(
-          runtimeRepository,
+          transaction,
           { now: () => 2 },
           malformed as unknown as Extract<RtcRttMutationComputed, { outcome: 'write' }>,
         ),
@@ -788,3 +792,16 @@ describe('RTC RTT repository convergence', () => {
     await expect(repository.findMeasurement('session-a', 'session-b')).resolves.toBeUndefined();
   });
 });
+
+function createUnopenedTransactionSql(): PSqlTransactionSql {
+  return Object.assign(
+    () => {
+      throw new Error('RTT write must not query the transaction');
+    },
+    {
+      begin: () => {
+        throw new Error('RTT write must not open a transaction');
+      },
+    },
+  );
+}

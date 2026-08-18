@@ -86,7 +86,7 @@ describe('AppGroupInboxService authenticated authority', () => {
       }),
     ).toBeUndefined();
     expect(
-      [...harness.queueEntries()].filter((entry) => entry.status === EntityStatus.NEW),
+      (await harness.queueEntries()).filter((entry) => entry.status === EntityStatus.NEW),
     ).toHaveLength(0);
   });
 
@@ -156,7 +156,7 @@ describe('AppGroupInboxService authenticated authority', () => {
       ]),
     ).rejects.toMatchObject({ status: 403 });
     expect(
-      [...harness.queueEntries()].filter((entry) => entry.status === EntityStatus.NEW),
+      (await harness.queueEntries()).filter((entry) => entry.status === EntityStatus.NEW),
     ).toHaveLength(0);
   });
 

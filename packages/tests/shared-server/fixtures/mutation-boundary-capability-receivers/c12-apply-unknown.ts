@@ -1,6 +1,6 @@
 import type { ClientStateRepository } from '@shared-server/mod.ts';
 
-declare function unknownArguments(): unknown[];
+declare function unknownArguments(): [callback: () => void];
 
 export function mutatePossibleApply(
   repository: ClientStateRepository,
@@ -13,7 +13,7 @@ export function mutatePossibleApply(
     invoke = repository.insertPrincipal;
   };
   const dispatch = (callback: () => void) => callback();
-  const args = enabled ? [writer] : unknownArguments();
+  const args: [callback: () => void] = enabled ? [writer] : unknownArguments();
   dispatch.apply(undefined, args);
   void invoke({} as never);
 }

@@ -9,6 +9,7 @@ import type {
   GroupMutationFacts,
   GroupMutationRead,
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/validate-group-mutation-result.ts';
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
@@ -31,6 +32,7 @@ function createService(runtimeRepository: GroupBarrierRepository, nowEpochMs: nu
   let id = 0;
   return createTestGroupStateService({
     runtimeRepository,
+    formationDamping: 'damped',
     now: () => nowEpochMs,
     randomId: () => `id-${nowEpochMs}-${++id}`,
     serviceId: 'group-service',
@@ -197,21 +199,20 @@ describe('group mutation receipt causal invariants', () => {
       const consistentlyWrongEvent = {
         ...computed,
         event: sessionEvent,
-        receipt: {
-          ...computed.receipt,
-          event: { kind: 'group' as const, event: sessionEvent },
-        },
-        idempotency: computed.idempotency && {
-          ...computed.idempotency,
-          receipt: {
-            ...computed.receipt,
-            event: { kind: 'group' as const, event: sessionEvent },
-          },
-        },
-        outbox: {
-          ...computed.outbox,
-          event: { kind: 'group' as const, event: sessionEvent },
-        },
+        outboxEntries: [
+          computeGroupPresenceSummaryEntry(
+            {
+              effectKind: 'group-presence-summary',
+              aggregateRef: command.aggregateRef,
+              commandId: command.commandId,
+              createdAtEpochMs: facts.nowEpochMs,
+              expireAtEpochMs: facts.expireAtEpochMs,
+              acceptedCausalRevision: computed.receipt.causalRevision,
+              event: sessionEvent,
+            },
+            facts.serviceId,
+          ),
+        ],
       };
       const injectedSummary: GroupPresenceSummary = {
         ...groupRef('pure-room'),

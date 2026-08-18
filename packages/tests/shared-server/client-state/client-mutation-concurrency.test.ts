@@ -69,6 +69,7 @@ describe('client mutation stable-read concurrency', () => {
     runtime.armPrincipalChangeAfterRead();
     const read = await createClientMutationService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       serviceId: 'client-service',
     }).read(command);
 

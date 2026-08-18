@@ -1,6 +1,5 @@
 import { vi } from 'vitest';
 
-import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import type {
@@ -178,7 +177,6 @@ export function createService(
 ) {
   return createClientStateService({
     runtimeRepository,
-    formationDamping: 'damped',
     syncPublisher,
     now: () => nowEpochMs,
     randomId: (() => {
@@ -221,10 +219,6 @@ export async function outboxFor(
   return getClientStateTestOutbox(runtime).filter((entry) =>
     commandIds.some((commandId) => entry.resource.includes(commandId)),
   );
-}
-
-function principalRef(principalId: string): ClientPrincipalRef {
-  return { ...SCOPE, principalId };
 }
 
 export function createPublisher(): StateSyncPublisher {

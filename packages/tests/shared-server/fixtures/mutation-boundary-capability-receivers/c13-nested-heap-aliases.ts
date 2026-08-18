@@ -6,7 +6,9 @@ declare const dynamicMember: string;
 export function mutateThroughRootWrite(
   repository: ClientStateRepository,
 ): void {
-  let invoke = repository.readSnapshot;
+  let invoke:
+    | ClientStateRepository['insertPrincipal']
+    | ClientStateRepository['readSnapshot'] = repository.readSnapshot;
   const root = { callbacks: { write: () => undefined } };
   const callbacks = root.callbacks;
   const select = () => {
@@ -23,7 +25,9 @@ export function mutateThroughRootWrite(
 export function mutateThroughAliasWrite(
   repository: ClientStateRepository,
 ): void {
-  let invoke = repository.readSnapshot;
+  let invoke:
+    | ClientStateRepository['readSnapshot']
+    | ClientStateRepository['updatePrincipal'] = repository.readSnapshot;
   const root = { callbacks: { write: () => undefined } };
   const callbacks = root.callbacks;
   const select = () => {
@@ -40,7 +44,9 @@ export function mutateThroughAliasWrite(
 export function mutateThroughNestedAlias(
   repository: ClientStateRepository,
 ): void {
-  let invoke = repository.readSnapshot;
+  let invoke:
+    | ClientStateRepository['deletePrincipal']
+    | ClientStateRepository['readSnapshot'] = repository.readSnapshot;
   const root = { callbacks: { nested: { write: () => undefined } } };
   const nested = root.callbacks.nested;
   const select = () => {
@@ -57,7 +63,9 @@ export function mutateThroughNestedAlias(
 export function mutateThroughDestructuredAlias(
   repository: ClientStateRepository,
 ): void {
-  let invoke = repository.readSnapshot;
+  let invoke:
+    | ClientStateRepository['insertPrincipal']
+    | ClientStateRepository['readSnapshot'] = repository.readSnapshot;
   const root = { callbacks: { write: () => undefined } };
   const { callbacks } = root;
   const select = () => {
@@ -74,7 +82,9 @@ export function mutateThroughDestructuredAlias(
 export function mutateThroughComputedAlias(
   repository: ClientStateRepository,
 ): void {
-  let invoke = repository.readSnapshot;
+  let invoke:
+    | ClientStateRepository['readSnapshot']
+    | ClientStateRepository['updatePrincipal'] = repository.readSnapshot;
   const root = { callbacks: { write: () => undefined } };
   const member = 'callbacks';
   const callbacks = root[member];
@@ -92,7 +102,9 @@ export function mutateThroughComputedAlias(
 export function mutateThroughConditionalAlias(
   repository: ClientStateRepository,
 ): void {
-  let invoke = repository.readSnapshot;
+  let invoke:
+    | ClientStateRepository['deletePrincipal']
+    | ClientStateRepository['readSnapshot'] = repository.readSnapshot;
   const root = { callbacks: { write: () => undefined } };
   const callbacks = enabled ? root.callbacks : root.callbacks;
   const select = () => {
@@ -109,7 +121,9 @@ export function mutateThroughConditionalAlias(
 export function mutateThroughUnknownMember(
   repository: ClientStateRepository,
 ): void {
-  let invoke = repository.readSnapshot;
+  let invoke:
+    | ClientStateRepository['insertPrincipal']
+    | ClientStateRepository['readSnapshot'] = repository.readSnapshot;
   const root = { callbacks: { write: () => undefined } };
   const callbacks = root.callbacks;
   const select = () => {

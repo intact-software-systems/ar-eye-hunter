@@ -150,7 +150,7 @@ export function validAuthority(
 export function validAuthoritySession(sessionId = 'authority-session') {
   return {
     clientId: 'alice',
-    accessToken: `${sessionId}-token`,
+    accessTokenDigest: `sha256:${sessionId}-token`,
     username: 'alice',
     sessionId,
     issuedAtEpochMs: 0,

@@ -6,6 +6,7 @@ import { computeClientSessionConnect } from '@shared-server/rallar-system/client
 import { computeClientSessionDisconnect } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-session-disconnect.ts';
 import { computeClientSessionExpiry } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-session-expiry.ts';
 import { computeClientSessionHeartbeat } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-session-heartbeat.ts';
+import type { ClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
@@ -39,9 +40,37 @@ import {
 } from './client-state-service-test-fixtures.ts';
 import { createLegacyClientStateTestDriver as createClientStateService } from './client-state-test-runtime.ts';
 
+function requireConnect(command: ClientMutationCommand) {
+  if (command.operation !== 'connectSession') {
+    throw new Error(`Expected connectSession command, received ${command.operation}`);
+  }
+  return command;
+}
+
+function requireHeartbeat(command: ClientMutationCommand) {
+  if (command.operation !== 'heartbeatSession') {
+    throw new Error(`Expected heartbeatSession command, received ${command.operation}`);
+  }
+  return command;
+}
+
+function requireDisconnect(command: ClientMutationCommand) {
+  if (command.operation !== 'disconnectSession') {
+    throw new Error(`Expected disconnectSession command, received ${command.operation}`);
+  }
+  return command;
+}
+
+function requireExpiry(command: ClientMutationCommand) {
+  if (command.operation !== 'expireSession') {
+    throw new Error(`Expected expireSession command, received ${command.operation}`);
+  }
+  return command;
+}
+
 describe('client session lifecycle compute', () => {
   it('routes connect and heartbeat directly to their named family owners', async () => {
-    const connect = await connectCommand();
+    const connect = requireConnect(await connectCommand());
     const connectRead = emptyRead(connect);
     const connected = requireWrite(
       computeClientSessionConnect({
@@ -58,7 +87,7 @@ describe('client session lifecycle compute', () => {
       expiresAtEpochMs: 8_000,
     });
 
-    const heartbeat = await heartbeatCommand();
+    const heartbeat = requireHeartbeat(await heartbeatCommand());
     const heartbeatRead = readAfterWrite(heartbeat, connected);
     const heartbeated = requireWrite(
       computeClientSessionHeartbeat({
@@ -82,7 +111,7 @@ describe('client session lifecycle compute', () => {
         read: emptyRead(connect),
       }),
     );
-    const disconnect = await disconnectCommand();
+    const disconnect = requireDisconnect(await disconnectCommand());
     const disconnectRead = readAfterWrite(disconnect, connected);
     const disconnected = requireWrite(
       computeClientSessionDisconnect({
@@ -99,7 +128,9 @@ describe('client session lifecycle compute', () => {
       disconnectReason: 'closed',
     });
 
-    const stale = await disconnectCommand('disconnect-stale', 'generation-stale');
+    const stale = requireDisconnect(
+      await disconnectCommand('disconnect-stale', 'generation-stale'),
+    );
     expect(
       computeClientSessionDisconnect({
         command: stale,
@@ -107,7 +138,7 @@ describe('client session lifecycle compute', () => {
       }),
     ).toMatchObject({ outcome: 'no-op', persistIdempotency: false });
 
-    const expiry = await expiryCommand();
+    const expiry = requireExpiry(await expiryCommand());
     const expiryRead = readAfterWrite(expiry, connected);
     const expired = requireWrite(computeClientSessionExpiry({ command: expiry, read: expiryRead }));
     expect(computeClientMutation({ command: expiry, read: expiryRead })).toEqual(expired);

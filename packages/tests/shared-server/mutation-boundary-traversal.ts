@@ -81,7 +81,7 @@ function readRuntimeImportSources(
     sourceType: 'module',
     sourceFilename: filePath,
     createImportExpressions: true,
-    plugins: ['typescript', 'importAttributes'],
+    plugins: ['typescript'],
   }).program;
   const imports = new Map<string, 'import' | 'export'>();
 

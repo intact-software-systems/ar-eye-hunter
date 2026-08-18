@@ -53,6 +53,9 @@ describe('group-state AppInbox transaction result boundary', () => {
     const harness = await createGroupStateTransactionBoundaryHarness();
 
     const created = await harness.handler.processGroupStateMutation(harness.context);
+    if (!('status' in created) || created.status !== 'created') {
+      throw new TypeError('createGroup must resolve to a created group-state write.');
+    }
 
     const persisted = await harness.results.findByKey(harness.context.entry.key);
     expect(persisted?.status).toBe(EntityStatus.COMPLETED);

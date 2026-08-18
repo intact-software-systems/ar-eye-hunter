@@ -13,7 +13,7 @@ import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-topology
 import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-topology/mutation/validate-rtc-rtt-mutation.ts';
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
 import { writeRtcRttMutation } from '@shared-server/rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const RTT_COMMAND_HASH = `sha256:${'a'.repeat(64)}`;
@@ -249,14 +249,15 @@ describe('RTC RTT mutation phases', () => {
         causalRevision?: unknown;
       }
     ).causalRevision;
-    const runtime = new FakeRuntimeStateRepository();
-    const begin = vi.spyOn(runtime, 'begin');
+    const queries: string[] = [];
+    const transaction = createUnopenedTransactionSql(queries);
+    const begin = vi.spyOn(transaction, 'begin');
 
     await expect(
-      writeRtcRttMutation(runtime, { ttlMs: 60_000, now: () => 1 }, malformed),
+      writeRtcRttMutation(transaction, { ttlMs: 60_000, now: () => 1 }, malformed),
     ).rejects.toThrow();
     expect(begin).not.toHaveBeenCalled();
-    await expect(runtime.findAllEntries('rtc-rtt:latest')).resolves.toEqual([]);
+    expect(queries).toEqual([]);
   });
 
   it('requires both RTT endpoint sessions to cover the full active interval at acceptance time', () => {
@@ -778,4 +779,18 @@ function rttGroupSnapshot(
     memberCount: sessionIds.length,
     onlineMemberCount: sessionIds.length,
   };
+}
+
+function createUnopenedTransactionSql(queries: string[]): PSqlTransactionSql {
+  return Object.assign(
+    () => {
+      queries.push('query');
+      throw new Error('RTT write must not query the transaction');
+    },
+    {
+      begin: () => {
+        throw new Error('RTT write must not open a transaction');
+      },
+    },
+  );
 }
