@@ -11,11 +11,27 @@ import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
+import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  ResourceInboxRepository,
+} from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  ResourceInboxResultsRepository,
+} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  AppCrdtInboxService,
+} from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  createCrdtMutationService,
+} from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
@@ -58,35 +74,38 @@ describe('CRDT production AppInbox ingress', () => {
     expect(command.capturedAtEpochMs).not.toBe(semantic.createdAtEpochMs);
   });
 
-  it('gives reconnect delivery a new AppInbox identity while retaining update replay identity', async () => {
-    const reader = new CapturingInboxReader(false);
-    const service = appCrdt(reader);
-    const semantic = update('reconnect-update');
+  it(
+    'gives reconnect delivery a new AppInbox identity while retaining ' + 'update replay identity',
+    async () => {
+      const reader = new CapturingInboxReader(false);
+      const service = appCrdt(reader);
+      const semantic = update('reconnect-update');
 
-    await service.createAndEnqueueAppend(
-      input({
-        updateEnvelope: semantic,
-        receivedAtEpochMs: 1_000,
-        sessionId: 'session-1',
-        deliveryId: 'delivery-1',
-      }),
-    );
-    await service.createAndEnqueueAppend(
-      input({
-        updateEnvelope: semantic,
-        receivedAtEpochMs: 2_000,
-        sessionId: 'session-2',
-        deliveryId: 'delivery-2',
-      }),
-    );
-    await vi.waitFor(() => expect(reader.messages).toHaveLength(2));
+      await service.createAndEnqueueAppend(
+        input({
+          updateEnvelope: semantic,
+          receivedAtEpochMs: 1_000,
+          sessionId: 'session-1',
+          deliveryId: 'delivery-1',
+        }),
+      );
+      await service.createAndEnqueueAppend(
+        input({
+          updateEnvelope: semantic,
+          receivedAtEpochMs: 2_000,
+          sessionId: 'session-2',
+          deliveryId: 'delivery-2',
+        }),
+      );
+      await vi.waitFor(() => expect(reader.messages).toHaveLength(2));
 
-    const commands = reader.messages.map((message) => JSON.parse(message.payload.resource).data);
-    expect(commands[0].update.updateId).toBe(commands[1].update.updateId);
-    expect(commands[0].commandId).toBe(commands[1].commandId);
-    expect(commands[0].deliveryId).not.toBe(commands[1].deliveryId);
-    expect(commands[0].actor.sessionId).not.toBe(commands[1].actor.sessionId);
-  });
+      const commands = reader.messages.map((message) => JSON.parse(message.payload.resource).data);
+      expect(commands[0].update.updateId).toBe(commands[1].update.updateId);
+      expect(commands[0].commandId).toBe(commands[1].commandId);
+      expect(commands[0].deliveryId).not.toBe(commands[1].deliveryId);
+      expect(commands[0].actor.sessionId).not.toBe(commands[1].actor.sessionId);
+    },
+  );
 });
 
 class CapturingInboxReader extends InboxQueueReader {
@@ -134,9 +153,16 @@ function appCrdt(inbox: InboxQueueReader): AppCrdtInboxService {
 }
 
 function createUnusedDatabase(): PSqlSql {
-  const database = (() =>
-    Promise.reject(new Error('Unexpected SQL execution in ingress unit test'))) as PSqlSql;
-  database.begin = () => Promise.reject(new Error('Unexpected transaction in ingress unit test'));
+  const database: PSqlSql = Object.assign(
+    <T>(
+      _stringsOrValues: TemplateStringsArray | readonly unknown[],
+      ..._values: unknown[]
+    ): Promise<T> => Promise.reject(new Error('Unexpected SQL execution in ingress unit test')),
+    {
+      begin: <T>(_run: (sql: PSqlTransactionSql) => Promise<T>): Promise<T> =>
+        Promise.reject(new Error('Unexpected transaction in ingress unit test')),
+    },
+  );
   return database;
 }
 

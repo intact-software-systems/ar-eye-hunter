@@ -6,10 +6,26 @@ import {
   type RallarCrdtDocumentRef,
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
-import { computeCrdtMutation } from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
-import { toCrdtAuditOutbox } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-outbox.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  createCrdtMutationCommand,
+} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  decodeCrdtMutationResult,
+} from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  computeCrdtMutation,
+} from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  toCrdtAuditOutbox,
+} from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-outbox.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',

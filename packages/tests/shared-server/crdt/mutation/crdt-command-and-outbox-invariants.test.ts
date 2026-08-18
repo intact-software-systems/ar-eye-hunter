@@ -15,8 +15,16 @@ import {
   type CrdtMutationRead,
   type CrdtMutationRepository,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  createCrdtMutationCommand,
+} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  createCrdtMutationService,
+} from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
@@ -69,9 +77,9 @@ describe('CRDT command and outbox invariants', () => {
   });
 
   it('rejects unknown fields in incoming update and generated WS payloads', async () => {
-    await expect(
-      appendCommand({ ...update('unknown'), unexpected: true } as never),
-    ).rejects.toThrow(/update|field/i);
+    const invalidUpdate = update('unknown');
+    Reflect.set(invalidUpdate, 'unexpected', true);
+    await expect(appendCommand(invalidUpdate)).rejects.toThrow(/update|field/i);
     const accepted = compute(await appendCommand(update('wire')), read());
     const wire = outboxMessage(accepted, 'reply');
     expect(Object.keys(wire).sort()).toEqual(
@@ -94,7 +102,7 @@ describe('CRDT command and outbox invariants', () => {
         snapshot,
         actorUpdatesInWindow: 1,
         storedSnapshotBytes: 2_000,
-      } as never),
+      }),
     );
     expect(computed).toMatchObject({ outcome: 'rejected', code: 'quota-exceeded' });
   });

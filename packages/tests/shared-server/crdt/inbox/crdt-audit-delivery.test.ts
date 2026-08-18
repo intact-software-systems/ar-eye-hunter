@@ -12,13 +12,37 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
-import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
-import { registerCrdtAuditDelivery } from '@shared-server/rallar-system/crdt/inbox/register-crdt-audit-delivery.ts';
-import type { CrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { CRDT_AUDIT_APP_OUTBOX_TYPE } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-outbox.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  AppCrdtInboxService,
+} from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  registerCrdtAuditDelivery,
+} from '@shared-server/rallar-system/crdt/inbox/register-crdt-audit-delivery.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import type {
+  CrdtMutationService,
+} from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
+import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  ResourceInboxRepository,
+} from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  ResourceInboxResultsRepository,
+} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  CRDT_AUDIT_APP_OUTBOX_TYPE,
+} from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-outbox.ts';
 
 const EVENT: RallarCrdtAuditEvent = {
   kind: 'erase',
@@ -116,10 +140,17 @@ function createInbox(input: CreateInboxInput): AppCrdtInboxService {
 }
 
 function createUnusedDatabase(): PSqlSql {
-  const database = (() =>
-    Promise.reject(new Error('Unexpected SQL execution in audit registration test'))) as PSqlSql;
-  database.begin = () =>
-    Promise.reject(new Error('Unexpected transaction in audit registration test'));
+  const database: PSqlSql = Object.assign(
+    <T>(
+      _stringsOrValues: TemplateStringsArray | readonly unknown[],
+      ..._values: unknown[]
+    ): Promise<T> =>
+      Promise.reject(new Error('Unexpected SQL execution in audit registration test')),
+    {
+      begin: <T>(_run: (sql: PSqlTransactionSql) => Promise<T>): Promise<T> =>
+        Promise.reject(new Error('Unexpected transaction in audit registration test')),
+    },
+  );
   return database;
 }
 

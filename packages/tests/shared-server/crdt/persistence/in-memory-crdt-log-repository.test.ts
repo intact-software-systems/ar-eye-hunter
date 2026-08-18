@@ -319,7 +319,7 @@ describe('InMemoryRallarCrdtLogRepository', () => {
       metadata: { updateCount: 1 },
     };
 
-    await repository.writeSnapshot({ snapshot });
+    await repository.writeSnapshot({ snapshot, appendSequence: 1 });
 
     expect(await repository.readSnapshot(documentRef)).toEqual(snapshot);
     expect(clock.callCount()).toBe(0);
@@ -622,6 +622,7 @@ describe('InMemoryRallarCrdtLogRepository', () => {
         value: { title: 'Source A' },
         metadata: { updateCount: 1 },
       },
+      appendSequence: 1,
     });
     const sourceBackup = await source.exportBackupBundle(documentRef, {
       exportedAtEpochMs: 3_000,

@@ -13,6 +13,10 @@ import {
   DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
   retryAfterAttempt,
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
 // Prettier's single-line form exceeds the repository's 100-character review limit.
 // prettier-ignore
 import {
@@ -53,11 +57,6 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   principalId: 'principal-1',
 };
 
-interface CrdtTopicFanoutDefinition {
-  readonly typeId: string;
-  readonly fanout: string;
-}
-
 describe('CRDT persisted mutation contract invariants', () => {
   it('rejects extra fields on every command document reference', async () => {
     const command = await lifecycleCommand();
@@ -70,24 +69,24 @@ describe('CRDT persisted mutation contract invariants', () => {
   });
 
   it('rejects non-authoritative lifecycle retention and quota set values', async () => {
-    await expect(
-      createCrdtMutationCommand({
-        ...lifecycleInput(),
-        retentionAction: {
-          kind: 'set',
-          value: { mode: 'retain', unexpected: true },
-        },
-      } as never),
-    ).rejects.toThrow(/retention/i);
-    await expect(
-      createCrdtMutationCommand({
-        ...lifecycleInput(),
-        quotaAction: {
-          kind: 'set',
-          value: { maxDocumentBytes: -1 },
-        },
-      } as never),
-    ).rejects.toThrow(/quota/i);
+    const command = await lifecycleCommand();
+    const invalidRetention = rehash({
+      ...command,
+      retentionAction: {
+        kind: 'set',
+        value: { mode: 'retain', unexpected: true },
+      },
+    });
+    const invalidQuota = rehash({
+      ...command,
+      quotaAction: {
+        kind: 'set',
+        value: { maxDocumentBytes: -1 },
+      },
+    });
+
+    expect(() => decodeCrdtMutationCommand(invalidRetention)).toThrow(/retention/i);
+    expect(() => decodeCrdtMutationCommand(invalidQuota)).toThrow(/quota/i);
   });
 
   it('rejects empty or duplicate lifecycle projection IDs', async () => {
@@ -204,16 +203,19 @@ describe('CRDT persisted mutation contract invariants', () => {
   });
 
   it('never configures update topics for live-only fanout without mutation ingress', () => {
-    const definitions: CrdtTopicFanoutDefinition[] = [];
-    installRallarCrdtWsTopics({
-      defineTopic: (definition) => {
-        definitions.push({ typeId: definition.typeId, fanout: definition.fanout });
-      },
-      on: () => () => undefined,
-    });
+    const socket = new JsonWebSocketServer();
+    const service = new WsQueueBoxServerService(
+      new InMemoryQueueBox(),
+      new InMemoryQueueBox(),
+      socket,
+      'server-1',
+    );
+    const bridge = installRallarCrdtWsTopics(new RallarServerWsFacade(service));
 
     expect(
-      definitions.filter((definition) => definition.typeId === 'rallar.crdt.update.v1'),
+      bridge.definitions
+        .filter((definition) => definition.typeId === 'rallar.crdt.update.v1')
+        .map(({ typeId, fanout }) => ({ typeId, fanout })),
     ).toEqual([
       { typeId: 'rallar.crdt.update.v1', fanout: 'none' },
       { typeId: 'rallar.crdt.update.v1', fanout: 'none' },

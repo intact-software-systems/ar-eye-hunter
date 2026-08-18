@@ -7,15 +7,31 @@ import {
   type RallarCrdtUpdateEnvelope,
   toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
   CrdtMutationConflictError,
+  type CrdtMutationCommand,
   type CrdtMutationComputed,
+  type CrdtMutationComputedWrite,
+  type CrdtMutationRead,
   type CrdtMutationRepository,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
-import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  createCrdtMutationCommand,
+} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  createCrdtMutationService,
+} from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
+// Prettier's single-line form exceeds the repository's 100-character review limit.
+// prettier-ignore
+import {
+  decodeCrdtMutationResult,
+} from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
@@ -65,7 +81,7 @@ describe('CRDT mutation service', () => {
     });
   });
 
-  it('replays an identical update and rejects an update-ID collision without writing a mutation', async () => {
+  it('replays identical updates and rejects collisions without mutation writes', async () => {
     const repository = new MemoryCrdtMutationRepository();
     const service = createCrdtMutationService({
       repository,
@@ -236,9 +252,13 @@ describe('CRDT mutation service', () => {
       ...computed,
       command: { ...command },
       expectedDocumentRevision: 99,
-      snapshot: {},
-      result: { ...computed.result, snapshot: null, metadata: null },
-    } as CrdtMutationComputed;
+    };
+    Reflect.set(malformed, 'snapshot', {});
+    Reflect.set(malformed, 'result', {
+      ...computed.result,
+      snapshot: null,
+      metadata: null,
+    });
 
     expect(() => service.validate({ command, read, computed: malformed })).not.toThrow();
     expect(
@@ -339,9 +359,9 @@ class MemoryCrdtMutationRepository implements CrdtMutationRepository {
   operations: string[] = [];
   readCalls = 0;
   failNextConflict = false;
-  readonly transaction = {} as PSqlTransactionSql;
+  readonly transaction = createUnusedTransaction();
 
-  readMutation() {
+  readMutation(_command: CrdtMutationCommand): Promise<CrdtMutationRead> {
     this.readCalls += 1;
     return Promise.resolve({
       document: this.metadata,
@@ -363,24 +383,41 @@ class MemoryCrdtMutationRepository implements CrdtMutationRepository {
     });
   }
 
-  writeMutation(computed: CrdtMutationComputed) {
+  writeMutation(computed: CrdtMutationComputedWrite): Promise<void> {
     this.operations.push('write-mutation');
     if (this.failNextConflict) {
       this.failNextConflict = false;
       throw new CrdtMutationConflictError(computed.documentKey);
     }
-    if (computed.outcome === 'write') {
-      this.metadata = computed.document;
-      if (computed.operation === 'append') this.updates.push(computed.update);
+    this.metadata = computed.document;
+    if (computed.operation === 'append') {
+      if (!computed.update) {
+        throw new Error('Expected append mutation update');
+      }
+      this.updates.push(computed.update);
     }
     return Promise.resolve();
   }
 
-  writeOutbox(entries: CrdtMutationComputed['outboxEntries']) {
+  writeOutbox(entries: readonly ResourceEntry[]): Promise<void> {
     this.operations.push('write-final-outbox');
     this.outbox.push(...entries);
     return Promise.resolve();
   }
+}
+
+function createUnusedTransaction(): PSqlTransactionSql {
+  const transaction: PSqlTransactionSql = Object.assign(
+    <T>(
+      _stringsOrValues: TemplateStringsArray | readonly unknown[],
+      ..._values: unknown[]
+    ): Promise<T> => Promise.reject(new Error('Unexpected SQL execution in mutation unit test')),
+    {
+      begin: <T>(_run: (sql: PSqlTransactionSql) => Promise<T>): Promise<T> =>
+        Promise.reject(new Error('Unexpected nested transaction in mutation unit test')),
+    },
+  );
+  return transaction;
 }
 
 async function computeCrdtMutation(

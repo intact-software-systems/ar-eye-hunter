@@ -34,10 +34,10 @@ const PATHS = {
 } as const;
 
 interface InventoryOwnerPathAliases {
-  readonly dispatchSource: string;
+  readonly dispatchSource?: string;
   readonly owner: string;
   readonly ownerSource: string;
-  readonly typeOwnerSource: string;
+  readonly typeOwnerSource?: string;
 }
 
 interface InventoryOwnerPaths {
