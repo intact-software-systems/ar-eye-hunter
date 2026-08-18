@@ -35,6 +35,5 @@
       "@shared/*": ["./packages/shared/*"],
       "@relic-hunters/*": ["./packages/relic-hunters/*"]
     }
-  },
-  "exclude": ["./packages/tests"]
+  }
 }

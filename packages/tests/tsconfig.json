@@ -7,6 +7,7 @@
     "strict": true,
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
+    "jsx": "react-jsx",
     "lib": [
       "ESNext",
       "DOM"
@@ -24,6 +25,9 @@
       "@shared-test/*": [
         "../../packages/shared-test/*"
       ],
+      "@relic-hunters/*": [
+        "../../packages/relic-hunters/*"
+      ],
       "@shared/*": [
         "../../packages/shared/*"
       ]
@@ -34,8 +38,7 @@
     ]
   },
   "include": [
-    "**/*.test.ts",
-    "**/*.d.ts",
-    "../../types/**/*.d.ts"
+    "**/*.ts",
+    "**/*.d.ts"
   ]
 }
