@@ -14,6 +14,7 @@ import {
 } from '@shared-server/rallar-system/admin-operations/admin-prune-work-codec.ts';
 import { ADMIN_PRUNE_AGGREGATE_TOPIC } from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
 import { AppInboxIdempotencyConflictError } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { hashCanonicalCommand } from '@shared-server/rallar-system/services/canonical-command-hash.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 // The canonical production owner is intentionally absent until Task 3.
 import { AppAdminInboxService } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
@@ -51,12 +52,21 @@ describe('AppAdminInboxService initial prune command', () => {
       pageSize: 25,
     });
     expect(command.jobId.length).toBeGreaterThan(0);
-    expect(harness.events.slice(0, 4)).toEqual([
+    expect(harness.events.slice(0, 5)).toEqual([
+      'semantic-identity-callback',
       'phase:semantic-identity',
       'phase:durable-command-read',
       'now-callback',
       'retry-expiry-callback',
     ]);
+    expect(harness.createAdminPruneIdempotencyIdentity).toHaveBeenCalledExactlyOnceWith({
+      requestId: command.jobId,
+      requestedBy: 'admin',
+      requestedSessionId: 'admin-session',
+      categories: ADMIN_PRUNE_EXPIRED_CATEGORIES.filter((category) => category !== 'app-data'),
+      appData: null,
+      dryRun: true,
+    });
     expect(harness.timingEvents).toContainEqual(
       expect.objectContaining({
         component: 'admin-prune-inbox',
@@ -168,6 +178,11 @@ describe('AppAdminInboxService initial prune command', () => {
       });
 
       expect(harness.readWorkCounts()).toEqual(beforeConflict);
+      expect(harness.createAdminPruneIdempotencyIdentity).toHaveBeenCalledTimes(2);
+      const identities = await Promise.all(
+        harness.createAdminPruneIdempotencyIdentity.mock.results.map(({ value }) => value),
+      );
+      expect(identities[0]?.semanticHash).not.toBe(identities[1]?.semanticHash);
       const semanticHashes = readSemanticHashes(harness.timingEvents);
       expect(semanticHashes).toHaveLength(2);
       expect(semanticHashes[0]).toMatch(/^sha256:/u);
@@ -203,6 +218,7 @@ describe('AppAdminInboxService initial prune command', () => {
     });
 
     expect(harness.events).toEqual([
+      'semantic-identity-callback',
       'phase:semantic-identity',
       'phase:durable-command-read',
       'now-callback',
@@ -232,6 +248,7 @@ describe('AppAdminInboxService initial prune command', () => {
     });
 
     expect(harness.events).toEqual([
+      'semantic-identity-callback',
       'phase:semantic-identity',
       'phase:durable-command-read',
       'now-callback',
@@ -297,6 +314,7 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.pruner.countExpired).toHaveBeenCalledTimes(2);
     expect(harness.transactionCount()).toBe(2);
     expect(harness.events).toEqual([
+      'semantic-identity-callback',
       'phase:semantic-identity',
       'phase:durable-command-read',
       'now-callback',
@@ -388,6 +406,7 @@ interface AdminInboxHarness {
   readonly timingEvents: RallarTimingEvent[];
   readonly nowEpochMs: ReturnType<typeof vi.fn>;
   readonly computeRetryExpiryAtEpochMs: ReturnType<typeof vi.fn>;
+  readonly createAdminPruneIdempotencyIdentity: ReturnType<typeof vi.fn>;
   readonly readAuthority: ReturnType<typeof vi.fn>;
   readonly pruner: Readonly<{ countExpired: ReturnType<typeof vi.fn> }>;
   readonly wakeQueueEngine: ReturnType<typeof vi.fn>;
@@ -425,6 +444,16 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
     events.push('retry-expiry-callback');
     return capturedAtEpochMs + (options.retryExpiryOffsetMs ?? RETRY_EXPIRY_OFFSET_MS);
   });
+  const createAdminPruneIdempotencyIdentity = vi.fn(
+    async (input: AdminPruneIdempotencyIdentityInput): Promise<AdminPruneIdempotencyIdentity> => {
+      events.push('semantic-identity-callback');
+      return {
+        version: 1,
+        ...input,
+        semanticHash: await hashCanonicalCommand(input),
+      };
+    },
+  );
   const readAuthority = vi.fn(async () => {
     events.push('current-authority');
     return {
@@ -483,6 +512,7 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
       readAuthority,
       wakeQueueEngine,
       computeRetryExpiryAtEpochMs,
+      createAdminPruneIdempotencyIdentity,
     },
     {
       serviceId: 'admin-inbox-test-server',
@@ -506,6 +536,7 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
     timingEvents,
     nowEpochMs,
     computeRetryExpiryAtEpochMs,
+    createAdminPruneIdempotencyIdentity,
     readAuthority,
     pruner,
     wakeQueueEngine,
@@ -525,6 +556,20 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
     }),
     transactionCount: () => transactions,
   };
+}
+
+interface AdminPruneIdempotencyIdentityInput {
+  readonly requestId: string;
+  readonly requestedBy: string;
+  readonly requestedSessionId: string;
+  readonly categories: readonly AdminPruneExpiredCategory[];
+  readonly appData: Readonly<{ namespace: string; storeName: string | null }> | null;
+  readonly dryRun: boolean;
+}
+
+interface AdminPruneIdempotencyIdentity extends AdminPruneIdempotencyIdentityInput {
+  readonly version: 1;
+  readonly semanticHash: string;
 }
 
 function createObservedDatabase(
