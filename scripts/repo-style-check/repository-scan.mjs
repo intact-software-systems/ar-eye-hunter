@@ -129,9 +129,12 @@ export async function resolveScanRoots(candidates) {
   return existingRoots;
 }
 
-export async function collectProductionSources(scanRoots) {
+export async function collectProductionSources(scanRoots, options = {}) {
   const nestedFiles = await Promise.all(scanRoots.map(collectSourceFiles));
-  const productionFiles = nestedFiles.flat().filter(isProductionCodeFile).sort();
+  const accept = options.includeTests
+    ? (file) => isProductionCodeFile(file) || isTestSourceFile(file)
+    : isProductionCodeFile;
+  const productionFiles = nestedFiles.flat().filter(accept).sort();
   return Promise.all(
     productionFiles.map(async (file) => ({ file, raw: await fs.readFile(file, 'utf8') })),
   );
@@ -341,6 +344,53 @@ async function collectSourceFiles(current) {
 // beyond production sources: collectProductionSources still filters test paths out entirely.
 export function resolveFileLineBackstop(file) {
   return isNonProductionPath(file) ? limits.testFileLineCount : limits.fileLineCount;
+}
+
+// Human-authored test sources: the same file kinds the production predicate accepts, minus its
+// test-path and test-filename exclusions. Generated, vendored, and runner-config files stay out of
+// both. The standard applies its universal rules here; which of them are enforced is separate.
+// Which rules block a branch when the changed file is a test. The standard applies universally, but
+// enforcement is staged: these three are unambiguous on any corpus and carry the highest value here
+// -- boundary.unknown is what reports `as unknown as`. The file metrics and layout rules stay
+// warning-only for tests until each is measured against the test corpus the way file.length was.
+export const testEnforcedRuleIds = new Set([
+  'line.width',
+  'boundary.unknown',
+  'construction.forward-capture',
+]);
+
+// Keyed on the path, not the file kind: layout findings are reported against a directory, which has
+// no extension and would otherwise fall through as if it were production.
+export function isTestEnforcedFinding(file, ruleId) {
+  if (typeof file !== 'string') {
+    return true;
+  }
+  return !isNonProductionPath(file) || testEnforcedRuleIds.has(ruleId);
+}
+
+export function isTestSourceFile(file) {
+  const normalized = file.replace(/\\/gu, '/').toLowerCase();
+  if (!checkedExtensions.has(path.extname(normalized))) {
+    return false;
+  }
+  if (isProductionCodeFile(file)) {
+    return false;
+  }
+  const parts = normalized.split('/');
+  const base = parts[parts.length - 1];
+  if (isTestRunnerConfigFile(base)) {
+    return false;
+  }
+  if (
+    parts.some((part) => part === 'node_modules' || generatedPathPartPattern.test(part))
+  ) {
+    return false;
+  }
+  return !(
+    /\.generated(?:\.d)?\.[cm]?(?:t|j)sx?$/u.test(base) ||
+    /\.gen(?:\.d)?\.[cm]?(?:t|j)sx?$/u.test(base) ||
+    /\.pb(?:\.d)?\.[cm]?(?:t|j)sx?$/u.test(base)
+  );
 }
 
 export function isProductionCodeFile(file) {

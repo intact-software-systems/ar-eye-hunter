@@ -49,7 +49,9 @@ async function main() {
     objectInterfaces: args.has('--object-interfaces'),
     cognitiveMetrics: args.has('--cognitive-metrics'),
   };
-  const sources = await collectProductionSources(scanRoots);
+  // Tests are in scope for the standard's universal rules, so the warning-only full scan reports
+  // them. Which of those rules block a branch is decided separately, in the changed-range gate.
+  const sources = await collectProductionSources(scanRoots, { includeTests: true });
   const result = scanProductionSources({
     repoRoot: path.resolve(process.cwd()),
     sources,

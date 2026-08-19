@@ -5,6 +5,8 @@ import path from 'node:path';
 import {
   collectProductionSources,
   isProductionCodeFile,
+  isTestEnforcedFinding,
+  isTestSourceFile,
   scanProductionSources,
 } from './repo-style-check/repository-scan.mjs';
 import {
@@ -70,7 +72,7 @@ async function main() {
   });
   const governedTargetSources =
     targetReference === worktreeTarget
-      ? await collectProductionSources([repoRoot])
+      ? await collectProductionSources([repoRoot], { includeTests: true })
       : readRevisionProductionSources(repoRoot, targetCommit);
   const baseSources = toBaseSources({
     repoRoot,
@@ -78,16 +80,13 @@ async function main() {
     targetSources: governedTargetSources,
     changes,
   });
-  const baseFindings = scanProductionSources({
-    repoRoot,
-    sources: baseSources,
-    options: scanOptions,
-  }).findings;
-  const targetFindings = scanProductionSources({
-    repoRoot,
-    sources: governedTargetSources,
-    options: scanOptions,
-  }).findings;
+  const baseFindings = toEnforcedFindings(
+    scanProductionSources({ repoRoot, sources: baseSources, options: scanOptions }).findings,
+  );
+  const targetFindings = toEnforcedFindings(
+    scanProductionSources({ repoRoot, sources: governedTargetSources, options: scanOptions })
+      .findings,
+  );
   const newFindings = subtractExistingFindings({
     repoRoot,
     baseFindings,
@@ -107,6 +106,13 @@ async function main() {
     governanceIssues: reviewedDispositionContext.issues,
   });
 }
+
+const isGovernedSourceFile = (file) => isProductionCodeFile(file) || isTestSourceFile(file);
+
+// Both sides of the comparison are filtered, so a rule that is not yet enforced on tests never
+// enters the base or the target set and cannot register as new or worsened.
+const toEnforcedFindings = (findings) =>
+  findings.filter((entry) => isTestEnforcedFinding(entry.file, entry.ruleId));
 
 function printChangedFindings(result) {
   for (const issue of result.governanceIssues) {
@@ -149,7 +155,7 @@ function readChanges(mergeBase, targetReference, repoRoot) {
   return changes.filter((change) =>
     [change.source, change.target]
       .filter(Boolean)
-      .some((file) => isProductionCodeFile(path.join(repoRoot, file))),
+      .some((file) => isGovernedSourceFile(path.join(repoRoot, file))),
   );
 }
 
@@ -185,7 +191,7 @@ function toBaseSources(input) {
     const baseSource = readRevisionFile(input.mergeBase, change.source);
     if (
       baseSource !== undefined &&
-      isProductionCodeFile(path.join(input.repoRoot, change.source))
+      isGovernedSourceFile(path.join(input.repoRoot, change.source))
     ) {
       sourceByPath.set(change.source, {
         file: path.join(input.repoRoot, change.source),
@@ -322,7 +328,7 @@ function readRevisionProductionSources(repoRoot, revision) {
   return runGit(['ls-tree', '-r', '--name-only', revision])
     .split('\n')
     .filter(Boolean)
-    .filter((file) => isProductionCodeFile(path.join(repoRoot, file)))
+    .filter((file) => isGovernedSourceFile(path.join(repoRoot, file)))
     .map((file) => ({
       file: path.join(repoRoot, file),
       raw: readRevisionFile(revision, file),
