@@ -289,6 +289,25 @@ export type CrdtMutationResult =
   | CrdtRebuildMutationResult
   | CrdtEraseMutationResult;
 
+export interface CrdtAdminCompactResult {
+  readonly document: RallarCrdtDocumentRef;
+  readonly documentKey: string;
+  readonly appendSequence: number;
+  readonly snapshot: CrdtCanonicalSnapshotEnvelope;
+}
+
+export type CrdtAdminEraseResult =
+  | Readonly<{
+      request: RallarCrdtErasureRequest;
+      auditEvent: RallarCrdtAuditEvent;
+      metadata: RallarCrdtDocumentMetadata;
+    }>
+  | Readonly<{
+      request: RallarCrdtErasureRequest;
+      auditEvent: RallarCrdtAuditEvent;
+      redactedBundle: RallarCrdtDebugBundle;
+    }>;
+
 export interface CrdtMutationRepository {
   readonly readMutation: (command: CrdtMutationCommand) => Promise<CrdtMutationRead>;
   readonly writeMutation: (computed: CrdtMutationComputedWrite) => Promise<void>;

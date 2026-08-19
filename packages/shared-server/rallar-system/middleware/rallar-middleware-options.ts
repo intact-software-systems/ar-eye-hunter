@@ -6,12 +6,12 @@ import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
 import type { AppAuthInboxService } from '../services/AppAuthInboxService.ts';
-import type { AppAdminInboxService } from '../services/AppAdminInboxService.ts';
+import type { AppAdminInboxService } from '../admin-operations/inbox/app-admin-inbox-service.ts';
 import type { AppCrdtInboxService } from '../crdt/inbox/app-crdt-inbox-service.ts';
 import type { RallarSnapshotPresenceClock } from '../snapshot-presence.ts';
 
 export type { AppAuthInboxService } from '../services/AppAuthInboxService.ts';
-export type { AppAdminInboxService } from '../services/AppAdminInboxService.ts';
+export type { AppAdminInboxService } from '../admin-operations/inbox/app-admin-inbox-service.ts';
 export type { AppCrdtInboxService } from '../crdt/inbox/app-crdt-inbox-service.ts';
 
 export interface RallarAuthInboxServiceFactoryInput {

@@ -16,7 +16,6 @@ import { ADMIN_PRUNE_AGGREGATE_TOPIC } from '@shared-server/rallar-system/admin-
 import { AppInboxIdempotencyConflictError } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { hashCanonicalCommand } from '@shared-server/rallar-system/services/canonical-command-hash.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
-// The canonical production owner is intentionally absent until Task 3.
 import { AppAdminInboxService } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
 import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
 import {
@@ -616,8 +615,9 @@ function createObservedTransaction(
     }
     if (query.includes('insert into resource_inbox_results')) {
       events.push(values[1] === ADMIN_PRUNE_AGGREGATE_TOPIC ? 'aggregate-write' : 'result-write');
+    } else if (query.includes('insert into resource_inbox')) {
+      events.push('page-write');
     }
-    if (query.includes('insert into resource_inbox')) events.push('page-write');
     return await transaction(strings, ...values);
   }) as typeof transaction;
   observed.begin = transaction.begin;
@@ -659,7 +659,11 @@ async function completePrune(
 ) {
   const pending = harness.service.pruneExpired({ adminSession, request });
   for (let attempt = 0; attempt < dequeueAttempts; attempt += 1) {
-    await waitForQueueEntry(harness.queue);
+    if (attempt === 0) {
+      await waitForQueueEntry(harness.queue);
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
     await dequeueInitialCommand(harness);
   }
   return await pending;

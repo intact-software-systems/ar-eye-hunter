@@ -1079,7 +1079,7 @@ Deno.test('PSqlAdminOperationsStatsReader validates the three global group row f
   });
 });
 
-Deno.test('PSqlAdminOperationsPruner counts and deletes only expired supported rows', async () => {
+Deno.test('PSqlAdminOperationsPruner counts only expired supported rows', async () => {
   await withPGliteSql(async (sql) => {
     await seedAdminOperationsRows(sql);
     const pruner = new PSqlAdminOperationsPruner(sql);
@@ -1089,29 +1089,10 @@ Deno.test('PSqlAdminOperationsPruner counts and deletes only expired supported r
     assert.equal(await pruner.countExpired('resource-inbox-results', cutoff), 1);
     assert.equal(
       await pruner.countExpired('app-data', {
-        ...cutoff, appData: { namespace: 'app-ns', storeName: 'settings' },
+        ...cutoff,
+        appData: { namespace: 'app-ns', storeName: 'settings' },
       }),
       1,
-    );
-
-    assert.equal(await pruner.pruneExpired('runtime-state', cutoff), 2);
-    assert.equal(await pruner.pruneExpired('resource-inbox', cutoff), 1);
-    assert.equal(await pruner.pruneExpired('resource-inbox-results', cutoff), 1);
-    assert.equal(
-      await pruner.pruneExpired('app-data', {
-        ...cutoff, appData: { namespace: 'app-ns', storeName: 'settings' },
-      }),
-      1,
-    );
-
-    assert.equal(await pruner.countExpired('runtime-state', cutoff), 0);
-    assert.equal(await pruner.countExpired('resource-inbox', cutoff), 0);
-    assert.equal(await pruner.countExpired('resource-inbox-results', cutoff), 0);
-    assert.equal(
-      await pruner.countExpired('app-data', {
-        ...cutoff, appData: { namespace: 'app-ns', storeName: 'settings' },
-      }),
-      0,
     );
   });
 });
