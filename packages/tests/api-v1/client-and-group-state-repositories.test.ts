@@ -1429,6 +1429,7 @@ function createGroupMember(
     };
     switch (status) {
         case 'invited':
+        case 'pending':
             return {
                 ...base,
                 status,
