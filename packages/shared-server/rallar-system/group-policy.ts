@@ -214,6 +214,18 @@ export function canConnectGroupPresenceSession(
   return ALLOWED;
 }
 
+/**
+ * Banned and removed rows are governance state. Only a governance action
+ * (`unbanGroupMember`, or an owner/admin acting on the member) may leave them,
+ * so a principal may never move their own row out of one — clearing the stamp
+ * by self-leaving would restore the ability to rejoin.
+ */
+export function canChangeOwnGroupMembership(
+  storedMember: GroupMember | undefined,
+): GroupPolicyResult {
+  return denyForBlockedMember(storedMember) ?? ALLOWED;
+}
+
 export function canActivateGroupMember(input: CanActivateGroupMemberInput): GroupPolicyResult {
   const lifecycleDenial = requireActiveGroup(input.snapshot.group, input.nowEpochMs);
   if (lifecycleDenial) {
