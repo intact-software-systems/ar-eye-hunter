@@ -68,8 +68,8 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
 
   async readMutation(command: CrdtMutationCommand): Promise<CrdtMutationRead> {
     const beforeRows = await readDocument(this.sql, command.documentKey);
-    const [records, snapshots, authority, actorRate] = await Promise.all([
-      readUpdates(this.sql, command.documentKey),
+    const [updateRows, snapshots, authority, actorRate] = await Promise.all([
+      readMutationUpdates(this.sql, command),
       readSnapshot(this.sql, command.documentKey),
       this.authorize(command),
       command.operation === 'append'
@@ -83,13 +83,17 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
     const document = beforeRows[0]
       ? toMetadata(beforeRows[0], command.documentKey, command.document)
       : null;
-    const decodedRecords = records.map((row) => toRecord(row, command.document));
-    validateReadSet({ document, records: decodedRecords, snapshots });
-    const existingRecord =
-      command.operation === 'append'
-        ? (decodedRecords.find((record) => record.update.updateId === command.update.updateId) ??
-          null)
-        : null;
+    const decodedRecords = updateRows.history.map((row) => toRecord(row, command.document));
+    const existingRecord = updateRows.candidate
+      ? toRecord(updateRows.candidate, command.document)
+      : null;
+    validateReadSet({
+      document,
+      records: decodedRecords,
+      appendCandidate: existingRecord,
+      snapshots,
+      scope: updateRows.scope,
+    });
     const snapshot = snapshots[0]
       ? toSnapshot({
           row: snapshots[0],
@@ -169,7 +173,56 @@ async function readDocument(sql: PSqlSql, documentKey: string): Promise<Document
     `;
 }
 
-async function readUpdates(sql: PSqlSql, documentKey: string): Promise<UpdateRow[]> {
+interface AppendLocalCrdtMutationUpdateRows {
+  readonly scope: 'append-local';
+  readonly candidate: UpdateRow | undefined;
+  readonly history: readonly [];
+}
+
+interface CompleteCrdtMutationUpdateHistory {
+  readonly scope: 'complete-history';
+  readonly candidate: undefined;
+  readonly history: readonly UpdateRow[];
+}
+
+type CrdtMutationUpdateRows = AppendLocalCrdtMutationUpdateRows | CompleteCrdtMutationUpdateHistory;
+
+async function readMutationUpdates(
+  sql: PSqlSql,
+  command: CrdtMutationCommand,
+): Promise<CrdtMutationUpdateRows> {
+  if (command.operation === 'append') {
+    return {
+      scope: 'append-local',
+      candidate: await readAppendUpdate(sql, command.documentKey, command.update.updateId),
+      history: [],
+    };
+  }
+  return {
+    scope: 'complete-history',
+    candidate: undefined,
+    history: await readCompleteUpdateHistory(sql, command.documentKey),
+  };
+}
+
+async function readAppendUpdate(
+  sql: PSqlSql,
+  documentKey: string,
+  updateId: string,
+): Promise<UpdateRow | undefined> {
+  const rows = await sql<UpdateRow[]>`
+        select document_key, update_id, append_sequence, update_envelope, accepted_update_hash,
+               actor_id, principal_id, session_id, server_id, authorization_scope,
+               accepted_at_ts
+        from crdt_updates
+        where document_key = ${documentKey}
+          and update_id = ${updateId}
+        limit 1
+    `;
+  return rows[0];
+}
+
+async function readCompleteUpdateHistory(sql: PSqlSql, documentKey: string): Promise<UpdateRow[]> {
   return await sql<UpdateRow[]>`
         select document_key, update_id, append_sequence, update_envelope, accepted_update_hash,
                actor_id, principal_id, session_id, server_id, authorization_scope,
@@ -211,15 +264,28 @@ function sameDocumentGuard(left: DocumentRow | undefined, right: DocumentRow | u
 interface ValidateReadSetInput {
   readonly document: RallarCrdtDocumentMetadata | null;
   readonly records: readonly ReturnType<typeof toRecord>[];
+  readonly appendCandidate: ReturnType<typeof toRecord> | null;
   readonly snapshots: readonly SnapshotRow[];
+  readonly scope: CrdtMutationUpdateRows['scope'];
 }
 
 function validateReadSet(input: ValidateReadSetInput): void {
-  const { document, records, snapshots } = input;
+  const { document, records, appendCandidate, snapshots, scope } = input;
   if (!document) {
-    if (records.length > 0 || snapshots.length > 0) {
+    if (records.length > 0 || appendCandidate || snapshots.length > 0) {
       throw new TypeError('CRDT persisted read set has children without a document');
     }
+    return;
+  }
+  if (
+    Number(snapshots[0]?.snapshot_count ?? 0) !== document.snapshotCount ||
+    (appendCandidate !== null &&
+      (appendCandidate.append.appendSequence > document.lastAppendSequence ||
+        appendCandidate.append.appendSequence > document.updateCount))
+  ) {
+    throw new TypeError('CRDT persisted read set differs from document counters');
+  }
+  if (scope === 'append-local') {
     return;
   }
   const sequences = records.map((record) => record.append.appendSequence);
@@ -228,8 +294,7 @@ function validateReadSet(input: ValidateReadSetInput): void {
     (sequences.at(-1) ?? 0) !== document.lastAppendSequence ||
     sequences.some((sequence, index) => sequence !== index + 1) ||
     records.reduce((bytes, record) => bytes + byteLengthOfRallarCrdtJson(record.update), 0) !==
-      document.storedUpdateBytes ||
-    Number(snapshots[0]?.snapshot_count ?? 0) !== document.snapshotCount
+      document.storedUpdateBytes
   ) {
     throw new TypeError('CRDT persisted read set differs from document counters');
   }

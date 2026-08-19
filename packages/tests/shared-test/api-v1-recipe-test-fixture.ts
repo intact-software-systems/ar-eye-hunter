@@ -7,8 +7,12 @@ export interface ApiV1MatrixEntry {
   readonly recipe: string;
   readonly category: string;
   readonly mode: string;
+  readonly tier?: number;
   readonly profiles: readonly string[];
   readonly expectedExitCode: number;
+  readonly artifactName?: string;
+  readonly env?: Readonly<Record<string, string>>;
+  readonly description?: string;
   readonly requires?: {
     readonly httpServices?: ReadonlyArray<{
       readonly name: string;
@@ -31,7 +35,7 @@ export function readApiV1Recipe(relativePath: string): Record<string, unknown> {
 }
 
 export function toFlatApiV1RecipeSteps(
-  steps: Array<Record<string, unknown>>,
+  steps: readonly Readonly<Record<string, unknown>>[],
 ): Array<Record<string, unknown>> {
   return steps.flatMap((step) => {
     const nested = Array.isArray(step.steps)
