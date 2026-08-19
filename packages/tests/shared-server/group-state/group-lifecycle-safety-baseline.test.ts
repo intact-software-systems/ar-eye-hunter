@@ -165,10 +165,13 @@ function baseRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
 }
 
 function joinRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
+  // Joining consults the admission policy, so its read carries one; absent is
+  // the open admission this baseline asserts survives a group stuck in FORMING.
   return {
     ...baseRead(lifecycleState),
     actorMember: null,
     actorMemberEntry: null,
+    lifecyclePolicy: { status: 'absent' },
   } as GroupMutationRead;
 }
 
