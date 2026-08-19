@@ -88,12 +88,14 @@ issues and create or reuse one accurate issue before handoff.
   topic, APP_OUTBOX topic, queue key, command/page/aggregate JSON shape, database schema, table/key
   identity, default, error class/status, retry horizon, page size, cutoff, and result-wait behavior,
   except for the separately approved matching-`requestId` replay result below.
-- Treat an externally supplied prune `requestId` as an idempotency key. Hash the authenticated
-  caller identity and normalized caller semantics before materializing server time or expiry. Only
-  a validated durable miss may capture those volatile facts. A matching replay must reuse the
-  first durable command facts and return or await its durable result without invoking the volatile
-  callbacks again. Reusing the key with different caller semantics remains the existing typed 409
-  conflict. A fresh point-in-time prune or dry-run requires a fresh `requestId`.
+- Treat an externally supplied prune `requestId` as an idempotency key within its existing AppInbox
+  queue-key scope of topic and authenticated client context. Hash the authenticated session and
+  normalized caller semantics before materializing server time or expiry. Only a validated durable
+  miss may capture those volatile facts. A matching replay must reuse the first durable command
+  facts and return or await its durable result without invoking the volatile callbacks again.
+  Reusing the scoped key with a different session or caller semantics remains the existing typed
+  409 conflict. The same `requestId` under a different authenticated client context remains an
+  independent key. A fresh point-in-time prune or dry-run requires a fresh scoped `requestId`.
 - Preserve authorization order and timing. Initial prune and every page retry reread the current
   session/admin allowlist; no captured administrator decision becomes durable authority.
 - AppInbox remains the sole owner of the incoming prune transaction and retry. The admin mutation
@@ -313,9 +315,10 @@ Expected: exact current main or a consciously amended base; no unidentified cons
       current conflict behavior until Task 3 implements durable-winner reuse. Prove the matching
       replay returns or awaits the first durable result, preserves its captured cutoff/expiry, and
       does not invoke time, expiry, authority, count, transaction, or wake work again.
-- [ ] Prove a replay with different authenticated caller identity, categories, app-data scope, or
-      dry-run semantics under the same `requestId` remains the typed 409 idempotency conflict and
-      invokes no new volatile callback or mutation work.
+- [ ] Prove a replay with a different authenticated session in the same client scope, categories,
+      app-data scope, or dry-run semantics under the same `requestId` remains the typed 409
+      idempotency conflict and invokes no new volatile callback or mutation work. Prove the same
+      `requestId` under a different authenticated client context remains an independent queue key.
 - [ ] Prove registration and phase order for one accepted dry run and one accepted durable prune:
       current authority/count read -> compute -> validate -> AppInbox transaction -> result and
       aggregate/page writes -> commit return -> queue wake.
