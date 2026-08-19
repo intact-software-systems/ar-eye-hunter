@@ -904,6 +904,77 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/admissions/{principalId}/grant:
+    post:
+      tags: [Group State]
+      summary: Grant a pending group admission
+      description: >
+        Completes a join parked under `admission.mode: manager-approval`. Only
+        the group's lifecycle managers may grant; capacity and the admission
+        windows are re-checked at grant time.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/PrincipalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantGroupAdmissionRequest'
+      responses:
+        '200':
+          description: Updated group snapshot with the granted member active.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/admissions/{principalId}/decline:
+    post:
+      tags: [Group State]
+      summary: Decline a pending group admission
+      description: >
+        Declines a join parked under `admission.mode: manager-approval`. The
+        parked member lands `left`, so the principal may request again.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/PrincipalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeclineGroupAdmissionRequest'
+      responses:
+        '200':
+          description: Updated group snapshot after declining the admission.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/remove:
     post:
       tags: [Group State]
@@ -5188,6 +5259,26 @@ components:
           type: string
 
     RevokeGroupInviteRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    GrantGroupAdmissionRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    DeclineGroupAdmissionRequest:
       type: object
       properties:
         reason:

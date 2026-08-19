@@ -167,6 +167,8 @@ function validateMembershipMutationInput(
     case 'removeGroupMember':
     case 'banGroupMember':
     case 'unbanGroupMember':
+    case 'grantGroupAdmission':
+    case 'declineGroupAdmission':
       return;
   }
 }

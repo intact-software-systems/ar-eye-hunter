@@ -1022,6 +1022,56 @@
       "description": "No-browser API-v1 group create recipe covering the optional lifecyclePolicy request field: a normalized preset with overrides, and a create that omits it."
     },
     {
+      "id": "api-v1-group-admission-approval",
+      "recipe": "tests/api-v1/api-v1-group-admission-approval.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-admission-approval",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Pins the managed preset's manager-approval admission: uninvited joins park pending with invite-tier visibility, managers grant and decline, declined principals re-request, zero-manager groups recover through invite-and-accept, and a pending admission survives two formation-epoch advances before its grant lands."
+    },
+    {
+      "id": "api-v1-group-admission-windows",
+      "recipe": "tests/api-v1/api-v1-group-admission-windows.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-admission-windows",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Pins the admission binding phases: the member-count window closes joins in a group that never activates, the epoch-ms window denies after its deadline, and closed admits only while forming -- denying during establishment and activation, and reopening after a below-floor return to forming."
+    },
+    {
       "id": "api-v1-rtc-topology-convergence",
       "recipe": "tests/api-v1/api-v1-rtc-topology-convergence.json",
       "category": "api-v1-black-box",

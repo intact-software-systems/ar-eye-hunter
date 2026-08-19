@@ -127,7 +127,12 @@ export type GroupMutationCommand =
   | (GroupMutationCommandBase &
       Readonly<{
         operation:
-          'revokeGroupInvite' | 'removeGroupMember' | 'banGroupMember' | 'unbanGroupMember';
+          | 'revokeGroupInvite'
+          | 'removeGroupMember'
+          | 'banGroupMember'
+          | 'unbanGroupMember'
+          | 'grantGroupAdmission'
+          | 'declineGroupAdmission';
         targetPrincipalId: string;
         input: NullableActorInput;
       }>)
@@ -362,6 +367,34 @@ export function isGroupLifecycleTransitionOperation(
     operation === 'activateGroup' ||
     operation === 'reopenGroupEstablishment' ||
     operation === 'failGroupFormation'
+  );
+}
+
+export type GroupAdmissionDecisionOperation = Extract<
+  GroupMutationCommand['operation'],
+  'grantGroupAdmission' | 'declineGroupAdmission'
+>;
+
+/** Grant/decline resolve managers, so they read the roster like transitions. */
+export function isGroupAdmissionDecisionOperation(
+  operation: GroupMutationCommand['operation'],
+): operation is GroupAdmissionDecisionOperation {
+  return operation === 'grantGroupAdmission' || operation === 'declineGroupAdmission';
+}
+
+/**
+ * The operations whose compute consults the admission policy (plan decision
+ * 5.1): the two join surfaces park under `manager-approval`, and grant
+ * re-checks the admission windows before completing membership.
+ */
+export function isGroupAdmissionPolicyReadOperation(
+  operation: GroupMutationCommand['operation'],
+): boolean {
+  return (
+    operation === 'joinGroup' ||
+    operation === 'acceptGroupInvite' ||
+    operation === 'upsertMember' ||
+    isGroupAdmissionDecisionOperation(operation)
   );
 }
 

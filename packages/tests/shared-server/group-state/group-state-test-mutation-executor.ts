@@ -25,6 +25,10 @@ import {
   type toSessionCleanupCommand,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
+// prettier-ignore
+import {
+  GroupLifecyclePolicyRepository,
+} from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import type {
   GroupMutationComputed,
   GroupMutationComputedWrite,
@@ -166,6 +170,12 @@ export class GroupStateTestMutationExecutor {
         await writeGuardedBatch(transaction, computed);
       } else {
         await writeConditionalMutation(repository, computed);
+      }
+      if (computed.lifecyclePolicy !== null) {
+        await new GroupLifecyclePolicyRepository(transaction).writePolicy(
+          computed.receipt.aggregateRef,
+          computed.lifecyclePolicy,
+        );
       }
       await repository.appendEvent(computed.event);
     });

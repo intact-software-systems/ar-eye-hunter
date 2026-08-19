@@ -17,10 +17,15 @@ const GROUP_PUBLIC_RESULT_EVENT_POLICY: Readonly<Record<string, GroupPublicResul
     allowsNoOp: true,
   },
   GROUP_DIRECTOR_APPOINT: { eventTypes: ['group-updated'], allowsNoOp: false },
-  GROUP_JOIN: { eventTypes: ['member-joined'], allowsNoOp: true },
+  GROUP_JOIN: {
+    eventTypes: ['member-joined', 'member-admission-requested'],
+    allowsNoOp: true,
+  },
   GROUP_INVITE_CREATE: { eventTypes: ['member-invited'], allowsNoOp: true },
   GROUP_INVITE_REVOKE: { eventTypes: ['member-left'], allowsNoOp: true },
   GROUP_INVITE_ACCEPT: { eventTypes: ['member-joined'], allowsNoOp: true },
+  GROUP_ADMISSION_GRANT: { eventTypes: ['member-joined'], allowsNoOp: true },
+  GROUP_ADMISSION_DECLINE: { eventTypes: ['member-left'], allowsNoOp: true },
   GROUP_JOIN_CODE_ROTATE: { eventTypes: ['group-updated'], allowsNoOp: false },
   GROUP_MEMBER_REMOVE: { eventTypes: ['member-removed'], allowsNoOp: true },
   GROUP_MEMBER_BAN: { eventTypes: ['member-banned'], allowsNoOp: true },
@@ -36,6 +41,7 @@ const GROUP_PUBLIC_RESULT_EVENT_POLICY: Readonly<Record<string, GroupPublicResul
   GROUP_MEMBER_UPSERT: {
     eventTypes: [
       'member-invited',
+      'member-admission-requested',
       'member-joined',
       'member-left',
       'member-removed',

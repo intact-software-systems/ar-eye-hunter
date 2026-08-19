@@ -182,15 +182,22 @@ export async function runOperationMatrix(
     authorityRead.mockClear();
     const previousOutboxCount = harness.database.outboxEntries.size;
     const requestId = (testCase.data as { request: { requestId: string } }).request.requestId;
+    const caseGroupId =
+      (testCase.data as { groupId?: string; request?: { groupId?: string } }).groupId ??
+      (testCase.data as { request?: { groupId?: string } }).request?.groupId ??
+      groupId;
     const result = await processAuthenticated(harness.service, harness.reader, testCase.authority, {
       type: testCase.type,
       resourceId: requestId,
-      contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
+      contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${caseGroupId}`,
       senderId: testCase.authority.clientId,
       data: testCase.data,
     });
 
-    expect(result.right, `${testCase.operation} result`).toBeDefined();
+    expect(
+      result.right,
+      `${testCase.operation} result: ${result.left ? JSON.stringify(result.left) : ''}`,
+    ).toBeDefined();
     expect(read).toHaveBeenCalledOnce();
     expect(compute).toHaveBeenCalledOnce();
     expect(validate).toHaveBeenCalledOnce();

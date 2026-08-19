@@ -155,6 +155,8 @@ function validateMembershipOperationInput(
     case 'removeGroupMember':
     case 'banGroupMember':
     case 'unbanGroupMember':
+    case 'grantGroupAdmission':
+    case 'declineGroupAdmission':
     case 'transferGroupOwnership':
       return;
   }
@@ -207,6 +209,8 @@ const GROUP_MUTATION_OPERATIONS = new Set([
   'acceptGroupInvite',
   'createGroupInvite',
   'revokeGroupInvite',
+  'grantGroupAdmission',
+  'declineGroupAdmission',
   'rotateGroupJoinCode',
   'removeGroupMember',
   'banGroupMember',
@@ -224,6 +228,8 @@ const TARGET_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operation
   'acceptGroupInvite',
   'createGroupInvite',
   'revokeGroupInvite',
+  'grantGroupAdmission',
+  'declineGroupAdmission',
   'removeGroupMember',
   'banGroupMember',
   'unbanGroupMember',
@@ -291,6 +297,8 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<
   acceptGroupInvite: [...ACTOR_INPUT_KEYS, 'inviteToken', 'joinCode'],
   createGroupInvite: [...ACTOR_INPUT_KEYS, 'invitationExpiresAtEpochMs'],
   revokeGroupInvite: ACTOR_INPUT_KEYS,
+  grantGroupAdmission: ACTOR_INPUT_KEYS,
+  declineGroupAdmission: ACTOR_INPUT_KEYS,
   removeGroupMember: ACTOR_INPUT_KEYS,
   banGroupMember: ACTOR_INPUT_KEYS,
   unbanGroupMember: ACTOR_INPUT_KEYS,

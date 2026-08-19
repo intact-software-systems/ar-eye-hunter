@@ -273,6 +273,9 @@
               "minimumViableRate": 1,
               "deadlineMs": 3000,
               "maxFormationAttempts": 1
+            },
+            "admission": {
+              "mode": "open"
             }
           }
         }

@@ -17,6 +17,8 @@ import {
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 // prettier-ignore
 import {
+  isGroupAdmissionDecisionOperation,
+  isGroupAdmissionPolicyReadOperation,
   isGroupLifecycleTransitionOperation,
 } from '../group-mutation-contracts.ts';
 import {
@@ -79,12 +81,16 @@ export function validateGroupMutationRead(
 }
 
 /**
- * The policy read is loaded exactly for the lifecycle transition operations;
- * anywhere else its presence would mean the read step loaded state the
- * operation must not depend on.
+ * The policy read is loaded exactly for the lifecycle transition operations
+ * and the admission-consulting operations (plan decision 5.1); anywhere else
+ * its presence would mean the read step loaded state the operation must not
+ * depend on.
  */
 function validateLifecyclePolicyRead(read: GroupMutationRead, command: GroupMutationCommand): void {
-  if (isGroupLifecycleTransitionOperation(command.operation)) {
+  if (
+    isGroupLifecycleTransitionOperation(command.operation) ||
+    isGroupAdmissionPolicyReadOperation(command.operation)
+  ) {
     if (read.lifecyclePolicy === null) {
       throw new TypeError('Group mutation read is missing the lifecycle policy read');
     }
@@ -102,15 +108,19 @@ function validateLifecyclePolicyRead(read: GroupMutationRead, command: GroupMuta
 
 /**
  * The roster read exists exactly for the lifecycle transition operations,
- * which pin the formation electorate at the epoch boundary; anywhere else its
- * presence would mean the read step loaded state the operation must not
- * depend on.
+ * which pin the formation electorate at the epoch boundary, and the admission
+ * grant/decline operations, whose manager resolution needs every candidate;
+ * anywhere else its presence would mean the read step loaded state the
+ * operation must not depend on.
  */
 function validateActiveMemberPrincipalIdsRead(
   read: GroupMutationRead,
   command: GroupMutationCommand,
 ): void {
-  if (isGroupLifecycleTransitionOperation(command.operation)) {
+  if (
+    isGroupLifecycleTransitionOperation(command.operation) ||
+    isGroupAdmissionDecisionOperation(command.operation)
+  ) {
     if (read.activeMemberPrincipalIds === null) {
       throw new TypeError('Group mutation read is missing the active member principal ids');
     }

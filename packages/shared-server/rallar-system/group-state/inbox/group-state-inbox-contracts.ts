@@ -71,6 +71,20 @@ export type GroupInviteAcceptAppInboxPayload = Readonly<{
   request: AcceptGroupInviteRequest;
 }>;
 
+export type GroupAdmissionGrantAppInboxPayload = Readonly<{
+  scope: StateScope;
+  groupId: string;
+  principalId: string;
+  request: MutationActorInput;
+}>;
+
+export type GroupAdmissionDeclineAppInboxPayload = Readonly<{
+  scope: StateScope;
+  groupId: string;
+  principalId: string;
+  request: MutationActorInput;
+}>;
+
 export type GroupJoinCodeRotateAppInboxPayload = Readonly<{
   scope: StateScope;
   groupId: string;
@@ -150,6 +164,8 @@ export interface AuthenticatedGroupMutationPayloadByType {
   [AppInboxType.GROUP_INVITE_CREATE]: GroupInviteCreateAppInboxPayload;
   [AppInboxType.GROUP_INVITE_REVOKE]: GroupInviteRevokeAppInboxPayload;
   [AppInboxType.GROUP_INVITE_ACCEPT]: GroupInviteAcceptAppInboxPayload;
+  [AppInboxType.GROUP_ADMISSION_GRANT]: GroupAdmissionGrantAppInboxPayload;
+  [AppInboxType.GROUP_ADMISSION_DECLINE]: GroupAdmissionDeclineAppInboxPayload;
   [AppInboxType.GROUP_JOIN_CODE_ROTATE]: GroupJoinCodeRotateAppInboxPayload;
   [AppInboxType.GROUP_MEMBER_REMOVE]: GroupMemberRemoveAppInboxPayload;
   [AppInboxType.GROUP_MEMBER_BAN]: GroupMemberBanAppInboxPayload;
@@ -187,6 +203,8 @@ export const AUTHENTICATED_GROUP_INBOX_TYPES = [
   AppInboxType.GROUP_INVITE_CREATE,
   AppInboxType.GROUP_INVITE_REVOKE,
   AppInboxType.GROUP_INVITE_ACCEPT,
+  AppInboxType.GROUP_ADMISSION_GRANT,
+  AppInboxType.GROUP_ADMISSION_DECLINE,
   AppInboxType.GROUP_JOIN_CODE_ROTATE,
   AppInboxType.GROUP_MEMBER_REMOVE,
   AppInboxType.GROUP_MEMBER_BAN,

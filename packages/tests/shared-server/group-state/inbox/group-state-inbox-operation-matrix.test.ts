@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   AppInboxType,
+  type GroupAdmissionDeclineAppInboxPayload,
+  type GroupAdmissionGrantAppInboxPayload,
   type GroupCreateAppInboxPayload,
   type GroupDirectorAppointAppInboxPayload,
   type GroupInviteAcceptAppInboxPayload,
@@ -62,6 +64,8 @@ describe('AppGroupInboxService authenticated authority', () => {
       AppInboxType.GROUP_INVITE_CREATE,
       AppInboxType.GROUP_INVITE_REVOKE,
       AppInboxType.GROUP_INVITE_ACCEPT,
+      AppInboxType.GROUP_ADMISSION_GRANT,
+      AppInboxType.GROUP_ADMISSION_DECLINE,
       AppInboxType.GROUP_JOIN_CODE_ROTATE,
       AppInboxType.GROUP_MEMBER_REMOVE,
       AppInboxType.GROUP_MEMBER_BAN,
@@ -85,6 +89,7 @@ describe('AppGroupInboxService authenticated authority', () => {
 async function runEveryAdvertisedGroupOperation(): Promise<void> {
   const harness = await createAuthorityHarness(['owner', 'bob', 'charlie']);
   const groupId = 'operation-matrix-room';
+  const admissionGroupId = 'operation-matrix-admissions';
   const ownerActor = {
     actorPrincipalId: 'owner',
     actorSessionId: 'owner-session',
@@ -205,6 +210,97 @@ async function runEveryAdvertisedGroupOperation(): Promise<void> {
       } satisfies GroupInviteAcceptAppInboxPayload,
       assertDomain: async () => {
         expect(await readMatrixMember(harness, groupId, 'charlie')).toMatchObject({
+          status: 'active',
+        });
+      },
+    },
+    // The admission decisions need a group whose policy parks joins: a
+    // manager-approval group with the owner as its assigned manager.
+    {
+      type: AppInboxType.GROUP_CREATE,
+      operation: 'createGroup',
+      authority: harness.sessions.owner,
+      data: {
+        scope: SCOPE,
+        request: {
+          groupId: admissionGroupId,
+          displayName: 'Operation Matrix Admissions',
+          kind: 'room',
+          joinMode: 'open',
+          createdByPrincipalId: 'owner',
+          lifecyclePolicy: {
+            manager: { selection: 'assigned', assignedPrincipalIds: ['owner'] },
+            admission: { mode: 'manager-approval' },
+          },
+          ...ownerActor,
+          requestId: 'matrix-create-admissions',
+        },
+      } satisfies GroupCreateAppInboxPayload,
+      assertDomain: async () => {
+        expect(
+          (await harness.repository.readSnapshot({ ...SCOPE, groupId: admissionGroupId }))?.group
+            .lifecycleState,
+        ).toBe('active');
+      },
+    },
+    {
+      type: AppInboxType.GROUP_JOIN,
+      operation: 'joinGroup',
+      authority: harness.sessions.bob,
+      data: {
+        scope: SCOPE,
+        groupId: admissionGroupId,
+        request: { ...bobActor, requestId: 'matrix-park-bob' },
+      } satisfies GroupJoinAppInboxPayload,
+      assertDomain: async () => {
+        expect(await readMatrixMember(harness, admissionGroupId, 'bob')).toMatchObject({
+          status: 'pending',
+        });
+      },
+    },
+    {
+      type: AppInboxType.GROUP_ADMISSION_DECLINE,
+      operation: 'declineGroupAdmission',
+      authority: harness.sessions.owner,
+      data: {
+        scope: SCOPE,
+        groupId: admissionGroupId,
+        principalId: 'bob',
+        request: { ...ownerActor, requestId: 'matrix-decline-bob' },
+      } satisfies GroupAdmissionDeclineAppInboxPayload,
+      assertDomain: async () => {
+        expect(await readMatrixMember(harness, admissionGroupId, 'bob')).toMatchObject({
+          status: 'left',
+        });
+      },
+    },
+    {
+      type: AppInboxType.GROUP_JOIN,
+      operation: 'joinGroup',
+      authority: harness.sessions.bob,
+      data: {
+        scope: SCOPE,
+        groupId: admissionGroupId,
+        request: { ...bobActor, requestId: 'matrix-repark-bob' },
+      } satisfies GroupJoinAppInboxPayload,
+      assertDomain: async () => {
+        expect(await readMatrixMember(harness, admissionGroupId, 'bob')).toMatchObject({
+          status: 'pending',
+        });
+      },
+    },
+    {
+      type: AppInboxType.GROUP_ADMISSION_GRANT,
+      operation: 'grantGroupAdmission',
+      authority: harness.sessions.owner,
+      data: {
+        scope: SCOPE,
+        groupId: admissionGroupId,
+        principalId: 'bob',
+        request: { ...ownerActor, requestId: 'matrix-grant-bob' },
+      } satisfies GroupAdmissionGrantAppInboxPayload,
+      assertDomain: async () => {
+        expect(await readMatrixMember(harness, admissionGroupId, 'bob')).toMatchObject({
           status: 'active',
         });
       },
