@@ -512,8 +512,22 @@ function assertAcceptedMeasurement(input: {
   const iterationIds = rtcB05IterationIds(sample.rawEvidence);
   expect(iterationIds).toHaveLength(25);
   expect(new Set(iterationIds).size).toBe(25);
-  expect(sample.metrics.filter(({ metric }) => metric === 'openDurationMs')).toHaveLength(25);
-  expect(sample.metrics.filter(({ metric }) => metric === 'closeDurationMs')).toHaveLength(25);
+  expect(
+    sample.metrics.filter(({ metric }) =>
+      ['firstOpenDurationMs', 'steadyOpenMedianDurationMs'].includes(metric),
+    ),
+  ).toEqual([
+    { metric: 'firstOpenDurationMs', unit: 'ms', value: 0.25 },
+    { metric: 'steadyOpenMedianDurationMs', unit: 'ms', value: 12.75 },
+  ]);
+  expect(
+    sample.metrics.filter(({ metric }) =>
+      ['firstCloseDurationMs', 'steadyCloseMedianDurationMs'].includes(metric),
+    ),
+  ).toEqual([
+    { metric: 'firstCloseDurationMs', unit: 'ms', value: 0.5 },
+    { metric: 'steadyCloseMedianDurationMs', unit: 'ms', value: 13 },
+  ]);
   expect(sample.runtimeObservation).toEqual(environment(input.captureManifest).observation);
 }
 
