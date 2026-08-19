@@ -33,7 +33,7 @@ import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/
 import { runInTransaction } from '@shared-server/postgres/run-in-transaction.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 const CREATED_AT_EPOCH_MS = 1_800_000_000_000;
 const EXPIRE_AT_EPOCH_MS = 1_800_000_060_000;

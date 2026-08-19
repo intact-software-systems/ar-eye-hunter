@@ -46,6 +46,8 @@
   ],
   "exclude": [
     "shared-test/scenario-black-box-rtc-config.test.ts",
-    "shared-test/execute-black-box-rtc-client-provider.test.ts"
+    "shared-test/execute-black-box-rtc-client-provider.test.ts",
+    "shared-server/fixtures/mutation-boundary-capability-receivers/assertions.ts",
+    "shared-server/fixtures/mutation-boundary-capability-receivers/lexical-classes.ts"
   ]
 }

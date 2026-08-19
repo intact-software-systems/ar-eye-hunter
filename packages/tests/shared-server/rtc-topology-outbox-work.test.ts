@@ -30,7 +30,7 @@ import {
 import { readRtcTopologyWorkEnvelope } from '@shared-server/rallar-system/topology/replay/rtc-topology-work-codec.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('RTC topology APP_OUTBOX work', () => {
   /*

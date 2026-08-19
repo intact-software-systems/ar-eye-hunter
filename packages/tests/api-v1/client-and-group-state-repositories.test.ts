@@ -34,7 +34,7 @@ import type {
     RuntimeStateEntry,
     RuntimeStateTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('ClientStateRepository', () => {
     it('exposes only conditional client-state mutation methods', () => {

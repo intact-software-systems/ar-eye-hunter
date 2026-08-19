@@ -17,7 +17,7 @@ const QRtcSessionState = {
 type QRtcSessionState = (typeof QRtcSessionState)[keyof typeof QRtcSessionState];
 
 export type QRtcDataExchanged = {
-    description: RTCSessionDescription | null
+    description: RTCSessionDescriptionInit | null
     candidate: RTCIceCandidateInit | null
 }
 

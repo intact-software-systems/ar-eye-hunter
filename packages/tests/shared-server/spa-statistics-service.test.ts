@@ -12,7 +12,7 @@ import type {
 import type { StateScope } from '@shared/api/state-types.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
 import { SpaStatisticsService } from '@shared-server/rallar-system/spa-statistics/SpaStatisticsService.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
 const TEST_SCOPE: StateScope = {

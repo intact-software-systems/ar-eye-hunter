@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 export function createClientSnapshot(stateRevision: number): ClientSnapshot {
   const audit = createAuditStamp(stateRevision);

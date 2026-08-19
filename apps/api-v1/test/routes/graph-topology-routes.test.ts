@@ -6,7 +6,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import type { GraphDiagnosticReadResponse } from '@shared/api/graph-topology-management-types.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 
 const TEST_SCOPE: StateScope = {
   applicationId: 'app-1',

@@ -6,7 +6,7 @@ import {
   takeRtcTopologyHydrationBatch,
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-reconnect-hydrator.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('RtcTopologyReconnectHydrator', () => {
   afterEach(() => {

@@ -13,12 +13,6 @@
     "allowImportingTsExtensions": true,
     "types": [],
     "paths": {
-      "@shared-web/*": [
-        "../../packages/shared-web/*"
-      ],
-      "@shared-graph/*": [
-        "../../packages/shared-graph/*"
-      ],
       "@shared/*": [
         "../../packages/shared/*"
       ]

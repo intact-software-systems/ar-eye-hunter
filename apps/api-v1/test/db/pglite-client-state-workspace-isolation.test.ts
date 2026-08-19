@@ -7,7 +7,7 @@ import { PSqlClientStateEventRepository } from '@shared-server/postgres/rallar-s
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { delayAdminRuntimeFactQueries } from './pglite-admin-query-scheduling-test-boundary.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 
 const WORKSPACE_CASES = [
   { workspaceId: '_', workspaceKey: '%5F' },

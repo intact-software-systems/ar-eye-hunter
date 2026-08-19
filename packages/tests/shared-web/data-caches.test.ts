@@ -28,7 +28,7 @@ import { findOverlayById, setOverlayById } from '@shared/repository/overlays-rep
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import * as dataCaches from '@shared-web/browser/data-caches.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('browser data caches state scope filtering', () => {
     beforeEach(() => {

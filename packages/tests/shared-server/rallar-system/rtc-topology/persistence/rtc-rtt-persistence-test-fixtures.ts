@@ -15,7 +15,7 @@ import {
 } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 
 import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../../create-test-group.ts';
 
 export type TestExecuteRtcRttMutationInput = Readonly<{
   repository: RtcRttRepository;

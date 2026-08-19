@@ -18,7 +18,7 @@ import type {
 import { createRallarServerFacade } from '@shared-server/rallar-facade/RallarServer.ts';
 import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/services/ws-topic-room-authorizer.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('RallarServerWsFacade', () => {
     it('fans out implicit app topics to their declared targets', async () => {

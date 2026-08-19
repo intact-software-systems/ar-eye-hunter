@@ -13,7 +13,7 @@ import {
 } from '@shared-server/rallar-system/group-state/persistence/assemble-group-state-snapshot.ts';
 import { canSendRoomMessage } from '@shared-server/rallar-system/group-policy.ts';
 import { isGroupSnapshotPresenceFresh } from '@shared-server/rallar-system/snapshot-presence.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../create-test-group.ts';
 
 const REF = {
   applicationId: 'app-1',

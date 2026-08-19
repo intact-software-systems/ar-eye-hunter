@@ -8,7 +8,7 @@ import type { AppInboxFailure } from '@shared-server/rallar-system/services/AppI
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../../create-test-group.ts';
 
 import type { PersistedAppInboxAttempt } from '../../../fixtures/postgres-app-inbox-worker-runtime.ts';
 

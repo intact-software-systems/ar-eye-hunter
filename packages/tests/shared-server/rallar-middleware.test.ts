@@ -36,7 +36,7 @@ import type { ClientStateRepository } from '@shared-server/rallar-system/reposit
 import type { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import type { AuditStamp, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('createRallarMiddleware', () => {
   it('constructs queuebox runtime services around supplied repositories', () => {

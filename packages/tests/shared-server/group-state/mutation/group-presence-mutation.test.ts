@@ -16,7 +16,7 @@ import {
   storagePart,
   storedEntry,
 } from './group-mutation-test-runtime.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../create-test-group.ts';
 
 describe('group presence mutation computation', () => {
   it('rejects a canonical target session whose value belongs to another principal', () => {

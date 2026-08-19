@@ -7,7 +7,7 @@ import {
   groupStateMemberStorageKey,
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../create-test-group.ts';
 
 describe('GroupStateRepository authority fence', () => {
   it('preserves the exact raw group bytes, physical expiry, and every domain field', async () => {

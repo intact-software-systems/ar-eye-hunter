@@ -29,7 +29,7 @@ import {
     setBrowserStateReadDiagnosticsSink,
 } from '@shared-web/browser/state-read/diagnostics.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 vi.mock('@shared/repository/group-state-snapshot-revision.ts', async (importOriginal) => {
     const actual = await importOriginal<

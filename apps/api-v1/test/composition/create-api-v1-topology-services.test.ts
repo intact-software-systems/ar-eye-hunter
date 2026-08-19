@@ -20,7 +20,7 @@ import {
   createApiV1TopologyServices,
   type CreateApiV1TopologyServicesInput,
 } from '../../src/composition/create-api-v1-topology-services.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 
 const NOW_EPOCH_MS = 4_000_000_000_000;
 

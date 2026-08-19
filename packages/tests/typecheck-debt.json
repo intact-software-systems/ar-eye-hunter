@@ -1,17 +1,9 @@
 {
   "description": "Files under the packages/tests TypeScript project that still fail to compile. This list may only shrink: CI fails when a file gains errors or is absent from it. Regenerate with `npm run typecheck:tests -- --update` after fixing files.",
   "project": "packages/tests/tsconfig.json",
-  "totalErrors": 13,
-  "fileCount": 9,
+  "totalErrors": 1,
+  "fileCount": 1,
   "files": {
-    "apps/api-v1/src/db/pglite-black-box-evidence-snapshot.ts": 1,
-    "apps/relic-hunter-server-v1/src/relic-game-service.ts": 2,
-    "packages/shared-test/black-box-runner/api-v1-black-box-run.mts": 1,
-    "packages/shared-test/black-box-runner/managed-api/api-v1-managed-api-readiness.mts": 1,
-    "packages/shared-test/black-box-runner/managed-api/api-v1-managed-log-tail.mts": 1,
-    "packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers/assertions.ts": 1,
-    "packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers/lexical-classes.ts": 1,
-    "packages/tests/shared/qrtc-peer-connection.test.ts": 3,
-    "scripts/perf/group-list-fanout-bench.ts": 2
+    "apps/api-v1/src/db/pglite-black-box-evidence-snapshot.ts": 1
   }
 }

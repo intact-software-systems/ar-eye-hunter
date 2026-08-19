@@ -6,7 +6,6 @@ import type {
 } from '@shared/api/group-types.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import type {
     RuntimeStateEntry,
@@ -33,13 +32,6 @@ const scope = {
     workspaceId: 'perf-workspace',
 };
 
-const noOpPublisher: StateSyncPublisher = {
-    publishClientSnapshot: async () => {},
-    publishClientEvent: async () => {},
-    publishGroupSnapshot: async () => {},
-    publishGroupEvent: async () => {},
-};
-
 type RunResult = Readonly<{
     run: number;
     durationMs: number;
@@ -64,7 +56,6 @@ async function main(): Promise<void> {
     const service = createGroupStateService({
         runtimeRepository: repository,
         formationDamping: 'damped',
-        syncPublisher: noOpPublisher,
         now: () => 1_700_000_000_000,
         serviceId: 'group-list-fanout-bench',
         authSessionRepository: new AuthSessionRepository(repository),
@@ -150,6 +141,12 @@ function createGroup(groupId: string, ownerPrincipalId: string): Group {
         metadata: {},
         activeMemberCount: 1,
         ownerPrincipalId,
+        lifecycleState: 'forming',
+        formationEpoch: 0,
+        formationAttemptCount: 0,
+        lastFormationOutcome: null,
+        establishmentStartedAtEpochMs: null,
+        formationElectorate: [ownerPrincipalId],
         snapshotVersion: 1,
         metadataVersion: 1,
         rosterVersion: 1,

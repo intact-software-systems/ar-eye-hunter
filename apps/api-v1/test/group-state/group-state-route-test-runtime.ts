@@ -22,7 +22,7 @@ import type {
   GroupStateRouteService,
   ProcessGroupAppInbox,
 } from '../../src/group-state/group-state-route-contracts.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 
 export const TEST_GROUP_SCOPE: StateScope = {
   applicationId: 'app-1',

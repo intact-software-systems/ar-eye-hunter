@@ -31,7 +31,7 @@ import * as vivaldiService from '@shared-graph/vivaldi-service.ts';
 import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../create-test-group.ts';
 
 describe('RTC RTT websocket topic', () => {
   it('rejects RTT measurements from a mismatched AL sender', async () => {

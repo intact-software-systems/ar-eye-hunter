@@ -12,7 +12,7 @@ import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-stat
 import {
   clientStateWorkspaceStorageKey,
 } from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../create-test-group.ts';
 
 import {
   createRuntimeStatePostgresSql,

@@ -24,7 +24,7 @@ import {
 import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('createGroupRoomWsAuthorizer', () => {
     afterEach(() => {

@@ -14,7 +14,7 @@ import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-topolog
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
 import { writeRtcRttMutation } from '@shared-server/rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
 import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../create-test-group.ts';
 
 const RTT_COMMAND_HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_RTT_COMMAND_HASH = `sha256:${'b'.repeat(64)}`;

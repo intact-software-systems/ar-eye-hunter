@@ -20,7 +20,7 @@ import {
   createResilience,
   SCOPE,
 } from '../../group-state/inbox/group-state-inbox-test-runtime.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../create-test-group.ts';
 
 describe('durable RTC RTT refinement work', () => {
   it('preserves the accepted RTT observation in final topology work', async () => {

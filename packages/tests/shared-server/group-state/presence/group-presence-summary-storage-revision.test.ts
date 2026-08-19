@@ -19,7 +19,7 @@ import {
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { createService, seedOpenGroup } from './group-presence-test-runtime.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../create-test-group.ts';
 
 const ref: GroupRef = {
   applicationId: 'cross-process-app',

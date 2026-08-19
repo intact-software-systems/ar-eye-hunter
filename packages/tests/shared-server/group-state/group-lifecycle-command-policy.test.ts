@@ -10,7 +10,7 @@ import {
 } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { Group, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../create-test-group.ts';
 
 function member(principalId: string, role: GroupMember['role']): GroupMember {
   const audit = {

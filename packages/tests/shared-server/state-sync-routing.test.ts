@@ -15,7 +15,7 @@ import {
     resolveStateSyncRecipients,
     sendStateSyncMessage,
 } from '@shared-server/rallar-system/state-sync-routing.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 const NOW = 1_000;
 
