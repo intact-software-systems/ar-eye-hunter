@@ -1174,6 +1174,31 @@ share the AppInbox architecture:
 Each child plan must preserve the existing AppInbox, transaction, retry,
 idempotency, outbox, and optimistic-concurrency invariants.
 
+#### Current next child selection — 2026-08-19
+
+The first five Wave 2 domains are implemented on current `main`. API-v1 composition and SQL
+normalization were also completed ahead of this final Wave 2 child, and the CRDT append-history
+follow-up was merged before exact current `main`
+`607751a32b47a625ecf15ace01ff328c4835986e`. Current main also enables staged changed-range
+style enforcement for test width, untrusted-boundary assertions, and forward captures; the admin
+child's moved tests must satisfy that gate rather than relying only on manual review.
+
+The next bounded child is
+[mutating admin operations ownership](../docs/superpowers/plans/2026-08-19-admin-mutation-ownership.md).
+Current production tracing shows that topology recomputation and CRDT administration already
+delegate to their canonical domain owners, while process-local metric reset is not an authoritative
+database mutation. The remaining admin-owned authoritative path is expired-data pruning:
+
+`HTTP route -> admin operations facade -> API mutation gateway -> AppAdminInboxService -> AppInbox
+transaction -> APP_OUTBOX page work -> PostgreSQL page/progress transaction`.
+
+That path is split across generic service, API service, route, admin-operation, and PostgreSQL
+locations. The child therefore has exactly two concrete slices: recover the shared-server
+AppInbox/page-work owner first, then migrate the API entry/composition consumers and close
+navigation, tests, and validation. Read-only admin support and statistics remain outside this child.
+No old private import path is retained for repository-local consumers; public HTTP, package,
+persisted, and protocol compatibility remains an explicit invariant.
+
 ### Wave 3: API-v1 composition and configuration
 
 Separate the current broad `middleware.ts` and `create-rallar-server.ts`
