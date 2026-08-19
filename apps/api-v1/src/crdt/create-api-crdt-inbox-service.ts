@@ -22,7 +22,30 @@ import {
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 
-import type { CurrentMutationAuthority } from './create-api-mutation-inbox-factories.ts';
+export interface CurrentMutationSession {
+  readonly clientId: string;
+  readonly username: string;
+  readonly sessionId: string;
+  readonly expiresAtEpochMs: number;
+}
+
+export interface CurrentMutationDocumentAuthorization {
+  readonly allowed: boolean;
+  readonly code: string;
+}
+
+export interface CurrentMutationAuthority {
+  readSession(sessionId: string): Promise<
+    | CurrentMutationSession
+    | null
+    | undefined
+  >;
+  authorizeDocument(
+    command: Crdt.CrdtMutationCommand,
+    session: CurrentMutationSession,
+  ): Promise<CurrentMutationDocumentAuthorization>;
+  readonly adminClientIds: readonly string[];
+}
 
 export interface CreateApiCrdtInboxServiceInput {
   readonly inboxQueueReader: InboxQueueReader;
@@ -38,33 +61,19 @@ export interface CreateApiCrdtInboxServiceInput {
   readonly auditDelivery?: AppCrdtInboxService.AuditDelivery;
 }
 
+interface ApiCrdtMutationAuthorizationDependencies {
+  readonly currentAuthority: CurrentMutationAuthority;
+  readonly nowEpochMs: () => number;
+}
+
 export function createApiCrdtInboxService(
   input: CreateApiCrdtInboxServiceInput,
 ): AppCrdtInboxService {
   const { currentAuthority, policies } = input;
-  const authorize = async (command: Crdt.CrdtMutationCommand) => {
-    const session = await currentAuthority.readSession(command.actor.sessionId);
-    const nowEpochMs = input.options?.nowEpochMs?.() ?? Date.now();
-    if (!session) {
-      return { allowed: false, code: 'authentication-missing' };
-    }
-    if (session.expiresAtEpochMs <= nowEpochMs) {
-      return { allowed: false, code: 'authentication-expired' };
-    }
-    if (
-      session.clientId !== command.actor.actorId ||
-      session.username !== command.actor.principalId ||
-      session.sessionId !== command.actor.sessionId ||
-      command.responseAudience.senderSessionId !== session.sessionId
-    ) {
-      return { allowed: false, code: 'authorization-forbidden' };
-    }
-    if (command.responseAudience.kind === 'admin') {
-      const allowed = currentAuthority.adminClientIds.includes(session.clientId);
-      return { allowed, code: allowed ? 'allowed' : 'authorization-forbidden' };
-    }
-    return await currentAuthority.authorizeDocument(command, session);
-  };
+  const authorize = createApiCrdtMutationAuthorizer({
+    currentAuthority,
+    nowEpochMs: input.options.nowEpochMs ?? Date.now,
+  });
   const repository = new PSqlCrdtMutationRepository(
     { sql: input.database, authorize },
     { policies },
@@ -106,4 +115,34 @@ export function createApiCrdtInboxService(
       appInbox: input.options,
     },
   );
+}
+
+function createApiCrdtMutationAuthorizer(
+  dependencies: ApiCrdtMutationAuthorizationDependencies,
+): (
+  command: Crdt.CrdtMutationCommand,
+) => Promise<CurrentMutationDocumentAuthorization> {
+  return async (command) => {
+    const session = await dependencies.currentAuthority.readSession(command.actor.sessionId);
+    const nowEpochMs = dependencies.nowEpochMs();
+    if (!session) {
+      return { allowed: false, code: 'authentication-missing' };
+    }
+    if (session.expiresAtEpochMs <= nowEpochMs) {
+      return { allowed: false, code: 'authentication-expired' };
+    }
+    if (
+      session.clientId !== command.actor.actorId ||
+      session.username !== command.actor.principalId ||
+      session.sessionId !== command.actor.sessionId ||
+      command.responseAudience.senderSessionId !== session.sessionId
+    ) {
+      return { allowed: false, code: 'authorization-forbidden' };
+    }
+    if (command.responseAudience.kind === 'admin') {
+      const allowed = dependencies.currentAuthority.adminClientIds.includes(session.clientId);
+      return { allowed, code: allowed ? 'allowed' : 'authorization-forbidden' };
+    }
+    return await dependencies.currentAuthority.authorizeDocument(command, session);
+  };
 }

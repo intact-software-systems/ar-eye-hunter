@@ -23,11 +23,14 @@ crdt-mutation-command-codec.ts';
 // deno-fmt-ignore
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/\
 decode-crdt-mutation-result.ts';
+// deno-fmt-ignore
+import { decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/\
+crdt-mutation-value-codec.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { toResilienceDto } from '../../../src/middleware-resilience.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
-import { createApiCrdtInboxService } from '../../../src/services/create-api-crdt-inbox-service.ts';
+import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';
 import {
   readPGliteDatabaseEpochMs,
   waitForPGliteQueueRow,
@@ -96,8 +99,11 @@ Deno.test(
       from crdt_snapshots s
       join resource_inbox_results r on r.ris_resource_id = 'compact-command'
     `;
-      const durableResult = decodeCrdtMutationResult(JSON.parse(stored!.ris_resource));
-      const persistedSnapshot = JSON.parse(stored!.snapshot_envelope) as RallarCrdtSnapshotEnvelope;
+      assert.ok(stored);
+      const durableResult = decodeCrdtMutationResult(JSON.parse(stored.ris_resource));
+      const persistedSnapshot = decodeExactSnapshotEnvelope(
+        JSON.parse(stored.snapshot_envelope),
+      );
 
       assert.equal(stored?.reason, REASON);
       assert.equal(persistedSnapshot.metadata.reason, REASON);

@@ -87,12 +87,14 @@ import type { ApiGroupCapacityConfig } from '../runtime/group-formation/group-ca
 import type {
   GroupFormationDampingMode,
 } from '../runtime/group-formation/group-formation-damping-config.ts';
+import { createApiCrdtDocumentAuthorizer } from '../crdt/create-api-crdt-document-authorizer.ts';
 import {
-  createApiCrdtDocumentAuthorizer,
-} from '../services/create-api-crdt-document-authorizer.ts';
-import {
-  createApiMutationInboxFactories,
+  createApiCrdtInboxFactory,
   resolveApiCrdtPolicies,
+} from '../crdt/create-api-crdt-inbox-factory.ts';
+import {
+  type ApiMutationInboxFactories,
+  createApiMutationInboxFactories,
 } from '../services/create-api-mutation-inbox-factories.ts';
 
 export interface ApiV1MutationRuntimeResilience {
@@ -161,6 +163,19 @@ interface ApiV1StateMutationDependencies {
   readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
 }
 
+interface ApiV1MutationResources {
+  readonly queueBox: PSqlQueueBox;
+  readonly resourceInboxRepository: ResourceInboxRepository;
+  readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
+  readonly runtimeStateRepository: PSqlRuntimeStateRepository;
+  readonly authSessionRepository: ReturnType<typeof createAuthSessionRepository>;
+  readonly clientsRepository: ReturnType<typeof createClientStateRepository>;
+  readonly groupsRepository: ReturnType<typeof createGroupStateRepository>;
+  readonly clientSnapshotCache: ClientStateSnapshotReadThroughCache;
+  readonly groupSnapshotCache: GroupStateSnapshotReadThroughCache;
+  readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
+}
+
 interface CreateAppGroupInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
   readonly groupCapacity: ApiGroupCapacityConfig;
   readonly groupStateDissemination: GroupStateDisseminationMode;
@@ -180,60 +195,21 @@ interface CreateAppAuthInboxServiceFactoryInput extends ApiV1StateMutationDepend
 export function createApiV1MutationRuntime(
   input: CreateApiV1MutationRuntimeInput,
 ): ApiV1MutationRuntime {
-  const resourceInboxRepository = new ResourceInboxRepository(input.database);
-  const resourceInboxResultsRepository = new ResourceInboxResultsRepository(input.database);
-  const queueBox = new PSqlQueueBox(resourceInboxRepository);
-  const runtimeStateRepository = new PSqlRuntimeStateRepository(input.database);
-  const authSessionRepository = createAuthSessionRepository(runtimeStateRepository);
-  const clientsRepository = createClientStateRepository(input.database);
-  const groupsRepository = createGroupStateRepository(input.database);
-  const clientSnapshotCache = new ClientStateSnapshotReadThroughCache({ clientsRepository });
-  const groupSnapshotCache = new GroupStateSnapshotReadThroughCache({ groupsRepository });
-  const groupFormationMetrics = createGroupFormationMetricsRecorder();
-  const stateDependencies: ApiV1StateMutationDependencies = {
-    database: input.database,
-    serviceId: input.serviceId,
-    nowEpochMs: input.nowEpochMs,
-    timing: input.timing,
-    appInboxOptions: input.appInboxOptions,
-    resourceInboxRepository,
-    resourceInboxResultsRepository,
-    runtimeStateRepository,
-    authSessionRepository,
-    clientSnapshotCache,
-    groupSnapshotCache,
-    groupFormationMetrics,
-  };
-  const mutationFactories = createApiMutationInboxFactories({
-    resourceInboxRepository,
-    resourceInboxResultsRepository,
-    database: input.database,
-    serviceId: input.serviceId,
-    timing: input.timing,
-    options: input.appInboxOptions,
-    currentAuthority: {
-      readSession: (sessionId) => authSessionRepository.findBySessionId(sessionId),
-      authorizeDocument: createApiCrdtDocumentAuthorizer({
-        readGroupSnapshot: (ref) => groupsRepository.readSnapshot(ref),
-        readClientSnapshot: (ref) => clientsRepository.readSnapshot(ref),
-        nowEpochMs: input.nowEpochMs,
-      }),
-      adminClientIds: input.adminClientIds,
-    },
-    crdtPolicies: resolveApiCrdtPolicies(input.crdtPolicies),
-  });
+  const resources = createApiV1MutationResources(input.database);
+  const stateDependencies = createApiV1StateMutationDependencies(input, resources);
+  const mutationFactories = createApiV1MutationInboxFactories(input, resources);
 
   return {
-    queueBox,
-    resourceInboxRepository,
+    queueBox: resources.queueBox,
+    resourceInboxRepository: resources.resourceInboxRepository,
     webSocketServer: new JsonWebSocketServer(),
-    runtimeStateRepository,
-    authSessionRepository,
-    clientsRepository,
-    groupsRepository,
-    clientSnapshotCache,
-    groupSnapshotCache,
-    groupFormationMetrics,
+    runtimeStateRepository: resources.runtimeStateRepository,
+    authSessionRepository: resources.authSessionRepository,
+    clientsRepository: resources.clientsRepository,
+    groupsRepository: resources.groupsRepository,
+    clientSnapshotCache: resources.clientSnapshotCache,
+    groupSnapshotCache: resources.groupSnapshotCache,
+    groupFormationMetrics: resources.groupFormationMetrics,
     appInboxDequeueOptions: createAppInboxDequeueOptions(input),
     createAppGroupInboxService: createAppGroupInboxServiceFactory({
       ...stateDependencies,
@@ -252,6 +228,89 @@ export function createApiV1MutationRuntime(
     ...mutationFactories,
     resilience: input.resilience,
   };
+}
+
+function createApiV1MutationResources(
+  database: PSqlSql,
+): ApiV1MutationResources {
+  const resourceInboxRepository = new ResourceInboxRepository(database);
+  const resourceInboxResultsRepository = new ResourceInboxResultsRepository(database);
+  const runtimeStateRepository = new PSqlRuntimeStateRepository(database);
+  const authSessionRepository = createAuthSessionRepository(runtimeStateRepository);
+  const clientsRepository = createClientStateRepository(database);
+  const groupsRepository = createGroupStateRepository(database);
+  return {
+    queueBox: new PSqlQueueBox(resourceInboxRepository),
+    resourceInboxRepository,
+    resourceInboxResultsRepository,
+    runtimeStateRepository,
+    authSessionRepository,
+    clientsRepository,
+    groupsRepository,
+    clientSnapshotCache: new ClientStateSnapshotReadThroughCache({ clientsRepository }),
+    groupSnapshotCache: new GroupStateSnapshotReadThroughCache({ groupsRepository }),
+    groupFormationMetrics: createGroupFormationMetricsRecorder(),
+  };
+}
+
+function createApiV1StateMutationDependencies(
+  input: CreateApiV1MutationRuntimeInput,
+  resources: ApiV1MutationResources,
+): ApiV1StateMutationDependencies {
+  return {
+    database: input.database,
+    serviceId: input.serviceId,
+    nowEpochMs: input.nowEpochMs,
+    timing: input.timing,
+    appInboxOptions: input.appInboxOptions,
+    resourceInboxRepository: resources.resourceInboxRepository,
+    resourceInboxResultsRepository: resources.resourceInboxResultsRepository,
+    runtimeStateRepository: resources.runtimeStateRepository,
+    authSessionRepository: resources.authSessionRepository,
+    clientSnapshotCache: resources.clientSnapshotCache,
+    groupSnapshotCache: resources.groupSnapshotCache,
+    groupFormationMetrics: resources.groupFormationMetrics,
+  };
+}
+
+function createApiV1MutationInboxFactories(
+  input: CreateApiV1MutationRuntimeInput,
+  resources: ApiV1MutationResources,
+): ApiMutationInboxFactories {
+  const readSession = (sessionId: string) =>
+    resources.authSessionRepository.findBySessionId(sessionId);
+  const currentAuthority = {
+    readSession,
+    authorizeDocument: createApiCrdtDocumentAuthorizer({
+      readGroupSnapshot: (ref) => resources.groupsRepository.readSnapshot(ref),
+      readClientSnapshot: (ref) => resources.clientsRepository.readSnapshot(ref),
+      nowEpochMs: input.nowEpochMs,
+    }),
+    adminClientIds: input.adminClientIds,
+  };
+  const createAppCrdtInboxService = createApiCrdtInboxFactory({
+    resourceInboxRepository: resources.resourceInboxRepository,
+    resourceInboxResultsRepository: resources.resourceInboxResultsRepository,
+    database: input.database,
+    serviceId: input.serviceId,
+    timing: input.timing,
+    options: input.appInboxOptions,
+    currentAuthority,
+    policies: resolveApiCrdtPolicies(input.crdtPolicies),
+  });
+  return createApiMutationInboxFactories({
+    createAppCrdtInboxService,
+    resourceInboxRepository: resources.resourceInboxRepository,
+    resourceInboxResultsRepository: resources.resourceInboxResultsRepository,
+    database: input.database,
+    serviceId: input.serviceId,
+    timing: input.timing,
+    options: input.appInboxOptions,
+    currentAuthority: {
+      readSession,
+      adminClientIds: input.adminClientIds,
+    },
+  });
 }
 
 function createAppGroupInboxServiceFactory(

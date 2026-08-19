@@ -1591,6 +1591,9 @@ actually changed by the review. If no file changed, do not create an empty commi
   PGlite CRDT suites
 - Move/Test: `packages/tests/shared-server/rallar-middleware-crdt-principal-correction-4.test.ts`
   to `packages/tests/shared-server/crdt/realtime/crdt-principal-fanout-cold-cache.test.ts`
+- Move/Test: `apps/api-v1/test/db/pglite-crdt-policy-correction-4.test.ts` to
+  `apps/api-v1/test/crdt/configuration/crdt-policy-configuration.test.ts` when its factory import
+  moves; touched-file closure does not retain the correction-named path until Task 9.
 - Remove: old API CRDT service files after import closure
 - Test: focused PGlite policy, authority, and production-factory suites
 
@@ -1602,16 +1605,19 @@ actually changed by the review. If no file changed, do not create an empty commi
 
 - [ ] **Step 1: Fork and lock the stacked Slice 2 base**
 
-After PR A has an immutable reviewed head and a clean worktree, create PR B from that local branch:
+After PR A has merged, create PR B from the exact merged `main` commit. PR A used a squash merge, so
+replaying its pre-merge feature branch would duplicate the Slice 1 history:
 
 ```bash
-git switch -c codex/crdt-api-alignment codex/crdt-ownership-design
-git merge-base --is-ancestor codex/crdt-ownership-design HEAD
+git switch main
+git pull --ff-only
+git switch -c codex/crdt-api-alignment
+git merge-base --is-ancestor main HEAD
 git status --short
 ```
 
-Expected: the ancestry check exits 0 and the new branch is clean. Do not move
-`codex/crdt-ownership-design` after this point; it is the exact Slice 2 comparison base.
+Expected: the ancestry check exits 0 and the new branch is clean. Record the immutable merged-main
+commit as the exact Slice 2 comparison base.
 
 - [ ] **Step 2: Add RED direct factory tests at the final paths**
 
@@ -1638,6 +1644,9 @@ git mv apps/api-v1/src/services/create-api-crdt-inbox-service.ts \
   apps/api-v1/src/crdt/create-api-crdt-inbox-service.ts
 git mv packages/tests/shared-server/rallar-middleware-crdt-principal-correction-4.test.ts \
   packages/tests/shared-server/crdt/realtime/crdt-principal-fanout-cold-cache.test.ts
+mkdir -p apps/api-v1/test/crdt/configuration
+git mv apps/api-v1/test/db/pglite-crdt-policy-correction-4.test.ts \
+  apps/api-v1/test/crdt/configuration/crdt-policy-configuration.test.ts
 ```
 
 Remove the unused `createApiCrdtMutationInboxFactories` function currently colocated with the
@@ -1665,7 +1674,7 @@ same decision boundary per current invocation.
 
 ```bash
 cd apps/api-v1
-deno test -A test/crdt/inbox
+deno test -A test/crdt/inbox test/crdt/configuration/crdt-policy-configuration.test.ts
 deno task check
 deno fmt --check src/crdt test/crdt
 cd ../..
@@ -1694,11 +1703,13 @@ git add apps/api-v1/src/crdt \
   apps/api-v1/src/composition/create-api-v1-runtime.ts \
   apps/api-v1/test/composition/create-api-v1-mutation-runtime.test.ts \
   apps/api-v1/test/crdt/inbox/crdt-production-inbox.test.ts \
+  apps/api-v1/test/crdt/configuration/crdt-policy-configuration.test.ts \
   apps/api-v1/test/crdt/persistence/crdt-mutation-retry.test.ts \
   apps/api-v1/test/crdt/persistence/crdt-snapshot-reason.test.ts \
   apps/api-v1/test/crdt/realtime/crdt-websocket-authority.test.ts \
   apps/api-v1/test/crdt \
   packages/tests/shared-server/crdt/realtime/crdt-principal-fanout-cold-cache.test.ts
+git add -u apps/api-v1/test/db/pglite-crdt-policy-correction-4.test.ts
 git commit -m "refactor(api-v1): colocate CRDT construction"
 ```
 
@@ -1853,9 +1864,10 @@ inventory and must not recreate historical correction-named paths.
 
 - [ ] **Step 1: Rename every materially touched PGlite CRDT suite by behavior**
 
-The two remaining PGlite CRDT files contain six `Deno.test` cases. Use the current test names as
-the mapping authority. Their destinations are the configuration and AppInbox-atomicity files;
-the other listed behavior paths already exist and are inputs to final inventory validation:
+Task 7 already moved the three policy-configuration cases when their production owner moved. The
+one remaining PGlite CRDT file contains three `Deno.test` cases. Use those current test names as
+the mapping authority. Its destination is the AppInbox-atomicity file; the other listed behavior
+paths already exist and are inputs to final inventory validation:
 
 ```text
 apps/api-v1/test/crdt/configuration/crdt-policy-configuration.test.ts
@@ -1870,9 +1882,9 @@ apps/api-v1/test/crdt/persistence/crdt-snapshot-reason.test.ts
 apps/api-v1/test/db/pglite-admin-prune-cutoff-and-expiry.test.ts
 ```
 
-Move the remaining atomicity and policy cases exactly once. Delete those final correction-named
-files only after an executable name inventory proves every remaining predecessor case has one
-destination and no destination duplicates one. The production and WebSocket suites are already at
+Move the remaining atomicity cases exactly once. Delete that final correction-named file only after
+an executable name inventory proves every remaining predecessor case has one destination and no
+destination duplicates one. The configuration, production, and WebSocket suites are already at
 their final paths and are not moved or merged again.
 
 - [ ] **Step 2: Update all canonical consumers**
@@ -1943,8 +1955,7 @@ git add apps/api-v1/test/crdt \
   docs/rallar-crdt-guide.md \
   docs/rallar-convergent-state-and-rtc-topology.md
 git add -u \
-  apps/api-v1/test/db/pglite-crdt-app-inbox-transaction.test.ts \
-  apps/api-v1/test/db/pglite-crdt-policy-correction-4.test.ts
+  apps/api-v1/test/db/pglite-crdt-app-inbox-transaction.test.ts
 git commit -m "test(crdt): align consumers and navigation"
 ```
 

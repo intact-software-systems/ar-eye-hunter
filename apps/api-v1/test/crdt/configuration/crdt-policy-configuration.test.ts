@@ -9,10 +9,8 @@ import {
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/\
 psql-crdt-log-repository.ts';
 
-import {
-  readConfiguredCrdtPolicies,
-} from '../../src/services/create-api-mutation-inbox-factories.ts';
-import { withPGliteSql } from './pglite-auth-test-harness.ts';
+import { readConfiguredCrdtPolicies } from '../../../src/crdt/create-api-crdt-inbox-factory.ts';
+import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
 const ENVIRONMENT_KEY = 'RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON';
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -138,14 +136,6 @@ Deno.test(
         const admin = await new PSqlCrdtLogRepository(sql, { policies }).listDocuments();
 
         assert.equal(admin.documents[0]?.rollout, mutation.rollout);
-        const productionSource = await Deno.readTextFile(
-          new URL(
-            '../../src/composition/create-default-rallar-server.ts',
-            import.meta.url,
-          ),
-        );
-        assert.match(productionSource, /readConfiguredCrdtPolicies/);
-        assert.match(productionSource, /PSqlCrdtLogRepository[\s\S]*policies/);
       });
     });
   },

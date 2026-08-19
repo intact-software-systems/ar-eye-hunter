@@ -10,9 +10,7 @@ import {
   createApiV1MutationRuntime,
 } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
-import {
-  findCurrentClientSnapshot,
-} from '../../src/services/create-api-crdt-document-authorizer.ts';
+import { findCurrentClientSnapshot } from '../../src/crdt/create-api-crdt-document-authorizer.ts';
 
 Deno.test('mutation runtime keeps one database identity and performs no construction query', () => {
   const databaseProbe = createDatabaseProbe();
@@ -86,18 +84,27 @@ interface DatabaseProbe {
 function createDatabaseProbe(): DatabaseProbe {
   let queries = 0;
   let transactions = 0;
-  const database = Object.assign(
-    function <T>(_strings: TemplateStringsArray, ..._values: unknown[]): Promise<T> {
-      queries += 1;
-      return Promise.resolve([] as T);
-    },
+  function query<T>(
+    _strings: TemplateStringsArray,
+    ..._values: unknown[]
+  ): Promise<T>;
+  function query(_values: readonly unknown[]): unknown;
+  function query(
+    _input: TemplateStringsArray | readonly unknown[],
+    ..._values: unknown[]
+  ): never {
+    queries += 1;
+    throw new Error('query not expected');
+  }
+  const database: PSqlSql = Object.assign(
+    query,
     {
       begin<T>(_operation: (transaction: PSqlSql) => Promise<T>): Promise<T> {
         transactions += 1;
         return Promise.reject(new Error('transaction not expected'));
       },
     },
-  ) as PSqlSql;
+  );
 
   return {
     database,

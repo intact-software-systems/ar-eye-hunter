@@ -20,11 +20,17 @@ crdt-mutation-command-codec.ts';
 // deno-fmt-ignore
 import { CrdtMutationConflictError } from '@shared-server/rallar-system/crdt/mutation/\
 crdt-mutation-contracts.ts';
+// deno-fmt-ignore
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/\
+decode-crdt-mutation-result.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
+import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
 import { toResilienceDto } from '../../../src/middleware-resilience.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
-import { createApiCrdtInboxService } from '../../../src/services/create-api-crdt-inbox-service.ts';
+import { createApiCrdtInboxFactory } from '../../../src/crdt/create-api-crdt-inbox-factory.ts';
+import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';
 import {
   readPGliteDatabaseEpochMs,
   waitForPGliteQueueRow,
@@ -72,6 +78,67 @@ Deno.test(
       const read = await service.mutationService.read(command);
       assert.equal(read.authorized, true);
       assert.equal(read.featureDecision.allowed, false);
+    });
+  },
+);
+
+Deno.test(
+  'CRDT factory supplies current authority, exact policy, queue wake, and no audit pair',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const now = await pgliteQueueNow(sql);
+      const resourceInbox = new ResourceInboxRepository(sql);
+      const queue = new PSqlQueueBox(resourceInbox);
+      const authorityReads: string[] = [];
+      let wakes = 0;
+      const factory = createApiCrdtInboxFactory({
+        resourceInboxRepository: resourceInbox,
+        resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
+        database: sql,
+        serviceId: 'server-1',
+        timing: undefined,
+        options: { nowEpochMs: () => now },
+        currentAuthority: {
+          readSession: (sessionId: string) => {
+            authorityReads.push(sessionId);
+            return Promise.resolve({
+              clientId: 'client-1',
+              username: 'client-1',
+              sessionId,
+              expiresAtEpochMs: now + 60_000,
+            });
+          },
+          authorizeDocument: () => Promise.resolve({ allowed: true, code: 'allowed' }),
+          adminClientIds: [],
+        },
+        policies: [{ documentType: 'checklist', rollout: 'production' }],
+      });
+      const outboxQueueReader = new RecordingOutboxQueueReader(queue);
+      const service = factory({
+        inboxQueueReader: new InboxQueueReader(queue),
+        outboxQueueReader,
+        appInboxResilience: toResilienceDto(),
+        wakeQueueEngine: () => {
+          wakes += 1;
+        },
+      });
+      const command = await appendCommand(now, 'factory-command', 'factory-update');
+
+      const read = await service.mutationService.read(command);
+      await service.createAndEnqueueAppend({
+        update: update('factory-enqueue', now - 10_000),
+        deliveryId: 'factory-delivery',
+        actor: command.actor,
+        responseAudience: command.responseAudience,
+        capturedAtEpochMs: now,
+        expireAtEpochMs: now + 60_000,
+      });
+
+      assert.deepEqual(authorityReads, ['session-1']);
+      assert.equal(read.authorized, true);
+      assert.equal(read.featureDecision.rollout, 'production');
+      assert.equal(wakes, 1);
+      assert.deepEqual(outboxQueueReader.registeredTypes, []);
     });
   },
 );
@@ -170,7 +237,7 @@ Deno.test(
     `;
       assert.deepEqual(
         results.map((row) => {
-          const result = JSON.parse(row.ris_resource);
+          const result = decodeCrdtMutationResult(JSON.parse(row.ris_resource));
           return { status: result.status, code: result.code };
         }),
         [
@@ -220,8 +287,9 @@ Deno.test(
       where ris_topic_id = 'app-inbox.crdt-state'
         and ris_resource_id = 'revoked-delivery'
     `;
-      assert.equal(completion?.ris_status, 'COMPLETED');
-      const result = JSON.parse(completion!.ris_resource);
+      assert.ok(completion);
+      assert.equal(completion.ris_status, 'COMPLETED');
+      const result = decodeCrdtMutationResult(JSON.parse(completion.ris_resource));
       assert.equal(result.status, 'rejected');
       assert.equal(result.code, 'authorization-denied');
     });
@@ -249,7 +317,7 @@ function productionService(input: ProductionServiceInput) {
     options: { nowEpochMs: () => now },
     wakeQueueEngine: () => undefined,
     currentAuthority: {
-      readSession: (sessionId) =>
+      readSession: (sessionId: string) =>
         Promise.resolve({
           clientId: 'client-1',
           username: 'client-1',
@@ -431,4 +499,13 @@ function executeSql(
 
 function isTemplateStringsArray(value: unknown): value is TemplateStringsArray {
   return Array.isArray(value) && 'raw' in value;
+}
+
+class RecordingOutboxQueueReader extends OutboxQueueReader {
+  readonly registeredTypes: string[] = [];
+
+  override onOutboxMessageDo(type: string, _callback: OnMessageCallback): this {
+    this.registeredTypes.push(type);
+    return this;
+  }
 }

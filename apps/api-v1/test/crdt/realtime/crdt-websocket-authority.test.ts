@@ -42,13 +42,16 @@ import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-rout
 import {
   createCrdtWsMutationIngress,
 } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
+// deno-fmt-ignore
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/\
+decode-crdt-mutation-result.ts';
 
 import { toResilienceDto } from '../../../src/middleware-resilience.ts';
 // deno-fmt-ignore
 import {
   createApiCrdtDocumentAuthorizer,
-} from '../../../src/services/create-api-crdt-document-authorizer.ts';
-import { createApiCrdtInboxService } from '../../../src/services/create-api-crdt-inbox-service.ts';
+} from '../../../src/crdt/create-api-crdt-document-authorizer.ts';
+import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';
 import {
   toPersistedAuthSessionFixture,
   waitForPGliteQueueRow,
@@ -69,12 +72,6 @@ interface PersistedActorRow {
 
 interface CountRow {
   readonly count: string;
-}
-
-interface PersistedResult {
-  readonly commandId: string;
-  readonly status: string;
-  readonly code: string | null;
 }
 
 interface PersistedResultRow {
@@ -279,7 +276,7 @@ async function readResults(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[
         where ris_topic_id = 'app-inbox.crdt-state'
         order by ris_row_id
     `;
-  return rows.map((row) => JSON.parse(row.ris_resource) as PersistedResult);
+  return rows.map((row) => decodeCrdtMutationResult(JSON.parse(row.ris_resource)));
 }
 
 async function readDurableEffects(

@@ -31,7 +31,9 @@ import * as iceRoutes from '../routes/ice-route.ts';
 import * as spaStatisticsRoutes from '../routes/spa-statistics-routes.ts';
 import * as swaggerRoutes from '../routes/swagger-routes.ts';
 import * as wsRoutes from '../routes/ws-routes.ts';
-import { authorizeCrdtDocumentAccess } from '../services/create-api-crdt-document-authorizer.ts';
+import {
+  createApiCrdtDocumentAccessAuthorizer,
+} from '../crdt/create-api-crdt-document-authorizer.ts';
 import { requireApiAuthSession, requireWsAuthSession } from '../services/request-auth-service.ts';
 import type { CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
 import type { ApiV1Runtime } from './api-v1-runtime.ts';
@@ -108,6 +110,19 @@ export interface ApiV1RouteInstallerOperations<Runtime extends ApiV1RouteInstall
   ) => Promise<IssuedAuthSession>;
 }
 
+interface ApiV1RouteConstruction<
+  Runtime extends ApiV1RouteInstallerRuntime,
+  Topology extends ApiV1RouteInstallerTopology,
+> {
+  readonly input: CreateApiV1RouteInstallersInput<Runtime, Topology>;
+  readonly operations: ApiV1RouteInstallerOperations<Runtime>;
+  readonly requireSession: (request: ApiV1RouteAuthRequest) => Promise<IssuedAuthSession>;
+  readonly snapshots: ReturnType<typeof createStateSnapshotReadRouteRegistrars>;
+  readonly authorizeCrdtDocumentAccess: ReturnType<
+    typeof createApiCrdtDocumentAccessAuthorizer
+  >;
+}
+
 export function createApiV1RouteInstallers(
   input: CreateApiV1RouteInstallersInput,
 ): ApiV1RouteInstallers {
@@ -124,104 +139,146 @@ export function constructApiV1RouteInstallers<
   input: CreateApiV1RouteInstallersInput<Runtime, Topology>,
   operations: ApiV1RouteInstallerOperations<Runtime>,
 ): ApiV1RouteInstallers {
-  const runtime = input.runtime;
-  const topology = input.topology;
+  const construction = createApiV1RouteConstruction(input, operations);
+  return {
+    ws: createApiV1WsRouteInstaller(construction),
+    rest: [
+      ...createApiV1StateRouteInstallers(construction),
+      ...createApiV1AdministrationRouteInstallers(construction),
+    ],
+  };
+}
+
+function createApiV1RouteConstruction<
+  Runtime extends ApiV1RouteInstallerRuntime,
+  Topology extends ApiV1RouteInstallerTopology,
+>(
+  input: CreateApiV1RouteInstallersInput<Runtime, Topology>,
+  operations: ApiV1RouteInstallerOperations<Runtime>,
+): ApiV1RouteConstruction<Runtime, Topology> {
+  const { runtime } = input;
   const requireSession = (request: ApiV1RouteAuthRequest) =>
     operations.requireApiAuthSession(request, runtime.authSessionRepository);
   const snapshots = createStateSnapshotReadRouteRegistrars(runtime, {
     requireApiAuthSession: operations.requireApiAuthSession,
   });
+  const authorizeCrdtDocumentAccess = createApiCrdtDocumentAccessAuthorizer({
+    readGroupSnapshot: (ref) => runtime.groupsRepository.readSnapshot(ref),
+    readClientSnapshot: (ref) => runtime.clientsRepository.readSnapshot(ref),
+    nowEpochMs: input.nowEpochMs,
+  });
   return {
-    ws: (app) =>
-      wsRoutes.registerWsRoutes(app, {
-        socketServer: runtime.wsQBoxServerService.socket,
-        appClientInboxService: runtime.appClientInboxService,
-        requireWsAuthSession: (request) =>
-          operations.requireWsAuthSession(
-            request,
-            runtime.appAuthInboxService,
-            input.createWsAuthRequestFacts(),
-          ),
-      }),
-    rest: [
-      (app) =>
-        configRoutes.registerConfigRoutes(app, {
-          requireApiAuthSession: requireSession,
-          readEnv: input.readEnv,
-          now: input.nowEpochMs,
-          createTokenId: input.createTokenId,
-          appAuthInbox: runtime.appAuthInboxService,
-          authUserRepository: input.authUserRepository,
-          staticClients: input.staticClients,
-          registrationMode: input.authRegistrationMode,
-          adminClientIds: new Set(topology.adminClientIds),
-        }),
-      (app) =>
-        iceRoutes.registerIceRoutes(app, {
-          requireApiAuthSession: requireSession,
-        }),
-      snapshots.client,
-      snapshots.group,
-      (app) =>
-        spaStatisticsRoutes.registerSpaStatisticsRoutes(app, {
-          statistics: input.admin.statistics,
-          requireApiAuthSession: requireSession,
-        }),
-      (app) =>
-        graphTopologyRoutes.registerGraphTopologyRoutes(app, {
-          groupStateService: snapshots.graphGroupStateService,
-          graphDiagnostics: {
-            readScopedGlobalGraphDiagnostic,
-            readGroupGraphDiagnostic,
-          },
-          topologyManagement: topology.topologyManagement,
-          processTopologyAppInbox: (authority, enqueue) =>
-            graphTopologyRoutes.processTopologyAppInbox(
-              runtime.appGroupInboxService,
-              authority,
-              enqueue,
-            ),
-          requireApiAuthSession: requireSession,
-          adminClientIds: topology.adminClientIds,
-          now: input.nowEpochMs,
-        }),
-      (app) =>
-        crdtAdminRoutes.registerCrdtAdminRoutes(app, {
-          repository: input.crdtLogRepository,
-          mutations: input.crdtMutations,
-          adminClientIds: topology.adminClientIds,
-          requireApiAdminSession: async (context) => await requireSession(context.req),
-          requireApiUserSession: async (context) => await requireSession(context.req),
-          authorizeCatchUp: ({ document, session }) =>
-            authorizeCrdtDocumentAccess(
-              {
-                readGroupSnapshot: (ref) => runtime.groupsRepository.readSnapshot(ref),
-                readClientSnapshot: (ref) => runtime.clientsRepository.readSnapshot(ref),
-                nowEpochMs: input.nowEpochMs,
-              },
-              {
-                document,
-                actorPrincipalId: session.username,
-                sessionId: session.sessionId,
-              },
-            ),
-        }),
-      (app) =>
-        adminOperationsRoutes.init(app, {
-          adminClientIds: topology.adminClientIds,
-          operations: input.admin.operations,
-          now: input.nowEpochMs,
-          requireApiAuthSession: requireSession,
-        }),
-      (app) =>
-        adminSupportRoutes.init(app, {
-          adminClientIds: topology.adminClientIds,
-          support: input.admin.support,
-          requireApiAuthSession: requireSession,
-        }),
-      swaggerRoutes.init,
-    ],
+    input,
+    operations,
+    requireSession,
+    snapshots,
+    authorizeCrdtDocumentAccess,
   };
+}
+
+function createApiV1WsRouteInstaller<
+  Runtime extends ApiV1RouteInstallerRuntime,
+  Topology extends ApiV1RouteInstallerTopology,
+>(
+  construction: ApiV1RouteConstruction<Runtime, Topology>,
+): RallarServerRouteInstaller<Hono> {
+  const { input, operations } = construction;
+  return (app) =>
+    wsRoutes.registerWsRoutes(app, {
+      socketServer: input.runtime.wsQBoxServerService.socket,
+      appClientInboxService: input.runtime.appClientInboxService,
+      requireWsAuthSession: (request) =>
+        operations.requireWsAuthSession(
+          request,
+          input.runtime.appAuthInboxService,
+          input.createWsAuthRequestFacts(),
+        ),
+    });
+}
+
+function createApiV1StateRouteInstallers<
+  Runtime extends ApiV1RouteInstallerRuntime,
+  Topology extends ApiV1RouteInstallerTopology,
+>(
+  construction: ApiV1RouteConstruction<Runtime, Topology>,
+): readonly RallarServerRouteInstaller<Hono>[] {
+  const { input, requireSession, snapshots } = construction;
+  return [
+    (app) =>
+      configRoutes.registerConfigRoutes(app, {
+        requireApiAuthSession: requireSession,
+        readEnv: input.readEnv,
+        now: input.nowEpochMs,
+        createTokenId: input.createTokenId,
+        appAuthInbox: input.runtime.appAuthInboxService,
+        authUserRepository: input.authUserRepository,
+        staticClients: input.staticClients,
+        registrationMode: input.authRegistrationMode,
+        adminClientIds: new Set(input.topology.adminClientIds),
+      }),
+    (app) => iceRoutes.registerIceRoutes(app, { requireApiAuthSession: requireSession }),
+    snapshots.client,
+    snapshots.group,
+    (app) =>
+      spaStatisticsRoutes.registerSpaStatisticsRoutes(app, {
+        statistics: input.admin.statistics,
+        requireApiAuthSession: requireSession,
+      }),
+    (app) =>
+      graphTopologyRoutes.registerGraphTopologyRoutes(app, {
+        groupStateService: snapshots.graphGroupStateService,
+        graphDiagnostics: { readScopedGlobalGraphDiagnostic, readGroupGraphDiagnostic },
+        topologyManagement: input.topology.topologyManagement,
+        processTopologyAppInbox: (authority, enqueue) =>
+          graphTopologyRoutes.processTopologyAppInbox(
+            input.runtime.appGroupInboxService,
+            authority,
+            enqueue,
+          ),
+        requireApiAuthSession: requireSession,
+        adminClientIds: input.topology.adminClientIds,
+        now: input.nowEpochMs,
+      }),
+  ];
+}
+
+function createApiV1AdministrationRouteInstallers<
+  Runtime extends ApiV1RouteInstallerRuntime,
+  Topology extends ApiV1RouteInstallerTopology,
+>(
+  construction: ApiV1RouteConstruction<Runtime, Topology>,
+): readonly RallarServerRouteInstaller<Hono>[] {
+  const { authorizeCrdtDocumentAccess, input, requireSession } = construction;
+  return [
+    (app) =>
+      crdtAdminRoutes.registerCrdtAdminRoutes(app, {
+        repository: input.crdtLogRepository,
+        mutations: input.crdtMutations,
+        adminClientIds: input.topology.adminClientIds,
+        requireApiAdminSession: async (context) => await requireSession(context.req),
+        requireApiUserSession: async (context) => await requireSession(context.req),
+        authorizeCatchUp: ({ document, session }) =>
+          authorizeCrdtDocumentAccess({
+            document,
+            actorPrincipalId: session.username,
+            sessionId: session.sessionId,
+          }),
+      }),
+    (app) =>
+      adminOperationsRoutes.init(app, {
+        adminClientIds: input.topology.adminClientIds,
+        operations: input.admin.operations,
+        now: input.nowEpochMs,
+        requireApiAuthSession: requireSession,
+      }),
+    (app) =>
+      adminSupportRoutes.init(app, {
+        adminClientIds: input.topology.adminClientIds,
+        support: input.admin.support,
+        requireApiAuthSession: requireSession,
+      }),
+    swaggerRoutes.init,
+  ];
 }
 
 const PRODUCTION_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1Runtime> = {
