@@ -6,6 +6,7 @@ import type {
   RtcBaselineSampleDto,
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
 import { rtcBaselineIssue } from '../../baseline/contracts/rtc-baseline-contracts.ts';
+import { summarizeRtcB05 } from './summarize-rtc-b05.ts';
 
 export const RTC_DATA_CHANNEL_BROWSER_SOAK_CONTRACT = {
   workloadId: 'RTC-B05',
@@ -135,15 +136,18 @@ function validateProducerCommand(
       ),
     ];
   }
-  const valid = producerCommand.executable === 'node' &&
+  const valid =
+    producerCommand.executable === 'node' &&
     same(producerCommand.arguments, expectedProducerArguments(baselineId, identity));
-  return valid ? [] : [
-    rtcBaselineIssue(
-      '$.producerCommand',
-      'producer-command-mismatch',
-      'Raw producer command must match the immutable B05 invocation.',
-    ),
-  ];
+  return valid
+    ? []
+    : [
+        rtcBaselineIssue(
+          '$.producerCommand',
+          'producer-command-mismatch',
+          'Raw producer command must match the immutable B05 invocation.',
+        ),
+      ];
 }
 
 function validateHeap(heapValue: RtcBaselineJson | undefined) {
@@ -244,7 +248,8 @@ function validateIterationCleanup(iteration: Record<string, RtcBaselineJson>, in
   }
   const events = Array.isArray(iteration.events) ? iteration.events : [];
   const uniqueEvents = new Set(events);
-  const lifecycleEventsComplete = uniqueEvents.size === expectedEvents.length &&
+  const lifecycleEventsComplete =
+    uniqueEvents.size === expectedEvents.length &&
     expectedEvents.every((eventName) => uniqueEvents.has(eventName));
   if (!lifecycleEventsComplete || iteration.failure !== null) {
     issues.push(
@@ -274,15 +279,16 @@ function validateIteration(
     ];
   }
   const expectedId = `${iterationIdPrefix}-iteration-${pad(index + 1)}`;
-  const identityIssues = iteration.index === index + 1 && iteration.iterationId === expectedId
-    ? []
-    : [
-      rtcBaselineIssue(
-        `$.soak.results[${index}].iterationId`,
-        'iteration-identity-mismatch',
-        'Iteration identity is not unique and ordered.',
-      ),
-    ];
+  const identityIssues =
+    iteration.index === index + 1 && iteration.iterationId === expectedId
+      ? []
+      : [
+          rtcBaselineIssue(
+            `$.soak.results[${index}].iterationId`,
+            'iteration-identity-mismatch',
+            'Iteration identity is not unique and ordered.',
+          ),
+        ];
   return [
     ...identityIssues,
     ...validateIterationTiming(iteration, index),
@@ -325,7 +331,7 @@ function validateSoak(rawEvidence: Record<string, RtcBaselineJson>, iterationIdP
     ...issues,
     ...countIssues,
     ...soak.results.flatMap((iteration, index) =>
-      validateIteration(iteration, index, iterationIdPrefix)
+      validateIteration(iteration, index, iterationIdPrefix),
     ),
   ];
 }
@@ -335,15 +341,16 @@ function validateMeasurement(
   iterationIdPrefix: string,
 ) {
   const duration = rawEvidence.durationMs;
-  const durationIssues = typeof duration === 'number' && Number.isFinite(duration) && duration >= 0
-    ? []
-    : [
-      rtcBaselineIssue(
-        '$.durationMs',
-        'invalid-duration',
-        'Soak duration must be nonnegative.',
-      ),
-    ];
+  const durationIssues =
+    typeof duration === 'number' && Number.isFinite(duration) && duration >= 0
+      ? []
+      : [
+          rtcBaselineIssue(
+            '$.durationMs',
+            'invalid-duration',
+            'Soak duration must be nonnegative.',
+          ),
+        ];
   return [
     ...durationIssues,
     ...validateSoak(rawEvidence, iterationIdPrefix),
@@ -392,20 +399,23 @@ export function validateRtcDataChannelBrowserSoakRuntimeObservation(
     redactedArgv: { executable: 'node', arguments: [contract.scriptPath] },
     projection: { fixedWorkerFlags: [], configurationFlags: [] },
   };
-  const valid = same(observation.deviations, []) &&
+  const valid =
+    same(observation.deviations, []) &&
     same(sourceIdentities, expectedSources) &&
     hashesValid &&
     same(observation.configurationInputs, []) &&
     same(observation.resolvedConfiguration, expectedConfiguration) &&
     same(observation.controllerInputs, expectedControllers) &&
     same(observation.workerCommand, expectedWorker);
-  return valid ? [] : [
-    rtcBaselineIssue(
-      '$.runtimeObservation',
-      'runtime-observation-mismatch',
-      'Runtime observation must match the initialized B05 identity and configuration.',
-    ),
-  ];
+  return valid
+    ? []
+    : [
+        rtcBaselineIssue(
+          '$.runtimeObservation',
+          'runtime-observation-mismatch',
+          'Runtime observation must match the initialized B05 identity and configuration.',
+        ),
+      ];
 }
 
 function validateRawEvidence(sample: RtcBaselineSampleDto, baselineId: string) {
@@ -422,82 +432,40 @@ function validateRawEvidence(sample: RtcBaselineSampleDto, baselineId: string) {
   const inputValid = same(rawEvidence.input, {
     iterations: RTC_DATA_CHANNEL_BROWSER_SOAK_CONTRACT.iterations,
   });
-  const createdAtValid = typeof rawEvidence.createdAt === 'string' &&
-    Number.isFinite(Date.parse(rawEvidence.createdAt));
+  const createdAtValid =
+    typeof rawEvidence.createdAt === 'string' && Number.isFinite(Date.parse(rawEvidence.createdAt));
   return [
     ...validateRawIdentity(rawEvidence, sample.identity, baselineId),
     ...validateProducerCommand(rawEvidence, sample.identity, baselineId),
     ...validateMeasurement(rawEvidence, sample.identity.sampleId),
     ...(!inputValid
       ? [
-        rtcBaselineIssue(
-          '$.input.iterations',
-          'input-mismatch',
-          'B05 requires exactly 25 iterations.',
-        ),
-      ]
+          rtcBaselineIssue(
+            '$.input.iterations',
+            'input-mismatch',
+            'B05 requires exactly 25 iterations.',
+          ),
+        ]
       : []),
     ...(!createdAtValid
       ? [
-        rtcBaselineIssue(
-          '$.createdAt',
-          'invalid-created-at',
-          'Raw evidence creation time is invalid.',
-        ),
-      ]
+          rtcBaselineIssue(
+            '$.createdAt',
+            'invalid-created-at',
+            'Raw evidence creation time is invalid.',
+          ),
+        ]
       : []),
     ...validateRtcDataChannelBrowserSoakRuntimeObservation(sample.runtimeObservation, baselineId),
-    ...(sample.rawReferences.length === 0 ? [] : [
-      rtcBaselineIssue(
-        '$.rawReferences',
-        'unexpected-raw-reference',
-        'B05 stages evidence inline.',
-      ),
-    ]),
-  ];
-}
-
-function computeFiniteMetric(
-  value: RtcBaselineJson | undefined,
-  metric: string,
-  unit: string,
-): RtcBaselineSampleDto['metrics'] {
-  return typeof value === 'number' && Number.isFinite(value) ? [{ metric, unit, value }] : [];
-}
-
-function computeIterationMetrics(resultValue: RtcBaselineJson): RtcBaselineSampleDto['metrics'] {
-  const result = toJsonObject(resultValue);
-  return result === null ? [] : [
-    ...computeFiniteMetric(result.openDurationMs, 'openDurationMs', 'ms'),
-    ...computeFiniteMetric(result.closeDurationMs, 'closeDurationMs', 'ms'),
-  ];
-}
-
-function computeHeapMetrics(
-  heapValue: RtcBaselineJson | undefined,
-): RtcBaselineSampleDto['metrics'] {
-  const heap = toJsonObject(heapValue);
-  const values = [heap?.beforeBytes, heap?.afterBytes, heap?.deltaBytes];
-  return values.every((value) => typeof value === 'number' && Number.isFinite(value))
-    ? [
-      { metric: 'heapBeforeBytes', unit: 'bytes', value: values[0] as number },
-      { metric: 'heapAfterBytes', unit: 'bytes', value: values[1] as number },
-      { metric: 'heapDeltaBytes', unit: 'bytes', value: values[2] as number },
-    ]
-    : [];
-}
-
-function computeMetrics(rawEvidenceValue: RtcBaselineJson): RtcBaselineSampleDto['metrics'] {
-  const rawEvidence = toJsonObject(rawEvidenceValue);
-  if (rawEvidence === null) {
-    return [];
-  }
-  const soak = toJsonObject(rawEvidence.soak);
-  const results = Array.isArray(soak?.results) ? soak.results : [];
-  return [
-    ...computeFiniteMetric(rawEvidence.durationMs, 'durationMs', 'ms'),
-    ...results.flatMap(computeIterationMetrics),
-    ...computeHeapMetrics(rawEvidence.heap),
+    ...(sample.rawReferences.length === 0
+      ? []
+      : [
+          rtcBaselineIssue(
+            '$.rawReferences',
+            'unexpected-raw-reference',
+            'B05 stages evidence inline.',
+          ),
+        ]),
   ];
 }
 
@@ -509,7 +477,7 @@ export function computeRtcDataChannelBrowserSoakSample(
   return {
     ...sample,
     outcome: issues.length === 0 ? ('passed' as const) : ('failed' as const),
-    metrics: computeMetrics(sample.rawEvidence),
+    metrics: summarizeRtcB05(sample.rawEvidence),
     issues,
   };
 }
@@ -519,7 +487,7 @@ export function computeRtcDataChannelBrowserSoakAttempt(
   baselineId: string,
 ): RtcBaselineExternalAttemptDto {
   const samples = attempt.samples.map((sample) =>
-    computeRtcDataChannelBrowserSoakSample(sample, baselineId)
+    computeRtcDataChannelBrowserSoakSample(sample, baselineId),
   );
   return {
     ...attempt,
