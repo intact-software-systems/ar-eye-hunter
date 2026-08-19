@@ -132,8 +132,13 @@ pull request and cannot be deferred through an issue to complete the work.
   backstop — worsened means crossing a metric tier or same-tier growth of more than
   max(10% of the merge-base magnitude, 25 units); every other rule treats any magnitude growth as worsened.
 - Checker tolerance is not authority to retain noncompliance and does not define touched-file standards closure.
-- Tests, mocks, stories, fixtures, and generated artifacts are excluded from the default production-code checker, but
-  not from the human-readable standard.
+- The full-repository checker reports tests, mocks, fixtures, and support tooling alongside
+  production. Generated and vendored artifacts stay out of both the checker and the standard.
+- Enforcement on tests is staged. Feature-branch CI blocks a changed test file only on
+  `line.width`, `boundary.unknown`, and `construction.forward-capture`; every other rule is
+  reported for review without blocking. A rule joins that set once it has been measured against the
+  test corpus, as `file.length` was. Staging is keyed on the path, so a directory-level layout
+  finding under a test tree is staged the same way a file-level one is.
 - A deliberate exception requires explicit human approval and a short rationale in the task handoff. Existing violations
   are not precedent.
 

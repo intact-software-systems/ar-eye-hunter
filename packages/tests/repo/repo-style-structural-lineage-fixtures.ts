@@ -101,6 +101,14 @@ export function writeBoundarySummaryVariantLoader(root: string): string {
     'export function isProductionCodeFile(file) {',
     '  return /\\/(?:apps|packages)\\/.*\\.[cm]?[jt]sx?$/u.test(file);',
     '}',
+    // The changed-style checker also asks which sources are tests and which rules are enforced on
+    // them. This fixture only produces production paths, so both answers are the production ones.
+    'export function isTestSourceFile() {',
+    '  return false;',
+    '}',
+    'export function isTestEnforcedFinding() {',
+    '  return true;',
+    '}',
     'export async function collectProductionSources(roots) {',
     "  return [{ file: path.join(roots[0], 'apps/example/target-a.ts'), raw: 'target' }];",
     '}',

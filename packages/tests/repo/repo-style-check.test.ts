@@ -244,17 +244,33 @@ describe('repo style checker', () => {
     expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
   });
 
-  it('excludes test and mock paths from production warnings', () => {
+  // Tests are in scope for the standard, so the full checker reports them. Enforcement is staged
+  // separately in the changed-range gate; this checker is warning-only either way.
+  it('reports test and mock paths alongside production', () => {
     const longLine = `const value = '${'x'.repeat(110)}';`;
     const fixtureRoot = createFixture({
       'tests/example.ts': longLine,
       'mocks/example.ts': longLine,
     });
 
+    const output = runChecker(fixtureRoot);
+
+    expect(output).toContain('tests/example.ts');
+    expect(output).toContain('mocks/example.ts');
+    expect(output).toContain('[line.width]');
+  });
+
+  it('still excludes generated artifacts from the checker entirely', () => {
+    const longLine = `const value = '${'x'.repeat(110)}';`;
+    const fixtureRoot = createFixture({
+      'schema.generated.ts': longLine,
+      'generated/example.ts': longLine,
+    });
+
     expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
   });
 
-  it('does not include excluded sources in layout directory counts', () => {
+  it('counts test sources in layout directory counts but never generated ones', () => {
     const fixtureRoot = createFixture({
       ...Object.fromEntries(
         Array.from({ length: 20 }, (_, index) => [
@@ -285,10 +301,12 @@ describe('repo style checker', () => {
 
     const result = runChecker(fixtureRoot, '--layout-only');
 
-    expect(result).not.toContain('[layout.directory-density]');
-    expect(result).not.toContain('[layout.feature-prefix-cluster]');
-    expect(result).toContain('layout.directory-density=0');
-    expect(result).toContain('layout.feature-prefix-cluster=0');
+    // tests/ and mocks/ hold 21 files each and are scanned now, so both are dense enough to
+    // report. generated/ holds 21 too and must still contribute nothing.
+    expect(result).toContain('[layout.directory-density]');
+    expect(result).toContain('/tests');
+    expect(result).toContain('/mocks');
+    expect(result).not.toContain('/generated');
   });
 
   it('excludes test-runner configuration files from production warnings', () => {
