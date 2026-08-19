@@ -63,7 +63,16 @@ This is behaviorally sound enough to preserve, but ownership is fragmented:
 - direct semantic coverage for the initial `AppAdminInboxService` phase sequence is missing;
 - test names such as `admin-prune-correction-3` and `admin-prune-task9-correction` preserve migration
   history instead of behavior;
-- current mutation-route and phase-order analyzers still navigate to the generic service path.
+- current mutation-route and phase-order analyzers still navigate to the generic service path;
+- an externally supplied prune `requestId` is currently hashed with newly captured time/expiry, so
+  a later replay can conflict even though the caller-semantic identity is unchanged; the
+  convergent-service rule requires a focused RED before correcting this behavior;
+- APP_OUTBOX retry exhaustion currently leaves the aggregate pending, while the synchronous result
+  wait can finish before the queue retry horizon; both outcomes must remain explicit during this
+  ownership change;
+- `AdminOperationsPruner.pruneExpired` and
+  `PSqlAdminOperationsPruner.pruneExpired` remain affected public legacy even though the direct
+  implementation has no verified production caller.
 
 No open GitHub issue currently describes this ownership child. Do not create an issue merely for
 the planned work. During implementation, fix an in-scope correctness bug only after a focused RED
@@ -75,6 +84,10 @@ issues and create or reuse one accurate issue before handoff.
 - Preserve every REST path, OpenAPI request/response shape, WebSocket behavior, AppInbox type and
   topic, APP_OUTBOX topic, queue key, command/page/aggregate JSON shape, database schema, table/key
   identity, default, error class/status, retry horizon, page size, cutoff, and result-wait behavior.
+- The focused externally supplied `requestId` replay correction in Tasks 2 and 3 is the sole planned
+  behavior exception: caller-semantic identity must not change merely because a later invocation
+  materializes new time/expiry. Prove the behavior RED first and preserve captured facts from the
+  durable winner; do not assume an implementation mechanism before that evidence exists.
 - Preserve authorization order and timing. Initial prune and every page retry reread the current
   session/admin allowlist; no captured administrator decision becomes durable authority.
 - AppInbox remains the sole owner of the incoming prune transaction and retry. The admin mutation
@@ -92,6 +105,10 @@ issues and create or reuse one accurate issue before handoff.
   conditional delete; optional successor APP_OUTBOX insert; reservation completion; commit; wake.
 - Preserve the current 20-attempt ResourceInbox lifetime for the initial command, every successor,
   and the pending aggregate result.
+- Preserve and characterize the current APP_OUTBOX exhaustion outcome that leaves an aggregate
+  pending and the shorter synchronous result wait. Do not silently change either behavior. If the
+  concern remains material but outside this horizon, Task 8 searches for a focused existing issue
+  before recording any follow-up.
 - Topology recomputation and CRDT administration remain direct delegations to their canonical
   domain owners. Do not copy their policy, mutation phases, or result construction into admin code.
 - Process-local metric reset remains outside AppInbox because it does not mutate authoritative
@@ -103,6 +120,10 @@ issues and create or reuse one accurate issue before handoff.
 - Public package exports, REST/API contracts, persisted formats, and protocols are compatibility
   decisions. If implementation evidence requires changing one, stop and request explicit
   maintainer approval instead of inferring permission from repository-local consumer ownership.
+- Treat `AdminOperationsPruner.pruneExpired` and
+  `PSqlAdminOperationsPruner.pruneExpired` as one affected public legacy compatibility decision.
+  This plan does not choose removal or retention; obtain explicit maintainer approval before any
+  production edit in this plan.
 - Every changed human-authored file is reviewed and remediated in full.
 - Every support file modified by remediation enters closure recursively until closure.
 - Independent untouched code remains outside closure.
@@ -181,8 +202,9 @@ and have different invokers, not to satisfy a size number.
   `apps/api-v1/src/services/create-api-mutation-inbox-factories.ts`,
   `apps/api-v1/src/composition/create-api-v1-mutation-runtime.ts`,
   `apps/api-v1/src/composition/create-api-v1-runtime.ts`,
-  `apps/api-v1/src/composition/create-api-v1-admin-services.ts`, and
-  `apps/api-v1/src/composition/create-api-v1-route-installers.ts`.
+  `apps/api-v1/src/composition/create-api-v1-admin-services.ts`,
+  `apps/api-v1/src/composition/create-api-v1-route-installers.ts`, and
+  `apps/api-v1/src/composition/create-default-rallar-server.ts`.
 - Modify package middleware options and exports to point directly to the canonical shared-server
   owner. Do not preserve `services/AppAdminInboxService.ts`.
 - Keep `apps/api-v1/src/routes/admin-support-routes.ts` and the read-only support owner in place.
@@ -279,6 +301,10 @@ Expected: exact current main or a consciously amended base; no unidentified cons
 - [ ] Import the future canonical owner so RED first fails on the missing module.
 - [ ] Prove exact request defaults and one-time volatile reads: generated ID, captured time,
       retry-horizon expiry, default dry-run, default categories, and app-data validation.
+- [ ] Add a focused RED for replaying an externally supplied `requestId` after time advances. Prove
+      caller-semantic identity stays stable and a later invocation cannot conflict solely because
+      it materializes new time/expiry; require the durable winner's captured facts in the replayed
+      result without prescribing the implementation mechanism.
 - [ ] Prove registration and phase order for one accepted dry run and one accepted durable prune:
       current authority/count read -> compute -> validate -> AppInbox transaction -> result and
       aggregate/page writes -> commit return -> queue wake.
@@ -314,6 +340,10 @@ must fail on the named behavior rather than source text.
 - [ ] Preserve `AppAdminInboxService` as the narrow AppInbox stateful shell; use required named
       dependencies/config rather than the current ten positional constructor arguments.
 - [ ] Keep request normalization and immutable fact capture visible before enqueue.
+- [ ] Make the externally supplied `requestId` replay RED GREEN under the convergent-service rule:
+      preserve the durable winner's captured time/expiry and derived facts when the same
+      caller-semantic identity is replayed. Choose the mechanism only from test and persistence
+      evidence.
 - [ ] Keep handler flow visibly `decode -> read -> compute -> validate -> writeMutation`.
 - [ ] Use immutable stage contracts with direct predecessor provenance; make validation pure and
       all-issues when invalid computed data can be represented without throwing. Preserve current
@@ -360,6 +390,10 @@ Expected: direct semantics and cross-domain phase order pass from the canonical 
 - [ ] Give the PostgreSQL adapter a truthful kebab-case path and canonical class name. Preserve SQL,
       ordering, page limits, app-data scope, and conditional predicates unless a failing test proves
       a bug.
+- [ ] Before changing the resource-inbox exclusion predicate, add a focused RED with colliding
+      resource IDs across distinct reservation queue identities. Require exclusion by the exact
+      reservation queue identity rather than resource ID alone only if that RED demonstrates the
+      collision bug; otherwise preserve the predicate.
 - [ ] Preserve every predecessor scenario exactly once, but delete historical task/correction
       filenames and any assertion that protects only a path or helper name.
 
@@ -438,7 +472,7 @@ Expected: FAIL on absent canonical modules, then on any named semantic mismatch.
 **Files:**
 
 - Move/modify the three API modules in the locked target.
-- Modify the five listed API composition/factory consumers.
+- Modify the six listed API composition/factory consumers.
 - Modify relevant OpenAPI/black-box files only if verification finds a real contract omission;
   otherwise leave them byte-unchanged.
 
@@ -478,6 +512,15 @@ Expected: canonical API ownership, unchanged route behavior, and complete app ty
 - Modify: mutation-route and phase-order semantic analyzer support
 - Modify: `packages/shared-test/black-box-runner/tests/api-v1/api-v1-admin-operations.json`
   only if a semantic assertion needs strengthening, never for a path-only ratchet
+- Modify atomically as state-write evidence consumers:
+  `packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-command-codecs.ts`,
+  `packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-derivation.ts`,
+  `packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-result-evidence.ts`,
+  their neighboring evidence modules reached by those imports, and the shared-test evidence tests
+  that exercise them, including `api-v1-state-write-result-identity.test.ts`,
+  `state-write-durable-result-evidence.test.ts`, `state-write-public-result-evidence.test.ts`,
+  `state-write-group-event-semantics-evidence.test.ts`, and
+  `state-write-recipe-evidence.test.ts`.
 
 - [ ] Prove no old production/test path, old class/file vocabulary, direct authoritative mutator,
       or duplicate admin-prune decision remains.
@@ -491,6 +534,10 @@ Expected: canonical API ownership, unchanged route behavior, and complete app ty
 - [ ] Review every warning and legacy candidate in the changed production call path. Fix actual
       bugs under RED tests. Search GitHub before recording any out-of-horizon weakness; create or
       reuse a focused issue with evidence, impact, safe next step, and acceptance.
+- [ ] Characterize APP_OUTBOX retry exhaustion leaving the aggregate pending and the shorter
+      synchronous result wait as preserved current behavior. If either remains material but outside
+      this horizon, search for and reuse a focused existing issue before considering a new one; do
+      not change either behavior silently.
 
 ### Task 9: Run final proportional validation and prepare review
 
