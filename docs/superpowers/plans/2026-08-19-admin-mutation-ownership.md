@@ -65,15 +65,17 @@ This is behaviorally sound enough to preserve, but ownership is fragmented:
   history instead of behavior;
 - current mutation-route and phase-order analyzers still navigate to the generic service path;
 - an externally supplied prune `requestId` is currently hashed with newly captured time/expiry, so
-  a later replay can conflict even though the caller-semantic identity is unchanged; the
-  convergent-service rule identifies a conflict, but changing this observable behavior requires a
-  separate explicit maintainer decision after focused characterization;
+  a later replay can conflict even though the caller-semantic identity is unchanged; the maintainer
+  approved changing this observable behavior so a matching replay reuses the first durable command
+  and result while conflicting semantic key reuse remains a typed rejection;
 - APP_OUTBOX retry exhaustion currently leaves the aggregate pending, while the synchronous result
   wait can finish before the queue retry horizon; both outcomes must remain explicit during this
   ownership change;
 - `AdminOperationsPruner.pruneExpired` and
   `PSqlAdminOperationsPruner.pruneExpired` remain affected public legacy even though the direct
-  implementation has no verified production caller.
+  implementation has no verified production caller; the maintainer approved removing these two
+  low-level deletion members while retaining the REST/AppInbox operation and the canonical page
+  worker.
 
 No open GitHub issue currently describes this ownership child. Do not create an issue merely for
 the planned work. During implementation, fix an in-scope correctness bug only after a focused RED
@@ -84,12 +86,14 @@ issues and create or reuse one accurate issue before handoff.
 
 - Preserve every REST path, OpenAPI request/response shape, WebSocket behavior, AppInbox type and
   topic, APP_OUTBOX topic, queue key, command/page/aggregate JSON shape, database schema, table/key
-  identity, default, error class/status, retry horizon, page size, cutoff, and result-wait behavior.
-- Preserve the current externally supplied `requestId` replay conflict unless a separate explicit
-  maintainer decision approves changing that observable behavior. Task 2 characterizes the current
-  result; production edits remain blocked until the maintainer decides whether to preserve it or
-  authorize a plan amendment for replay stability. This decision is separate from, and cannot be
-  inferred from, the public legacy-pruner decision below.
+  identity, default, error class/status, retry horizon, page size, cutoff, and result-wait behavior,
+  except for the separately approved matching-`requestId` replay result below.
+- Treat an externally supplied prune `requestId` as an idempotency key. Hash the authenticated
+  caller identity and normalized caller semantics before materializing server time or expiry. Only
+  a validated durable miss may capture those volatile facts. A matching replay must reuse the
+  first durable command facts and return or await its durable result without invoking the volatile
+  callbacks again. Reusing the key with different caller semantics remains the existing typed 409
+  conflict. A fresh point-in-time prune or dry-run requires a fresh `requestId`.
 - Preserve authorization order and timing. Initial prune and every page retry reread the current
   session/admin allowlist; no captured administrator decision becomes durable authority.
 - AppInbox remains the sole owner of the incoming prune transaction and retry. The admin mutation
@@ -122,11 +126,11 @@ issues and create or reuse one accurate issue before handoff.
 - Public package exports, REST/API contracts, persisted formats, and protocols are compatibility
   decisions. If implementation evidence requires changing one, stop and request explicit
   maintainer approval instead of inferring permission from repository-local consumer ownership.
-- Treat `AdminOperationsPruner.pruneExpired` and
-  `PSqlAdminOperationsPruner.pruneExpired` as one affected public legacy compatibility decision.
-  This plan does not choose removal or retention; obtain explicit maintainer approval before any
-  production edit in this plan. Approval for this decision does not decide `requestId` replay
-  behavior, and approval for replay behavior does not decide this legacy surface.
+- Remove `AdminOperationsPruner.pruneExpired` and
+  `PSqlAdminOperationsPruner.pruneExpired` as approved affected public legacy. Retain the
+  independently required expired-row counting capability and the high-level REST/AppInbox prune
+  operation. Do not add a registry entry, shim, or replacement direct mutator; production deletion
+  remains owned exclusively by the canonical fenced page worker.
 - Every changed human-authored file is reviewed and remediated in full.
 - Every support file modified by remediation enters closure recursively until closure.
 - Independent untouched code remains outside closure.
@@ -304,13 +308,14 @@ Expected: exact current main or a consciously amended base; no unidentified cons
 - [ ] Import the future canonical owner so RED first fails on the missing module.
 - [ ] Prove exact request defaults and one-time volatile reads: generated ID, captured time,
       retry-horizon expiry, default dry-run, default categories, and app-data validation.
-- [ ] Add focused characterization for replaying an externally supplied `requestId` after time
-      advances. The test is RED initially only because the future canonical module is absent; after
-      that import exists, prove current production behavior: new captured time/expiry changes the
-      command identity and the later invocation conflicts instead of returning the durable winner.
-- [ ] Present that characterization as its own observable compatibility decision and obtain an
-      explicit maintainer choice before any production edit. Do not treat the convergent-service
-      rule, the test, or the legacy-pruner decision as approval to change replay behavior.
+- [ ] Add focused RED coverage for replaying an externally supplied `requestId` after time advances.
+      The test first fails because the future canonical module is absent, then must still catch the
+      current conflict behavior until Task 3 implements durable-winner reuse. Prove the matching
+      replay returns or awaits the first durable result, preserves its captured cutoff/expiry, and
+      does not invoke time, expiry, authority, count, transaction, or wake work again.
+- [ ] Prove a replay with different authenticated caller identity, categories, app-data scope, or
+      dry-run semantics under the same `requestId` remains the typed 409 idempotency conflict and
+      invokes no new volatile callback or mutation work.
 - [ ] Prove registration and phase order for one accepted dry run and one accepted durable prune:
       current authority/count read -> compute -> validate -> AppInbox transaction -> result and
       aggregate/page writes -> commit return -> queue wake.
@@ -346,10 +351,11 @@ must fail on the named behavior rather than source text.
 - [ ] Preserve `AppAdminInboxService` as the narrow AppInbox stateful shell; use required named
       dependencies/config rather than the current ten positional constructor arguments.
 - [ ] Keep request normalization and immutable fact capture visible before enqueue.
-- [ ] Implement only the separately approved `requestId` decision. If the maintainer chooses
-      preservation, keep the characterized replay conflict and volatile capture timing unchanged.
-      If the maintainer authorizes replay stability, amend this plan before production changes and
-      require the durable winner's captured facts without prescribing an unverified mechanism.
+- [ ] Implement the approved durable-winner `requestId` decision: establish normalized caller
+      semantics before volatile capture, let only a validated durable miss call time/expiry sources,
+      and make a matching replay return or await the first command/result with its captured facts.
+      Preserve the typed 409 conflict for different semantic reuse and keep current route
+      authentication fail-closed before replay resolution.
 - [ ] Keep handler flow visibly `decode -> read -> compute -> validate -> writeMutation`.
 - [ ] Use immutable stage contracts with direct predecessor provenance; make validation pure and
       all-issues when invalid computed data can be represented without throwing. Preserve current
@@ -622,6 +628,9 @@ Expected: canonical API ownership, unchanged route behavior, and complete app ty
 
 - [ ] Prove no old production/test path, old class/file vocabulary, direct authoritative mutator,
       or duplicate admin-prune decision remains.
+- [ ] Classify the approved low-level `AdminOperationsPruner.pruneExpired` and
+      `PSqlAdminOperationsPruner.pruneExpired` legacy as `removed`; keep `countExpired` only through
+      the narrow capability required by the initial AppInbox read phase.
 - [ ] Before any production move, classify every file named above as `path-update`,
       `semantic-review`, or `verified-byte-unchanged`; no consumer may remain implicit.
 - [ ] Cold-trace from `packages/shared-server/mod.ts` and API route registration without using the
