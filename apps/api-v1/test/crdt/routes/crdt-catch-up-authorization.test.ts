@@ -14,7 +14,7 @@ import {
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
 
-import * as crdtAdminRoutes from '../../src/routes/crdt-admin-routes.ts';
+import * as crdtAdminRoutes from '../../../src/crdt/register-crdt-admin-routes.ts';
 
 const NOW = 1_700_000_000_000;
 const USER: IssuedAuthSession = {
@@ -39,6 +39,10 @@ interface CatchUpAuthorizationInput {
   readonly session: AuthSession;
 }
 
+const UNUSED_CRDT_ADMIN_MUTATIONS = {
+  writeCrdtAdminMutation: () => Promise.reject(new Error('mutation not used')),
+};
+
 Deno.test(
   'durable CRDT catch-up denies an authenticated non-member without reading the log',
   async () => {
@@ -55,6 +59,7 @@ Deno.test(
           return Promise.reject(new Error('snapshot must not be read on denial'));
         },
       }),
+      crdtAdminMutations: UNUSED_CRDT_ADMIN_MUTATIONS,
       requireApiUserSession: () => Promise.resolve(USER),
       requireApiAdminSession: () => Promise.resolve(USER),
       authorizeCatchUp: () => Promise.resolve({ allowed: false }),
@@ -62,7 +67,7 @@ Deno.test(
 
     const response = await postCatchUp(app, { document: DOCUMENT });
     assert.equal(response.status, 403);
-    const body = await response.json();
+    const body = await readJsonRecord(response);
     assert.equal(body.ok, false);
     assert.equal(body.error, 'Forbidden: CRDT catch-up authorization required.');
     assert.equal(logReads, 0);
@@ -99,6 +104,7 @@ Deno.test('durable CRDT catch-up serves the log for an authorized caller', async
         }),
       readSnapshot: () => Promise.resolve(createCatchUpSnapshot()),
     }),
+    crdtAdminMutations: UNUSED_CRDT_ADMIN_MUTATIONS,
     now: () => NOW,
     requireApiUserSession: () => Promise.resolve(USER),
     requireApiAdminSession: () => Promise.resolve(USER),
@@ -110,10 +116,16 @@ Deno.test('durable CRDT catch-up serves the log for an authorized caller', async
 
   const response = await postCatchUp(app, { document: DOCUMENT });
   assert.equal(response.status, 200);
-  const body = await response.json();
+  const body = await readJsonRecord(response);
   assert.equal(body.ok, true);
-  assert.equal(body.result.page.records[0].update.updateId, 'update-1');
-  assert.equal(body.result.snapshot.snapshotId, 'snapshot-1');
+  const result = requireRecord(body.result, 'CRDT catch-up result');
+  const page = requireRecord(result.page, 'CRDT catch-up page');
+  const records = requireArray(page.records, 'CRDT catch-up records');
+  const record = requireRecord(records[0], 'CRDT catch-up record');
+  const recordUpdate = requireRecord(record.update, 'CRDT catch-up update');
+  const snapshot = requireRecord(result.snapshot, 'CRDT catch-up snapshot');
+  assert.equal(recordUpdate.updateId, 'update-1');
+  assert.equal(snapshot.snapshotId, 'snapshot-1');
   assert.equal(authorizeInputs.length, 1);
   assert.deepEqual(authorizeInputs[0].document, DOCUMENT);
   assert.equal(authorizeInputs[0].session.sessionId, 'alice-session');
@@ -126,6 +138,7 @@ Deno.test('durable CRDT catch-up rejects a missing bearer token with 401', async
       listAfter: () => Promise.reject(new Error('unused')),
       readSnapshot: () => Promise.reject(new Error('unused')),
     }),
+    crdtAdminMutations: UNUSED_CRDT_ADMIN_MUTATIONS,
     requireApiUserSession: () => {
       throw new Error('Unauthorized: Missing bearer token');
     },
@@ -135,7 +148,7 @@ Deno.test('durable CRDT catch-up rejects a missing bearer token with 401', async
 
   const response = await postCatchUp(app, { document: DOCUMENT });
   assert.equal(response.status, 401);
-  assert.equal((await response.json()).error, 'Unauthorized: Missing bearer token');
+  assert.equal((await readJsonRecord(response)).error, 'Unauthorized: Missing bearer token');
 });
 
 Deno.test(
@@ -144,7 +157,7 @@ Deno.test(
     const app = new Hono();
     crdtAdminRoutes.registerCrdtAdminRoutes(app, {
       repository: createCrdtReadRepository(),
-      mutations: {
+      crdtAdminMutations: {
         writeCrdtAdminMutation: () => {
           throw new Error('mutation must not run');
         },
@@ -172,7 +185,10 @@ Deno.test(
       body: JSON.stringify({ document: DOCUMENT }),
     });
     assert.equal(response.status, 403);
-    assert.equal((await response.json()).error, 'Forbidden: CRDT admin authorization required.');
+    assert.equal(
+      (await readJsonRecord(response)).error,
+      'Forbidden: CRDT admin authorization required.',
+    );
   },
 );
 
@@ -231,4 +247,23 @@ async function postCatchUp(app: Hono, body: unknown): Promise<Response> {
     },
     body: JSON.stringify(body),
   });
+}
+
+async function readJsonRecord(response: Response): Promise<Record<string, unknown>> {
+  const value: unknown = await response.json();
+  return requireRecord(value, 'CRDT route response');
+}
+
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${label} must be an object`);
+  }
+  return Object.fromEntries(Object.entries(value));
+}
+
+function requireArray(value: unknown, label: string): readonly unknown[] {
+  if (!Array.isArray(value)) {
+    throw new TypeError(`${label} must be an array`);
+  }
+  return value;
 }

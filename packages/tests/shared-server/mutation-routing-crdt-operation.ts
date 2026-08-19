@@ -5,7 +5,7 @@ import type { MutationRouteInventoryEntry } from './mutation-routing-inventory.t
 import type { MutationRoutingProgramLoader } from './mutation-routing-live-registration.ts';
 
 const CRDT_ADMIN_MUTATIONS_PATH = 'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts';
-const CRDT_ADMIN_ROUTES_PATH = 'apps/api-v1/src/routes/crdt-admin-routes.ts';
+const CRDT_ADMIN_ROUTES_PATH = 'apps/api-v1/src/crdt/register-crdt-admin-routes.ts';
 
 const GENERAL_ADMIN_METHOD_BY_OPERATION: Readonly<Record<string, string>> = {
   compact: 'compactCrdt',
@@ -138,10 +138,12 @@ function hasExactGeneralAdminRouteOperation(
 
 function hasNamedOwnerOperationCall(input: NamedOwnerOperationCallInput): boolean {
   const owners = findFunctionLikes(input.program, input.ownerName);
+  const owner = owners[0];
   return (
     owners.length === 1 &&
+    owner !== undefined &&
     hasExactLiveOperationCall({
-      root: owners[0]!,
+      root: owner,
       callName: input.callName,
       expectedOperationValues: input.expectedOperationValues,
     })
@@ -156,7 +158,10 @@ function hasExactAdminMutationSubmission(
   if (owners.length !== 1) {
     return false;
   }
-  const owner = owners[0]!;
+  const owner = owners[0];
+  if (!owner) {
+    return false;
+  }
   const facts = readLiveFunctionFacts(owner);
   const submissions = facts.calls.filter((call) =>
     isCallNamed(call, 'writeCrdtCommandUntilCompletion'),
@@ -164,7 +169,10 @@ function hasExactAdminMutationSubmission(
   if (submissions.length !== 1) {
     return false;
   }
-  const submission = submissions[0]!;
+  const submission = submissions[0];
+  if (!submission) {
+    return false;
+  }
   const commandBinding = readName(unwrapExpression(asNodes(submission.arguments)[0]));
   const binding = readLexicalBinding(owner, submission, commandBinding);
   if (!binding || !facts.declarations.includes(binding.declarationStatement)) {
@@ -406,7 +414,11 @@ function hasExactCommandOperation(program: MutationRoutingAstNode, operation: st
   if (owners.length !== 1) {
     return false;
   }
-  const returned = readLiveSwitchReturn(owners[0]!, 'input.operation', operation);
+  const owner = owners[0];
+  if (!owner) {
+    return false;
+  }
+  const returned = readLiveSwitchReturn(owner, 'input.operation', operation);
   const creation = unwrapExpression(returned);
   if (!creation || !isCallNamed(creation, 'createCrdtMutationCommand')) {
     return false;
@@ -424,7 +436,11 @@ function hasExactAppInboxType(
   if (owners.length !== 1) {
     return false;
   }
-  const returned = readLiveSwitchReturn(owners[0]!, 'command.operation', operation);
+  const owner = owners[0];
+  if (!owner) {
+    return false;
+  }
+  const returned = readLiveSwitchReturn(owner, 'command.operation', operation);
   return readMemberPath(unwrapExpression(returned)) === `AppInboxType.${type}`;
 }
 
@@ -441,7 +457,11 @@ function readLiveSwitchReturn(
   if (switches.length !== 1) {
     return undefined;
   }
-  const cases = asNodes(switches[0]!.cases);
+  const switchStatement = switches[0];
+  if (!switchStatement) {
+    return undefined;
+  }
+  const cases = asNodes(switchStatement.cases);
   const start = cases.findIndex((caseNode) => readString(asNode(caseNode.test)) === operation);
   return start < 0 ? undefined : readFallthroughReturn(cases.slice(start));
 }
@@ -494,8 +514,12 @@ function readStatementCompletion(statement: MutationRoutingAstNode): LiveComplet
 
 function readIfStatementCompletion(statement: MutationRoutingAstNode): LiveCompletion {
   const condition = readBoolean(asNode(statement.test));
+  const consequent = asNode(statement.consequent);
+  if (!consequent) {
+    return { kind: 'ambiguous' };
+  }
   if (condition === true) {
-    return readStatementCompletion(asNode(statement.consequent)!);
+    return readStatementCompletion(consequent);
   }
   if (condition === false) {
     const alternate = asNode(statement.alternate);
@@ -511,7 +535,11 @@ function hasExactLiveOperationCall(input: ExactLiveOperationCallInput): boolean 
   if (calls.length !== 1) {
     return false;
   }
-  const operation = readEffectiveOperation(asNodes(calls[0]!.arguments)[0]);
+  const call = calls[0];
+  if (!call) {
+    return false;
+  }
+  const operation = readEffectiveOperation(asNodes(call.arguments)[0]);
   return input.expectedOperationValues.includes(operation ?? '');
 }
 
@@ -610,14 +638,18 @@ function visitLiveIfStatement(
 ): boolean {
   visitLiveExpression(asNode(statement.test), facts);
   const condition = readBoolean(asNode(statement.test));
+  const consequent = asNode(statement.consequent);
+  if (!consequent) {
+    return false;
+  }
   if (condition === true) {
-    return visitLiveStatement(asNode(statement.consequent)!, facts);
+    return visitLiveStatement(consequent, facts);
   }
   if (condition === false) {
     const alternate = asNode(statement.alternate);
     return alternate ? visitLiveStatement(alternate, facts) : true;
   }
-  const consequentContinues = visitLiveStatement(asNode(statement.consequent)!, facts);
+  const consequentContinues = visitLiveStatement(consequent, facts);
   const alternate = asNode(statement.alternate);
   const alternateContinues = alternate ? visitLiveStatement(alternate, facts) : true;
   return consequentContinues || alternateContinues;
@@ -686,14 +718,16 @@ function findFunctionLikes(
   program: MutationRoutingAstNode,
   name: string,
 ): readonly MutationRoutingAstNode[] {
-  return findAll(program, (node) => functionLikeName(node) === name).map((node) => {
+  return findAll(program, (node) => functionLikeName(node) === name).flatMap((node) => {
     if (node.type === 'VariableDeclarator') {
-      return asNode(node.init)!;
+      const initializer = asNode(node.init);
+      return initializer ? [initializer] : [];
     }
     if (node.type === 'ObjectProperty') {
-      return asNode(node.value)!;
+      const value = asNode(node.value);
+      return value ? [value] : [];
     }
-    return node;
+    return [node];
   });
 }
 
@@ -740,11 +774,10 @@ function visit(value: unknown, visitor: (node: MutationRoutingAstNode) => void):
     }
     return;
   }
-  const node = value as MutationRoutingAstNode;
-  if (typeof node.type === 'string') {
-    visitor(node);
+  if (isMutationRoutingAstNode(value)) {
+    visitor(value);
   }
-  for (const [key, child] of Object.entries(node)) {
+  for (const [key, child] of Object.entries(value)) {
     if (!['loc', 'start', 'end', 'comments', 'tokens'].includes(key)) {
       visit(child, visitor);
     }
@@ -847,9 +880,16 @@ function sourceRangeSize(node: MutationRoutingAstNode): number {
 }
 
 function asNode(value: unknown): MutationRoutingAstNode | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as MutationRoutingAstNode)
-    : undefined;
+  return isMutationRoutingAstNode(value) ? value : undefined;
+}
+
+function isMutationRoutingAstNode(value: unknown): value is MutationRoutingAstNode {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    typeof Reflect.get(value, 'type') === 'string'
+  );
 }
 
 function asNodes(value: unknown): readonly MutationRoutingAstNode[] {

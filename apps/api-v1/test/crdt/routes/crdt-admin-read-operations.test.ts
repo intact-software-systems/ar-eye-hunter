@@ -15,7 +15,7 @@ import {
   InMemoryRallarCrdtLogRepository,
 } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 
-import { registerCrdtAdminRoutes } from '../../src/routes/crdt-admin-routes.ts';
+import { registerCrdtAdminRoutes } from '../../../src/crdt/register-crdt-admin-routes.ts';
 
 Deno.test('CRDT admin routes expose read-only repository health operations', async () => {
   const audit = new InMemoryRallarCrdtAuditSink();
@@ -39,6 +39,9 @@ Deno.test('CRDT admin routes expose read-only repository health operations', asy
   const app = new Hono();
   registerCrdtAdminRoutes(app, {
     repository,
+    crdtAdminMutations: {
+      writeCrdtAdminMutation: () => Promise.reject(new Error('mutation not used')),
+    },
     now: () => 12_000,
     requireAuth: false,
     requireApiAdminSession: () => Promise.reject(new Error('auth disabled')),
@@ -47,8 +50,9 @@ Deno.test('CRDT admin routes expose read-only repository health operations', asy
 
   const list = await postJson(app, '/api/crdt/admin/documents/list', {});
   assert.equal(list.ok, true);
-  assert.equal(list.result.documents.length, 1);
-  assert.equal(list.result.documents[0].updateCount, 1);
+  const documents = requireArray(list.result.documents, 'CRDT document list');
+  assert.equal(documents.length, 1);
+  assert.equal(requireRecord(documents[0], 'CRDT document status').updateCount, 1);
 
   const integrity = await postJson(app, '/api/crdt/admin/documents/integrity', {
     document: update.document,
@@ -63,8 +67,13 @@ Deno.test('CRDT admin routes expose read-only repository health operations', asy
   });
   assert.equal(debug.ok, true);
   assert.equal(debug.result.format, 'rallar.crdt.debug-bundle.v1');
-  assert.equal(debug.result.redaction.payloadsRedacted, true);
-  assert.deepEqual(debug.result.records[0].update.payload.operations, []);
+  const redaction = requireRecord(debug.result.redaction, 'CRDT debug redaction');
+  assert.equal(redaction.payloadsRedacted, true);
+  const records = requireArray(debug.result.records, 'CRDT debug records');
+  const record = requireRecord(records[0], 'CRDT debug record');
+  const recordUpdate = requireRecord(record.update, 'CRDT debug update');
+  const payload = requireRecord(recordUpdate.payload, 'CRDT debug update payload');
+  assert.deepEqual(payload.operations, []);
 });
 
 const CRDT_ROOM_REF = {
@@ -110,38 +119,9 @@ function createCrdtUpdate(updateId: string): RallarCrdtUpdateEnvelope {
   };
 }
 
-interface CrdtAdminDocumentJson {
-  readonly updateCount: number;
-}
-
-interface CrdtAdminRedactionJson {
-  readonly payloadsRedacted: boolean;
-}
-
-interface CrdtAdminUpdatePayloadJson {
-  readonly operations: readonly unknown[];
-}
-
-interface CrdtAdminUpdateJson {
-  readonly payload: CrdtAdminUpdatePayloadJson;
-}
-
-interface CrdtAdminRecordJson {
-  readonly update: CrdtAdminUpdateJson;
-}
-
-interface CrdtAdminRouteResultJson {
-  readonly documents: readonly CrdtAdminDocumentJson[];
-  readonly valid: boolean;
-  readonly checkedUpdateCount: number;
-  readonly format: string;
-  readonly redaction: CrdtAdminRedactionJson;
-  readonly records: readonly CrdtAdminRecordJson[];
-}
-
 interface CrdtAdminRouteJson {
   readonly ok: boolean;
-  readonly result: CrdtAdminRouteResultJson;
+  readonly result: Record<string, unknown>;
 }
 
 async function postJson(
@@ -155,5 +135,27 @@ async function postJson(
     body: JSON.stringify(body),
   });
   assert.equal(response.status, 200);
-  return await response.json() as CrdtAdminRouteJson;
+  const value: unknown = await response.json();
+  const responseBody = requireRecord(value, 'CRDT admin response');
+  if (typeof responseBody.ok !== 'boolean') {
+    throw new TypeError('CRDT admin response ok must be a boolean');
+  }
+  return {
+    ok: responseBody.ok,
+    result: requireRecord(responseBody.result, 'CRDT admin response result'),
+  };
+}
+
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${label} must be an object`);
+  }
+  return Object.fromEntries(Object.entries(value));
+}
+
+function requireArray(value: unknown, label: string): readonly unknown[] {
+  if (!Array.isArray(value)) {
+    throw new TypeError(`${label} must be an array`);
+  }
+  return value;
 }

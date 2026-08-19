@@ -8,6 +8,14 @@
         "blob": "833ca2f3cb37879c778e90be2097d89dc76f30dc"
       },
       "targets": ["apps/api-v1/src/crdt/create-api-crdt-inbox-factory.ts"]
+    },
+    {
+      "mergeBase": "95aa1578b8dd8b3c5e65a151d28ce1f94e005dcc",
+      "source": {
+        "path": "apps/api-v1/src/routes/crdt-admin-routes.ts",
+        "blob": "5820382ecd9d9f932b1fa77677a916afabc458ce"
+      },
+      "targets": ["apps/api-v1/src/crdt/register-crdt-admin-routes.ts"]
     }
   ]
 }

@@ -21,7 +21,7 @@ import {
 import * as adminOperationsRoutes from '../routes/admin-operations-routes.ts';
 import * as adminSupportRoutes from '../routes/admin-support-routes.ts';
 import * as configRoutes from '../routes/config-route.ts';
-import * as crdtAdminRoutes from '../routes/crdt-admin-routes.ts';
+import * as crdtAdminRoutes from '../crdt/register-crdt-admin-routes.ts';
 import {
   type ApiV1StateSnapshotRouteRuntime,
   createStateSnapshotReadRouteRegistrars,
@@ -253,7 +253,7 @@ function createApiV1AdministrationRouteInstallers<
     (app) =>
       crdtAdminRoutes.registerCrdtAdminRoutes(app, {
         repository: input.crdtLogRepository,
-        mutations: input.crdtMutations,
+        crdtAdminMutations: input.crdtMutations,
         adminClientIds: input.topology.adminClientIds,
         requireApiAdminSession: async (context) => await requireSession(context.req),
         requireApiUserSession: async (context) => await requireSession(context.req),

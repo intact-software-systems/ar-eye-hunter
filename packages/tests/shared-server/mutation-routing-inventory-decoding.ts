@@ -19,7 +19,7 @@ const PATHS = {
   a: 'apps/api-v1/src/routes/config-route.ts',
   w: 'apps/api-v1/src/routes/ws-routes.ts',
   ad: 'apps/api-v1/src/routes/admin-operations-routes.ts',
-  cr: 'apps/api-v1/src/routes/crdt-admin-routes.ts',
+  cr: 'apps/api-v1/src/crdt/register-crdt-admin-routes.ts',
   cm: 'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts',
   ag: 'apps/api-v1/src/services/create-api-admin-mutation-gateway.ts',
   rq: 'apps/api-v1/src/services/request-auth-service.ts',
@@ -74,12 +74,12 @@ function toMutationRouteInventoryEntry(
     constructionRootMarker,
     familyOwnerOrder,
   } = row;
-  const sourcePath = PATHS[source as keyof typeof PATHS];
-  const enqueueSourcePath = PATHS[enqueueSource as keyof typeof PATHS];
-  const rootSourcePath = rootSource ? PATHS[rootSource as keyof typeof PATHS] : undefined;
+  const sourcePath = readStringProperty(PATHS, source);
+  const enqueueSourcePath = readStringProperty(PATHS, enqueueSource);
+  const rootSourcePath = rootSource ? readStringProperty(PATHS, rootSource) : undefined;
   const { ownerSourcePath, ownerDispatchPath, typeOwnerSourcePath, dispatchSourcePath } =
     resolveInventoryOwnerPaths({ dispatchSource, owner, ownerSource, typeOwnerSource });
-  const appInboxType = AppInboxType[type as keyof typeof AppInboxType];
+  const appInboxType = Object.values(AppInboxType).find((candidate) => candidate === type);
   if (
     !sourcePath ||
     !enqueueSourcePath ||
@@ -120,19 +120,20 @@ function resolveInventoryOwnerPaths({
   ownerSource,
   typeOwnerSource,
 }: InventoryOwnerPathAliases): InventoryOwnerPaths {
-  const ownerSourcePath =
-    MUTATION_ROUTE_OWNER_PATHS[ownerSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS];
+  const ownerSourcePath = readStringProperty(MUTATION_ROUTE_OWNER_PATHS, ownerSource);
   return {
     ownerSourcePath,
-    ownerDispatchPath:
-      MUTATION_ROUTE_OWNER_DISPATCH_PATHS[
-        owner as keyof typeof MUTATION_ROUTE_OWNER_DISPATCH_PATHS
-      ],
+    ownerDispatchPath: readStringProperty(MUTATION_ROUTE_OWNER_DISPATCH_PATHS, owner),
     typeOwnerSourcePath: typeOwnerSource
-      ? MUTATION_ROUTE_OWNER_PATHS[typeOwnerSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS]
+      ? readStringProperty(MUTATION_ROUTE_OWNER_PATHS, typeOwnerSource)
       : ownerSourcePath,
     dispatchSourcePath: dispatchSource
-      ? MUTATION_ROUTE_OWNER_PATHS[dispatchSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS]
+      ? readStringProperty(MUTATION_ROUTE_OWNER_PATHS, dispatchSource)
       : ownerSourcePath,
   };
+}
+
+function readStringProperty(value: object, key: string): string | undefined {
+  const property = Reflect.get(value, key);
+  return typeof property === 'string' ? property : undefined;
 }

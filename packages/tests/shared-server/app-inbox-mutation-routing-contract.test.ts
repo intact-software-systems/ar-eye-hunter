@@ -17,7 +17,7 @@ const GROUP_DISPATCH_PATH = 'packages/shared-server/rallar-system/services/AppGr
 const GROUP_MEMBERSHIP_ROUTES = 'apps/api-v1/src/group-state/register-group-membership-routes.ts';
 const GROUP_PRESENCE_ROUTES = 'apps/api-v1/src/group-state/register-group-presence-routes.ts';
 const GROUP_COMMAND_TRANSLATOR = 'apps/api-v1/src/group-state/to-group-state-command.ts';
-const CRDT_ADMIN_ROUTES = 'apps/api-v1/src/routes/crdt-admin-routes.ts';
+const CRDT_ADMIN_ROUTES = 'apps/api-v1/src/crdt/register-crdt-admin-routes.ts';
 const CRDT_ADMIN_MUTATIONS = 'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts';
 const ADMIN_MUTATION_GATEWAY = 'apps/api-v1/src/services/create-api-admin-mutation-gateway.ts';
 const APP_CRDT_INBOX = 'packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
@@ -429,15 +429,17 @@ it.each([
   const mutated = source.replace(from, to);
   expect(mutated).not.toBe(source);
   const route = MUTATION_ROUTE_INVENTORY.find((entry) => entry.type === type);
-  expect(route).toBeDefined();
+  if (!route) {
+    throw new Error(`Missing route inventory for ${type}`);
+  }
 
   expect(
     validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {
       sourceOverrides: new Map([[GROUP_DISPATCH_PATH, mutated]]),
     }),
   ).toContain(
-    `${route!.transport}:${route!.entrypoint}:${route!.type} ` +
-      `owner dispatch is not connected to ${route!.owner}`,
+    `${route.transport}:${route.entrypoint}:${route.type} ` +
+      `owner dispatch is not connected to ${route.owner}`,
   );
 });
 
@@ -481,15 +483,17 @@ it.each([
   const mutated = source.replace(from, to);
   expect(mutated).not.toBe(source);
   const route = MUTATION_ROUTE_INVENTORY.find((entry) => entry.type === type);
-  expect(route).toBeDefined();
+  if (!route) {
+    throw new Error(`Missing route inventory for ${type}`);
+  }
 
   expect(
     validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {
       sourceOverrides: new Map([[GROUP_DISPATCH_PATH, mutated]]),
     }),
   ).toContain(
-    `${route!.transport}:${route!.entrypoint}:${route!.type} ` +
-      `owner dispatch is not connected to ${route!.owner}`,
+    `${route.transport}:${route.entrypoint}:${route.type} ` +
+      `owner dispatch is not connected to ${route.owner}`,
   );
 });
 
@@ -687,10 +691,10 @@ ${wrongReturn}`;
 
 function withDeadCorrectDirectRouteCall(source: string): string {
   const correctCall = `      return await processCrdtAdminMutation({
-        context: c,
-        options,
+        context,
+        dependencies,
         operation: 'compact',
-        request: await readJson(c),
+        request: await readJson(context),
       });`;
   const nestedCorrectCall = correctCall.replace(/^      /gm, '        ');
   const wrongCall = correctCall.replace("operation: 'compact',", "operation: 'lifecycle',");
