@@ -5,13 +5,16 @@ import {
   ADMIN_PRUNE_EXPIRED_CATEGORIES,
   type AdminPruneExpiredCategory,
 } from '@shared/api/admin-operations-types.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
   decodeAdminPruneCommand,
   type AdminPruneCommand,
 } from '@shared-server/rallar-system/admin-operations/admin-prune-work-codec.ts';
+import { ADMIN_PRUNE_AGGREGATE_TOPIC } from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
 import { AppInboxIdempotencyConflictError } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 // The canonical production owner is intentionally absent until Task 3.
 import { AppAdminInboxService } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
 import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
@@ -48,6 +51,21 @@ describe('AppAdminInboxService initial prune command', () => {
       pageSize: 25,
     });
     expect(command.jobId.length).toBeGreaterThan(0);
+    expect(harness.events.slice(0, 4)).toEqual([
+      'phase:semantic-identity',
+      'phase:durable-command-read',
+      'captured-clock',
+      'retry-expiry',
+    ]);
+    expect(harness.timingEvents).toContainEqual(
+      expect.objectContaining({
+        component: 'admin-prune-inbox',
+        operation: 'semantic-identity',
+        principalId: 'admin',
+        sessionId: 'admin-session',
+        details: expect.objectContaining({ semanticHash: expect.stringMatching(/^sha256:/u) }),
+      }),
+    );
     expect(harness.nowEpochMs).toHaveBeenCalledOnce();
     expect(harness.computeRetryExpiryAtEpochMs).toHaveBeenCalledExactlyOnceWith(
       INITIAL_TIME_EPOCH_MS,
@@ -142,12 +160,18 @@ describe('AppAdminInboxService initial prune command', () => {
         dryRun: true,
       });
       const beforeConflict = harness.readWorkCounts();
-
-      await expect(
-        harness.service.pruneExpired({ adminSession: session, request }),
-      ).rejects.toBeInstanceOf(AppInboxIdempotencyConflictError);
+      const conflict = harness.service.pruneExpired({ adminSession: session, request });
+      await expect(conflict).rejects.toBeInstanceOf(AppInboxIdempotencyConflictError);
+      await expect(conflict).rejects.toMatchObject({
+        code: 'app-inbox-idempotency-conflict',
+        status: 409,
+      });
 
       expect(harness.readWorkCounts()).toEqual(beforeConflict);
+      const semanticHashes = readSemanticHashes(harness.timingEvents);
+      expect(semanticHashes).toHaveLength(2);
+      expect(semanticHashes[0]).toMatch(/^sha256:/u);
+      expect(semanticHashes[1]).not.toBe(semanticHashes[0]);
     },
   );
 
@@ -179,9 +203,16 @@ describe('AppAdminInboxService initial prune command', () => {
     });
 
     expect(harness.events).toEqual([
+      'phase:semantic-identity',
+      'phase:durable-command-read',
+      'captured-clock',
+      'retry-expiry',
       'queue-wake',
       'count:runtime-state',
       'current-authority',
+      'phase:read',
+      'phase:compute',
+      'phase:validate',
       'transaction',
       'result-write',
       'commit-return',
@@ -199,11 +230,21 @@ describe('AppAdminInboxService initial prune command', () => {
     });
 
     expect(harness.events).toEqual([
+      'phase:semantic-identity',
+      'phase:durable-command-read',
+      'captured-clock',
+      'retry-expiry',
       'queue-wake',
       'count:runtime-state',
       'count:resource-inbox-results',
       'current-authority',
+      'phase:read',
+      'phase:compute',
+      'phase:validate',
       'transaction',
+      'page-write',
+      'page-write',
+      'aggregate-write',
       'result-write',
       'commit-return',
       'queue-wake',
@@ -222,6 +263,7 @@ describe('AppAdminInboxService initial prune command', () => {
 
     expect(result.left).toMatchObject({ code: 'resource-inbox-invariant-corruption' });
     expect(harness.database.outboxEntries.size).toBe(0);
+    expect(harness.outboxWinnerLookups()).toBe(0);
     expect(harness.wakeQueueEngine).toHaveBeenCalledOnce();
   });
 
@@ -243,12 +285,22 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.pruner.countExpired).toHaveBeenCalledTimes(2);
     expect(harness.transactionCount()).toBe(2);
     expect(harness.events).toEqual([
+      'phase:semantic-identity',
+      'phase:durable-command-read',
+      'captured-clock',
+      'retry-expiry',
       'queue-wake',
       'count:runtime-state',
       'current-authority',
+      'phase:read',
+      'phase:compute',
+      'phase:validate',
       'transaction',
       'count:runtime-state',
       'current-authority',
+      'phase:read',
+      'phase:compute',
+      'phase:validate',
       'transaction',
       'result-write',
       'commit-return',
@@ -318,12 +370,14 @@ interface AdminInboxHarness {
   readonly reader: InboxQueueReader;
   readonly database: ReturnType<typeof createAppInboxTestDatabase>;
   readonly events: string[];
+  readonly timingEvents: RallarTimingEvent[];
   readonly nowEpochMs: ReturnType<typeof vi.fn>;
   readonly computeRetryExpiryAtEpochMs: ReturnType<typeof vi.fn>;
   readonly readAuthority: ReturnType<typeof vi.fn>;
   readonly pruner: Readonly<{ countExpired: ReturnType<typeof vi.fn> }>;
   readonly wakeQueueEngine: ReturnType<typeof vi.fn>;
   advanceTime(milliseconds: number): void;
+  outboxWinnerLookups(): number;
   readWorkCounts(): Readonly<{
     now: number;
     expiry: number;
@@ -337,11 +391,13 @@ interface AdminInboxHarness {
 
 function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): AdminInboxHarness {
   const events: string[] = [];
+  const timingEvents: RallarTimingEvent[] = [];
   const queue = new TestResourceInbox();
   const reader = new InboxQueueReader(queue);
   const results = new TestResourceInboxResults();
   let currentTimeEpochMs = INITIAL_TIME_EPOCH_MS;
   let transactions = 0;
+  let collisionWinnerLookups = 0;
   const nowEpochMs = vi.fn(() => currentTimeEpochMs);
   const computeRetryExpiryAtEpochMs = vi.fn(
     (capturedAtEpochMs: number) =>
@@ -363,7 +419,6 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
   const wakeQueueEngine = vi.fn(() => events.push('queue-wake'));
   const resultRepository = {
     replace: async (entry: ResourceEntry) => {
-      events.push('result-write');
       return await results.replace(entry);
     },
     findByKey: async (...arguments_: Parameters<TestResourceInboxResults['findByKey']>) =>
@@ -386,12 +441,15 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
       if (stage === 'transaction-commit-return') events.push('commit-return');
     },
   });
+  const observedDatabase = createObservedDatabase(database, events, () => {
+    collisionWinnerLookups += 1;
+  });
   const service = new AppAdminInboxService(
     {
       inboxQueueReader: reader,
       resourceInboxRepository: queue as never,
       resourceInboxResultsRepository: resultRepository as never,
-      database,
+      database: observedDatabase,
       pruner,
       readAuthority,
       wakeQueueEngine,
@@ -400,7 +458,7 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
     {
       serviceId: 'admin-inbox-test-server',
       pageSize: 25,
-      timing: undefined,
+      timing: (event) => recordAdminPrunePhase(events, timingEvents, event),
       appInbox: {
         nowEpochMs,
         waitMaxElapsedMsecs: options.waitForResult === false ? 0 : 1_000,
@@ -416,6 +474,7 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
     reader,
     database,
     events,
+    timingEvents,
     nowEpochMs,
     computeRetryExpiryAtEpochMs,
     readAuthority,
@@ -424,6 +483,7 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
     advanceTime: (milliseconds) => {
       currentTimeEpochMs += milliseconds;
     },
+    outboxWinnerLookups: () => collisionWinnerLookups,
     readWorkCounts: () => ({
       now: nowEpochMs.mock.calls.length,
       expiry: computeRetryExpiryAtEpochMs.mock.calls.length,
@@ -434,6 +494,59 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
     }),
     transactionCount: () => transactions,
   };
+}
+
+function createObservedDatabase(
+  database: ReturnType<typeof createAppInboxTestDatabase>,
+  events: string[],
+  recordOutboxWinnerLookup: () => void,
+): PSqlSql {
+  const observed = ((strings: TemplateStringsArray, ...values: unknown[]) =>
+    database(strings, ...values)) as PSqlSql;
+  Object.defineProperties(observed, Object.getOwnPropertyDescriptors(database));
+  observed.begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>): Promise<T> =>
+    await database.begin(
+      async (transaction) =>
+        await write(createObservedTransaction(transaction, events, recordOutboxWinnerLookup)),
+    );
+  return observed;
+}
+
+function createObservedTransaction(
+  transaction: PSqlTransactionSql,
+  events: string[],
+  recordOutboxWinnerLookup: () => void,
+): PSqlTransactionSql {
+  const observed = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    const query = strings.join(' ').replace(/\s+/gu, ' ').trim().toLowerCase();
+    if (query.includes('from resource_inbox') && query.includes('limit 1')) {
+      recordOutboxWinnerLookup();
+    }
+    if (query.includes('insert into resource_inbox_results')) {
+      events.push(values[1] === ADMIN_PRUNE_AGGREGATE_TOPIC ? 'aggregate-write' : 'result-write');
+    }
+    if (query.includes('insert into resource_inbox')) events.push('page-write');
+    return await transaction(strings, ...values);
+  }) as typeof transaction;
+  observed.begin = transaction.begin;
+  return observed;
+}
+
+function recordAdminPrunePhase(
+  events: string[],
+  timingEvents: RallarTimingEvent[],
+  event: RallarTimingEvent,
+): void {
+  if (event.component !== 'admin-prune-inbox') return;
+  timingEvents.push(event);
+  events.push(`phase:${event.operation}`);
+}
+
+function readSemanticHashes(timingEvents: readonly RallarTimingEvent[]): readonly string[] {
+  return timingEvents
+    .filter((event) => event.operation === 'semantic-identity')
+    .map((event) => event.details?.semanticHash)
+    .filter((semanticHash): semanticHash is string => typeof semanticHash === 'string');
 }
 
 function createAdminSession(clientId: string, sessionId: string): AuthSession {
