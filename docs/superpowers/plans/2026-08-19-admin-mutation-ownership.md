@@ -552,7 +552,8 @@ Expected: canonical API ownership, unchanged route behavior, and complete app ty
   `packages/tests/shared-server/admin-prune-correction-3.test.ts`,
   `packages/tests/shared-server/admin-prune-task9-correction.test.ts`,
   `packages/tests/shared-server/integration/postgres/admin-prune-page-delete.test.ts`,
-  `packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts`, and
+  `packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts`,
+  `packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts`, and
   `packages/tests/shared-server/crdt/inbox/app-crdt-inbox-service.test.ts`.
 - Modify: `apps/api-v1/src/composition/README.md`
 - Modify: shared-server admin README from Slice 1
