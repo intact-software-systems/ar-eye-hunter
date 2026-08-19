@@ -85,6 +85,10 @@ const testRunnerConfigExtensions = new Set([
 ]);
 const limits = {
   fileLineCount: 1200,
+  // Test files are 13-23% longer than production at every percentile, and the test corpus
+  // p99 is 1,242 lines. 1,500 keeps the backstop at the same "top ~1% of files" meaning the
+  // production number carries, so a cohesive suite is not split to satisfy a production shape.
+  testFileLineCount: 1500,
   lineWidth: 100,
   handlerLineCount: 30,
   handlerComplexity: 8,
@@ -198,11 +202,12 @@ function isAmbientDeclarationFile(file) {
 function addFileMeasurementFindings(findings, sourceText) {
   const { lines } = sourceText;
   const navigationLength = resolveNavigationFileLength(sourceText);
-  if (navigationLength > limits.fileLineCount) {
+  const fileLineCount = resolveFileLineBackstop(sourceText.file);
+  if (navigationLength > fileLineCount) {
     findings.push(
       finding(
         'file.length',
-        `File length ${navigationLength} > ${limits.fileLineCount} navigation backstop ` +
+        `File length ${navigationLength} > ${fileLineCount} navigation backstop ` +
           `after the data-literal discount (${lines.length} physical lines). Split along ` +
           'real ownership; density review is owned by the cognitive-load tiers.',
       ),
@@ -329,6 +334,13 @@ async function collectSourceFiles(current) {
     }
   }
   return files;
+}
+
+// Which backstop a file answers to. Test files were measured to sit 13-23% longer than production
+// at every percentile, so they carry the wider one. This currently only affects callers that scan
+// beyond production sources: collectProductionSources still filters test paths out entirely.
+export function resolveFileLineBackstop(file) {
+  return isNonProductionPath(file) ? limits.testFileLineCount : limits.fileLineCount;
 }
 
 export function isProductionCodeFile(file) {

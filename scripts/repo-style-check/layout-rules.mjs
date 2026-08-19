@@ -4,6 +4,12 @@ import { parse } from '@babel/parser';
 import { compareCodeUnits, compareFindings, toFinding } from './layout-findings.mjs';
 
 const typeScriptSuffixPattern = /(?:\.d)?\.(?:ts|tsx|mts|cts)$/u;
+// A filename may carry conventional role qualifiers before its extension -- `.test`,
+// `.browser.test`, `.config`, `.worker`. Those describe the file's role, not its name, so
+// they are removed before the kebab-case and generic-stem checks read the owning noun.
+const fileRoleQualifiers =
+  'test|spec|browser|worker|config|typecheck|full-stack|recipe-console|exhaustive';
+const fileRoleQualifierPattern = new RegExp(`(?:\\.(?:${fileRoleQualifiers}))+$`, 'u');
 const kebabCasePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const toWordSet = (value) => new Set(value.split(' '));
 const genericFileStems = toWordSet('utils types helpers contracts runtime middleware');
@@ -381,7 +387,8 @@ function getFeaturePrefix(file, directoryTokens) {
 }
 const hasRoomToken = (name) => /(?:^|-)(?:room|rooms)(?:-|$)/u.test(toKebabCase(name));
 const toRelativeFile = (repoRoot, file) => path.relative(repoRoot, file).split(path.sep).join('/');
-const toTypeScriptStem = (fileName) => fileName.replace(typeScriptSuffixPattern, '');
+const toTypeScriptStem = (fileName) =>
+  fileName.replace(typeScriptSuffixPattern, '').replace(fileRoleQualifierPattern, '');
 const sampleFileNames = (fileNames) =>
   [...fileNames].sort().slice(0, layoutLimits.displayedFileSampleCount).join(', ');
 function groupBy(values, toKey) {
