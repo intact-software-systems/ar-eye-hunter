@@ -54,8 +54,8 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.events.slice(0, 4)).toEqual([
       'phase:semantic-identity',
       'phase:durable-command-read',
-      'captured-clock',
-      'retry-expiry',
+      'now-callback',
+      'retry-expiry-callback',
     ]);
     expect(harness.timingEvents).toContainEqual(
       expect.objectContaining({
@@ -205,9 +205,10 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.events).toEqual([
       'phase:semantic-identity',
       'phase:durable-command-read',
-      'captured-clock',
-      'retry-expiry',
+      'now-callback',
+      'retry-expiry-callback',
       'queue-wake',
+      'now-callback',
       'count:runtime-state',
       'current-authority',
       'phase:read',
@@ -215,6 +216,7 @@ describe('AppAdminInboxService initial prune command', () => {
       'phase:validate',
       'transaction',
       'result-write',
+      'now-callback',
       'commit-return',
     ]);
     expect(harness.database.outboxEntries.size).toBe(0);
@@ -232,9 +234,10 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.events).toEqual([
       'phase:semantic-identity',
       'phase:durable-command-read',
-      'captured-clock',
-      'retry-expiry',
+      'now-callback',
+      'retry-expiry-callback',
       'queue-wake',
+      'now-callback',
       'count:runtime-state',
       'count:resource-inbox-results',
       'current-authority',
@@ -246,6 +249,7 @@ describe('AppAdminInboxService initial prune command', () => {
       'page-write',
       'aggregate-write',
       'result-write',
+      'now-callback',
       'commit-return',
       'queue-wake',
     ]);
@@ -253,17 +257,25 @@ describe('AppAdminInboxService initial prune command', () => {
   });
 
   it('rolls back initial durable work on an outbox collision without loading a winner or waking', async () => {
-    const harness = createAdminInboxHarness({ failOutboxWrite: true });
+    const harness = createAdminInboxHarness({ failOutboxWrite: true, waitForResult: false });
 
-    const result = await completePrune(harness, createAdminSession('admin', 'admin-session'), {
-      requestId: 'initial-outbox-collision',
-      categories: ['runtime-state'],
-      dryRun: false,
-    });
+    await expect(
+      harness.service.pruneExpired({
+        adminSession: createAdminSession('admin', 'admin-session'),
+        request: {
+          requestId: 'initial-outbox-collision',
+          categories: ['runtime-state'],
+          dryRun: false,
+        },
+      }),
+    ).resolves.toMatchObject({ left: { code: 'app-inbox-unavailable' } });
+    await waitForQueueEntry(harness.queue);
+    await dequeueInitialCommand(harness);
 
-    expect(result.left).toMatchObject({ code: 'resource-inbox-invariant-corruption' });
     expect(harness.database.outboxEntries.size).toBe(0);
     expect(harness.outboxWinnerLookups()).toBe(0);
+    expect(harness.durableResultQueryLookups()).toBe(0);
+    expect(harness.durableResultPortLookups()).toBe(0);
     expect(harness.wakeQueueEngine).toHaveBeenCalledOnce();
   });
 
@@ -287,15 +299,17 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.events).toEqual([
       'phase:semantic-identity',
       'phase:durable-command-read',
-      'captured-clock',
-      'retry-expiry',
+      'now-callback',
+      'retry-expiry-callback',
       'queue-wake',
+      'now-callback',
       'count:runtime-state',
       'current-authority',
       'phase:read',
       'phase:compute',
       'phase:validate',
       'transaction',
+      'now-callback',
       'count:runtime-state',
       'current-authority',
       'phase:read',
@@ -303,6 +317,7 @@ describe('AppAdminInboxService initial prune command', () => {
       'phase:validate',
       'transaction',
       'result-write',
+      'now-callback',
       'commit-return',
     ]);
   });
@@ -377,6 +392,8 @@ interface AdminInboxHarness {
   readonly pruner: Readonly<{ countExpired: ReturnType<typeof vi.fn> }>;
   readonly wakeQueueEngine: ReturnType<typeof vi.fn>;
   advanceTime(milliseconds: number): void;
+  durableResultPortLookups(): number;
+  durableResultQueryLookups(): number;
   outboxWinnerLookups(): number;
   readWorkCounts(): Readonly<{
     now: number;
@@ -398,11 +415,16 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
   let currentTimeEpochMs = INITIAL_TIME_EPOCH_MS;
   let transactions = 0;
   let collisionWinnerLookups = 0;
-  const nowEpochMs = vi.fn(() => currentTimeEpochMs);
-  const computeRetryExpiryAtEpochMs = vi.fn(
-    (capturedAtEpochMs: number) =>
-      capturedAtEpochMs + (options.retryExpiryOffsetMs ?? RETRY_EXPIRY_OFFSET_MS),
-  );
+  let resultPortLookups = 0;
+  let resultQueryLookups = 0;
+  const nowEpochMs = vi.fn(() => {
+    events.push('now-callback');
+    return currentTimeEpochMs;
+  });
+  const computeRetryExpiryAtEpochMs = vi.fn((capturedAtEpochMs: number) => {
+    events.push('retry-expiry-callback');
+    return capturedAtEpochMs + (options.retryExpiryOffsetMs ?? RETRY_EXPIRY_OFFSET_MS);
+  });
   const readAuthority = vi.fn(async () => {
     events.push('current-authority');
     return {
@@ -421,8 +443,10 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
     replace: async (entry: ResourceEntry) => {
       return await results.replace(entry);
     },
-    findByKey: async (...arguments_: Parameters<TestResourceInboxResults['findByKey']>) =>
-      await results.findByKey(...arguments_),
+    findByKey: async (...arguments_: Parameters<TestResourceInboxResults['findByKey']>) => {
+      resultPortLookups += 1;
+      return await results.findByKey(...arguments_);
+    },
   };
   const database = createAppInboxTestDatabase(queue, resultRepository, {
     shouldFailOutboxWrite: options.failOutboxWrite ? () => true : undefined,
@@ -441,8 +465,13 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
       if (stage === 'transaction-commit-return') events.push('commit-return');
     },
   });
-  const observedDatabase = createObservedDatabase(database, events, () => {
-    collisionWinnerLookups += 1;
+  const observedDatabase = createObservedDatabase(database, events, {
+    recordOutboxWinnerLookup: () => {
+      collisionWinnerLookups += 1;
+    },
+    recordDurableResultLookup: () => {
+      resultQueryLookups += 1;
+    },
   });
   const service = new AppAdminInboxService(
     {
@@ -483,6 +512,8 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
     advanceTime: (milliseconds) => {
       currentTimeEpochMs += milliseconds;
     },
+    durableResultPortLookups: () => resultPortLookups,
+    durableResultQueryLookups: () => resultQueryLookups,
     outboxWinnerLookups: () => collisionWinnerLookups,
     readWorkCounts: () => ({
       now: nowEpochMs.mock.calls.length,
@@ -499,7 +530,10 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
 function createObservedDatabase(
   database: ReturnType<typeof createAppInboxTestDatabase>,
   events: string[],
-  recordOutboxWinnerLookup: () => void,
+  lookupRecorder: Readonly<{
+    recordOutboxWinnerLookup(): void;
+    recordDurableResultLookup(): void;
+  }>,
 ): PSqlSql {
   const observed = ((strings: TemplateStringsArray, ...values: unknown[]) =>
     database(strings, ...values)) as PSqlSql;
@@ -507,7 +541,7 @@ function createObservedDatabase(
   observed.begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>): Promise<T> =>
     await database.begin(
       async (transaction) =>
-        await write(createObservedTransaction(transaction, events, recordOutboxWinnerLookup)),
+        await write(createObservedTransaction(transaction, events, lookupRecorder)),
     );
   return observed;
 }
@@ -515,12 +549,18 @@ function createObservedDatabase(
 function createObservedTransaction(
   transaction: PSqlTransactionSql,
   events: string[],
-  recordOutboxWinnerLookup: () => void,
+  lookupRecorder: Readonly<{
+    recordOutboxWinnerLookup(): void;
+    recordDurableResultLookup(): void;
+  }>,
 ): PSqlTransactionSql {
   const observed = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const query = strings.join(' ').replace(/\s+/gu, ' ').trim().toLowerCase();
     if (query.includes('from resource_inbox') && query.includes('limit 1')) {
-      recordOutboxWinnerLookup();
+      lookupRecorder.recordOutboxWinnerLookup();
+    }
+    if (query.includes('from resource_inbox_results') && query.includes('limit 1')) {
+      lookupRecorder.recordDurableResultLookup();
     }
     if (query.includes('insert into resource_inbox_results')) {
       events.push(values[1] === ADMIN_PRUNE_AGGREGATE_TOPIC ? 'aggregate-write' : 'result-write');
