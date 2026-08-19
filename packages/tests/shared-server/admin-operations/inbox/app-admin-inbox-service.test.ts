@@ -53,12 +53,18 @@ describe('AppAdminInboxService initial prune command', () => {
     });
     expect(command.jobId.length).toBeGreaterThan(0);
     expect(harness.events.slice(0, 5)).toEqual([
-      'semantic-identity-callback',
+      'semantic-identity-completed',
       'phase:semantic-identity',
       'phase:durable-command-read',
       'now-callback',
       'retry-expiry-callback',
     ]);
+    expect(harness.events.indexOf('semantic-identity-completed')).toBeLessThan(
+      harness.events.indexOf('now-callback'),
+    );
+    expect(harness.events.indexOf('semantic-identity-completed')).toBeLessThan(
+      harness.events.indexOf('retry-expiry-callback'),
+    );
     expect(harness.createAdminPruneIdempotencyIdentity).toHaveBeenCalledExactlyOnceWith({
       requestId: command.jobId,
       requestedBy: 'admin',
@@ -218,7 +224,7 @@ describe('AppAdminInboxService initial prune command', () => {
     });
 
     expect(harness.events).toEqual([
-      'semantic-identity-callback',
+      'semantic-identity-completed',
       'phase:semantic-identity',
       'phase:durable-command-read',
       'now-callback',
@@ -248,7 +254,7 @@ describe('AppAdminInboxService initial prune command', () => {
     });
 
     expect(harness.events).toEqual([
-      'semantic-identity-callback',
+      'semantic-identity-completed',
       'phase:semantic-identity',
       'phase:durable-command-read',
       'now-callback',
@@ -314,7 +320,7 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.pruner.countExpired).toHaveBeenCalledTimes(2);
     expect(harness.transactionCount()).toBe(2);
     expect(harness.events).toEqual([
-      'semantic-identity-callback',
+      'semantic-identity-completed',
       'phase:semantic-identity',
       'phase:durable-command-read',
       'now-callback',
@@ -446,11 +452,12 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
   });
   const createAdminPruneIdempotencyIdentity = vi.fn(
     async (input: AdminPruneIdempotencyIdentityInput): Promise<AdminPruneIdempotencyIdentity> => {
-      events.push('semantic-identity-callback');
+      const semanticHash = await hashCanonicalCommand(input);
+      events.push('semantic-identity-completed');
       return {
         version: 1,
         ...input,
-        semanticHash: await hashCanonicalCommand(input),
+        semanticHash,
       };
     },
   );
