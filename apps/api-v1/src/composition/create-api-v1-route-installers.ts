@@ -67,6 +67,9 @@ export interface ApiV1RouteInstallerRuntime extends ApiV1StateSnapshotRouteRunti
 export interface ApiV1RouteInstallerTopology {
   readonly topologyManagement: graphTopologyRoutes.GraphTopologyRouteTopologyManagement;
   readonly adminClientIds: readonly string[];
+  readonly groupStateRepository: Readonly<{
+    readLifecyclePolicy: graphTopologyRoutes.GraphTopologyRouteDependencies['readLifecyclePolicy'];
+  }>;
 }
 
 export interface ApiV1RouteInstallerAdminServices {
@@ -237,6 +240,7 @@ function createApiV1StateRouteInstallers<
           ),
         requireApiAuthSession: requireSession,
         adminClientIds: input.topology.adminClientIds,
+        readLifecyclePolicy: (ref) => input.topology.groupStateRepository.readLifecyclePolicy(ref),
         now: input.nowEpochMs,
       }),
   ];

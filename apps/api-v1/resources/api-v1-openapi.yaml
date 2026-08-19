@@ -4479,6 +4479,7 @@ components:
         - lastFormationOutcome
         - establishmentStartedAtEpochMs
         - readiness
+        - managerPrincipalIds
       properties:
         groupRef:
           $ref: '#/components/schemas/GroupRef'
@@ -4500,6 +4501,10 @@ components:
           type: integer
           format: int64
           nullable: true
+        managerPrincipalIds:
+          type: array
+          items:
+            type: string
         readiness:
           type: object
           required: [plannedEdgeCount, observedEdgeCount, observedRate]

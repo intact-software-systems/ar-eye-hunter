@@ -91,6 +91,9 @@ export function computeLifecycleTransition(
       ? read.lifecyclePolicy.policy
       : createDefaultGroupLifecyclePolicy();
   const transition = LIFECYCLE_TRANSITION_BY_OPERATION[command.operation];
+  if (read.activeMemberPrincipalIds === null) {
+    throw new TypeError('Lifecycle transition compute requires the roster read');
+  }
   if (facts.internalAuthority === 'formation-criterion') {
     // The criterion evaluator petitions with service authority; the state
     // machine below is the only check that applies. Principals never carry
@@ -107,11 +110,9 @@ export function computeLifecycleTransition(
         },
         policy,
         transition,
+        activeMemberPrincipalIds: read.activeMemberPrincipalIds,
       }),
     );
-  }
-  if (read.activeMemberPrincipalIds === null) {
-    throw new TypeError('Lifecycle transition compute requires the roster read');
   }
   const outcome = computeGroupLifecycleTransition({
     transition,

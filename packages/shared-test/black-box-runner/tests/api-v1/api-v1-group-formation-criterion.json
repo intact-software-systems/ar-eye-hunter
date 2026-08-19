@@ -240,7 +240,10 @@
           "lastFormationOutcome": {
             "outcome": "activated",
             "observedRate": 1
-          }
+          },
+          "managerPrincipalIds": [
+            "{aliceClientId}"
+          ]
         }
       }
     },
@@ -405,7 +408,10 @@
           "lastFormationOutcome": {
             "outcome": "below-floor",
             "observedRate": 0
-          }
+          },
+          "managerPrincipalIds": [
+            "{aliceClientId}"
+          ]
         }
       }
     }

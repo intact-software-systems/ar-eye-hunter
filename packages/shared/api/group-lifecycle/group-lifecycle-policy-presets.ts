@@ -95,7 +95,10 @@ const MANAGED_POLICY: GroupLifecyclePolicy = {
 const MATCH_POLICY: GroupLifecyclePolicy = {
     formation: 'phased',
     manager: {
-        selection: 'elected-by-rank',
+        // elected-by-rank has no rank source in v1 (plan decision 4.2); the
+        // deterministic election gives the preset a working manager until one
+        // lands.
+        selection: 'elected-random-deterministic',
         assignedPrincipalIds: [],
         count: 1,
         succession: 'next-by-selection',

@@ -12,6 +12,11 @@ import {
   computeGroupFormationReadiness,
 } from '@shared/api/group-lifecycle/compute-group-formation-readiness.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
+// prettier-ignore
+import type {
+  GroupLifecyclePolicyRead,
+} from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
+import { readGroupFormationView } from './group-formation-view-read.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import {
@@ -90,6 +95,7 @@ export type GraphTopologyRouteDependencies = Readonly<{
     req: { header(name: string): string | undefined },
   ) => Promise<IssuedAuthSession>;
   adminClientIds: readonly string[];
+  readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
   now: () => number;
 }>;
 
@@ -341,35 +347,6 @@ async function handlePutTopologyOverride(
   } catch (error) {
     return toErrorResponse(context, error);
   }
-}
-
-async function readGroupFormationView(
-  groupRef: GroupRef,
-  snapshot: GroupSnapshot,
-  deps: GraphTopologyRouteDependencies,
-): Promise<GroupFormationView> {
-  const [authority, view] = await Promise.all([
-    deps.topologyManagement.readTopologyPlanningAuthority(groupRef, undefined, snapshot),
-    deps.topologyManagement.readTopologyView(groupRef) as Promise<
-      Readonly<{ snapshot: RallarOverlayTopologySnapshot | null }>
-    >,
-  ]);
-  const group = authority.group.group;
-  return {
-    groupRef,
-    lifecycleState: group.lifecycleState,
-    formationEpoch: group.formationEpoch,
-    formationAttemptCount: group.formationAttemptCount,
-    lastFormationOutcome: group.lastFormationOutcome,
-    establishmentStartedAtEpochMs: group.establishmentStartedAtEpochMs,
-    readiness: view.snapshot === null
-      ? { plannedEdgeCount: 0, observedEdgeCount: 0, observedRate: 1 }
-      : computeGroupFormationReadiness({
-        planned: view.snapshot,
-        rttMeasurements: authority.rttMeasurements,
-        nowEpochMs: authority.nowEpochMs,
-      }),
-  };
 }
 
 async function readCurrentGroupSnapshot(

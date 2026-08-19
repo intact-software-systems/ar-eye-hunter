@@ -175,13 +175,13 @@ is explicit: manager absence blocks only manager-assigned actions, never group s
 
 | # | Decision |
 | --- | --- |
+| 4.2 | **The match preset elects `elected-random-deterministic` in v1.** `elected-by-rank` has no possible rank source yet — the `GroupMember` contract carries no application metadata — so it stays in the vocabulary and resolves zero managers (typed `lifecycle-manager-unavailable`) until a source lands. Deviation from the design table recorded; see the deferred item below so it is not forgotten. |
 | 4.1 | **Aggregate-recorded election; authority stays pure** (option A of `2026-08-18-manager-role-basis-analysis.md`). Epoch-advancing transitions record the electorate on the aggregate beside `formationEpoch`; manager resolution is a pure function over (policy, recorded electorate, epoch, live member statuses) — rendezvous ranking keyed on the epoch, still-active filter, first `count`, with succession `next-by-selection` filtering before taking and `none` taking before filtering. Departure needs zero extra writes. The plan's original "build on `GROUP_DIRECTOR_APPOINT`" sentence is amended: the aggregate-state *pattern* is what survives; the session-scoped, heartbeat-leased, claim-based semantics deliberately do not, because manager liveness is membership, not heartbeats. The director remains the browser work delegate. |
 
-This slice also switches the shipped presets' manager dimension on: every preset currently ships
-`selection: 'none'` (deliberate — decision 2.2's honest unavailability applied to defaults), so
-`managed` moving to creator-with-succession and `match` to elected-by-rank is where preset users
-first see manager behaviour. The no-policy property is untouched: `optimistic` keeps
-`selection: 'none'`.
+*Correction (2026-08-18): an earlier revision of this note claimed every preset ships
+`selection: 'none'` — wrong, from a faulty extraction. The presets have carried
+`managed: creator` and `match: elected-by-rank` since slice 1; decision 2.2's interim predicate is
+what makes the managed creator work today, and the elected variants are what this slice activates.*
 
 ### Slice 5 — Admission and data policies
 
@@ -212,6 +212,11 @@ typed unsupported rejection.
   default) is recorded product-owner decision 2 and is supported by the Phase 0–4 evidence in
   `2026-08-17-phase5-establishment-posture-decision.md`.
 - **The six-state RTC activation status projection.** Slice 3 builds only the readiness fraction.
+- **The `elected-by-rank` rank source** (decision 4.2). The selection ships in the vocabulary and
+  resolves zero managers until the `GroupMember` contract gains an application-supplied rank (the
+  plan's least-coupled default) or another source is chosen. Whoever picks this up: the resolution
+  already takes `rankByPrincipalId` as input, so the work is the member-contract field, its join
+  plumbing, and swapping the `match` preset back from `elected-random-deterministic`.
 - **The `match` preset's per-edge audit trail and server-side pacing.** The preset ships and, with
   the `minimumViableRate` floor, it now also gets honest failure: below the floor a match does not
   activate, and with `closed` admission and `blocked-until-active` data, nothing starts. What v1
