@@ -179,6 +179,9 @@
                 "{bobClientId}"
               ],
               "count": 1
+            },
+            "admission": {
+              "mode": "open"
             }
           }
         }
@@ -380,6 +383,9 @@
                 "{aliceClientId}"
               ],
               "count": 1
+            },
+            "admission": {
+              "mode": "open"
             }
           }
         }

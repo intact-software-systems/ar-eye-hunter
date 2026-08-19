@@ -7,6 +7,8 @@ import type {
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 // prettier-ignore
 import {
+  isGroupAdmissionDecisionOperation,
+  isGroupAdmissionPolicyReadOperation,
   isGroupLifecycleTransitionOperation,
 } from '../group-mutation-contracts.ts';
 import {
@@ -18,16 +20,25 @@ export async function readGroupMutation(
   repository: GroupStateRepository,
   command: GroupMutationCommand,
 ): Promise<GroupMutationRead> {
+  // Safe beside the exact batch because the policy document is written once
+  // at creation and never updated in this release; a policy-update surface
+  // must move this into the batch's stability window.
+  const lifecyclePolicy =
+    isGroupLifecycleTransitionOperation(command.operation) ||
+    isGroupAdmissionPolicyReadOperation(command.operation)
+      ? await repository.readLifecyclePolicy(command.aggregateRef)
+      : null;
   const sequentialOnly =
     command.operation === 'appointDirector' ||
-    isGroupLifecycleTransitionOperation(command.operation);
+    isGroupLifecycleTransitionOperation(command.operation) ||
+    isGroupAdmissionDecisionOperation(command.operation);
   if (!sequentialOnly) {
     const exactRead = await readExactGroupMutation(repository, command);
     if (exactRead.status === 'stable') {
-      return assembleExactGroupMutationRead(command, exactRead);
+      return assembleExactGroupMutationRead(command, exactRead, lifecyclePolicy);
     }
   }
-  return await readGroupMutationSequentially(repository, command);
+  return await readGroupMutationSequentially(repository, command, lifecyclePolicy);
 }
 
 async function readExactGroupMutation(
@@ -51,6 +62,7 @@ async function readExactGroupMutation(
 function assembleExactGroupMutationRead(
   command: GroupMutationCommand,
   read: Extract<GroupStateMutationExactReadResult, { status: 'stable' }>,
+  lifecyclePolicy: GroupMutationRead['lifecyclePolicy'],
 ): GroupMutationRead {
   const actorPrincipalId = command.input.actorPrincipalId;
   const targetPrincipalId = targetPrincipalIdFor(command);
@@ -98,7 +110,7 @@ function assembleExactGroupMutationRead(
     authorityPresenceSessions: [],
     authorityPresenceSessionEntries: [],
     presenceSummary: read.presenceSummaries[0] ?? null,
-    lifecyclePolicy: null,
+    lifecyclePolicy,
     activeMemberPrincipalIds: null,
   };
 }
@@ -106,13 +118,13 @@ function assembleExactGroupMutationRead(
 async function readGroupMutationSequentially(
   repository: GroupStateRepository,
   command: GroupMutationCommand,
+  lifecyclePolicy: GroupMutationRead['lifecyclePolicy'],
 ): Promise<GroupMutationRead> {
-  const lifecyclePolicy = isGroupLifecycleTransitionOperation(command.operation)
-    ? await repository.readLifecyclePolicy(command.aggregateRef)
-    : null;
-  const activeMemberPrincipalIds = isGroupLifecycleTransitionOperation(command.operation)
-    ? toActiveMemberPrincipalIds(await repository.listMembers(command.aggregateRef))
-    : null;
+  const activeMemberPrincipalIds =
+    isGroupLifecycleTransitionOperation(command.operation) ||
+    isGroupAdmissionDecisionOperation(command.operation)
+      ? toActiveMemberPrincipalIds(await repository.listMembers(command.aggregateRef))
+      : null;
   const primary = await readSequentialPrimaryEntries(repository, command);
   const identities = resolveSequentialIdentities(command, primary.groupRead.value?.value);
   const related = await readGroupMutationRelatedEntries({

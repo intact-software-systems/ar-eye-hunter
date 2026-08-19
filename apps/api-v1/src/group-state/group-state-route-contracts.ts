@@ -158,6 +158,24 @@ export type GroupStateRouteCommandInput =
   | (
     & GroupStateRouteCommandInputBase
     & Readonly<{
+      operation: 'grant-group-admission';
+      groupId: string;
+      principalId: string;
+      request: GroupStateRouteRequestWithId<MutationActorInput>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'decline-group-admission';
+      groupId: string;
+      principalId: string;
+      request: GroupStateRouteRequestWithId<MutationActorInput>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
       operation: 'remove-group-member';
       groupId: string;
       principalId: string;

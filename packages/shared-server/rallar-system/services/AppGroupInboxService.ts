@@ -70,6 +70,8 @@ export {
 
 export {
   AUTHENTICATED_GROUP_INBOX_TYPES,
+  type GroupAdmissionDeclineAppInboxPayload,
+  type GroupAdmissionGrantAppInboxPayload,
   type GroupCreateAppInboxPayload,
   type GroupDirectorAppointAppInboxPayload,
   type GroupInviteAcceptAppInboxPayload,

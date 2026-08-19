@@ -22,6 +22,8 @@ export function toGroupMutationDescriptor(
     case AppInboxType.GROUP_INVITE_CREATE:
     case AppInboxType.GROUP_INVITE_REVOKE:
     case AppInboxType.GROUP_INVITE_ACCEPT:
+    case AppInboxType.GROUP_ADMISSION_GRANT:
+    case AppInboxType.GROUP_ADMISSION_DECLINE:
       return toAdmissionMutationDescriptor(enqueue);
     case AppInboxType.GROUP_MEMBER_REMOVE:
     case AppInboxType.GROUP_MEMBER_BAN:
@@ -130,6 +132,8 @@ function toAdmissionMutationDescriptor(
     | { readonly type: typeof AppInboxType.GROUP_INVITE_CREATE }
     | { readonly type: typeof AppInboxType.GROUP_INVITE_REVOKE }
     | { readonly type: typeof AppInboxType.GROUP_INVITE_ACCEPT }
+    | { readonly type: typeof AppInboxType.GROUP_ADMISSION_GRANT }
+    | { readonly type: typeof AppInboxType.GROUP_ADMISSION_DECLINE }
   >,
 ): GroupMutationDescriptor {
   const enqueueType = enqueue.type;
@@ -166,6 +170,24 @@ function toAdmissionMutationDescriptor(
         enqueue.data.scope,
         enqueue.data.groupId,
         enqueue.data.request,
+      );
+    }
+    case AppInboxType.GROUP_ADMISSION_GRANT: {
+      return mutationDescriptor(
+        'grantGroupAdmission',
+        enqueue.data.scope,
+        enqueue.data.groupId,
+        enqueue.data.request,
+        enqueue.data.principalId,
+      );
+    }
+    case AppInboxType.GROUP_ADMISSION_DECLINE: {
+      return mutationDescriptor(
+        'declineGroupAdmission',
+        enqueue.data.scope,
+        enqueue.data.groupId,
+        enqueue.data.request,
+        enqueue.data.principalId,
       );
     }
     default: {

@@ -261,6 +261,8 @@ const METHOD_OPERATION: Readonly<Record<string, GroupMutationDescriptor['operati
   createGroupInvite: 'createGroupInvite',
   revokeGroupInvite: 'revokeGroupInvite',
   acceptGroupInvite: 'acceptGroupInvite',
+  grantGroupAdmission: 'grantGroupAdmission',
+  declineGroupAdmission: 'declineGroupAdmission',
   rotateGroupJoinCode: 'rotateGroupJoinCode',
   removeGroupMember: 'removeGroupMember',
   banGroupMember: 'banGroupMember',
@@ -280,6 +282,8 @@ const USER_MUTATIONS = Object.keys(METHOD_OPERATION);
 const TARGET_MUTATIONS = new Set([
   'createGroupInvite',
   'revokeGroupInvite',
+  'grantGroupAdmission',
+  'declineGroupAdmission',
   'removeGroupMember',
   'banGroupMember',
   'unbanGroupMember',

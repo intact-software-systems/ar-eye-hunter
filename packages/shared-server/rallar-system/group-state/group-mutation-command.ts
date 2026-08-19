@@ -76,6 +76,8 @@ export function toMembershipMutationCommand(
     case 'removeGroupMember':
     case 'banGroupMember':
     case 'unbanGroupMember':
+    case 'grantGroupAdmission':
+    case 'declineGroupAdmission':
       return toTargetCommand(descriptor, randomId);
     case 'setGroupMemberRole':
       return toRoleCommand(descriptor, randomId);
@@ -218,7 +220,12 @@ function toTargetCommand(
   const request = descriptor.request as RevokeGroupInviteRequest | RemoveGroupMemberRequest;
   return {
     operation: descriptor.operation as
-      'revokeGroupInvite' | 'removeGroupMember' | 'banGroupMember' | 'unbanGroupMember',
+      | 'revokeGroupInvite'
+      | 'removeGroupMember'
+      | 'banGroupMember'
+      | 'unbanGroupMember'
+      | 'grantGroupAdmission'
+      | 'declineGroupAdmission',
     aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
     targetPrincipalId: requireTargetPrincipalId(descriptor),
     ...toGroupMutationIdentity(request.requestId, randomId),

@@ -29,6 +29,10 @@ import {
   computeUpsertMember,
 } from '../membership/compute-group-membership-mutation.ts';
 import {
+  computeDeclineGroupAdmission,
+  computeGrantGroupAdmission,
+} from '../membership/compute-group-admission-mutation.ts';
+import {
   computeConnectPresence,
   computeDisconnectPresence,
   computeHeartbeatPresence,
@@ -75,6 +79,10 @@ export function computeGroupMutation(
       return computeInvite(command, read, facts);
     case 'revokeGroupInvite':
       return computeRevokeInvite(command, read, facts);
+    case 'grantGroupAdmission':
+      return computeGrantGroupAdmission(command, read, facts);
+    case 'declineGroupAdmission':
+      return computeDeclineGroupAdmission(command, read, facts);
     case 'rotateGroupJoinCode':
       return computeRotateJoinCode(command, read, facts);
     case 'removeGroupMember':

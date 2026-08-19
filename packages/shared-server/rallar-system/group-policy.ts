@@ -370,6 +370,23 @@ function denyForLifecycleInitiator(
 function denyForNonManager(
   input: CanCommandGroupLifecycleTransitionInput,
 ): GroupPolicyDenied | undefined {
+  return denyForNonManagerPrincipal(
+    input,
+    'Only the group manager can command lifecycle transitions.',
+  );
+}
+
+interface ManagerResolutionPolicyInput {
+  readonly snapshot: GroupSnapshot;
+  readonly actor: GroupPolicyActor;
+  readonly policy: GroupLifecyclePolicy;
+  readonly activeMemberPrincipalIds: readonly string[];
+}
+
+function denyForNonManagerPrincipal(
+  input: ManagerResolutionPolicyInput,
+  message: string,
+): GroupPolicyDenied | undefined {
   const managers = resolveGroupLifecycleManagers({
     manager: input.policy.manager,
     ownerPrincipalId: input.snapshot.group.ownerPrincipalId,
@@ -387,7 +404,35 @@ function denyForNonManager(
   const principalId = input.actor.principalId;
   return principalId !== undefined && managers.includes(principalId)
     ? undefined
-    : deny('forbidden-role', 'Only the group manager can command lifecycle transitions.');
+    : deny('forbidden-role', message);
+}
+
+export type CanDecideGroupAdmissionInput = Readonly<{
+  snapshot: GroupSnapshot;
+  actor: GroupPolicyActor;
+  policy: GroupLifecyclePolicy;
+  /** The full active roster at decision time; see the transition input note. */
+  activeMemberPrincipalIds: readonly string[];
+  nowEpochMs?: number;
+}>;
+
+/**
+ * Who may grant or decline a pending admission: the lifecycle managers, and
+ * only them (plan decision 5.3). Governance is not widened — an owner in a
+ * zero-manager group recovers through its own consent channel, the invite.
+ */
+export function canDecideGroupAdmission(input: CanDecideGroupAdmissionInput): GroupPolicyResult {
+  const lifecycleDenial = requireActiveGroup(input.snapshot.group, input.nowEpochMs);
+  if (lifecycleDenial) {
+    return lifecycleDenial;
+  }
+  const actorMember = findActorMember(input.snapshot, input.actor);
+  const blocked = denyForPresenceMember(actorMember);
+  if (blocked) {
+    return blocked;
+  }
+  const denial = denyForNonManagerPrincipal(input, 'Only a group manager can decide admissions.');
+  return denial ?? ALLOWED;
 }
 
 export function canGovernGroupMember(input: CanGovernGroupMemberInput): GroupPolicyResult {

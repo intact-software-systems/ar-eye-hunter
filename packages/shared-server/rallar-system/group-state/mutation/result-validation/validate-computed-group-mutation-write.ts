@@ -306,6 +306,8 @@ function expectedMutationMemberPrincipalIds(
     case 'acceptGroupInvite':
     case 'createGroupInvite':
     case 'revokeGroupInvite':
+    case 'grantGroupAdmission':
+    case 'declineGroupAdmission':
     case 'removeGroupMember':
     case 'banGroupMember':
     case 'unbanGroupMember':

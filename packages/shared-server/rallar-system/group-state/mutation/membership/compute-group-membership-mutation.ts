@@ -33,6 +33,7 @@ import {
   groupMemberEventType,
   transitionGroupMemberLifecycle,
 } from './transition-group-member-lifecycle.ts';
+import { resolveAdmittedMemberStatus } from './compute-group-admission-mutation.ts';
 
 const DEFAULT_GROUP_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
@@ -64,26 +65,29 @@ export function computeJoin(
   );
   const existing = read.targetMember ?? undefined;
   if (existing?.status === 'active') return noOp(command, read, facts);
+  const status = resolveAdmittedMemberStatus({ read, facts, existing });
+  if (existing?.status === 'pending' && status === 'pending') return noOp(command, read, facts);
   const audit = auditStamp(command, facts, command.targetPrincipalId);
   const member: GroupMember = {
     ...command.aggregateRef,
     principalId: command.targetPrincipalId,
     role: existing?.role ?? 'member',
-    status: 'active',
-    joined: existing?.joined ?? audit,
     updated: audit,
     left: null,
     removed: null,
     banned: null,
     invitedByPrincipalId: existing?.invitedByPrincipalId ?? null,
     invitationExpiresAtEpochMs: existing?.invitationExpiresAtEpochMs ?? null,
+    ...(status === 'active'
+      ? { status, joined: existing?.joined ?? audit }
+      : { status, joined: null }),
   };
   return computeGroupMembershipWrite({
     command,
     read,
     facts,
     members: [member],
-    eventType: 'member-joined',
+    eventType: groupMemberEventType(status),
   });
 }
 
@@ -246,6 +250,14 @@ export function computeUpsertMember(
     capacity: facts.capacity,
   });
   const existing = findTargetMember(read);
+  // Self-activation is the second join surface: it takes the same admission
+  // decision as the join command, so it parks where a join would park
+  // (plan decision 5.1). Admin activation stays governance — it is a grant
+  // expressed through the existing surface.
+  const status =
+    isSelf && command.input.status === 'active'
+      ? resolveAdmittedMemberStatus({ read, facts, existing })
+      : command.input.status;
   const role = command.input.role ?? existing?.role ?? 'member';
   const invitedByPrincipalId =
     command.input.invitedByPrincipalId ?? existing?.invitedByPrincipalId ?? null;
@@ -253,7 +265,7 @@ export function computeUpsertMember(
     command.input.invitationExpiresAtEpochMs ?? existing?.invitationExpiresAtEpochMs ?? null;
   if (
     existing &&
-    existing.status === command.input.status &&
+    existing.status === status &&
     existing.role === role &&
     existing.invitedByPrincipalId === invitedByPrincipalId &&
     existing.invitationExpiresAtEpochMs === invitationExpiresAtEpochMs
@@ -264,6 +276,7 @@ export function computeUpsertMember(
     command,
     facts,
     existing,
+    status,
     role,
     invitedByPrincipalId,
     invitationExpiresAtEpochMs,

@@ -4,6 +4,7 @@ import type {
   AcceptGroupInviteRequest,
   CreateGroupInviteRequest,
   JoinGroupRequest,
+  MutationActorInput,
   RevokeGroupInviteRequest,
   RotateGroupJoinCodeRequest,
 } from '@shared/api/state-types.ts';
@@ -28,6 +29,8 @@ import { toGroupStateResponse } from './to-group-state-response.ts';
 type GroupStateRouteCommandPayload = AuthenticatedGroupMutationEnqueue['data'];
 const GROUP_INVITE_PATH =
   '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/invites/:principalId';
+const GROUP_ADMISSION_PATH =
+  '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/admissions/:principalId';
 
 export function registerGroupAdmissionRoutes(
   app: Hono,
@@ -38,6 +41,8 @@ export function registerGroupAdmissionRoutes(
   registerRotateGroupJoinCodeRoute(app, dependencies);
   registerCreateGroupInviteRoute(app, dependencies);
   registerRevokeGroupInviteRoute(app, dependencies);
+  registerGrantGroupAdmissionRoute(app, dependencies);
+  registerDeclineGroupAdmissionRoute(app, dependencies);
 }
 
 function registerJoinGroupRoute(
@@ -176,6 +181,82 @@ function registerCreateGroupInviteRoute(
               groupId,
               principalId,
               request: await readGroupStateRouteRequest<CreateGroupInviteRequest>(context),
+            }),
+          ),
+        });
+
+        return context.json(written.snapshot);
+      } catch (error) {
+        return toGroupStateErrorResponse(context, error);
+      }
+    },
+  );
+}
+
+function registerGrantGroupAdmissionRoute(
+  app: Hono,
+  dependencies: GroupStateRouteDependencies,
+): void {
+  app.post(
+    `${GROUP_ADMISSION_PATH}/grant`,
+    async (context) => {
+      try {
+        const authSession = await dependencies.requireApiAuthSession(context.req);
+        const scope = toGroupStateRouteScope(context);
+        const groupId = context.req.param('groupId');
+        const principalId = context.req.param('principalId');
+        const written = toGroupStateResponse({
+          kind: 'mutation',
+          written: await dependencies.processGroupAppInbox<
+            GroupStateRouteCommandPayload,
+            GroupStateWritten
+          >(
+            authSession,
+            toGroupStateCommand({
+              operation: 'grant-group-admission',
+              authSession,
+              scope,
+              groupId,
+              principalId,
+              request: await readGroupStateRouteRequest<MutationActorInput>(context),
+            }),
+          ),
+        });
+
+        return context.json(written.snapshot);
+      } catch (error) {
+        return toGroupStateErrorResponse(context, error);
+      }
+    },
+  );
+}
+
+function registerDeclineGroupAdmissionRoute(
+  app: Hono,
+  dependencies: GroupStateRouteDependencies,
+): void {
+  app.post(
+    `${GROUP_ADMISSION_PATH}/decline`,
+    async (context) => {
+      try {
+        const authSession = await dependencies.requireApiAuthSession(context.req);
+        const scope = toGroupStateRouteScope(context);
+        const groupId = context.req.param('groupId');
+        const principalId = context.req.param('principalId');
+        const written = toGroupStateResponse({
+          kind: 'mutation',
+          written: await dependencies.processGroupAppInbox<
+            GroupStateRouteCommandPayload,
+            GroupStateWritten
+          >(
+            authSession,
+            toGroupStateCommand({
+              operation: 'decline-group-admission',
+              authSession,
+              scope,
+              groupId,
+              principalId,
+              request: await readGroupStateRouteRequest<MutationActorInput>(context),
             }),
           ),
         });

@@ -193,6 +193,8 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<
   acceptGroupInvite: MUTATION_REQUEST_KEYS,
   createGroupInvite: [...MUTATION_REQUEST_KEYS, 'invitationExpiresAtEpochMs'],
   revokeGroupInvite: MUTATION_REQUEST_KEYS,
+  grantGroupAdmission: MUTATION_REQUEST_KEYS,
+  declineGroupAdmission: MUTATION_REQUEST_KEYS,
   removeGroupMember: MUTATION_REQUEST_KEYS,
   banGroupMember: MUTATION_REQUEST_KEYS,
   unbanGroupMember: MUTATION_REQUEST_KEYS,

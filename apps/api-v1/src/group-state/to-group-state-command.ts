@@ -41,6 +41,10 @@ export function toGroupStateCommand(
       return toCreateGroupInviteCommand(input);
     case 'revoke-group-invite':
       return toRevokeGroupInviteCommand(input);
+    case 'grant-group-admission':
+      return toGrantGroupAdmissionCommand(input);
+    case 'decline-group-admission':
+      return toDeclineGroupAdmissionCommand(input);
     case 'remove-group-member':
       return toRemoveGroupMemberCommand(input);
     case 'ban-group-member':
@@ -253,6 +257,46 @@ function toRevokeGroupInviteCommand(
 
   return {
     type: AppInboxType.GROUP_INVITE_REVOKE,
+    resourceId: request.requestId,
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    senderId: input.authSession.clientId,
+    data: {
+      scope: input.scope,
+      groupId: input.groupId,
+      principalId: input.principalId,
+      request,
+    },
+  };
+}
+
+function toGrantGroupAdmissionCommand(
+  input: Extract<GroupStateRouteCommandInput, { operation: 'grant-group-admission' }>,
+): GroupStateCommand<typeof AppInboxType.GROUP_ADMISSION_GRANT> {
+  const request = withActor(input);
+  validateGroupMutationRequest('grantGroupAdmission', request);
+
+  return {
+    type: AppInboxType.GROUP_ADMISSION_GRANT,
+    resourceId: request.requestId,
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    senderId: input.authSession.clientId,
+    data: {
+      scope: input.scope,
+      groupId: input.groupId,
+      principalId: input.principalId,
+      request,
+    },
+  };
+}
+
+function toDeclineGroupAdmissionCommand(
+  input: Extract<GroupStateRouteCommandInput, { operation: 'decline-group-admission' }>,
+): GroupStateCommand<typeof AppInboxType.GROUP_ADMISSION_DECLINE> {
+  const request = withActor(input);
+  validateGroupMutationRequest('declineGroupAdmission', request);
+
+  return {
+    type: AppInboxType.GROUP_ADMISSION_DECLINE,
     resourceId: request.requestId,
     contextId: toGroupAppInboxContextId(input.scope, input.groupId),
     senderId: input.authSession.clientId,

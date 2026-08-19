@@ -19,6 +19,8 @@ interface CreateUpsertGroupMemberInput {
   readonly command: Extract<GroupMutationCommand, { operation: 'upsertMember' }>;
   readonly facts: GroupMutationFacts;
   readonly existing: GroupMember | undefined;
+  /** The admission-resolved landing status, not necessarily the input's. */
+  readonly status: GroupMemberStatus;
   readonly role: GroupMember['role'];
   readonly invitedByPrincipalId: string | null;
   readonly invitationExpiresAtEpochMs: number | null;
@@ -28,6 +30,7 @@ export function createUpsertGroupMember({
   command,
   facts,
   existing,
+  status,
   role,
   invitedByPrincipalId,
   invitationExpiresAtEpochMs,
@@ -50,7 +53,7 @@ export function createUpsertGroupMember({
       invitedByPrincipalId,
       invitationExpiresAtEpochMs,
     },
-    command.input.status,
+    status,
     audit,
   );
 }
