@@ -13,7 +13,7 @@ export type ActorId = string;
 
 export type GroupStatus = 'active' | 'archived' | 'deleted';
 
-export type GroupMemberStatus = 'invited' | 'active' | 'left' | 'removed' | 'banned';
+export type GroupMemberStatus = 'invited' | 'pending' | 'active' | 'left' | 'removed' | 'banned';
 
 export type GroupRole = 'owner' | 'admin' | 'member';
 
@@ -131,6 +131,16 @@ export type GroupMember = GroupMemberBase &
         removed: null;
         banned: null;
       }>
+    // The consent-mirror of `invited`: the principal has asked to join and a
+    // lifecycle manager has not yet granted it (plan decision 5.1). Never
+    // client-suppliable; only the admission decision computes it.
+    | Readonly<{
+        status: 'pending';
+        joined: null;
+        left: null;
+        removed: null;
+        banned: null;
+      }>
     | Readonly<{
         status: 'active';
         joined: AuditStamp;
@@ -241,6 +251,7 @@ export type GroupEventType =
   | 'group-archived'
   | 'group-deleted'
   | 'member-invited'
+  | 'member-admission-requested'
   | 'member-joined'
   | 'member-left'
   | 'member-removed'

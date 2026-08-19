@@ -287,7 +287,11 @@ function validateDeltaMember(
   sameGroupRef(member, ref, label);
   nonEmptyString(member.principalId, `${label}.principalId`);
   enumValue(member.role, ['owner', 'admin', 'member'], `${label}.role`);
-  enumValue(member.status, ['invited', 'active', 'left', 'removed', 'banned'], `${label}.status`);
+  enumValue(
+    member.status,
+    ['invited', 'pending', 'active', 'left', 'removed', 'banned'],
+    `${label}.status`,
+  );
   nullableAudit(member.joined, `${label}.joined`);
   validateAudit(member.updated, `${label}.updated`);
   nullableAudit(member.left, `${label}.left`);
@@ -295,8 +299,8 @@ function validateDeltaMember(
   nullableAudit(member.banned, `${label}.banned`);
   nullableString(member.invitedByPrincipalId, `${label}.invitedByPrincipalId`);
   nullablePositiveInteger(member.invitationExpiresAtEpochMs, `${label}.invitationExpiresAtEpochMs`);
-  if (member.status === 'invited' && member.joined !== null) {
-    fail(`${label} invited member joined must be null`);
+  if ((member.status === 'invited' || member.status === 'pending') && member.joined !== null) {
+    fail(`${label} invited/pending member joined must be null`);
   }
   if (member.status === 'active' && member.joined === null) {
     fail(`${label} active member joined is required`);

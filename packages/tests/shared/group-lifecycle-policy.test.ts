@@ -115,6 +115,20 @@ describe('group lifecycle policy validation', () => {
         expect(toIssueCodes(policy)).toContain('manager-initiator-without-manager');
     });
 
+    // The slice-5 sibling deadlock: nobody could ever grant a parked join
+    // (plan decision 5.3). Transient zero-manager states stay legal; only
+    // the permanently granterless combination is invalid.
+    it('rejects manager-approval admission with no manager selection', () => {
+        const policy = toNormalizedGroupLifecyclePolicy({
+            manager: { selection: 'none' },
+            admission: { mode: 'manager-approval' },
+        });
+
+        expect(toIssueCodes(policy)).toContain('manager-approval-without-manager');
+        expect(toIssueCodes(toNormalizedGroupLifecyclePolicy({ preset: 'managed' })))
+            .toHaveLength(0);
+    });
+
     it('rejects a floor above the success rate', () => {
         const policy = toNormalizedGroupLifecyclePolicy({
             activation: { mode: 'threshold', successRate: 0.5, minimumViableRate: 0.9 },

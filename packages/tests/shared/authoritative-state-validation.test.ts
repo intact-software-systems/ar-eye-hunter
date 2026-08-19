@@ -70,6 +70,20 @@ describe('authoritative network state validation', () => {
             ...group,
             members: [{ ...group.members[0], joined: null }],
         }, scope)).toThrow(/joined/);
+        expect(() => validateAuthoritativeGroupSnapshot({
+            ...group,
+            members: [
+                group.members[0],
+                { ...group.members[0], principalId: 'parker', status: 'pending', joined: null },
+            ],
+        }, scope)).not.toThrow();
+        expect(() => validateAuthoritativeGroupSnapshot({
+            ...group,
+            members: [
+                group.members[0],
+                { ...group.members[0], principalId: 'parker', status: 'pending' },
+            ],
+        }, scope)).toThrow(/joined/);
 
         const topology = {
             sourceGroupStateCausalRevision: group.causalRevision,

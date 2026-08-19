@@ -62,6 +62,19 @@ function toManagerIssues(
         });
     }
 
+    // Nobody could ever grant a parked join. Transient zero-manager states
+    // stay legal (invite is the recovery channel); only the permanently
+    // granterless combination is invalid (plan decision 5.3).
+    if (policy.admission.mode === 'manager-approval' && manager.selection === 'none') {
+        issues.push({
+            code: 'manager-approval-without-manager',
+            field: 'admission.mode',
+            message:
+                'admission.mode is manager-approval but manager.selection is none, ' +
+                'so no principal could ever grant a pending admission',
+        });
+    }
+
     return issues;
 }
 

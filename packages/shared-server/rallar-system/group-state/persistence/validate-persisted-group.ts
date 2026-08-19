@@ -162,7 +162,11 @@ export function validateStoredMember(
   validateScopedRecord(value, ref, label);
   requireNonEmptyString(value.principalId, `${label} principalId`);
   requireOneOf(value.role, ['owner', 'admin', 'member'], `${label} role`);
-  requireOneOf(value.status, ['invited', 'active', 'left', 'removed', 'banned'], `${label} status`);
+  requireOneOf(
+    value.status,
+    ['invited', 'pending', 'active', 'left', 'removed', 'banned'],
+    `${label} status`,
+  );
   if (value.joined !== null) validateAuditStamp(value.joined, `${label} joined`);
   validateAuditStamp(value.updated, `${label} updated`);
   for (const key of ['left', 'removed', 'banned'] as const) {
@@ -181,8 +185,8 @@ export function validateStoredMember(
       throw new TypeError(`${label} terminal lifecycle audits are inconsistent`);
     }
   }
-  if (value.status === 'invited' && value.joined !== null) {
-    throw new TypeError(`${label} invited member joined must be null`);
+  if ((value.status === 'invited' || value.status === 'pending') && value.joined !== null) {
+    throw new TypeError(`${label} invited/pending member joined must be null`);
   }
   if (value.status === 'active' && value.joined === null) {
     throw new TypeError(`${label} active member joined is required`);
