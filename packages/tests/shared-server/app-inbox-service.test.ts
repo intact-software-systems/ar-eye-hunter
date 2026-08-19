@@ -66,7 +66,7 @@ import {
     ClientStateEventCollisionError,
     GroupStateEventCollisionError,
 } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'ar-eye-hunter',

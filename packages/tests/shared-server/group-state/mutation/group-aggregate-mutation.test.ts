@@ -16,7 +16,7 @@ import {
   groupStorageKey,
   storedEntry,
 } from './group-mutation-test-runtime.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../create-test-group.ts';
 
 describe('group aggregate mutation computation', () => {
   it('keeps pure mutation computation synchronous, deterministic, and input preserving', () => {

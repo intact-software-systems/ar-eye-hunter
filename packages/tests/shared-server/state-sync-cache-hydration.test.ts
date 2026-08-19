@@ -9,7 +9,7 @@ import {
 } from '@shared/repository/group-state-snapshots-repository.ts';
 import { hydrateStateSyncSnapshotCaches } from '@shared-server/mod.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('state sync cache hydration', () => {
     beforeEach(() => {

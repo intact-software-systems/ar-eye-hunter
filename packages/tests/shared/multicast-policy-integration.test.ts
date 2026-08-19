@@ -7,7 +7,7 @@ import type {
     GroupPresenceSession,
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 // TypeScript declares a native `globalThis.Temporal` whose shape differs from the polyfill's, so
 // the polyfill has to be installed through a property definition rather than a typed assignment.

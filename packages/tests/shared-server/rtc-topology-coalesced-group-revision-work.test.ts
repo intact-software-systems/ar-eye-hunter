@@ -26,7 +26,7 @@ import {
   readRtcTopologyWorkEnvelope,
   toRtcTopologyExecutionId,
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-work-codec.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 const GROUP_REF = {
   applicationId: 'app-1',

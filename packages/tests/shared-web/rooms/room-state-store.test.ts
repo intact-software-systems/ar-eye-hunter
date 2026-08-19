@@ -5,7 +5,7 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../create-test-group.ts';
 
 const stateMocks = vi.hoisted(() => ({
   session: {

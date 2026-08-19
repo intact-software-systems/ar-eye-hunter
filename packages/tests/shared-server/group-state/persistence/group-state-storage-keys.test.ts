@@ -27,7 +27,7 @@ import {
   groupStorageKey,
   storedEntry,
 } from '../mutation/group-mutation-test-runtime.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../create-test-group.ts';
 
 describe('GroupStateRepository persistence', () => {
   it('encodes canonical group storage keys including workspace absence and reserved IDs', () => {

@@ -10,7 +10,7 @@ import type {
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('WebRtcGroupManager', () => {
     it('reconciles desired groups against online clients and connection state', async () => {

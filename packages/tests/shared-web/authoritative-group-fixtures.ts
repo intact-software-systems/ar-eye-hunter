@@ -9,7 +9,7 @@ import type {
     ClientSession,
     ClientSnapshot,
 } from '@shared/api/client-types.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 export function createAuditStampFixture(
     atEpochMs: number,

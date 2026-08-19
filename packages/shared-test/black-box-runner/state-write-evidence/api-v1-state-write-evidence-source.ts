@@ -289,6 +289,10 @@ async function readSnapshotResponse(path: string): Promise<SnapshotResponse | un
   }
 }
 
+const PGLITE_SNAPSHOT_READER_PATH =
+  'packages/shared-test/black-box-runner/state-write-evidence/' +
+  'read-pglite-black-box-evidence.mts';
+
 async function runPGliteSnapshotReader(
   snapshotPath: string,
   input: unknown,
@@ -301,7 +305,7 @@ async function runPGliteSnapshotReader(
       '--config',
       'apps/api-v1/deno.json',
       '--allow-read',
-      'packages/shared-test/black-box-runner/state-write-evidence/read-pglite-black-box-evidence.mts',
+      PGLITE_SNAPSHOT_READER_PATH,
       snapshotPath,
       JSON.stringify(input),
     ],

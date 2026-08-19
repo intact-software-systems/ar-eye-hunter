@@ -15,7 +15,7 @@ import {
   type AdminSupportQueueEntryRead,
   AdminSupportService,
 } from '@shared-server/rallar-system/admin-support/AdminSupportService.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
 const SCOPE = {

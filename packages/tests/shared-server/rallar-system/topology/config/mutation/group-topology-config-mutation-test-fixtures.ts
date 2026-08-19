@@ -5,7 +5,7 @@ import type {
   GroupTopologyConfigMutationFacts,
   GroupTopologyConfigMutationRead,
 } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../../../create-test-group.ts';
 
 export interface CreateTopologyConfigMutationTestInput {
   readonly operation?: 'putConfig' | 'putOverride';

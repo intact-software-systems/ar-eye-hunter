@@ -8,7 +8,7 @@ import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { configureOverlayRepository, readableOverlayCache } from '@shared/repository/overlays-repository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 export type SimulatedClient = Readonly<{
     sessionId: string;

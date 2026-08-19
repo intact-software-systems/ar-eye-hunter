@@ -5,7 +5,7 @@ import {
 } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../../create-test-group.ts';
 
 // Phase 4 (M6) incremental-evolution contract, exercised through the planning
 // kernel exactly as the durable group-revision work path drives it: seeded

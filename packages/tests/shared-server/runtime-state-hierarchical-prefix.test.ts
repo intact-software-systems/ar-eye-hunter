@@ -13,7 +13,7 @@ import type {
     GroupMember,
     GroupPresenceSession,
 } from '@shared/api/group-types.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('runtime-state hierarchical prefix isolation', () => {
     it('keeps sibling workspace identifiers isolated', async () => {

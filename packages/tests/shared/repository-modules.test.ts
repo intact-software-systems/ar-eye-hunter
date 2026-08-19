@@ -55,7 +55,7 @@ import {
 } from '@shared/repository/overlays-repository.ts';
 import { getAllRtt, pairKey, setRtt, setRttById, } from '@shared/repository/rtt-repository.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('repository modules', () => {
     beforeEach(() => {

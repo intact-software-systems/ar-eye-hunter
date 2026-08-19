@@ -146,6 +146,7 @@ function createGroup(groupId: string, ownerPrincipalId: string): Group {
         formationAttemptCount: 0,
         lastFormationOutcome: null,
         establishmentStartedAtEpochMs: null,
+        formationElectorate: [ownerPrincipalId],
         snapshotVersion: 1,
         metadataVersion: 1,
         rosterVersion: 1,

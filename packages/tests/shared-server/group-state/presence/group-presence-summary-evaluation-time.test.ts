@@ -28,7 +28,7 @@ import {
   rekey,
 } from '../group-state-concurrency-test-fixtures.ts';
 import { groupRef, presenceFor } from '../mutation/group-mutation-test-runtime.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../create-test-group.ts';
 
 const REF: GroupRef = {
   applicationId: 'summary-app',

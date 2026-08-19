@@ -5,7 +5,7 @@ import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-life
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../../create-test-group.ts';
 
 import {
   createTopologyTestGroupRef,

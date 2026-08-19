@@ -6,7 +6,7 @@ import {
   isTuplePreservingGroupLivenessReduction,
 } from '@shared/repository/group-state-snapshot-revision.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('decideGroupSnapshotCausalRevision', () => {
   it('orders snapshots by causal tuple', () => {

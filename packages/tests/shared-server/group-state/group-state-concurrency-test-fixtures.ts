@@ -12,7 +12,7 @@ import {
   storagePart,
   storedEntry,
 } from './mutation/group-mutation-test-runtime.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../create-test-group.ts';
 
 export const BASE_EPOCH_MS = Date.now();
 

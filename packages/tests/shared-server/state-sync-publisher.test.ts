@@ -10,7 +10,7 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/services/ti
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('createWsStateSyncPublisher', () => {
     beforeEach(() => {

@@ -676,6 +676,14 @@ moved or changed test.
       "coverageRelation": "The capability traversal test executes barrel and re-export resolution; this AST parse is the mechanism that follows a mutable capability to its canonical owner."
     },
     {
+      "id": "package-dependency-direction-import-map",
+      "domain": "Package dependency direction",
+      "owner": "Rallar platform maintainers",
+      "summary": "The api-v1 Deno import map advertises no browser or test-only package to application source. Executable assertion: “keeps the api-v1 Deno import map free of browser and test-only packages”.",
+      "semanticCoverage": "packages/tests/repo/package-dependency-direction.test.ts#keeps the api-v1 Deno import map free of browser and test-only packages",
+      "coverageRelation": "The import-direction suite executes the layering rule over every package source file; this config read covers the one surface that grants resolution before any import exists."
+    },
+    {
       "id": "mutation-capability-type-interface",
       "domain": "Mutation capability type analysis",
       "owner": "Rallar server maintainers",
@@ -1378,6 +1386,19 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "Inspects the canonical capability declarations so every inventoried mutation type can be joined to an actual registration and owner.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#maps all 50 entrypoints and 46 types to real registrations and owners"
+    },
+    {
+      "id": "test-structure-coupling-f5689a4960545ce1",
+      "path": "packages/tests/repo/package-dependency-direction.test.ts",
+      "line": 104,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "package-dependency-direction-import-map",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar platform maintainers",
+      "rationale": "Reads the api-v1 Deno import map so a browser or test-only mapping cannot be reintroduced ahead of any import that would use it.",
+      "semanticCoverage": "packages/tests/repo/package-dependency-direction.test.ts#keeps the api-v1 Deno import map free of browser and test-only packages"
     },
     {
       "id": "test-structure-coupling-14caa2363e36d34f",

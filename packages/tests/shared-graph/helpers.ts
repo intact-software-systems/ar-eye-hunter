@@ -15,7 +15,7 @@ import {
     VertexType,
     type WeightedGraph,
 } from '@shared-graph/graph/graph-props.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 export function createGraph(
     nodes: ReadonlyArray<readonly [string, VertexState, number]>,

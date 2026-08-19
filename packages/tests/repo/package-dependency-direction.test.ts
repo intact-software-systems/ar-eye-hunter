@@ -99,20 +99,27 @@ describe('package dependency direction', () => {
     },
   );
 
-  it('keeps the api-v1 Deno import map free of browser and higher-layer packages', () => {
+  it('keeps the api-v1 Deno import map free of browser and test-only packages', () => {
     const imports = (
       JSON.parse(readFileSync(path.join(repoRoot, 'apps/api-v1/deno.json'), 'utf8')) as {
         imports?: Record<string, string>;
       }
     ).imports;
+    const declared = Object.keys(imports ?? {});
 
-    expect(Object.keys(imports ?? {})).not.toContain('@shared-web/');
+    expect(declared).not.toContain('@shared-web/');
+    expect(declared).not.toContain('@shared-test/');
   });
 
-  it('keeps api-v1 application source free of test-only packages', () => {
-    const offenders = readSourceFiles('apps/api-v1/src').filter((filePath) =>
-      readFileSync(path.join(repoRoot, filePath), 'utf8').includes('shared-test'),
-    );
+  // packages/shared-test ships products (the black-box runner); packages/tests is test code only.
+  // A test may use either, but application source may reach neither.
+  it('keeps api-v1 application source free of test code and test products', () => {
+    const offenders = readSourceFiles('apps/api-v1/src')
+      .filter((filePath) => {
+        const source = readFileSync(path.join(repoRoot, filePath), 'utf8');
+        return source.includes('packages/shared-test') || source.includes('packages/tests');
+      })
+      .toSorted();
 
     expect(offenders).toEqual([]);
   });

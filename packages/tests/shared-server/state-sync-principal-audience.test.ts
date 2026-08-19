@@ -6,7 +6,7 @@ import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { computeClientStateSyncEntries } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync-routing.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 const NOW_EPOCH_MS = 1_800_000_000_000;
 

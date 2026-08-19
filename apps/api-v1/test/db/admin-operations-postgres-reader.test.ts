@@ -15,7 +15,7 @@ import {
 } from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 
 Deno.test('PSqlAdminOperationsStatsReader aggregates admin read statistics', async () => {
   await withPGliteSql(async (sql) => {

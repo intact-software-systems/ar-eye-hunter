@@ -9,7 +9,7 @@ import type {
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { WebRtcGroupService } from '@shared/services/WebRtcGroupService.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('WebRtcGroupService', () => {
     it('accepts newer snapshots, filters self from targets, and ignores stale updates', async () => {

@@ -14,7 +14,7 @@ import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts'
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 const scope: StateScope = {
   applicationId: DEFAULT_STATE_APPLICATION_ID,

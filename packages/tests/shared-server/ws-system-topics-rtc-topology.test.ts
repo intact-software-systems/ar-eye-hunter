@@ -28,7 +28,7 @@ import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/rep
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('Rallar system websocket topics RTC topology', () => {
   it('does not run a process-local topology fallback for inbound group snapshots', async () => {

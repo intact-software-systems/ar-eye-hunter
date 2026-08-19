@@ -5,7 +5,7 @@ import type {
   GroupPresenceSession,
   GroupSnapshot,
 } from '@shared/api/group-types.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../create-test-group.ts';
 
 interface SnapshotConstruction {
   readonly snapshotVersion: number;

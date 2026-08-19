@@ -4,7 +4,7 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../../create-test-group.ts';
 
 describe('RTC topology plan determinism', () => {
   const sizes = [2, 4, 5, 6, 12, 15, 16, 20, 33, 50, 64];

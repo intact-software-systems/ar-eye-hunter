@@ -172,7 +172,7 @@ import {
 // deno-fmt-ignore
 import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/services/\
 rtc-topology-ws-outbox-entry.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import {

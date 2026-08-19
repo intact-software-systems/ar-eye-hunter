@@ -15,7 +15,7 @@ import type {
     GroupPresenceSession,
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('Rallar group director metadata', () => {
     it('creates appointments with incremented epochs and preserves metadata', () => {

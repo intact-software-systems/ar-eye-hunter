@@ -4,7 +4,7 @@ import type { AuditStamp, GroupMember, GroupSnapshot } from '@shared/api/group-t
 import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
 import { createApiV1RoomWsAuthorizer } from '../../src/services/ws-topic-room-authorizer.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 
 Deno.test('API room authorization reads the current scoped group snapshot', async () => {
   const snapshot = createSnapshot();

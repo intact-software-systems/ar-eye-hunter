@@ -1,6 +1,6 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../../../create-test-group.ts';
 
 interface CreateRtcTopologyRttMeasurementInput {
   readonly sessionIdFrom: string;

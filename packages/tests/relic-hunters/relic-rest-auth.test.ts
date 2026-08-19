@@ -12,7 +12,7 @@ import {
   authorizeRelicSnapshotRead,
   readRelicRestAuthMode,
 } from '../../../apps/relic-hunter-server-v1/src/relic-rest-auth.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 const SESSION = {
   clientId: 'alice',

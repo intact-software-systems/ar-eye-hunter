@@ -7,7 +7,7 @@ import {
   groupStorageKey,
   storedEntry,
 } from './group-state/mutation/group-mutation-test-runtime.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 export function createCorruptionMutationRead(): GroupMutationRead {
   const audit = persistenceAuditStamp(1_000, 'alice', 'seed');

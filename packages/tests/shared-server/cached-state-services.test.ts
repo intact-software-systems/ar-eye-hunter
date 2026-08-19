@@ -19,7 +19,7 @@ import {
 } from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';
 import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
-import { createTestGroup } from '@shared-test/create-test-group.ts';
+import { createTestGroup } from '../create-test-group.ts';
 
 describe('cached state services', () => {
     it('keeps client cache compatibility exports on the canonical factories', () => {
