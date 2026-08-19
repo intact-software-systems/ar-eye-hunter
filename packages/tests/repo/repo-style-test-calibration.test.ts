@@ -6,7 +6,10 @@ import { describe, expect, it } from 'vitest';
 import {
   isProductionCodeFile,
   isNonProductionPath,
+  isTestEnforcedFinding,
+  isTestSourceFile,
   resolveFileLineBackstop,
+  testEnforcedRuleIds,
 } from '../../../scripts/repo-style-check/repository-scan.mjs';
 
 const repoRoot = process.cwd();
@@ -33,12 +36,39 @@ describe('repo style test calibration', () => {
     expect(resolveFileLineBackstop('apps/api-v1/src/main.ts')).toBe(1200);
   });
 
-  // The wider backstop is prepared, not yet reachable: collectProductionSources filters test paths
-  // out of the scan entirely, so no test file is measured until the test scan is enabled. This
-  // pins that honestly rather than letting the calibration read as though it were already live.
-  it('records that the scan still excludes the files the wider backstop is for', () => {
+  it('scans test sources without counting them as production', () => {
     expect(isProductionCodeFile('packages/tests/shared/queue.test.ts')).toBe(false);
-    expect(isProductionCodeFile('packages/shared/queuebox/ResourceEntry.ts')).toBe(true);
+    expect(isTestSourceFile('packages/tests/shared/queue.test.ts')).toBe(true);
+    expect(isTestSourceFile('packages/tests/create-test-group.ts')).toBe(true);
+    expect(isTestSourceFile('apps/api-v1/test/db/pglite-sql-adapter.test.ts')).toBe(true);
+    expect(isTestSourceFile('packages/shared/queuebox/ResourceEntry.ts')).toBe(false);
+  });
+
+  it('blocks only the staged rules when the changed file is a test', () => {
+    const testFile = 'packages/tests/shared/queue.test.ts';
+
+    expect([...testEnforcedRuleIds].toSorted()).toEqual([
+      'boundary.unknown',
+      'construction.forward-capture',
+      'line.width',
+    ]);
+    expect(isTestEnforcedFinding(testFile, 'line.width')).toBe(true);
+    expect(isTestEnforcedFinding(testFile, 'boundary.unknown')).toBe(true);
+    expect(isTestEnforcedFinding(testFile, 'file.cognitive-load')).toBe(false);
+    expect(isTestEnforcedFinding(testFile, 'file.length')).toBe(false);
+  });
+
+  // Layout findings are reported against a directory, which has no extension. Keying the staging on
+  // the file kind would let those through as if the directory were production.
+  it('stages a directory-level finding under the test tree the same way', () => {
+    expect(isTestEnforcedFinding('packages/tests/repo', 'layout.directory-density')).toBe(false);
+    expect(isTestEnforcedFinding('packages/shared', 'layout.directory-density')).toBe(true);
+  });
+
+  it('leaves every rule blocking on production paths', () => {
+    for (const ruleId of ['line.width', 'file.cognitive-load', 'file.length', 'boundary.unknown']) {
+      expect(isTestEnforcedFinding('packages/shared/queuebox/ResourceEntry.ts', ruleId)).toBe(true);
+    }
   });
 
   it('states both backstops in the authority the checker implements', () => {
