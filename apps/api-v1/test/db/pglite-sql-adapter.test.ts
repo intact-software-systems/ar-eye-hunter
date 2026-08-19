@@ -2459,6 +2459,7 @@ Deno.test(
             graphTopologyRoutes.processTopologyAppInbox(service, authSession, enqueue),
           requireApiAuthSession: () => Promise.resolve(authority),
           adminClientIds: [],
+          readLifecyclePolicy: () => Promise.resolve({ status: 'absent' as const }),
           now: () => nowEpochMs,
         });
         return app;

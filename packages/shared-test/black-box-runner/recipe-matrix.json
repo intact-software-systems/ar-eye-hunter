@@ -1140,6 +1140,31 @@
       "description": "Exercises both legs of the activation criterion: a threshold group auto-activates from the evidence produced by its own establishment planning pass, and a deadline group with unconfirmed links fails formation below the floor -- typed outcome, attempt increment, terminal forming at the attempt cap."
     },
     {
+      "id": "api-v1-group-manager-succession",
+      "recipe": "tests/api-v1/api-v1-group-manager-succession.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-manager-succession",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Drives the manager role end to end under an assigned policy: the non-manager owner is denied, the assigned manager establishes, removal passes duty to the next assigned member who completes the phase, and the zero-manager fallback blocks only manager-gated actions -- membership still works and joining the assigned member restores the manager."
+    },
+    {
       "id": "api-v1-group-lifecycle-policy",
       "recipe": "tests/api-v1/api-v1-group-lifecycle-policy.json",
       "category": "api-v1-black-box",

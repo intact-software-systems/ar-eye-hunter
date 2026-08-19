@@ -627,6 +627,7 @@ function createRouteApp(options: {
     requireApiAuthSession: options.requireApiAuthSession ??
       (() => Promise.resolve(options.session ?? createIssuedSession('owner', 'owner-session'))),
     adminClientIds: options.adminClientIds ?? [],
+    readLifecyclePolicy: () => Promise.resolve({ status: 'absent' as const }),
     graphDiagnostics: {
       readScopedGlobalGraphDiagnostic: options.graphDiagnostics?.readScopedGlobalGraphDiagnostic ??
         ((scope) => Either.ofRight(createGraphResponse({ ...scope, groupId: '__global__' }))),

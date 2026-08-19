@@ -426,12 +426,16 @@ describe('group policy helpers', () => {
                 actor: ACTOR,
                 policy: resolveGroupLifecyclePolicyPreset('optimistic'),
                 transition: 'start-establishment',
+                activeMemberPrincipalIds: [ACTOR.principalId ?? ''],
             })),
             expectCode(canCommandGroupLifecycleTransition({
-                snapshot: snapshot({lifecycleState: 'forming'}),
+                // An empty electorate resolves zero managers, covering the
+                // lifecycle-manager-unavailable reason code.
+                snapshot: snapshot({lifecycleState: 'forming', formationElectorate: []}),
                 actor: ACTOR,
                 policy: resolveGroupLifecyclePolicyPreset('match'),
                 transition: 'start-establishment',
+                activeMemberPrincipalIds: [ACTOR.principalId ?? ''],
             })),
         ]);
 
@@ -548,6 +552,10 @@ function snapshot(
         ownerPrincipalId: options.ownerPrincipalId ?? members.find((entry) =>
             entry.status === 'active' && entry.role === 'owner'
         )?.principalId ?? 'alice',
+        ...(options.lifecycleState === undefined ? {} : {lifecycleState: options.lifecycleState}),
+        ...(options.formationElectorate === undefined
+            ? {}
+            : {formationElectorate: options.formationElectorate}),
     });
     const group: Group = options.status === 'archived'
         ? {

@@ -1,5 +1,14 @@
 import { rendezvousScore } from '../../rtc/rendezvous-score.ts';
+import type { GroupRef } from '../group-types.ts';
 import type { GroupManagerPolicy } from './group-lifecycle-policy.ts';
+
+/**
+ * The one election-key derivation. Every resolver of the same group must key
+ * the rendezvous hash identically or replicas would elect different managers.
+ */
+export function toGroupLifecycleElectionKey(ref: GroupRef): string {
+  return `${ref.applicationId}:${ref.workspaceId}:${ref.groupId}`;
+}
 
 export interface ResolveGroupLifecycleManagersInput {
   readonly manager: GroupManagerPolicy;

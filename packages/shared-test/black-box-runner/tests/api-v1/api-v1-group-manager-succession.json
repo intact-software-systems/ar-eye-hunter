@@ -4,10 +4,10 @@
       "env": "RALLAR_API_BASE_URL",
       "default": "http://127.0.0.1:18080"
     },
-    "applicationId": "group-transitions-{runId}",
+    "applicationId": "manager-succession-{runId}",
     "workspaceId": "default-{runId}",
-    "managedGroupId": "managed-room-{runId}",
-    "plainGroupId": "plain-room-{runId}",
+    "managerGroupId": "succession-room-{runId}",
+    "zeroManagerGroupId": "zero-manager-room-{runId}",
     "aliceUsername": {
       "env": "RALLAR_ALICE_USERNAME",
       "default": "alice"
@@ -127,20 +127,20 @@
       }
     },
     {
-      "name": "createAliceClientState",
+      "name": "createBobClientState",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{bobClientId}/principal",
         "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "client-create-alice-{runId}",
-          "username": "{aliceUsername}",
-          "displayName": "Lifecycle manager {runId}",
+          "requestId": "client-create-bob-{runId}",
+          "username": "{bobUsername}",
+          "displayName": "Succession owner {runId}",
           "status": "active",
           "roles": []
         }
@@ -150,27 +150,35 @@
       }
     },
     {
-      "name": "createManagedGroup",
+      "name": "createAssignedGroup",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
         "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "group-create-managed-{runId}",
-          "groupId": "{managedGroupId}",
-          "displayName": "Managed group {runId}",
+          "requestId": "group-create-succession-{runId}",
+          "groupId": "{managerGroupId}",
+          "displayName": "Succession group {runId}",
           "kind": "room",
           "joinMode": "open",
-          "createdByPrincipalId": "{aliceClientId}",
+          "createdByPrincipalId": "{bobClientId}",
           "lifecyclePolicy": {
             "preset": "managed",
             "activation": {
               "mode": "manual"
+            },
+            "manager": {
+              "selection": "assigned",
+              "assignedPrincipalIds": [
+                "{aliceClientId}",
+                "{bobClientId}"
+              ],
+              "count": 1
             }
           }
         }
@@ -179,61 +187,51 @@
         "status": 201,
         "body": {
           "group": {
-            "groupId": "{managedGroupId}",
+            "groupId": "{managerGroupId}",
             "lifecycleState": "forming",
             "formationEpoch": 0,
             "formationElectorate": [
-              "{aliceClientId}"
+              "{bobClientId}"
             ]
           }
         }
       }
     },
     {
-      "name": "topologyHeldWhileForming",
+      "name": "joinAliceToAssignedGroup",
       "type": "http",
       "connection": "primary",
       "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/topology",
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/join",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "join-alice-succession-{runId}"
         }
       },
       "expect": {
-        "status": 200,
-        "bodyAnyOf": [
-          {
-            "snapshot": null
-          },
-          {
-            "snapshot": {
-              "state": "removed"
-            }
-          }
-        ]
+        "status": 200
       }
     },
     {
-      "name": "formationViewWhileForming",
+      "name": "formationViewManagerIsAlice",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/formation",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/formation",
         "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
         }
       },
       "expect": {
         "status": 200,
         "body": {
           "lifecycleState": "forming",
-          "formationEpoch": 0,
-          "formationAttemptCount": 0,
-          "establishmentStartedAtEpochMs": null,
           "managerPrincipalIds": [
             "{aliceClientId}"
           ]
@@ -241,18 +239,18 @@
       }
     },
     {
-      "name": "bobCannotStartEstablishment",
+      "name": "ownerCannotEstablishPastAssignedManager",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/lifecycle/establish",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "bob-start-{runId}"
+          "requestId": "establish-bob-denied-{runId}"
         }
       },
       "expect": {
@@ -260,18 +258,18 @@
       }
     },
     {
-      "name": "startEstablishment",
+      "name": "assignedManagerEstablishes",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/lifecycle/establish",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "start-establishment-{runId}"
+          "requestId": "establish-alice-{runId}"
         }
       },
       "expect": {
@@ -279,80 +277,68 @@
         "body": {
           "group": {
             "lifecycleState": "establishing",
-            "formationEpoch": 1
+            "formationEpoch": 1,
+            "formationElectorate": [
+              "{aliceClientId}",
+              "{bobClientId}"
+            ]
           }
         }
       }
     },
     {
-      "name": "topologyPlannedAfterEstablish",
+      "name": "ownerRemovesTheManager",
       "type": "http",
       "connection": "primary",
       "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/topology",
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/members/{aliceClientId}/remove",
         "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
         },
-        "poll": {
-          "maxAttempts": 20,
-          "maxDurationMs": 15000,
-          "backoffMs": 100,
-          "backoffMultiplier": 2
+        "body": {
+          "requestId": "remove-alice-{runId}"
         }
       },
       "expect": {
-        "status": 200,
-        "body": {
-          "snapshot": {
-            "state": "active"
-          }
-        }
+        "status": 200
       }
     },
     {
-      "name": "formationViewAfterEstablish",
+      "name": "successionPassesToBob",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/formation",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/formation",
         "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "lifecycleState": "establishing",
-          "formationEpoch": 1,
-          "establishmentStartedAtEpochMs": "integer",
-          "readiness": {
-            "plannedEdgeCount": 0,
-            "observedEdgeCount": 0,
-            "observedRate": 1
-          },
           "managerPrincipalIds": [
-            "{aliceClientId}"
+            "{bobClientId}"
           ]
         }
       }
     },
     {
-      "name": "activateGroup",
+      "name": "successorCompletesThePhase",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/activate",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/lifecycle/activate",
         "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "activate-{runId}"
+          "requestId": "activate-bob-{runId}"
         }
       },
       "expect": {
@@ -366,68 +352,79 @@
       }
     },
     {
-      "name": "reopenEstablishment",
+      "name": "createZeroManagerGroup",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/reopen",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
         "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "reopen-{runId}"
+          "requestId": "group-create-zero-{runId}",
+          "groupId": "{zeroManagerGroupId}",
+          "displayName": "Zero manager group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{bobClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "activation": {
+              "mode": "manual"
+            },
+            "manager": {
+              "selection": "assigned",
+              "assignedPrincipalIds": [
+                "{aliceClientId}"
+              ],
+              "count": 1
+            }
+          }
         }
       },
       "expect": {
-        "status": 200,
+        "status": 201,
         "body": {
           "group": {
-            "lifecycleState": "reconfiguring",
-            "formationEpoch": 3
+            "lifecycleState": "forming"
           }
         }
       }
     },
     {
-      "name": "reactivateGroup",
+      "name": "zeroManagerViewIsEmpty",
       "type": "http",
       "connection": "primary",
       "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/activate",
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroManagerGroupId}/formation",
         "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "body": {
-          "requestId": "reactivate-{runId}"
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "group": {
-            "lifecycleState": "active",
-            "formationEpoch": 4
-          }
+          "managerPrincipalIds": []
         }
       }
     },
     {
-      "name": "startFromActiveIsDenied",
+      "name": "zeroManagerBlocksOnlyManagerActions",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroManagerGroupId}/lifecycle/establish",
         "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "start-from-active-{runId}"
+          "requestId": "establish-zero-denied-{runId}"
         }
       },
       "expect": {
@@ -435,33 +432,42 @@
       }
     },
     {
-      "name": "createPlainGroup",
+      "name": "membershipStaysSafeWithZeroManagers",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroManagerGroupId}/join",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-plain-{runId}",
-          "groupId": "{plainGroupId}",
-          "displayName": "Plain group {runId}",
-          "kind": "room",
-          "joinMode": "open",
-          "createdByPrincipalId": "{aliceClientId}"
+          "requestId": "join-alice-zero-{runId}"
         }
       },
       "expect": {
-        "status": 201,
+        "status": 200
+      }
+    },
+    {
+      "name": "joiningTheAssignedMemberRestoresTheManager",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroManagerGroupId}/formation",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
         "body": {
-          "group": {
-            "groupId": "{plainGroupId}",
-            "lifecycleState": "active",
-            "formationEpoch": 0
-          }
+          "managerPrincipalIds": [
+            "{aliceClientId}"
+          ]
         }
       }
     }
