@@ -1,18 +1,44 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-persistence-contracts.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-import { authSessionProofSecret } from '@shared-server/rallar-system/auth/sessions/auth-session-proof-secret.ts';
-import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+// prettier-ignore
+import type {
+  PersistedAuthSession,
+} from '@shared-server/rallar-system/auth/persistence/auth-persistence-contracts.ts';
+// prettier-ignore
+import type {
+  IssuedAuthSession,
+} from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+// prettier-ignore
+import {
+  authSessionProofSecret,
+} from '@shared-server/rallar-system/auth/sessions/auth-session-proof-secret.ts';
+// prettier-ignore
+import type {
+  GroupStateService,
+} from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import {
   type AppInboxMessageContext,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
-import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
-import { toTopologyConfigMutationResult } from '@shared-server/rallar-system/topology/config/mutation/to-topology-config-mutation-result.ts';
-import { writeTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/write-topology-config-mutation.ts';
+// prettier-ignore
 import {
+  createAuthenticatedTopologyEnqueue,
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
+// prettier-ignore
+import {
+  toTopologyAppInboxCommand,
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
+// prettier-ignore
+import {
+  toTopologyConfigMutationResult,
+} from '@shared-server/rallar-system/topology/config/mutation/\
+to-topology-config-mutation-result.ts';
+// prettier-ignore
+import {
+  writeTopologyConfigMutation,
+} from '@shared-server/rallar-system/topology/config/mutation/write-topology-config-mutation.ts';
+import {
+  decodeTopologyAppInboxResult,
   TopologyAppInboxHandler,
   type TopologyAppInboxMutationOwners,
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
@@ -37,7 +63,25 @@ const SESSION: IssuedAuthSession = {
 };
 
 describe('TopologyAppInboxHandler', () => {
-  it('keeps verification and read-compute-validate-write phases ordered and wakes after commit', async () => {
+  it('decodes an exact topology reconfigure result', () => {
+    const result = {
+      status: 'queued',
+      groupRef: {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: 'room-1',
+      },
+      requestId: 'request-1',
+      outboxId: 'outbox-1',
+    } as const;
+
+    expect(decodeTopologyAppInboxResult(result)).toEqual(result);
+    expect(() => decodeTopologyAppInboxResult({ ...result, stale: true })).toThrow(
+      'Topology reconfigure AppInbox result fields are invalid',
+    );
+  });
+
+  it('orders verification and mutation phases before post-commit wake', async () => {
     const phases: string[] = [];
     const context = await topologyContext(phases);
     const computed = { outcome: 'write' } as never;
@@ -98,7 +142,7 @@ describe('TopologyAppInboxHandler', () => {
     expect(wakeQueue).toHaveBeenCalledOnce();
   });
 
-  it('rejects an idempotency conflict before opening a transaction or waking the queue', async () => {
+  it('rejects idempotency conflict before transaction or wake', async () => {
     const phases: string[] = [];
     const context = await topologyContext(phases);
     const writeMutation = vi.fn();

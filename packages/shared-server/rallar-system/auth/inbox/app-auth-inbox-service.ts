@@ -78,15 +78,19 @@ export class AppAuthInboxService extends AppInboxService {
     wakeQueue?: () => void,
   ) {
     super(
-      inbox,
-      resourceInbox,
-      resourceInboxResults,
-      database,
-      serviceId,
-      AUTH_STATE_APP_INBOX_TOPIC,
-      timing,
-      options,
-      wakeQueue,
+      {
+        inboxQueueReader: inbox,
+        resourceInboxRepository: resourceInbox,
+        resourceInboxResultsRepository: resourceInboxResults,
+        database,
+      },
+      {
+        serviceId,
+        defaultTopicId: AUTH_STATE_APP_INBOX_TOPIC,
+        timing,
+        options,
+        wakeOwningQueue: wakeQueue,
+      },
     );
     this.authMutationService = authMutationService;
     this.credentialIssuer = credentialIssuer;
@@ -113,25 +117,24 @@ export class AppAuthInboxService extends AppInboxService {
       persisted = await super.processEntryUntilCompletionResult<
         AuthMutationCommand,
         AuthMutationResult
-      >({
-        type: toAuthAppInboxType(decoded),
-        topicId: AUTH_STATE_APP_INBOX_TOPIC,
-        resourceId: decoded.requestId,
-        contextId: toAuthCommandContextId(decoded),
-        senderId: toAuthCommandSenderId(decoded),
-        data: decoded,
-      });
+      >(
+        {
+          type: toAuthAppInboxType(decoded),
+          topicId: AUTH_STATE_APP_INBOX_TOPIC,
+          resourceId: decoded.requestId,
+          contextId: toAuthCommandContextId(decoded),
+          senderId: toAuthCommandSenderId(decoded),
+          data: decoded,
+        },
+        decodeAuthMutationResult,
+      );
     } catch (error) {
       return Either.ofLeft(toTerminalAppInboxFailure(error, toAppInboxErrorCode(error)));
     }
     if (persisted.left !== undefined) return Either.ofLeft(persisted.left);
     if (persisted.right === undefined) throw new Error('Auth AppInbox result is missing');
     return Either.ofRight(
-      (await toAuthMutationPublicResult(
-        decoded,
-        decodeAuthMutationResult(persisted.right),
-        this.credentialIssuer,
-      )) as R,
+      (await toAuthMutationPublicResult(decoded, persisted.right, this.credentialIssuer)) as R,
     );
   }
 

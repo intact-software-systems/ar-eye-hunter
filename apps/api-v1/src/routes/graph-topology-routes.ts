@@ -6,11 +6,7 @@ import type {
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import {
-  computeGroupFormationReadiness,
-} from '@shared/api/group-lifecycle/compute-group-formation-readiness.ts';
-import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
+// prettier-ignore
 import type {
   GroupLifecyclePolicyRead,
 } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
@@ -26,13 +22,16 @@ import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import {
+  decodeTopologyAppInboxResult,
   type TopologyAppInboxCommand,
   type TopologyAppInboxRequestPayload,
+  type TopologyAppInboxResult,
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import {
   type AppInboxEnqueueInput,
   type AppInboxFailure,
+  type AppInboxResultDecoder,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
@@ -43,12 +42,13 @@ import {
 export type ProcessTopologyAppInbox = (
   authority: IssuedAuthSession,
   enqueue: AppInboxEnqueueInput<TopologyAppInboxCommand>,
-) => Promise<unknown>;
+) => Promise<TopologyAppInboxResult>;
 
 export type GraphTopologyAppInboxService = Readonly<{
   processAuthenticatedEntryUntilCompletionResult<V, R = V>(
     enqueue: AppInboxEnqueueInput<V>,
     authority: IssuedAuthSession,
+    decodeResult: AppInboxResultDecoder<R>,
   ): Promise<Either<AppInboxFailure, R>>;
 }>;
 
@@ -500,7 +500,7 @@ function requireRequestId(
 
 async function writeTopologyAppInboxCommand(
   input: WriteTopologyAppInboxCommandInput,
-): Promise<unknown> {
+): Promise<TopologyAppInboxResult> {
   const command = await toTopologyAppInboxCommand({
     actor: {
       principalId: input.authSession.clientId,
@@ -547,16 +547,17 @@ export async function processTopologyAppInbox(
   service: GraphTopologyAppInboxService,
   authority: IssuedAuthSession,
   enqueue: AppInboxEnqueueInput<TopologyAppInboxCommand>,
-): Promise<unknown> {
+): Promise<TopologyAppInboxResult> {
   const result = await service.processAuthenticatedEntryUntilCompletionResult(
     enqueue,
     authority,
+    decodeTopologyAppInboxResult,
   );
   return result.fold(
     (error) => {
       throw new TopologyAppInboxFailureError(error);
     },
-    (value) => value,
+    (value): TopologyAppInboxResult => value,
   );
 }
 

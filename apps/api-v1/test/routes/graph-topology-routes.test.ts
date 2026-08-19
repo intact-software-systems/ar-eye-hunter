@@ -4,7 +4,9 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { GraphDiagnosticReadResponse } from '@shared/api/graph-topology-management-types.ts';
-import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+// deno-fmt-ignore
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/\
+group-topology-config-canonical.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 
@@ -14,7 +16,7 @@ const TEST_SCOPE: StateScope = {
 };
 
 Deno.test('scoped graph routes pass scope and group refs to diagnostics', async () => {
-  const calls: unknown[] = [];
+  const calls: object[] = [];
   const group = createGroupSnapshot('room-1', ['owner']);
   const app = createRouteApp({
     group,
@@ -34,7 +36,8 @@ Deno.test('scoped graph routes pass scope and group refs to diagnostics', async 
   });
 
   const globalResponse = await app.request(
-    '/api/state/apps/app-1/workspaces/workspace-1/graphs/global?includeMeasured=true&refresh=always',
+    '/api/state/apps/app-1/workspaces/workspace-1/graphs/global' +
+      '?includeMeasured=true&refresh=always',
   );
   const groupResponse = await app.request(
     '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/graphs/latest',
@@ -148,13 +151,13 @@ Deno.test('topology writes require group manager or platform admin auth', async 
   );
   assert.equal(memberDenied.status, 403);
 
-  const ownerCalls: unknown[] = [];
+  const ownerCalls: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1][] = [];
   const ownerApp = createRouteApp({
     group: createGroupSnapshot('room-1', ['owner']),
     session: createIssuedSession('owner', 'owner-session'),
     processTopologyAppInbox: (_authority, enqueue) => {
       ownerCalls.push(enqueue);
-      return Promise.resolve({ ok: true });
+      return Promise.resolve(createTopologyAppInboxResult(enqueue));
     },
   });
   const ownerAllowed = await ownerApp.request(
@@ -169,19 +172,19 @@ Deno.test('topology writes require group manager or platform admin auth', async 
     },
   );
   assert.equal(ownerAllowed.status, 200);
-  assert.deepEqual((ownerCalls[0] as { data: { payload: unknown } }).data.payload, {
+  assert.deepEqual(ownerCalls[0]?.data.payload, {
     operation: 'putConfig',
     config: toCanonicalGroupTopologyConfigPatch({ topologyKind: 'tree' }),
   });
 
-  const adminCalls: unknown[] = [];
+  const adminCalls: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1][] = [];
   const adminApp = createRouteApp({
     group: createGroupSnapshot('room-1', ['owner']),
     session: createIssuedSession('platform-admin', 'admin-session'),
     adminClientIds: ['platform-admin'],
     processTopologyAppInbox: (_authority, enqueue) => {
       adminCalls.push(enqueue);
-      return Promise.resolve({ ok: true });
+      return Promise.resolve(createTopologyAppInboxResult(enqueue));
     },
   });
   const adminAllowed = await adminApp.request(
@@ -197,19 +200,22 @@ Deno.test('topology writes require group manager or platform admin auth', async 
   );
   assert.equal(adminAllowed.status, 200);
   assert.equal(
-    (adminCalls[0] as { data: { actor: { principalId: string } } }).data.actor.principalId,
+    adminCalls[0]?.data.actor.principalId,
     'platform-admin',
   );
 });
 
 Deno.test('all topology mutation routes submit complete AppInbox commands', async () => {
-  const appInboxCommands: unknown[] = [];
+  const appInboxCommands: Array<{
+    authority: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[0];
+    enqueue: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1];
+  }> = [];
   const app = createRouteApp({
     group: createGroupSnapshot('room-1', ['owner']),
     session: createIssuedSession('owner', 'owner-session'),
     processTopologyAppInbox: (authority, enqueue) => {
       appInboxCommands.push({ authority, enqueue });
-      return Promise.resolve({ operation: enqueue.type, committed: true });
+      return Promise.resolve(createTopologyAppInboxResult(enqueue));
     },
   });
 
@@ -217,7 +223,7 @@ Deno.test('all topology mutation routes submit complete AppInbox commands', asyn
     method: 'PUT' | 'DELETE' | 'POST';
     path: 'config' | 'override' | 'reconfigure';
     requestId: string;
-    body?: unknown;
+    body?: object;
   }>[] = [
     {
       method: 'PUT',
@@ -257,7 +263,7 @@ Deno.test('all topology mutation routes submit complete AppInbox commands', asyn
   }
 
   assert.deepEqual(
-    appInboxCommands.map((value) => (value as { enqueue: { type: string } }).enqueue.type),
+    appInboxCommands.map((value) => value.enqueue.type),
     [
       'TOPOLOGY_CONFIG_PUT',
       'TOPOLOGY_CONFIG_DELETE',
@@ -267,23 +273,7 @@ Deno.test('all topology mutation routes submit complete AppInbox commands', asyn
     ],
   );
   for (const value of appInboxCommands) {
-    const command = value as {
-      authority: ReturnType<typeof createIssuedSession>;
-      enqueue: {
-        resourceId: string;
-        contextId: string;
-        senderId: string;
-        data: {
-          actor: { principalId: string; sessionId: string };
-          groupRef: GroupRef;
-          requestId: string;
-          commandHash: string;
-          capturedAtEpochMs: number;
-          operation: string;
-          payload: Record<string, unknown>;
-        };
-      };
-    };
+    const command = value;
     assert.equal(command.authority.accessToken, 'owner-token');
     assert.equal(command.enqueue.resourceId, command.enqueue.data.requestId);
     assert.equal(command.enqueue.contextId, 'app-1:workspace-1:room-1');
@@ -317,7 +307,7 @@ Deno.test('topology AppInbox context ids preserve scoped component boundaries', 
       processTopologyAppInbox: (_authority, enqueue) => {
         assert.ok(enqueue.contextId);
         contexts.push(enqueue.contextId);
-        return Promise.resolve({ status: 'queued' });
+        return Promise.resolve(createTopologyAppInboxResult(enqueue));
       },
     });
     const response = await app.request(
@@ -343,98 +333,101 @@ Deno.test('topology AppInbox context ids preserve scoped component boundaries', 
   assert.notEqual(contexts[0], contexts[1]);
 });
 
-Deno.test('topology mutations return after commit while explicit reconfigure forwards options', async () => {
-  const calls: unknown[] = [];
-  const app = createRouteApp({
-    group: createGroupSnapshot('room-1', ['owner']),
-    session: createIssuedSession('owner', 'owner-session'),
-    processTopologyAppInbox: (_authority, enqueue) => {
-      calls.push(enqueue);
-      return Promise.resolve({ committed: true });
-    },
-  });
+Deno.test(
+  'topology mutations return after commit while explicit reconfigure forwards options',
+  async () => {
+    const calls: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1][] = [];
+    const app = createRouteApp({
+      group: createGroupSnapshot('room-1', ['owner']),
+      session: createIssuedSession('owner', 'owner-session'),
+      processTopologyAppInbox: (_authority, enqueue) => {
+        calls.push(enqueue);
+        return Promise.resolve(createTopologyAppInboxResult(enqueue));
+      },
+    });
 
-  assert.equal(
-    (await app.request(
-      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/override',
+    assert.equal(
+      (await app.request(
+        '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/override',
+        {
+          method: 'PUT',
+          headers: {
+            authorization: 'Bearer token',
+            'Idempotency-Key': 'override-idem',
+          },
+          body: JSON.stringify({ config: { degreeLimit: 4 }, ttlMs: 5_000 }),
+        },
+      )).status,
+      200,
+    );
+    assert.equal(
+      (await app.request(
+        '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/config',
+        {
+          method: 'DELETE',
+          headers: {
+            authorization: 'Bearer token',
+            'Idempotency-Key': 'config-delete-idem',
+          },
+        },
+      )).status,
+      200,
+    );
+    assert.equal(
+      (await app.request(
+        '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/override',
+        {
+          method: 'DELETE',
+          headers: {
+            authorization: 'Bearer token',
+            'Idempotency-Key': 'override-delete-idem',
+          },
+        },
+      )).status,
+      200,
+    );
+    const reconfigureResponse = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/reconfigure',
       {
-        method: 'PUT',
+        method: 'POST',
         headers: {
           authorization: 'Bearer token',
-          'Idempotency-Key': 'override-idem',
+          'Idempotency-Key': 'reconfigure-idem',
         },
-        body: JSON.stringify({ config: { degreeLimit: 4 }, ttlMs: 5_000 }),
+        body: JSON.stringify({ options: { topologyKind: 'tree' }, publish: false }),
       },
-    )).status,
-    200,
-  );
-  assert.equal(
-    (await app.request(
-      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/config',
-      {
-        method: 'DELETE',
-        headers: {
-          authorization: 'Bearer token',
-          'Idempotency-Key': 'config-delete-idem',
-        },
-      },
-    )).status,
-    200,
-  );
-  assert.equal(
-    (await app.request(
-      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/override',
-      {
-        method: 'DELETE',
-        headers: {
-          authorization: 'Bearer token',
-          'Idempotency-Key': 'override-delete-idem',
-        },
-      },
-    )).status,
-    200,
-  );
-  const reconfigureResponse = await app.request(
-    '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/reconfigure',
-    {
-      method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'Idempotency-Key': 'reconfigure-idem',
-      },
-      body: JSON.stringify({ options: { topologyKind: 'tree' }, publish: false }),
-    },
-  );
+    );
 
-  assert.equal(reconfigureResponse.status, 200);
-  assert.deepEqual(
-    calls.map((call) => (call as { data: { payload: unknown } }).data.payload),
-    [
-      {
-        operation: 'putOverride',
-        config: toCanonicalGroupTopologyConfigPatch({ degreeLimit: 4 }),
-        ttlMs: 5_000,
-        expiresAtEpochMs: null,
-      },
-      { operation: 'deleteConfig', target: 'config' },
-      { operation: 'deleteOverride', target: 'override' },
-      {
-        operation: 'reconfigureTopology',
-        requestOptions: toCanonicalGroupTopologyConfigPatch({ topologyKind: 'tree' }),
-        publish: false,
-      },
-    ],
-  );
-});
+    assert.equal(reconfigureResponse.status, 200);
+    assert.deepEqual(
+      calls.map((call) => call.data.payload),
+      [
+        {
+          operation: 'putOverride',
+          config: toCanonicalGroupTopologyConfigPatch({ degreeLimit: 4 }),
+          ttlMs: 5_000,
+          expiresAtEpochMs: null,
+        },
+        { operation: 'deleteConfig', target: 'config' },
+        { operation: 'deleteOverride', target: 'override' },
+        {
+          operation: 'reconfigureTopology',
+          requestOptions: toCanonicalGroupTopologyConfigPatch({ topologyKind: 'tree' }),
+          publish: false,
+        },
+      ],
+    );
+  },
+);
 
 Deno.test('all topology mutation routes reject requests without a stable identity', async () => {
-  const calls: unknown[] = [];
+  const calls: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1][] = [];
   const app = createRouteApp({
     group: createGroupSnapshot('room-1', ['owner']),
     session: createIssuedSession('owner', 'owner-session'),
     processTopologyAppInbox: (_authority, enqueue) => {
       calls.push(enqueue);
-      return Promise.resolve({ committed: true });
+      return Promise.resolve(createTopologyAppInboxResult(enqueue));
     },
   });
 
@@ -461,13 +454,13 @@ Deno.test('all topology mutation routes reject requests without a stable identit
 });
 
 Deno.test('all topology mutation routes require a nonempty authoritative header', async () => {
-  const calls: unknown[] = [];
+  const calls: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1][] = [];
   const app = createRouteApp({
     group: createGroupSnapshot('room-1', ['owner']),
     session: createIssuedSession('owner', 'owner-session'),
     processTopologyAppInbox: (_authority, enqueue) => {
       calls.push(enqueue);
-      return Promise.resolve({ queued: true });
+      return Promise.resolve(createTopologyAppInboxResult(enqueue));
     },
   });
   const mutations = [
@@ -513,51 +506,54 @@ Deno.test('all topology mutation routes require a nonempty authoritative header'
   assert.deepEqual(calls, []);
 });
 
-Deno.test('topology mutation routes reject header and compatibility body identity mismatch', async () => {
-  const calls: unknown[] = [];
-  const app = createRouteApp({
-    group: createGroupSnapshot('room-1', ['owner']),
-    session: createIssuedSession('owner', 'owner-session'),
-    processTopologyAppInbox: (_authority, enqueue) => {
-      calls.push(enqueue);
-      return Promise.resolve({ queued: true });
-    },
-  });
-  const mutations = [
-    {
-      method: 'PUT',
-      path: 'config',
-      body: { requestId: 'body-config', config: { topologyKind: 'tree' } },
-    },
-    {
-      method: 'PUT',
-      path: 'override',
-      body: { requestId: 'body-override', config: { degreeLimit: 4 } },
-    },
-    {
-      method: 'POST',
-      path: 'reconfigure',
-      body: { requestId: 'body-reconfigure', publish: false },
-    },
-  ] as const;
-
-  for (const mutation of mutations) {
-    const response = await app.request(
-      `/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/${mutation.path}`,
-      {
-        method: mutation.method,
-        headers: {
-          authorization: 'Bearer token',
-          'Idempotency-Key': 'header-request',
-        },
-        body: JSON.stringify(mutation.body),
+Deno.test(
+  'topology mutation routes reject header and compatibility body identity mismatch',
+  async () => {
+    const calls: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1][] = [];
+    const app = createRouteApp({
+      group: createGroupSnapshot('room-1', ['owner']),
+      session: createIssuedSession('owner', 'owner-session'),
+      processTopologyAppInbox: (_authority, enqueue) => {
+        calls.push(enqueue);
+        return Promise.resolve(createTopologyAppInboxResult(enqueue));
       },
-    );
-    assert.equal(response.status, 400, `${mutation.method} ${mutation.path}`);
-    assert.match((await response.json()).error, /must match/u);
-  }
-  assert.deepEqual(calls, []);
-});
+    });
+    const mutations = [
+      {
+        method: 'PUT',
+        path: 'config',
+        body: { requestId: 'body-config', config: { topologyKind: 'tree' } },
+      },
+      {
+        method: 'PUT',
+        path: 'override',
+        body: { requestId: 'body-override', config: { degreeLimit: 4 } },
+      },
+      {
+        method: 'POST',
+        path: 'reconfigure',
+        body: { requestId: 'body-reconfigure', publish: false },
+      },
+    ] as const;
+
+    for (const mutation of mutations) {
+      const response = await app.request(
+        `/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/${mutation.path}`,
+        {
+          method: mutation.method,
+          headers: {
+            authorization: 'Bearer token',
+            'Idempotency-Key': 'header-request',
+          },
+          body: JSON.stringify(mutation.body),
+        },
+      );
+      assert.equal(response.status, 400, `${mutation.method} ${mutation.path}`);
+      assert.match((await response.json()).error, /must match/u);
+    }
+    assert.deepEqual(calls, []);
+  },
+);
 
 Deno.test('graph topology routes map missing groups and validation errors', async () => {
   const missingApp = createRouteApp({ group: undefined });
@@ -572,7 +568,7 @@ Deno.test('graph topology routes map missing groups and validation errors', asyn
     processTopologyAppInbox: () => {
       const error = new Error('invalid config') as Error & {
         status: number;
-        issues: unknown[];
+        issues: object[];
       };
       error.status = 422;
       error.issues = [{ code: 'invalid-positive-integer' }];
@@ -654,10 +650,48 @@ function createRouteApp(options: {
           })),
     },
     processTopologyAppInbox: options.processTopologyAppInbox ??
-      (() => Promise.resolve({ committed: true })),
+      ((_authority, enqueue) => Promise.resolve(createTopologyAppInboxResult(enqueue))),
     now: () => 123_456,
   });
   return app;
+}
+
+function createTopologyAppInboxResult(
+  enqueue: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1],
+): Awaited<ReturnType<graphTopologyRoutes.ProcessTopologyAppInbox>> {
+  if (enqueue.data.operation === 'reconfigureTopology') {
+    return {
+      status: 'queued',
+      groupRef: enqueue.data.groupRef,
+      requestId: enqueue.data.requestId,
+      outboxId: `${enqueue.data.requestId}:outbox`,
+    };
+  }
+  return {
+    receipt: {
+      commandId: enqueue.data.requestId,
+      requestId: enqueue.data.requestId,
+      commandHash: enqueue.data.commandHash,
+      operation: enqueue.data.operation,
+      outcome: 'no-op',
+      attemptCount: 1,
+      groupRef: enqueue.data.groupRef,
+      target: enqueue.data.operation === 'putOverride' ||
+          enqueue.data.operation === 'deleteOverride'
+        ? 'override'
+        : 'config',
+      acceptedVersion: 1,
+      acceptedStorageRevision: null,
+      acceptedCreatedAtEpochMs: null,
+      acceptedUpdatedAtEpochMs: null,
+      acceptedExpiresAtEpochMs: null,
+      acceptedConfig: null,
+      acceptedCausalRevision: null,
+      eventId: null,
+      outboxId: null,
+      outboxIds: [],
+    },
+  };
 }
 
 function createIssuedSession(clientId: string, sessionId: string) {

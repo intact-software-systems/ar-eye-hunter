@@ -2,14 +2,24 @@ import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topolog
 
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
+import { requireExactKeys, requireString } from '../../services/exact-object-codec.ts';
 import type { AppInboxMutationTransactionWriter } from '../../services/app-inbox-transaction-writer.ts';
 import type {
   AppInboxEnqueueInput,
   AppInboxMessageContext,
 } from '../../services/AppInboxService.ts';
+import type { JsonWireValue } from '../../services/mutation-command-identity.ts';
 import type { GroupTopologyConfigMutationService } from '../config/group-topology-config-mutation-service.ts';
 import { toTopologyConfigMutationResult } from '../config/mutation/to-topology-config-mutation-result.ts';
 import { writeTopologyConfigMutation } from '../config/mutation/write-topology-config-mutation.ts';
+// prettier-ignore
+import {
+  readTopologyConfigReceiptBoundary,
+} from '../config/mutation/topology-config-mutation-boundary.ts';
+import {
+  decodeStoredGroupTopologyConfig,
+  decodeStoredGroupTopologyOverride,
+} from '../config/persistence/decode-stored-group-topology-config.ts';
 import { GroupTopologyConfigIdempotencyConflictError } from '../group-topology-errors.ts';
 import type { GroupTopologyReconfigureCommand } from '../reconfigure/group-topology-reconfigure-contracts.ts';
 import type { GroupTopologyReconfigureMutation } from '../reconfigure/group-topology-reconfigure-mutation.ts';
@@ -39,7 +49,7 @@ export interface TopologyAppInboxMutationOwners {
   >;
 }
 
-type TopologyConfigInboxResult = ReturnType<typeof toTopologyConfigMutationResult>;
+export type TopologyConfigInboxResult = ReturnType<typeof toTopologyConfigMutationResult>;
 
 export interface TopologyReconfigureInboxResult {
   readonly status: 'queued';
@@ -48,7 +58,74 @@ export interface TopologyReconfigureInboxResult {
   readonly outboxId: string;
 }
 
-type TopologyAppInboxResult = TopologyConfigInboxResult | TopologyReconfigureInboxResult;
+export type TopologyAppInboxResult = TopologyConfigInboxResult | TopologyReconfigureInboxResult;
+
+export function decodeTopologyAppInboxResult(value: JsonWireValue): TopologyAppInboxResult {
+  const result = readJsonRecord(value, 'Topology AppInbox result');
+  if (result.status === 'queued') {
+    return decodeTopologyReconfigureInboxResult(result);
+  }
+
+  const receiptRecord = readJsonRecord(result.receipt, 'Topology config AppInbox receipt');
+  const groupRef = readExactGroupRef(receiptRecord.groupRef);
+  const receipt = readTopologyConfigReceiptBoundary(receiptRecord, groupRef);
+  if (receipt.operation === 'putConfig') {
+    requireExactKeys(result, ['receipt', 'config'], 'Topology config AppInbox result');
+    return { receipt, config: decodeStoredGroupTopologyConfig(result.config, groupRef) };
+  }
+  if (receipt.operation === 'putOverride') {
+    requireExactKeys(result, ['receipt', 'override'], 'Topology override AppInbox result');
+    return { receipt, override: decodeStoredGroupTopologyOverride(result.override, groupRef) };
+  }
+  requireExactKeys(result, ['receipt'], 'Topology delete AppInbox result');
+  return { receipt };
+}
+
+export function decodeTopologyReconfigureInboxResult(
+  value: JsonWireValue,
+): TopologyReconfigureInboxResult {
+  const result = readJsonRecord(value, 'Topology reconfigure AppInbox result');
+  requireExactKeys(
+    result,
+    ['status', 'groupRef', 'requestId', 'outboxId'],
+    'Topology reconfigure AppInbox result',
+  );
+  if (result.status !== 'queued') {
+    throw new TypeError('Topology reconfigure status is invalid');
+  }
+  const groupRef = readExactGroupRef(result.groupRef);
+  requireString(result.requestId, 'Topology reconfigure requestId');
+  requireString(result.outboxId, 'Topology reconfigure outboxId');
+  return { status: 'queued', groupRef, requestId: result.requestId, outboxId: result.outboxId };
+}
+
+function readExactGroupRef(value: JsonWireValue): TopologyReconfigureInboxResult['groupRef'] {
+  const groupRef = readJsonRecord(value, 'Topology AppInbox groupRef');
+  requireExactKeys(
+    groupRef,
+    ['applicationId', 'workspaceId', 'groupId'],
+    'Topology AppInbox groupRef',
+  );
+  requireString(groupRef.applicationId, 'Topology AppInbox applicationId');
+  requireString(groupRef.workspaceId, 'Topology AppInbox workspaceId');
+  requireString(groupRef.groupId, 'Topology AppInbox groupId');
+  return {
+    applicationId: groupRef.applicationId,
+    workspaceId: groupRef.workspaceId,
+    groupId: groupRef.groupId,
+  };
+}
+
+function readJsonRecord(value: JsonWireValue, label: string): Record<string, JsonWireValue> {
+  if (!isJsonRecord(value)) {
+    throw new TypeError(`${label} must be an exact object`);
+  }
+  return value;
+}
+
+function isJsonRecord(value: JsonWireValue): value is Readonly<Record<string, JsonWireValue>> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
 
 export class TopologyAppInboxHandler {
   private readonly dependencies: TopologyAppInboxHandlerDependencies;

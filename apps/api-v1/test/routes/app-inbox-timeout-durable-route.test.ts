@@ -9,23 +9,26 @@ import {
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
 
-Deno.test('HTTP wait timeout leaves the durable AppInbox row eligible without fallback', async () => {
+Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async () => {
   const queue = new InMemoryQueueBox(new Map());
   const service = new AppInboxService(
-    new InboxQueueReader(queue),
     {
-      isEntryWithStatus: () => Promise.resolve(false),
-    } as never,
-    {} as never,
-    {} as never,
-    'server-12345678',
-    SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
-    undefined,
+      inboxQueueReader: new InboxQueueReader(queue),
+      resourceInboxRepository: {
+        isEntryWithStatus: () => Promise.resolve(false),
+      } as never,
+      resourceInboxResultsRepository: {} as never,
+      database: {} as never,
+    },
     {
-      waitMaxElapsedMsecs: 0,
-      waitRetryIntervalMsecs: 0,
-      waitMaxRetryIntervalMsecs: 0,
-      waitJitterRatio: 0,
+      serviceId: 'server-12345678',
+      defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+      options: {
+        waitMaxElapsedMsecs: 0,
+        waitRetryIntervalMsecs: 0,
+        waitMaxRetryIntervalMsecs: 0,
+        waitJitterRatio: 0,
+      },
     },
   );
   let directMutationFallbacks = 0;

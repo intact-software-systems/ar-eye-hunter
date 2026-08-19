@@ -52,7 +52,7 @@ describe('AppInbox durable enqueue', () => {
     await expect(asDurable(service).enqueue(COMMAND)).rejects.toBe(failure);
   });
 
-  it('wakes the owning queue engine after durable enqueue, including idempotent reuse', async () => {
+  it('wakes the owning queue after durable enqueue and idempotent reuse', async () => {
     const queue = new InMemoryQueueBox(new Map());
     const wakeQueue = vi.fn();
     const service = createService(queue, wakeQueue);
@@ -67,15 +67,17 @@ describe('AppInbox durable enqueue', () => {
 
 function createService(queue: InMemoryQueueBox, wakeQueue?: () => void): AppInboxService {
   return new AppInboxService(
-    new InboxQueueReader(queue),
-    queue as never,
-    {} as never,
-    {} as never,
-    'server-12345678',
-    SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
-    undefined,
-    undefined,
-    wakeQueue,
+    {
+      inboxQueueReader: new InboxQueueReader(queue),
+      resourceInboxRepository: queue as never,
+      resourceInboxResultsRepository: {} as never,
+      database: {} as never,
+    },
+    {
+      serviceId: 'server-12345678',
+      defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+      wakeOwningQueue: wakeQueue,
+    },
   );
 }
 

@@ -4,13 +4,19 @@ import { isCompletedOrFailed } from '@shared/queuebox/ResourceEntry.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql } from '../../../postgres/PostgresSqlClient.ts';
-import { ResourceInboxRepository } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '../../../postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+// prettier-ignore
+import {
+  ResourceInboxRepository,
+} from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
+// prettier-ignore
+import {
+  ResourceInboxResultsRepository,
+} from '../../../postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import type { IssuedAuthSession } from '../../repositories/AuthSessionRepository.ts';
 import {
   type AppInboxEnqueueInput,
-  type AppInboxServiceOptions,
   AppInboxService,
+  type AppInboxServiceOptions,
   AppInboxType,
   SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
 } from '../../services/AppInboxService.ts';
@@ -66,15 +72,19 @@ export class AppClientInboxService extends AppInboxService {
     wakeQueue?: () => void,
   ) {
     super(
-      inbox,
-      resourceInbox,
-      resourceInboxResults,
-      database,
-      serviceId,
-      SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
-      timing,
-      options,
-      wakeQueue,
+      {
+        inboxQueueReader: inbox,
+        resourceInboxRepository: resourceInbox,
+        resourceInboxResultsRepository: resourceInboxResults,
+        database,
+      },
+      {
+        serviceId,
+        defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+        timing,
+        options,
+        wakeOwningQueue: wakeQueue,
+      },
     );
     this.clientStateService = clientStateService;
     this.handler = new ClientStateInboxHandler({

@@ -26,6 +26,7 @@ import {
   createCrdtMutationCommand,
   decodeCrdtMutationCommand,
 } from '../mutation/crdt-mutation-command-codec.ts';
+import { decodeCrdtMutationResult } from '../mutation/decode-crdt-mutation-result.ts';
 import type { CrdtMutationService } from '../mutation/create-crdt-mutation-service.ts';
 import {
   type AuthenticatedCrdtAppendInput,
@@ -77,15 +78,19 @@ export class AppCrdtInboxService extends AppInboxService {
 
   constructor(dependencies: AppCrdtInboxService.Dependencies, config: AppCrdtInboxService.Config) {
     super(
-      dependencies.inboxQueueReader,
-      dependencies.resourceInboxRepository,
-      dependencies.resourceInboxResultsRepository,
-      dependencies.database,
-      config.serviceId,
-      CRDT_APP_INBOX_TOPIC,
-      config.timing,
-      config.appInbox,
-      dependencies.wakeQueueEngine,
+      {
+        inboxQueueReader: dependencies.inboxQueueReader,
+        resourceInboxRepository: dependencies.resourceInboxRepository,
+        resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+        database: dependencies.database,
+      },
+      {
+        serviceId: config.serviceId,
+        defaultTopicId: CRDT_APP_INBOX_TOPIC,
+        timing: config.timing,
+        options: config.appInbox,
+        wakeOwningQueue: dependencies.wakeQueueEngine,
+      },
     );
     this.mutationService = dependencies.mutationService;
     this.readCurrentSession = dependencies.readCurrentSession;
@@ -105,14 +110,17 @@ export class AppCrdtInboxService extends AppInboxService {
     command: CrdtMutationCommand,
   ): Promise<Either<AppInboxFailure, CrdtMutationResult>> {
     const decoded = decodeCrdtMutationCommand(command);
-    return await this.processEntryUntilCompletionResult({
-      type: toCrdtAppInboxType(decoded),
-      topicId: CRDT_APP_INBOX_TOPIC,
-      resourceId: decoded.deliveryId,
-      contextId: decoded.documentKey,
-      senderId: decoded.actor.sessionId,
-      data: decoded,
-    });
+    return await this.processEntryUntilCompletionResult(
+      {
+        type: toCrdtAppInboxType(decoded),
+        topicId: CRDT_APP_INBOX_TOPIC,
+        resourceId: decoded.deliveryId,
+        contextId: decoded.documentKey,
+        senderId: decoded.actor.sessionId,
+        data: decoded,
+      },
+      decodeCrdtMutationResult,
+    );
   }
 
   writeCrdtCommandNoWaiting(command: CrdtMutationCommand): void {
