@@ -710,24 +710,30 @@ ${wrongCall}`,
 
 function withDeadCorrectGatewayCall(source: string): string {
   const original = `    compactCrdt: async (request) =>
-      await input.crdtAdminMutations.writeCrdtAdminMutation({
-        operation: 'compact',
-        adminSession: request.adminSession,
-        request: request.request,
-      }),`;
-  const replacement = `    compactCrdt: async (request) => {
-      if (false) {
-        return await input.crdtAdminMutations.writeCrdtAdminMutation({
+      requireCrdtCompactResult(
+        await input.crdtAdminMutations.writeCrdtAdminMutation({
           operation: 'compact',
           adminSession: request.adminSession,
           request: request.request,
-        });
+        }),
+      ),`;
+  const replacement = `    compactCrdt: async (request) => {
+      if (false) {
+        return requireCrdtCompactResult(
+          await input.crdtAdminMutations.writeCrdtAdminMutation({
+            operation: 'compact',
+            adminSession: request.adminSession,
+            request: request.request,
+          }),
+        );
       }
-      return await input.crdtAdminMutations.writeCrdtAdminMutation({
-        operation: 'lifecycle',
-        adminSession: request.adminSession,
-        request: request.request,
-      });
+      return requireCrdtCompactResult(
+        await input.crdtAdminMutations.writeCrdtAdminMutation({
+          operation: 'lifecycle',
+          adminSession: request.adminSession,
+          request: request.request,
+        }),
+      );
     },`;
   return replaceRequired(source, original, replacement);
 }

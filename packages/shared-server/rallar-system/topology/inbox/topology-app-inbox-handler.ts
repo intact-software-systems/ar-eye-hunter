@@ -41,7 +41,7 @@ export interface TopologyAppInboxMutationOwners {
 
 type TopologyConfigInboxResult = ReturnType<typeof toTopologyConfigMutationResult>;
 
-interface TopologyReconfigureInboxResult {
+export interface TopologyReconfigureInboxResult {
   readonly status: 'queued';
   readonly groupRef: GroupTopologyReconfigureCommand['groupRef'];
   readonly requestId: string;

@@ -15,7 +15,7 @@ const EXACT_RESOLVED_HANDOFFS = new Set([
   'apps/api-v1/src/composition/create-api-v1-mutation-runtime.ts',
   'packages/shared/mod.ts',
   'packages/shared-server/http/request-auth-service.ts',
-  'packages/shared-server/rallar-system/services/AppAdminInboxService.ts',
+  'packages/shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts',
   'packages/shared-server/rallar-system/services/AppAuthInboxService.ts',
   'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts',
   'packages/shared-server/rallar-system/auth/inbox/auth-inbox-handler.ts',

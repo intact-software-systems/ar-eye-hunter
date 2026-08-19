@@ -13,6 +13,7 @@ const repositoryRoot = 'packages/shared-server/rallar-system/repositories';
 const groupStateRoot = 'packages/shared-server/rallar-system/group-state';
 const topologyInboxRoot = 'packages/shared-server/rallar-system/topology/inbox';
 const topologyRoot = 'packages/shared-server/rallar-system/topology';
+const adminInboxRoot = 'packages/shared-server/rallar-system/admin-operations/inbox';
 const rtcInboxRoot = 'packages/shared-server/rallar-system/rtc-topology/inbox';
 const rtcMutationRoot = 'packages/shared-server/rallar-system/rtc-topology/mutation';
 const persistenceRoot = `${groupStateRoot}/persistence`;
@@ -34,7 +35,7 @@ const forbiddenPersistenceOwnerImport = new RegExp(
 );
 
 const sources = {
-  appAdmin: read(`${serviceRoot}/AppAdminInboxService.ts`),
+  appAdmin: read(`${adminInboxRoot}/app-admin-inbox-service.ts`),
   authHandler: read(`${authRoot}/inbox/auth-inbox-handler.ts`),
   appClient: read('packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts'),
   appCrdt: read('packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts'),
@@ -140,7 +141,12 @@ it.each([
     name: 'admin AppInbox',
     source: sources.appAdmin,
     owner: 'processCommand',
-    calls: ['this.read(command)', 'this.compute(command, read)', 'this.validate(command, read, computed)', 'this.writeMutation(context'],
+    calls: [
+      'this.read(command)',
+      'this.compute(read)',
+      'this.validate(computed)',
+      'this.writeMutation(context',
+    ],
   },
   {
     name: 'client AppInbox',

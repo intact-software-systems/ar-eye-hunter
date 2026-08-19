@@ -1,7 +1,9 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
   RallarCrdtDocumentLifecycleState,
+  RallarCrdtDocumentMetadata,
   RallarCrdtDocumentRef,
+  RallarCrdtIntegrityReport,
   RallarCrdtQuotaPolicy,
   RallarCrdtRetentionPolicy,
   RallarCrdtSnapshotEnvelope,
@@ -10,6 +12,8 @@ import { toRallarCrdtDocumentKey } from '@shared/crdt/mod.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import type {
+  CrdtAdminCompactResult,
+  CrdtAdminEraseResult,
   CrdtMutationActor,
   CrdtMutationCommand,
   CrdtMutationResponseAudience,
@@ -42,8 +46,14 @@ export interface CrdtAdminMutationInput {
   readonly request: unknown;
 }
 
+export type CrdtAdminPublicResult =
+  | RallarCrdtIntegrityReport
+  | CrdtAdminCompactResult
+  | RallarCrdtDocumentMetadata
+  | CrdtAdminEraseResult;
+
 export interface CrdtAdminMutations {
-  writeCrdtAdminMutation(input: CrdtAdminMutationInput): Promise<unknown>;
+  writeCrdtAdminMutation(input: CrdtAdminMutationInput): Promise<CrdtAdminPublicResult>;
 }
 
 export interface CrdtAdminMutationInbox {
@@ -107,6 +117,9 @@ export function createCrdtAdminMutations(
       const result = decodeCrdtMutationResult(completed.right);
       if (result.status === 'rejected') {
         throw toAdminMutationError(result.code);
+      }
+      if (result.operation === 'append') {
+        throw new TypeError('CRDT admin mutation returned an append result');
       }
       return toAdminPublicResult(result);
     },
@@ -203,11 +216,16 @@ function toCrdtAdminCommandCommon(
   };
 }
 
-function toAdminPublicResult(result: CrdtMutationResult): unknown {
+function toAdminPublicResult(
+  result: Exclude<
+    Extract<CrdtMutationResult, { status: 'accepted' }>,
+    { operation: 'append' }
+  >,
+): CrdtAdminPublicResult {
   switch (result.operation) {
     case 'compact':
       return {
-        document: result.snapshot?.document ?? null,
+        document: result.snapshot.document,
         documentKey: result.documentKey,
         appendSequence: result.appendSequence,
         snapshot: result.snapshot,
@@ -224,16 +242,18 @@ function toAdminPublicResult(result: CrdtMutationResult): unknown {
           ? { metadata: result.metadata }
           : { redactedBundle: result.redactedBundle }),
       };
-    case 'append':
-      return result;
   }
 }
 
 function requireRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  if (!isRecord(value)) {
     throw new TypeError('CRDT admin request must be an object');
   }
-  return value as Record<string, unknown>;
+  return value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function readString(value: unknown): string | null {
@@ -278,8 +298,12 @@ function toAdminMutationError(code: string | null): Error {
 }
 
 function requireLifecycle(value: unknown): RallarCrdtDocumentLifecycleState {
-  if (!['active', 'archived', 'destroyed', 'quarantined'].includes(String(value))) {
-    throw new TypeError('CRDT lifecycle is invalid');
+  switch (value) {
+    case 'active':
+    case 'archived':
+    case 'destroyed':
+    case 'quarantined':
+      return value;
   }
-  return value as RallarCrdtDocumentLifecycleState;
+  throw new TypeError('CRDT lifecycle is invalid');
 }

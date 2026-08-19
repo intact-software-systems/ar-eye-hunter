@@ -86,12 +86,13 @@ export type AppInboxServiceOptions = Readonly<{
     waitMaxRetryIntervalMsecs?: number;
     waitJitterRatio?: number;
     nowEpochMs?: () => number;
+    timingNowEpochMs?: () => number;
 }>;
 
 type NormalizedAppInboxServiceOptions = Required<
     Omit<
-    AppInboxServiceOptions,
-    'nowEpochMs'
+        AppInboxServiceOptions,
+        'nowEpochMs' | 'timingNowEpochMs'
     >
 >;
 
@@ -685,7 +686,7 @@ export class AppInboxService {
     private toMutationTimingDetails(
         context: AppInboxMessageContext,
     ): RallarTimingDetails {
-        const nowEpochMs = this.nowEpochMs();
+        const nowEpochMs = this.optionsInput.timingNowEpochMs?.() ?? Date.now();
         const telemetry = readResourceInboxAttemptTelemetry(context.entry);
         return {
             ...this.toTimingDetails(context.enqueue, context.entry.key),

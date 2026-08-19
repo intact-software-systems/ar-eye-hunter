@@ -3,11 +3,15 @@ import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toUnavailableAppInboxFailure } from '@shared-server/rallar-system/services/\
 app-inbox-failure.ts';
 
-import type { CrdtAdminMutationInput } from '../../src/crdt/create-crdt-admin-mutations.ts';
+import type {
+  CrdtAdminMutationInput,
+  CrdtAdminPublicResult,
+} from '../../src/crdt/create-crdt-admin-mutations.ts';
 import * as adminOperationsRoutes from '../../src/routes/admin-operations-routes.ts';
 import {
   createApiAdminMutationGateway,
@@ -21,6 +25,30 @@ const ADMIN_SESSION: AuthSession = {
   accessToken: 'access-token',
   sessionId: 'admin-session',
   expiresAtEpochMs: NOW_EPOCH_MS + 60_000,
+};
+const CRDT_DOCUMENT: RallarCrdtDocumentRef = {
+  applicationId: 'app-1',
+  workspaceId: 'workspace-1',
+  scope: 'room',
+  documentType: 'map',
+  documentId: 'document-1',
+};
+const CRDT_METADATA: RallarCrdtDocumentMetadata = {
+  document: CRDT_DOCUMENT,
+  documentKey: 'app-1/workspace-1/room/map/document-1',
+  documentRevision: 1,
+  lifecycle: 'active',
+  createdAtEpochMs: NOW_EPOCH_MS,
+  updatedAtEpochMs: NOW_EPOCH_MS,
+  archivedAtEpochMs: null,
+  destroyedAtEpochMs: null,
+  lastAppendSequence: 0,
+  updateCount: 0,
+  snapshotCount: 1,
+  storedUpdateBytes: 0,
+  retention: null,
+  quota: null,
+  projectionIds: [],
 };
 
 Deno.test('admin operations routes reject unauthenticated requests with 401', async () => {
@@ -263,7 +291,7 @@ function createRecordingGateway(
     crdtAdminMutations: {
       writeCrdtAdminMutation: (mutation) => {
         crdtCalls.push(mutation);
-        return Promise.resolve({ operation: mutation.operation });
+        return Promise.resolve(toRecordedCrdtResult(mutation));
       },
     },
     appGroup: {
@@ -273,6 +301,50 @@ function createRecordingGateway(
     now: () => NOW_EPOCH_MS,
   });
   return { gateway, crdtCalls };
+}
+
+function toRecordedCrdtResult(mutation: CrdtAdminMutationInput): CrdtAdminPublicResult {
+  switch (mutation.operation) {
+    case 'rebuild-projection':
+      return {
+        valid: true,
+        issues: [],
+        documentKey: CRDT_METADATA.documentKey,
+        checkedUpdateCount: 0,
+        sequenceGaps: [],
+      };
+    case 'compact':
+      return {
+        document: CRDT_DOCUMENT,
+        documentKey: CRDT_METADATA.documentKey,
+        appendSequence: 0,
+        snapshot: {
+          protocolVersion: 1,
+          document: CRDT_DOCUMENT,
+          snapshotId: 'snapshot-1',
+          schemaVersion: 1,
+          createdAtEpochMs: NOW_EPOCH_MS,
+          maxLamport: 0,
+          includedUpdateIds: [],
+          value: null,
+          metadata: { updateCount: 0, reason: 'test' },
+        },
+      };
+    case 'lifecycle':
+      return CRDT_METADATA;
+    case 'erase':
+      return {
+        request: {
+          document: CRDT_DOCUMENT,
+          requestedAtEpochMs: NOW_EPOCH_MS,
+          requestedBy: ADMIN_SESSION.clientId,
+          reason: 'test',
+          mode: 'destroy-document',
+        },
+        auditEvent: { kind: 'erase', atEpochMs: NOW_EPOCH_MS },
+        metadata: CRDT_METADATA,
+      };
+  }
 }
 
 function createApp(options: CreateAppOptions = {}): Hono {

@@ -18,17 +18,27 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import type { RallarGroupFormationMetrics } from '@shared/rtc/group-formation-metrics.ts';
 import {
   type RallarCrdtAdminReadRepository,
+  type RallarCrdtDocumentMetadata,
   type RallarCrdtLifecycleInput,
 } from '@shared/crdt/mod.ts';
 
+import {
+  type CrdtAdminCompactResult,
+  type CrdtAdminEraseResult,
+} from '../crdt/mutation/crdt-mutation-contracts.ts';
 import {
   nowMs,
   type RallarTimingEventInput,
   type RallarTimingSink,
   recordRallarTiming,
 } from '../services/timing.ts';
+// prettier-ignore
+import type {
+  TopologyReconfigureInboxResult,
+} from '../topology/inbox/topology-app-inbox-handler.ts';
 import type { AdminOperationsMutationGateway } from './admin-operations-mutation-gateway.ts';
 import type { AdminPruneExpiredOptions } from './admin-prune-options.ts';
+import type { AdminPruneEnqueueResult } from './inbox/app-admin-inbox-service.ts';
 import {
   compactTimingDetails,
   readDocument,
@@ -58,10 +68,6 @@ export interface AdminOperationsStatsReader {
 }
 export interface AdminOperationsPruner {
   readonly countExpired: (
-    category: AdminPruneExpiredCategory,
-    options: AdminPruneExpiredOptions,
-  ) => Promise<number>;
-  readonly pruneExpired: (
     category: AdminPruneExpiredCategory,
     options: AdminPruneExpiredOptions,
   ) => Promise<number>;
@@ -237,16 +243,14 @@ export class AdminOperationsService {
 
   async recomputeTopology(
     input: AdminOperationsWriteInput<AdminTopologyRecomputeRequest>,
-  ): Promise<AdminOperationResultResponse> {
-    return (await this.options.mutationGateway.recomputeTopology(
-      input,
-    )) as AdminOperationResultResponse;
+  ): Promise<TopologyReconfigureInboxResult> {
+    return await this.options.mutationGateway.recomputeTopology(input);
   }
 
   async pruneExpired(
     input: AdminOperationsWriteInput<AdminPruneExpiredRequest>,
-  ): Promise<AdminOperationResultResponse> {
-    return (await this.options.mutationGateway.pruneExpired(input)) as AdminOperationResultResponse;
+  ): Promise<AdminPruneEnqueueResult> {
+    return await this.options.mutationGateway.pruneExpired(input);
   }
 
   async verifyCrdtIntegrity(input: AdminOperationsWriteInput<unknown>): Promise<unknown> {
@@ -279,17 +283,17 @@ export class AdminOperationsService {
     });
   }
 
-  async compactCrdt(input: AdminOperationsWriteInput<unknown>): Promise<unknown> {
+  async compactCrdt(input: AdminOperationsWriteInput<unknown>): Promise<CrdtAdminCompactResult> {
     return await this.options.mutationGateway.compactCrdt(input);
   }
 
   async updateCrdtLifecycle(
     input: AdminOperationsWriteInput<RallarCrdtLifecycleInput>,
-  ): Promise<unknown> {
+  ): Promise<RallarCrdtDocumentMetadata> {
     return await this.options.mutationGateway.updateCrdtLifecycle(input);
   }
 
-  async eraseCrdt(input: AdminOperationsWriteInput<unknown>): Promise<unknown> {
+  async eraseCrdt(input: AdminOperationsWriteInput<unknown>): Promise<CrdtAdminEraseResult> {
     return await this.options.mutationGateway.eraseCrdt(input);
   }
 

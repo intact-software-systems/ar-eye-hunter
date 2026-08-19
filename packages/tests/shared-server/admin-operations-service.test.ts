@@ -6,11 +6,25 @@ import type {
   AdminOperationsStateResponse,
   AdminOperationsSystemResponse,
 } from '@shared/api/admin-operations-types.ts';
-import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
-import type { AdminOperationsMutationGateway } from '@shared-server/rallar-system/admin-operations/admin-operations-mutation-gateway.ts';
+import type { RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
+// prettier-ignore
+import type {
+  AdminOperationsMutationGateway,
+} from '@shared-server/rallar-system/admin-operations/admin-operations-mutation-gateway.ts';
 import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/AdminOperationsService.ts';
+import type {
+  AdminPruneEnqueueResult,
+} from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
+import type {
+  CrdtAdminCompactResult,
+  CrdtAdminEraseResult,
+} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/formation-metrics.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
+// prettier-ignore
+import type {
+  TopologyReconfigureInboxResult,
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
 const CRDT_DOCUMENT: RallarCrdtDocumentRef = {
@@ -19,6 +33,73 @@ const CRDT_DOCUMENT: RallarCrdtDocumentRef = {
   scope: 'room',
   documentType: 'map',
   documentId: 'doc-1',
+};
+const CRDT_METADATA: RallarCrdtDocumentMetadata = {
+  document: CRDT_DOCUMENT,
+  documentKey: 'app-1/workspace-1/room/map/doc-1',
+  documentRevision: 1,
+  lifecycle: 'active',
+  createdAtEpochMs: NOW_EPOCH_MS,
+  updatedAtEpochMs: NOW_EPOCH_MS,
+  archivedAtEpochMs: null,
+  destroyedAtEpochMs: null,
+  lastAppendSequence: 0,
+  updateCount: 0,
+  snapshotCount: 1,
+  storedUpdateBytes: 0,
+  retention: null,
+  quota: null,
+  projectionIds: [],
+};
+const PRUNE_RESULT: AdminPruneEnqueueResult = {
+  generatedAtEpochMs: NOW_EPOCH_MS,
+  serverId: 'test-server',
+  warnings: [],
+  operation: 'maintenance.prune-expired',
+  status: 'completed',
+  changed: true,
+  jobId: 'prune-1',
+  results: [],
+};
+const TOPOLOGY_RESULT: TopologyReconfigureInboxResult = {
+  status: 'queued',
+  groupRef: {
+    applicationId: 'app-1',
+    workspaceId: 'workspace-1',
+    groupId: 'room-1',
+  },
+  requestId: 'topology-1',
+  outboxId: 'topology-outbox-1',
+};
+const CRDT_COMPACT_RESULT: CrdtAdminCompactResult = {
+  document: CRDT_DOCUMENT,
+  documentKey: CRDT_METADATA.documentKey,
+  appendSequence: 0,
+  snapshot: {
+    protocolVersion: 1,
+    document: CRDT_DOCUMENT,
+    snapshotId: 'snapshot-1',
+    schemaVersion: 1,
+    createdAtEpochMs: NOW_EPOCH_MS,
+    maxLamport: 0,
+    includedUpdateIds: [],
+    value: null,
+    metadata: { updateCount: 0, reason: 'test' },
+  },
+};
+const CRDT_ERASE_RESULT: CrdtAdminEraseResult = {
+  request: {
+    document: CRDT_DOCUMENT,
+    requestedAtEpochMs: NOW_EPOCH_MS,
+    requestedBy: 'platform-admin',
+    reason: 'test',
+    mode: 'destroy-document',
+  },
+  auditEvent: {
+    kind: 'erase',
+    atEpochMs: NOW_EPOCH_MS,
+  },
+  metadata: CRDT_METADATA,
 };
 
 describe('AdminOperationsService', () => {
@@ -154,7 +235,7 @@ describe('AdminOperationsService', () => {
     const mutationGateway = createMutationGateway({
       pruneExpired: (input) => {
         calls.push(input);
-        return Promise.resolve({ status: 'completed', changed: true });
+        return Promise.resolve(PRUNE_RESULT);
       },
     });
     const service = createService({ mutationGateway });
@@ -187,7 +268,7 @@ describe('AdminOperationsService', () => {
     const mutationGateway = createMutationGateway({
       recomputeTopology: (input) => {
         calls.push(input);
-        return Promise.resolve({ status: 'completed', changed: true });
+        return Promise.resolve(TOPOLOGY_RESULT);
       },
     });
     const service = createService({ mutationGateway });
@@ -205,18 +286,19 @@ describe('AdminOperationsService', () => {
     };
 
     await expect(service.recomputeTopology(input)).resolves.toMatchObject({
-      status: 'completed',
-      changed: true,
+      status: 'queued',
+      requestId: 'topology-1',
+      outboxId: 'topology-outbox-1',
     });
     expect(calls).toEqual([input]);
   });
 
   it('routes every CRDT mutation through the mandatory gateway unchanged', async () => {
-    const calls: Array<readonly [string, unknown]> = [];
+    const calls: Array<readonly [string, object]> = [];
     const mutationGateway = createMutationGateway({
-      compactCrdt: (input) => record(calls, 'compact', input),
-      updateCrdtLifecycle: (input) => record(calls, 'lifecycle', input),
-      eraseCrdt: (input) => record(calls, 'erase', input),
+      compactCrdt: (input) => record(calls, 'compact', input, CRDT_COMPACT_RESULT),
+      updateCrdtLifecycle: (input) => record(calls, 'lifecycle', input, CRDT_METADATA),
+      eraseCrdt: (input) => record(calls, 'erase', input, CRDT_ERASE_RESULT),
     });
     const service = createService({ mutationGateway });
     const adminSession = createAdminSession();
@@ -308,20 +390,24 @@ function createService(overrides: Partial<ConstructorParameters<typeof AdminOper
 }
 
 function createMutationGateway(overrides: Partial<AdminOperationsMutationGateway> = {}): AdminOperationsMutationGateway {
-  const completed = () => Promise.resolve({ status: 'completed', changed: false });
   return {
-    recomputeTopology: completed,
-    pruneExpired: completed,
-    compactCrdt: completed,
-    updateCrdtLifecycle: completed,
-    eraseCrdt: completed,
+    recomputeTopology: () => Promise.resolve(TOPOLOGY_RESULT),
+    pruneExpired: () => Promise.resolve(PRUNE_RESULT),
+    compactCrdt: () => Promise.resolve(CRDT_COMPACT_RESULT),
+    updateCrdtLifecycle: () => Promise.resolve(CRDT_METADATA),
+    eraseCrdt: () => Promise.resolve(CRDT_ERASE_RESULT),
     ...overrides,
   };
 }
 
-function record(calls: Array<readonly [string, unknown]>, operation: string, input: unknown) {
+function record<TInput extends object, TResult>(
+  calls: Array<readonly [string, object]>,
+  operation: string,
+  input: TInput,
+  result: TResult,
+): Promise<TResult> {
   calls.push([operation, input]);
-  return Promise.resolve({ operation });
+  return Promise.resolve(result);
 }
 
 function createAdminSession() {

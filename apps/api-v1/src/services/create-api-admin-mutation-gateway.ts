@@ -1,18 +1,29 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { RallarCrdtDocumentMetadata } from '@shared/crdt/mod.ts';
 import type {
   AdminOperationsMutationGateway,
 } from '@shared-server/rallar-system/admin-operations/admin-operations-mutation-gateway.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/\
 auth-session-repository.ts';
-import type { AppAdminInboxService } from '@shared-server/rallar-system/services/\
-AppAdminInboxService.ts';
+import type { AppAdminInboxService } from '@shared-server/rallar-system/admin-operations/inbox/\
+app-admin-inbox-service.ts';
+import type {
+  CrdtAdminCompactResult,
+  CrdtAdminEraseResult,
+} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 import {
   type AppGroupInboxService,
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import type {
+  TopologyReconfigureInboxResult,
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 
-import type { CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
+import type {
+  CrdtAdminMutations,
+  CrdtAdminPublicResult,
+} from '../crdt/create-crdt-admin-mutations.ts';
 
 export interface ApiAdminPruneMutationPort {
   readonly pruneExpired: AppAdminInboxService['pruneExpired'];
@@ -49,7 +60,10 @@ export function createApiAdminMutationGateway(
           publish: request.publish ?? true,
         },
       });
-      const result = await input.appGroup.processAuthenticatedEntryUntilCompletionResult({
+      const result = await input.appGroup.processAuthenticatedEntryUntilCompletionResult<
+        typeof command,
+        TopologyReconfigureInboxResult
+      >({
         type: AppInboxType.TOPOLOGY_RECONFIGURE,
         resourceId: command.requestId,
         contextId: [
@@ -81,26 +95,47 @@ export function createApiAdminMutationGateway(
       throw new Error('Admin prune AppInbox processing failed');
     },
     compactCrdt: async (request) =>
-      await input.crdtAdminMutations.writeCrdtAdminMutation({
-        operation: 'compact',
-        adminSession: request.adminSession,
-        request: request.request,
-      }),
+      requireCrdtCompactResult(
+        await input.crdtAdminMutations.writeCrdtAdminMutation({
+          operation: 'compact',
+          adminSession: request.adminSession,
+          request: request.request,
+        }),
+      ),
     updateCrdtLifecycle: async (request) =>
-      await input.crdtAdminMutations.writeCrdtAdminMutation({
-        operation: 'lifecycle',
-        adminSession: request.adminSession,
-        request: request.request,
-      }),
+      requireCrdtLifecycleResult(
+        await input.crdtAdminMutations.writeCrdtAdminMutation({
+          operation: 'lifecycle',
+          adminSession: request.adminSession,
+          request: request.request,
+        }),
+      ),
     eraseCrdt: async (request) =>
-      await input.crdtAdminMutations.writeCrdtAdminMutation({
-        operation: 'erase',
-        adminSession: request.adminSession,
-        request: request.request,
-      }),
+      requireCrdtEraseResult(
+        await input.crdtAdminMutations.writeCrdtAdminMutation({
+          operation: 'erase',
+          adminSession: request.adminSession,
+          request: request.request,
+        }),
+      ),
   };
 }
 
 function toIssuedAuthSession(session: AuthSession, issuedAtEpochMs: number): IssuedAuthSession {
   return { ...session, issuedAtEpochMs };
+}
+
+function requireCrdtCompactResult(result: CrdtAdminPublicResult): CrdtAdminCompactResult {
+  if ('snapshot' in result) return result;
+  throw new TypeError('CRDT compact mutation returned a different operation result');
+}
+
+function requireCrdtLifecycleResult(result: CrdtAdminPublicResult): RallarCrdtDocumentMetadata {
+  if ('lifecycle' in result) return result;
+  throw new TypeError('CRDT lifecycle mutation returned a different operation result');
+}
+
+function requireCrdtEraseResult(result: CrdtAdminPublicResult): CrdtAdminEraseResult {
+  if ('request' in result) return result;
+  throw new TypeError('CRDT erase mutation returned a different operation result');
 }

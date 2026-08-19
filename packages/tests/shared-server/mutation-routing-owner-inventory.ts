@@ -29,7 +29,7 @@ export const MUTATION_ROUTE_OWNER_PATHS = {
   A: 'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts',
   B: 'packages/shared-server/rallar-system/auth/inbox/auth-inbox-handler.ts',
   D: 'packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts',
-  N: 'packages/shared-server/rallar-system/services/AppAdminInboxService.ts',
+  N: 'packages/shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts',
 } as const;
 
 export const MUTATION_ROUTE_OWNER_DISPATCH_PATHS = {
