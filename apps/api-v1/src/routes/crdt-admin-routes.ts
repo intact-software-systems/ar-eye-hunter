@@ -1,7 +1,7 @@
 import { type Context, Hono } from 'jsr:@hono/hono@4.11.9';
+
 import type {
-  RallarCrdtAdminLogRepository,
-  RallarCrdtAuditSink,
+  RallarCrdtAdminReadRepository,
   RallarCrdtCatchUpRequestEnvelope,
   RallarCrdtCatchUpResponseEnvelope,
   RallarCrdtDocumentRef,
@@ -12,46 +12,54 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+
 import { toAuthErrorResponse, toAuthSession } from '../services/request-auth-service.ts';
+import type {
+  CrdtAdminMutationOperation,
+  CrdtAdminMutations,
+} from '../crdt/create-crdt-admin-mutations.ts';
 
-export type RallarCrdtAdminMutationOperation =
-  | 'rebuild-projection'
-  | 'compact'
-  | 'lifecycle'
-  | 'erase';
+export interface RallarCrdtAdminAuthorizationInput {
+  readonly session: AuthSession;
+  readonly context: Context;
+}
 
-export type RallarCrdtAdminMutations = Readonly<{
-  processAdminMutationUntilCompletion(
-    operation: RallarCrdtAdminMutationOperation,
-    input: Readonly<{ adminSession: AuthSession; request: unknown }>,
-  ): Promise<unknown>;
-}>;
+export interface RallarCrdtCatchUpAuthorizationInput {
+  readonly document: RallarCrdtDocumentRef;
+  readonly session: AuthSession;
+}
 
-export type RallarCrdtAdminRoutesOptions = Readonly<{
-  repository: RallarCrdtAdminLogRepository;
-  mutations?: RallarCrdtAdminMutations;
-  audit?: RallarCrdtAuditSink;
-  now?: () => number;
-  requireAuth?: boolean;
-  adminClientIds?: readonly string[];
-  authorizeAdmin?: (
-    input: Readonly<{
-      session: AuthSession;
-      context: Context;
-    }>,
+export interface RallarCrdtCatchUpAuthorizationDecision {
+  readonly allowed: boolean;
+}
+
+export interface RallarCrdtAdminRoutesOptions {
+  readonly repository: RallarCrdtAdminReadRepository;
+  readonly mutations?: CrdtAdminMutations;
+  readonly now?: () => number;
+  readonly requireAuth?: boolean;
+  readonly adminClientIds?: readonly string[];
+  readonly authorizeAdmin?: (
+    input: RallarCrdtAdminAuthorizationInput,
   ) => boolean | Promise<boolean>;
-  requireApiAdminSession: (context: Context) => Promise<IssuedAuthSession>;
-  requireApiUserSession: (context: Context) => Promise<IssuedAuthSession>;
-  authorizeCatchUp?: (
-    input: Readonly<{ document: RallarCrdtDocumentRef; session: AuthSession }>,
-  ) => Promise<Readonly<{ allowed: boolean }>>;
-}>;
+  readonly requireApiAdminSession: (context: Context) => Promise<IssuedAuthSession>;
+  readonly requireApiUserSession: (context: Context) => Promise<IssuedAuthSession>;
+  readonly authorizeCatchUp?: (
+    input: RallarCrdtCatchUpAuthorizationInput,
+  ) => Promise<RallarCrdtCatchUpAuthorizationDecision>;
+}
 
 interface ProcessCrdtAdminMutationInput {
   readonly context: Context;
   readonly options: RallarCrdtAdminRoutesOptions;
-  readonly operation: RallarCrdtAdminMutationOperation;
+  readonly operation: CrdtAdminMutationOperation;
   readonly request: unknown;
+}
+
+interface CrdtAdminDebugExportRequest {
+  readonly document?: RallarCrdtDocumentRef;
+  readonly reason?: string;
+  readonly redactPayloads?: boolean;
 }
 
 export function registerCrdtAdminRoutes(
@@ -115,11 +123,7 @@ export function registerCrdtAdminRoutes(
 
   app.post('/api/crdt/admin/documents/debug-export', (c) =>
     withAdminError(c, async () => {
-      const body = await readJson<{
-        document?: RallarCrdtDocumentRef;
-        reason?: string;
-        redactPayloads?: boolean;
-      }>(c);
+      const body = await readJson<CrdtAdminDebugExportRequest>(c);
       return await options.repository.exportDebugBundle(
         readDocument(body),
         {
@@ -194,10 +198,11 @@ async function processCrdtAdminMutation(
     throw new Error('CRDT AppInbox mutations are not configured.');
   }
   const adminSession = await requireCrdtAdminSession(input.context, input.options);
-  return await input.options.mutations.processAdminMutationUntilCompletion(
-    input.operation,
-    { adminSession, request: input.request },
-  );
+  return await input.options.mutations.writeCrdtAdminMutation({
+    operation: input.operation,
+    adminSession,
+    request: input.request,
+  });
 }
 
 function forbidden(message: string): Error {
@@ -249,8 +254,10 @@ async function requireCrdtAdminSession(
 }
 
 function readErrorStatus(error: unknown): 400 | 401 | 403 | 404 | 409 | 429 | 503 {
-  if (!error || typeof error !== 'object' || !('status' in error)) return 400;
-  const status = Number((error as { status: unknown }).status);
+  if (!error || typeof error !== 'object' || !('status' in error)) {
+    return 400;
+  }
+  const status = Number(Reflect.get(error, 'status'));
   return [400, 401, 403, 404, 409, 429, 503].includes(status)
     ? status as 400 | 401 | 403 | 404 | 409 | 429 | 503
     : 400;
@@ -265,12 +272,10 @@ async function readJson<T>(c: Context): Promise<T> {
 }
 
 function readDocument(input: unknown): RallarCrdtDocumentRef {
-  const candidate = input &&
-      typeof input === 'object' &&
-      'document' in input &&
-      (input as { document?: unknown }).document
-    ? (input as { document?: unknown }).document
-    : input;
+  const requestDocument = input && typeof input === 'object' && 'document' in input
+    ? Reflect.get(input, 'document')
+    : undefined;
+  const candidate = requestDocument ?? input;
 
   if (!candidate || typeof candidate !== 'object') {
     throw new Error('CRDT admin request requires a document ref.');

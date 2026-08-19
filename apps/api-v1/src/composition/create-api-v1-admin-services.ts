@@ -1,4 +1,4 @@
-import type { RallarCrdtAdminLogRepository } from '@shared/crdt/mod.ts';
+import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 // prettier-ignore
 import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/\
@@ -11,7 +11,10 @@ import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/\
 AdminOperationsService.ts';
 // prettier-ignore
-import { AdminSupportService } from '@shared-server/rallar-system/admin-support/\
+import {
+  AdminSupportService,
+  type AdminSupportTopologyManagement,
+} from '@shared-server/rallar-system/admin-support/\
 AdminSupportService.ts';
 import type {
   ClientStateService,
@@ -23,26 +26,19 @@ formation-metrics.ts';
 import type { GroupStateService } from '@shared-server/rallar-system/services/\
 group-state-service.ts';
 // prettier-ignore
-import type { AppAdminInboxService } from '@shared-server/rallar-system/services/\
-AppAdminInboxService.ts';
-// prettier-ignore
-import type { AppCrdtInboxService } from '@shared-server/rallar-system/services/\
-AppCrdtInboxService.ts';
-// prettier-ignore
-import type { AppGroupInboxService } from '@shared-server/rallar-system/services/\
-AppGroupInboxService.ts';
-// prettier-ignore
 import { SpaStatisticsService } from '@shared-server/rallar-system/spa-statistics/\
 SpaStatisticsService.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
-// prettier-ignore
-import type { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/\
-group-topology-management-service.ts';
 import type { RallarServerWsStatus } from '@shared-server/rallar-facade/ws-topic-router.ts';
 
 import type { ApiV1DatabaseBackendConfig } from '../db/database-config.ts';
 import type { ApiV1DatabasePubSubConfig } from '../db/database-pubsub-config.ts';
-import { createApiAdminMutationGateway } from '../services/create-api-admin-mutation-gateway.ts';
+import type { CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
+import {
+  type ApiAdminPruneMutationPort,
+  type ApiTopologyRecomputeMutationPort,
+  createApiAdminMutationGateway,
+} from '../services/create-api-admin-mutation-gateway.ts';
 
 export interface CreateApiV1AdminServicesInput {
   readonly database: PSqlSql;
@@ -56,8 +52,8 @@ export interface CreateApiV1AdminServicesInput {
   readonly resetRtcTopologyMetrics: () => void;
   readonly readGroupFormationMetrics: RallarGroupFormationMetricsRecorder['readMetrics'];
   readonly resetGroupFormationMetrics: RallarGroupFormationMetricsRecorder['resetMetrics'];
-  readonly crdtAdminRepository: RallarCrdtAdminLogRepository;
-  readonly topologyManagement: GroupTopologyManagementService;
+  readonly crdtAdminRepository: RallarCrdtAdminReadRepository;
+  readonly topologyManagement: AdminSupportTopologyManagement;
   readonly clientStateService: Pick<
     ClientStateService,
     'readSnapshot' | 'readPresenceSnapshot' | 'listRecentEvents'
@@ -70,9 +66,9 @@ export interface CreateApiV1AdminServicesInput {
     | 'listSnapshotsPage'
     | 'listEvents'
   >;
-  readonly appAdminInboxService: AppAdminInboxService;
-  readonly appCrdtInboxService: AppCrdtInboxService;
-  readonly appGroupInboxService: AppGroupInboxService;
+  readonly appAdminInboxService: ApiAdminPruneMutationPort;
+  readonly crdtAdminMutations: CrdtAdminMutations;
+  readonly appGroupInboxService: ApiTopologyRecomputeMutationPort;
 }
 
 export interface ApiV1AdminServices {
@@ -103,7 +99,7 @@ export function createApiV1AdminServices(
       crdtAdminRepository: input.crdtAdminRepository,
       mutationGateway: createApiAdminMutationGateway({
         appAdmin: input.appAdminInboxService,
-        appCrdt: input.appCrdtInboxService,
+        crdtAdminMutations: input.crdtAdminMutations,
         appGroup: input.appGroupInboxService,
         now: input.nowEpochMs,
       }),

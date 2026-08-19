@@ -19,11 +19,15 @@ export const ROUTING_SOURCE_MARKERS = {
     'AppInboxType.TOPOLOGY_RECONFIGURE',
   ],
   'apps/api-v1/src/routes/config-route.ts': ['AppAuthInboxService', 'appAuthInbox'],
-  'apps/api-v1/src/routes/crdt-admin-routes.ts': ['processAdminMutationUntilCompletion'],
+  'apps/api-v1/src/routes/crdt-admin-routes.ts': ['writeCrdtAdminMutation'],
+  'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts': [
+    'writeCrdtAdminMutation',
+    'writeCrdtCommandUntilCompletion',
+  ],
   'apps/api-v1/src/services/create-api-admin-mutation-gateway.ts': [
     'AppInboxType.TOPOLOGY_RECONFIGURE',
     'appAdmin.pruneExpired',
-    'appCrdt.processAdminMutationUntilCompletion',
+    'crdtAdminMutations.writeCrdtAdminMutation',
   ],
   'apps/api-v1/src/services/request-auth-service.ts': [
     'requireSharedWsAuthSession',
@@ -33,7 +37,9 @@ export const ROUTING_SOURCE_MARKERS = {
     'requireWsAuthSession',
     'enqueueAuthorisedWsClientConnect',
   ],
-  'packages/shared-server/crdt/RallarCrdtServer.ts': ['mutationIngress.enqueueUpdate'],
+  'packages/shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts': [
+    'mutationIngress.enqueueUpdate',
+  ],
   'packages/shared-server/rallar-system/rtc-topology/topic/init-rtc-rtt-topic.ts': [
     'enqueueRtcRttMutation',
   ],

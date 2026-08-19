@@ -1,11 +1,16 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
-import { findMutationBoundaryViolations } from './mutation-boundary-analysis.ts';
+// prettier-ignore
 import {
-  readFunctionBody as functionBody,
-  readMethodBody as methodBody,
-} from './authoritative-mutation-source-analysis.ts';
-import { authoritativeMutationRuntimeSourcePaths } from './authoritative-mutation-runtime-source-inventory.ts';
+  describe,
+  expect,
+  it,
+} from 'vitest';
+
+import { findMutationBoundaryViolations } from './mutation-boundary-analysis.ts';
+import { readFunctionBody, readMethodBody } from './authoritative-mutation-source-analysis.ts';
+// prettier-ignore
+import { authoritativeMutationRuntimeSourcePaths }
+  from './authoritative-mutation-runtime-source-inventory.ts';
 
 // Retain permanently as cross-domain semantic phase-order evidence.
 const read = (file: string): string => readFileSync(file, 'utf8');
@@ -31,6 +36,10 @@ const sharedValidationPrimitiveNames = [
   'requirePositiveSafeInteger',
   'nullablePositiveSafeInteger',
 ] as const;
+const forbiddenPersistenceOwnerImport = new RegExp(
+  String.raw`from ['"](?:\.\.\/)+` +
+    String.raw`(?:mutation|services|inbox|repositories\/GroupStateRepository)(?:\/|\.ts)`,
+);
 
 const sources = {
   appAdmin: read(`${serviceRoot}/AppAdminInboxService.ts`),
@@ -38,7 +47,8 @@ const sources = {
   appClient: read(
     'packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts',
   ),
-  appCrdt: read(`${serviceRoot}/AppCrdtInboxService.ts`),
+  appCrdt: read('packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts'),
+  crdtAdminMutations: read('apps/api-v1/src/crdt/create-crdt-admin-mutations.ts'),
   appGroup: read(`${serviceRoot}/AppGroupInboxService.ts`),
   topologyHandler: read(`${topologyInboxRoot}/topology-app-inbox-handler.ts`),
   rtcHandler: read(`${rtcInboxRoot}/rtc-rtt-app-inbox-handler.ts`),
@@ -94,9 +104,7 @@ it('keeps persistence validators below mutation and stateful owners', () => {
     `${persistenceRoot}/validate-persisted-group-presence.ts`,
   ]) {
     const source = read(file);
-    expect(source, file).not.toMatch(
-      /from ['"](?:\.\.\/)+(?:mutation|services|inbox|repositories\/GroupStateRepository)(?:\/|\.ts)/,
-    );
+    expect(source, file).not.toMatch(forbiddenPersistenceOwnerImport);
   }
 });
 
@@ -150,8 +158,8 @@ it.each([
     owner: 'processCommand',
     calls: [
       'this.mutationService.read(command)',
-      'this.mutationService.compute(command, read)',
-      'this.mutationService.validate(command, read, computed)',
+      'this.mutationService.compute({ command, read })',
+      'this.mutationService.validate({ command, read, computed })',
       'this.mutationService.write(transaction, computed)',
     ],
   },
@@ -224,18 +232,26 @@ it.each([
     ],
   },
 ])('$name keeps one visible read/compute/validate/write path', ({ source, owner, calls }) => {
-  const body = methodBody(source, owner);
+  const body = readMethodBody(source, owner);
   expectInOrder(body, calls);
+});
+
+it('keeps API CRDT administration connected to the terminal AppInbox owner', () => {
+  expectInOrder(readFunctionBody(sources.crdtAdminMutations, 'createCrdtAdminMutations'), [
+    'writeCrdtAdminMutation',
+    'createCrdtAdminCommand({',
+    'writeCrdtCommandUntilCompletion(command)',
+  ]);
 });
 
 it('keeps every authoritative service write bound to the caller transaction', () => {
   const seams = [
-    functionBody(sources.client, 'writeClientMutation'),
-    functionBody(sources.group, 'writeGroupMutation'),
-    functionBody(sources.topologyConfig, 'writeTopologyConfigMutation'),
-    methodBody(sources.topologyReconfigure, 'write'),
-    functionBody(sources.rtt, 'writeRtcRttMutation'),
-    methodBody(sources.topologyRepository, 'writeTopologyMutation'),
+    readFunctionBody(sources.client, 'writeClientMutation'),
+    readFunctionBody(sources.group, 'writeGroupMutation'),
+    readFunctionBody(sources.topologyConfig, 'writeTopologyConfigMutation'),
+    readMethodBody(sources.topologyReconfigure, 'write'),
+    readFunctionBody(sources.rtt, 'writeRtcRttMutation'),
+    readMethodBody(sources.topologyRepository, 'writeTopologyMutation'),
   ];
   for (const seam of seams) {
     expect(seam).toMatch(/transaction:\s*PSqlTransactionSql/);
@@ -266,14 +282,14 @@ it('keeps transport boundaries free of direct mutators and persistence owners', 
 }, 15_000);
 
 it('writes topology config state, receipt, authority fence, and APP_OUTBOX atomically', () => {
-  const seam = functionBody(sources.topologyConfig, 'writeTopologyConfigMutation');
+  const seam = readFunctionBody(sources.topologyConfig, 'writeTopologyConfigMutation');
   expectInOrder(seam, [
     'writeTopologyConfigAuthorityFence(',
     'writeTopologyConfigState(',
     'insertMutationRecord(',
     'writeRtcTopologyOutbox(transaction, computed.outbox)',
   ]);
-  expectInOrder(functionBody(sources.topologyConfig, 'writeTopologyConfigAuthorityFence'), [
+  expectInOrder(readFunctionBody(sources.topologyConfig, 'writeTopologyConfigAuthorityFence'), [
     'advanceAuthorityFence(',
     'computed.groupAuthorityGuard',
     'throw new RuntimeStateWriteConflictError()',
@@ -282,7 +298,7 @@ it('writes topology config state, receipt, authority fence, and APP_OUTBOX atomi
 });
 
 it('fences explicit reconfigure authority before inserting APP_OUTBOX', () => {
-  const seam = methodBody(sources.topologyReconfigure, 'write');
+  const seam = readMethodBody(sources.topologyReconfigure, 'write');
   expectInOrder(seam, [
     'advanceAuthorityFence(',
     'computed.authorityGuard',
@@ -292,7 +308,7 @@ it('fences explicit reconfigure authority before inserting APP_OUTBOX', () => {
 });
 
 it('writes RTT admission, measurement, receipt, and direct APP_OUTBOX rows atomically', () => {
-  const seam = functionBody(sources.rtt, 'writeRtcRttMutation');
+  const seam = readFunctionBody(sources.rtt, 'writeRtcRttMutation');
   expectInOrder(seam, [
     'commitEndpointAdmission(',
     'commitMeasurement(',

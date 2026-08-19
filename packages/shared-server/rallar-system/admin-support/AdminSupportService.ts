@@ -25,13 +25,14 @@ import type {
   AdminSupportWarning,
 } from '@shared/api/admin-support-types.ts';
 import type {
-  RallarCrdtAdminLogRepository,
+  RallarCrdtAdminReadRepository,
   RallarCrdtDebugBundle,
   RallarCrdtDocumentMetadata,
   RallarCrdtDocumentRef,
   RallarCrdtIntegrityReport,
 } from '@shared/crdt/mod.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
+
 import type { ClientStateService } from '../client-state/client-state-service-contracts.ts';
 import type { GroupStateService } from '../services/group-state-service.ts';
 import {
@@ -42,43 +43,41 @@ import {
   recordRallarTiming,
 } from '../services/timing.ts';
 
-export type AdminSupportReadInput = Readonly<{
-  adminSession: AuthSession;
-}>;
+export interface AdminSupportReadInput {
+  readonly adminSession: AuthSession;
+}
 
-export type AdminSupportWriteInput<TRequest> = Readonly<{
-  adminSession: AuthSession;
-  request: TRequest;
-}>;
+export interface AdminSupportWriteInput<TRequest> {
+  readonly adminSession: AuthSession;
+  readonly request: TRequest;
+}
 
-export type AdminSupportQueueEntrySource =
-  | 'resource_inbox'
-  | 'resource_inbox_results';
+export type AdminSupportQueueEntrySource = 'resource_inbox' | 'resource_inbox_results';
 
-export type AdminSupportQueueEntryRead = Readonly<{
-  source: AdminSupportQueueEntrySource;
-  key: Key;
-  typeId: string;
-  status: string;
-  attempts: number;
-  createdAtEpochMs?: number;
-  startedAtEpochMs?: number;
-  endedAtEpochMs?: number;
-  nextRetryAtEpochMs?: number;
-  expiresAtEpochMs?: number;
-  payload: string;
-}>;
+export interface AdminSupportQueueEntryRead {
+  readonly source: AdminSupportQueueEntrySource;
+  readonly key: Key;
+  readonly typeId: string;
+  readonly status: string;
+  readonly attempts: number;
+  readonly createdAtEpochMs?: number;
+  readonly startedAtEpochMs?: number;
+  readonly endedAtEpochMs?: number;
+  readonly nextRetryAtEpochMs?: number;
+  readonly expiresAtEpochMs?: number;
+  readonly payload: string;
+}
 
-export type AdminSupportReader = Readonly<{
-  readQueueEntry(
+export interface AdminSupportReader {
+  readonly readQueueEntry: (
     key: Key,
     includeExpired: boolean,
-  ): Promise<AdminSupportQueueEntryRead | undefined>;
-  readQueueResult(
+  ) => Promise<AdminSupportQueueEntryRead | undefined>;
+  readonly readQueueResult: (
     key: Key,
     includeExpired: boolean,
-  ): Promise<AdminSupportQueueEntryRead | undefined>;
-}>;
+  ) => Promise<AdminSupportQueueEntryRead | undefined>;
+}
 
 export type AdminSupportClientStateService = Pick<
   ClientStateService,
@@ -90,29 +89,29 @@ export type AdminSupportGroupStateService = Pick<
   'readSnapshot' | 'listRecentEvents'
 >;
 
-export type AdminSupportTopologyManagement = Readonly<{
-  readTopologyView(groupRef: GroupRef): Promise<unknown>;
-}>;
+export interface AdminSupportTopologyManagement {
+  readonly readTopologyView: (groupRef: GroupRef) => Promise<unknown>;
+}
 
-export type AdminSupportWsStatus = Readonly<{
-  connectionCount: number;
-  openConnectionCount: number;
-  connectionIds: readonly string[];
-  openConnectionIds: readonly string[];
-  connections?: readonly unknown[];
-}>;
+export interface AdminSupportWsStatus {
+  readonly connectionCount: number;
+  readonly openConnectionCount: number;
+  readonly connectionIds: readonly string[];
+  readonly openConnectionIds: readonly string[];
+  readonly connections?: readonly unknown[];
+}
 
-export type AdminSupportServiceOptions = Readonly<{
-  now: () => number;
-  serverId?: string;
-  reader: AdminSupportReader;
-  clientStateService?: AdminSupportClientStateService;
-  groupStateService?: AdminSupportGroupStateService;
-  topologyManagement?: AdminSupportTopologyManagement;
-  wsStatus?: () => AdminSupportWsStatus;
-  crdtAdminRepository?: Partial<RallarCrdtAdminLogRepository>;
-  timing?: RallarTimingSink;
-}>;
+export interface AdminSupportServiceOptions {
+  readonly now: () => number;
+  readonly serverId?: string;
+  readonly reader: AdminSupportReader;
+  readonly clientStateService?: AdminSupportClientStateService;
+  readonly groupStateService?: AdminSupportGroupStateService;
+  readonly topologyManagement?: AdminSupportTopologyManagement;
+  readonly wsStatus?: () => AdminSupportWsStatus;
+  readonly crdtAdminRepository?: Partial<RallarCrdtAdminReadRepository>;
+  readonly timing?: RallarTimingSink;
+}
 
 export class AdminSupportService {
   private readonly options: AdminSupportServiceOptions;
@@ -134,11 +133,11 @@ export class AdminSupportService {
       const wsStatus = this.options.wsStatus?.();
       const [snapshot, presence, recentEvents] = clientStateService
         ? await Promise.all([
-          clientStateService.readSnapshot(ref),
-          clientStateService.readPresenceSnapshot(ref),
-          clientStateService.listRecentEvents?.(ref, { limit }) ?? Promise.resolve([]),
-        ])
-        : [undefined, undefined, []] as const;
+            clientStateService.readSnapshot(ref),
+            clientStateService.readPresenceSnapshot(ref),
+            clientStateService.listRecentEvents?.(ref, { limit }) ?? Promise.resolve([]),
+          ])
+        : ([undefined, undefined, []] as const);
       const session = findClientSession(
         snapshot,
         input.request.clientInstanceId,
@@ -172,7 +171,12 @@ export class AdminSupportService {
         facts,
         timeline: clientTimeline(recentEvents),
         warnings,
-        likelyCauses: clientLikelyCauses(snapshot, session, input.request.sessionId, wsStatus),
+        likelyCauses: clientLikelyCauses({
+          snapshot,
+          session,
+          sessionId: input.request.sessionId,
+          wsStatus,
+        }),
         suggestedActions: clientSuggestedActions(snapshot, session, input.request.sessionId),
         rawRefs: [`client:${toClientRef(ref)}`],
       };
@@ -187,7 +191,7 @@ export class AdminSupportService {
       const limit = readRecentEventLimit(input.request.limitRecentEvents);
       const snapshot = await this.options.groupStateService?.readSnapshot(groupRef);
       const recentEvents =
-        await this.options.groupStateService?.listRecentEvents?.(groupRef, { limit }) ?? [];
+        (await this.options.groupStateService?.listRecentEvents?.(groupRef, { limit })) ?? [];
       const topologyView = await this.options.topologyManagement?.readTopologyView(groupRef);
       const session = findGroupSession(
         snapshot,
@@ -260,24 +264,30 @@ export class AdminSupportService {
           idempotencyKey: input.request.idempotencyKey,
           target: input.request.target,
         }),
-        facts: [{
-          label: 'request.search',
-          source: 'admin-support',
-          value: 'not-run',
-          certainty: 'unavailable',
-        }],
+        facts: [
+          {
+            label: 'request.search',
+            source: 'admin-support',
+            value: 'not-run',
+            certainty: 'unavailable',
+          },
+        ],
         timeline: [],
-        warnings: [{
-          code: 'unsupported-global-request-search',
-          message: 'Request explanation requires queueKey or a specific target in phase 1.',
-          source: 'admin-support',
-        }],
+        warnings: [
+          {
+            code: 'unsupported-global-request-search',
+            message: 'Request explanation requires queueKey or a specific target in phase 1.',
+            source: 'admin-support',
+          },
+        ],
         likelyCauses: [],
-        suggestedActions: [{
-          code: 'provide-queue-key',
-          label: 'Provide a QueueBox key or scoped target to explain this request',
-          severity: 'info',
-        }],
+        suggestedActions: [
+          {
+            code: 'provide-queue-key',
+            label: 'Provide a QueueBox key or scoped target to explain this request',
+            severity: 'info',
+          },
+        ],
         rawRefs: [],
       };
     });
@@ -290,19 +300,21 @@ export class AdminSupportService {
       const document = input.request.document;
       const repository = this.options.crdtAdminRepository;
       const metadata = await repository?.readDocumentMetadata?.(document);
-      const integrity = input.request.includeIntegrity === true
-        ? await repository?.verifyIntegrity?.(document)
-        : undefined;
-      const debugBundle = input.request.includeRedactedDebugBundle === true
-        ? await repository?.exportDebugBundle?.(document, {
-          reason: 'api-v1-admin-support-debug-export',
-          exportedAtEpochMs: this.options.now(),
-          redaction: {
-            payloadsRedacted: true,
-            reason: 'api-v1-admin-support-redaction',
-          },
-        })
-        : undefined;
+      const integrity =
+        input.request.includeIntegrity === true
+          ? await repository?.verifyIntegrity?.(document)
+          : undefined;
+      const debugBundle =
+        input.request.includeRedactedDebugBundle === true
+          ? await repository?.exportDebugBundle?.(document, {
+              reason: 'api-v1-admin-support-debug-export',
+              exportedAtEpochMs: this.options.now(),
+              redaction: {
+                payloadsRedacted: true,
+                reason: 'api-v1-admin-support-redaction',
+              },
+            })
+          : undefined;
       const facts = crdtFacts({
         metadata,
         integrity,
@@ -344,14 +356,8 @@ export class AdminSupportService {
         this.options.reader.readQueueEntry(queueKey, includeExpired),
         this.options.reader.readQueueResult(queueKey, includeExpired),
       ]);
-      const facts = [
-        ...entryFacts('inbox', inbox),
-        ...entryFacts('result', result),
-      ];
-      const timeline = [
-        ...entryTimeline('inbox', inbox),
-        ...entryTimeline('result', result),
-      ];
+      const facts = [...entryFacts('inbox', inbox), ...entryFacts('result', result)];
+      const timeline = [...entryTimeline('inbox', inbox), ...entryTimeline('result', result)];
       const warnings: AdminSupportWarning[] = [];
 
       if (!inbox) {
@@ -408,13 +414,7 @@ export class AdminSupportService {
       );
       return result;
     } catch (error) {
-      recordRallarTiming(
-        this.options.timing,
-        timingInput,
-        'error',
-        nowMs() - startedAt,
-        error,
-      );
+      recordRallarTiming(this.options.timing, timingInput, 'error', nowMs() - startedAt, error);
       throw error;
     }
   }
@@ -451,23 +451,69 @@ export class AdminSupportService {
   }
 }
 
-function clientFacts(
-  input: Readonly<{
-    snapshot: ClientSnapshot | undefined;
-    presence: ClientPresenceSnapshot | undefined;
-    recentEvents: readonly ClientEvent[];
-    session: ClientSession | undefined;
-    sessionId: string | undefined;
-    clientInstanceId: string | undefined;
-    wsStatus: AdminSupportWsStatus | undefined;
-  }>,
-): readonly AdminSupportFact[] {
-  const facts: AdminSupportFact[] = [{
-    label: 'client.snapshot',
-    source: 'client-state',
-    value: input.snapshot ? 'found' : 'missing',
-    certainty: input.snapshot ? 'exact' : 'unavailable',
-  }];
+interface ClientFactsInput {
+  readonly snapshot: ClientSnapshot | undefined;
+  readonly presence: ClientPresenceSnapshot | undefined;
+  readonly recentEvents: readonly ClientEvent[];
+  readonly session: ClientSession | undefined;
+  readonly sessionId: string | undefined;
+  readonly clientInstanceId: string | undefined;
+  readonly wsStatus: AdminSupportWsStatus | undefined;
+}
+
+interface ClientWarningsInput {
+  readonly hasClientStateService: boolean;
+  readonly snapshot: ClientSnapshot | undefined;
+  readonly session: ClientSession | undefined;
+  readonly sessionId: string | undefined;
+  readonly wsStatus: AdminSupportWsStatus | undefined;
+}
+
+interface GroupFactsInput {
+  readonly snapshot: GroupSnapshot | undefined;
+  readonly recentEvents: readonly GroupEvent[];
+  readonly topologyView: unknown;
+  readonly principalId: string | undefined;
+  readonly sessionId: string | undefined;
+  readonly session: GroupPresenceSession | undefined;
+}
+
+interface GroupWarningsInput {
+  readonly hasGroupStateService: boolean;
+  readonly hasTopologyManagement: boolean;
+  readonly snapshot: GroupSnapshot | undefined;
+  readonly principalId: string | undefined;
+  readonly sessionId: string | undefined;
+  readonly session: GroupPresenceSession | undefined;
+  readonly topologyView: unknown;
+}
+
+interface CrdtFactsInput {
+  readonly metadata: RallarCrdtDocumentMetadata | undefined;
+  readonly integrity: RallarCrdtIntegrityReport | undefined;
+  readonly debugBundle: RallarCrdtDebugBundle | undefined;
+}
+
+interface CrdtWarningsInput {
+  readonly hasRepository: boolean;
+  readonly hasMetadataReader: boolean;
+  readonly requestedIntegrity: boolean;
+  readonly hasIntegrityReader: boolean;
+  readonly requestedDebugBundle: boolean;
+  readonly hasDebugBundleReader: boolean;
+  readonly metadata: RallarCrdtDocumentMetadata | undefined;
+  readonly integrity: RallarCrdtIntegrityReport | undefined;
+}
+
+function clientFacts(input: ClientFactsInput): readonly AdminSupportFact[] {
+  const facts: AdminSupportFact[] = [
+    {
+      label: 'client.snapshot',
+      source: 'client-state',
+      value: input.snapshot ? 'found' : 'missing',
+      certainty: input.snapshot ? 'exact' : 'unavailable',
+    },
+  ];
 
   if (input.snapshot) {
     facts.push(
@@ -491,8 +537,8 @@ function clientFacts(
       },
     );
     if (input.clientInstanceId) {
-      const instance = input.snapshot.instances.find((candidate) =>
-        candidate.clientInstanceId === input.clientInstanceId
+      const instance = input.snapshot.instances.find(
+        (candidate) => candidate.clientInstanceId === input.clientInstanceId,
       );
       facts.push({
         label: 'client.instance.status',
@@ -530,21 +576,19 @@ function clientFacts(
   }
 
   if (input.wsStatus) {
-    facts.push(
-      {
-        label: 'client.websocket.openConnectionCount',
-        source: 'websocket',
-        value: input.wsStatus.openConnectionCount,
-        certainty: 'exact',
-      },
-    );
+    facts.push({
+      label: 'client.websocket.openConnectionCount',
+      source: 'websocket',
+      value: input.wsStatus.openConnectionCount,
+      certainty: 'exact',
+    });
     if (input.sessionId) {
       facts.push({
         label: 'client.session.currentProcessOpen',
         source: 'websocket',
         value: Boolean(
           input.session?.connectionId &&
-            input.wsStatus.openConnectionIds.includes(input.session.connectionId),
+          input.wsStatus.openConnectionIds.includes(input.session.connectionId),
         ),
         certainty: input.session?.connectionId ? 'exact' : 'inferred',
       });
@@ -571,15 +615,7 @@ function clientTimeline(events: readonly ClientEvent[]): readonly AdminSupportTi
   }));
 }
 
-function clientWarnings(
-  input: Readonly<{
-    hasClientStateService: boolean;
-    snapshot: ClientSnapshot | undefined;
-    session: ClientSession | undefined;
-    sessionId: string | undefined;
-    wsStatus: AdminSupportWsStatus | undefined;
-  }>,
-): readonly AdminSupportWarning[] {
+function clientWarnings(input: ClientWarningsInput): readonly AdminSupportWarning[] {
   const warnings: AdminSupportWarning[] = [];
   if (!input.hasClientStateService) {
     warnings.push({
@@ -623,12 +659,15 @@ function clientWarnings(
   return warnings;
 }
 
-function clientLikelyCauses(
-  snapshot: ClientSnapshot | undefined,
-  session: ClientSession | undefined,
-  sessionId: string | undefined,
-  wsStatus: AdminSupportWsStatus | undefined,
-): readonly string[] {
+interface ClientLikelyCausesInput {
+  readonly snapshot: ClientSnapshot | undefined;
+  readonly session: ClientSession | undefined;
+  readonly sessionId: string | undefined;
+  readonly wsStatus: AdminSupportWsStatus | undefined;
+}
+
+function clientLikelyCauses(input: ClientLikelyCausesInput): readonly string[] {
+  const { snapshot, session, sessionId, wsStatus } = input;
   const causes = [];
   if (!snapshot) {
     causes.push('Client principal has no durable state snapshot.');
@@ -669,22 +708,15 @@ function clientSuggestedActions(
   return actions;
 }
 
-function groupFacts(
-  input: Readonly<{
-    snapshot: GroupSnapshot | undefined;
-    recentEvents: readonly GroupEvent[];
-    topologyView: unknown;
-    principalId: string | undefined;
-    sessionId: string | undefined;
-    session: GroupPresenceSession | undefined;
-  }>,
-): readonly AdminSupportFact[] {
-  const facts: AdminSupportFact[] = [{
-    label: 'group.snapshot',
-    source: 'group-state',
-    value: input.snapshot ? 'found' : 'missing',
-    certainty: input.snapshot ? 'exact' : 'unavailable',
-  }];
+function groupFacts(input: GroupFactsInput): readonly AdminSupportFact[] {
+  const facts: AdminSupportFact[] = [
+    {
+      label: 'group.snapshot',
+      source: 'group-state',
+      value: input.snapshot ? 'found' : 'missing',
+      certainty: input.snapshot ? 'exact' : 'unavailable',
+    },
+  ];
 
   if (input.snapshot) {
     facts.push(
@@ -714,8 +746,8 @@ function groupFacts(
       },
     );
     if (input.principalId) {
-      const member = input.snapshot.members.find((candidate) =>
-        candidate.principalId === input.principalId
+      const member = input.snapshot.members.find(
+        (candidate) => candidate.principalId === input.principalId,
       );
       facts.push({
         label: 'group.member.status',
@@ -763,17 +795,7 @@ function groupTimeline(events: readonly GroupEvent[]): readonly AdminSupportTime
   }));
 }
 
-function groupWarnings(
-  input: Readonly<{
-    hasGroupStateService: boolean;
-    hasTopologyManagement: boolean;
-    snapshot: GroupSnapshot | undefined;
-    principalId: string | undefined;
-    sessionId: string | undefined;
-    session: GroupPresenceSession | undefined;
-    topologyView: unknown;
-  }>,
-): readonly AdminSupportWarning[] {
+function groupWarnings(input: GroupWarningsInput): readonly AdminSupportWarning[] {
   const warnings: AdminSupportWarning[] = [];
   if (!input.hasGroupStateService) {
     warnings.push({
@@ -850,19 +872,15 @@ function groupSuggestedActions(
   return actions;
 }
 
-function crdtFacts(
-  input: Readonly<{
-    metadata: RallarCrdtDocumentMetadata | undefined;
-    integrity: RallarCrdtIntegrityReport | undefined;
-    debugBundle: RallarCrdtDebugBundle | undefined;
-  }>,
-): readonly AdminSupportFact[] {
-  const facts: AdminSupportFact[] = [{
-    label: 'crdt.metadata',
-    source: 'crdt-admin-log',
-    value: input.metadata ? 'found' : 'missing',
-    certainty: input.metadata ? 'exact' : 'unavailable',
-  }];
+function crdtFacts(input: CrdtFactsInput): readonly AdminSupportFact[] {
+  const facts: AdminSupportFact[] = [
+    {
+      label: 'crdt.metadata',
+      source: 'crdt-admin-log',
+      value: input.metadata ? 'found' : 'missing',
+      certainty: input.metadata ? 'exact' : 'unavailable',
+    },
+  ];
 
   if (input.metadata) {
     facts.push(
@@ -941,45 +959,34 @@ function crdtTimeline(
     return [];
   }
   return [
-    toTimeline(
-      metadata.createdAtEpochMs,
-      'crdt-admin-log',
-      'crdt.created',
-      'CRDT document metadata was created.',
-    ),
-    toTimeline(
-      metadata.updatedAtEpochMs,
-      'crdt-admin-log',
-      'crdt.updated',
-      'CRDT document metadata was updated.',
-    ),
-    toTimeline(
-      metadata.archivedAtEpochMs ?? undefined,
-      'crdt-admin-log',
-      'crdt.archived',
-      'CRDT document was archived.',
-    ),
-    toTimeline(
-      metadata.destroyedAtEpochMs ?? undefined,
-      'crdt-admin-log',
-      'crdt.destroyed',
-      'CRDT document was destroyed.',
-    ),
+    toTimeline({
+      atEpochMs: metadata.createdAtEpochMs,
+      source: 'crdt-admin-log',
+      eventType: 'crdt.created',
+      summary: 'CRDT document metadata was created.',
+    }),
+    toTimeline({
+      atEpochMs: metadata.updatedAtEpochMs,
+      source: 'crdt-admin-log',
+      eventType: 'crdt.updated',
+      summary: 'CRDT document metadata was updated.',
+    }),
+    toTimeline({
+      atEpochMs: metadata.archivedAtEpochMs ?? undefined,
+      source: 'crdt-admin-log',
+      eventType: 'crdt.archived',
+      summary: 'CRDT document was archived.',
+    }),
+    toTimeline({
+      atEpochMs: metadata.destroyedAtEpochMs ?? undefined,
+      source: 'crdt-admin-log',
+      eventType: 'crdt.destroyed',
+      summary: 'CRDT document was destroyed.',
+    }),
   ].filter((item): item is AdminSupportTimelineItem => item !== undefined);
 }
 
-function crdtWarnings(
-  input: Readonly<{
-    hasRepository: boolean;
-    hasMetadataReader: boolean;
-    requestedIntegrity: boolean;
-    hasIntegrityReader: boolean;
-    requestedDebugBundle: boolean;
-    hasDebugBundleReader: boolean;
-    metadata: RallarCrdtDocumentMetadata | undefined;
-    integrity: RallarCrdtIntegrityReport | undefined;
-  }>,
-): readonly AdminSupportWarning[] {
+function crdtWarnings(input: CrdtWarningsInput): readonly AdminSupportWarning[] {
   const warnings: AdminSupportWarning[] = [];
   if (!input.hasRepository) {
     warnings.push({
@@ -1068,12 +1075,14 @@ function entryFacts(
   entry: AdminSupportQueueEntryRead | undefined,
 ): readonly AdminSupportFact[] {
   if (!entry) {
-    return [{
-      label: `${prefix}.status`,
-      source: prefix === 'inbox' ? 'resource_inbox' : 'resource_inbox_results',
-      value: 'missing',
-      certainty: 'unavailable',
-    }];
+    return [
+      {
+        label: `${prefix}.status`,
+        source: prefix === 'inbox' ? 'resource_inbox' : 'resource_inbox_results',
+        value: 'missing',
+        certainty: 'unavailable',
+      },
+    ];
   }
 
   return [
@@ -1113,41 +1122,56 @@ function entryTimeline(
     return [];
   }
   return [
-    toTimeline(entry.createdAtEpochMs, entry.source, `${prefix}.created`, 'Queue row was created.'),
-    toTimeline(
-      entry.startedAtEpochMs,
-      entry.source,
-      `${prefix}.started`,
-      'Queue row processing started.',
-    ),
-    toTimeline(
-      entry.endedAtEpochMs,
-      entry.source,
-      `${prefix}.ended`,
-      'Queue row processing ended.',
-    ),
-    toTimeline(
-      entry.nextRetryAtEpochMs,
-      entry.source,
-      `${prefix}.next-retry`,
-      'Queue row is scheduled for retry.',
-    ),
-    toTimeline(entry.expiresAtEpochMs, entry.source, `${prefix}.expires`, 'Queue row expires.'),
+    toTimeline({
+      atEpochMs: entry.createdAtEpochMs,
+      source: entry.source,
+      eventType: `${prefix}.created`,
+      summary: 'Queue row was created.',
+    }),
+    toTimeline({
+      atEpochMs: entry.startedAtEpochMs,
+      source: entry.source,
+      eventType: `${prefix}.started`,
+      summary: 'Queue row processing started.',
+    }),
+    toTimeline({
+      atEpochMs: entry.endedAtEpochMs,
+      source: entry.source,
+      eventType: `${prefix}.ended`,
+      summary: 'Queue row processing ended.',
+    }),
+    toTimeline({
+      atEpochMs: entry.nextRetryAtEpochMs,
+      source: entry.source,
+      eventType: `${prefix}.next-retry`,
+      summary: 'Queue row is scheduled for retry.',
+    }),
+    toTimeline({
+      atEpochMs: entry.expiresAtEpochMs,
+      source: entry.source,
+      eventType: `${prefix}.expires`,
+      summary: 'Queue row expires.',
+    }),
   ].filter((item): item is AdminSupportTimelineItem => item !== undefined);
 }
 
-function toTimeline(
-  atEpochMs: number | undefined,
-  source: string,
-  eventType: string,
-  summary: string,
-): AdminSupportTimelineItem | undefined {
-  return atEpochMs === undefined ? undefined : {
-    atEpochMs,
-    source,
-    eventType,
-    summary,
-  };
+interface ToTimelineInput {
+  readonly atEpochMs: number | undefined;
+  readonly source: string;
+  readonly eventType: string;
+  readonly summary: string;
+}
+
+function toTimeline(input: ToTimelineInput): AdminSupportTimelineItem | undefined {
+  const { atEpochMs, source, eventType, summary } = input;
+  return atEpochMs === undefined
+    ? undefined
+    : {
+        atEpochMs,
+        source,
+        eventType,
+        summary,
+      };
 }
 
 function queueLikelyCauses(
@@ -1237,9 +1261,10 @@ function findClientSession(
   if (!snapshot) {
     return undefined;
   }
-  return snapshot.activeSessions.find((session) =>
-    (clientInstanceId === undefined || session.clientInstanceId === clientInstanceId) &&
-    (sessionId === undefined || session.sessionId === sessionId)
+  return snapshot.activeSessions.find(
+    (session) =>
+      (clientInstanceId === undefined || session.clientInstanceId === clientInstanceId) &&
+      (sessionId === undefined || session.sessionId === sessionId),
   );
 }
 
@@ -1251,9 +1276,10 @@ function findGroupSession(
   if (!snapshot) {
     return undefined;
   }
-  return snapshot.activeSessions.find((session) =>
-    (principalId === undefined || session.principalId === principalId) &&
-    (sessionId === undefined || session.sessionId === sessionId)
+  return snapshot.activeSessions.find(
+    (session) =>
+      (principalId === undefined || session.principalId === principalId) &&
+      (sessionId === undefined || session.sessionId === sessionId),
   );
 }
 
@@ -1265,12 +1291,14 @@ function summarizeTopologyView(input: unknown): Readonly<Record<string, unknown>
   const activeSessionIds = Array.isArray(snapshot?.activeSessionIds)
     ? snapshot.activeSessionIds
     : undefined;
-  const participantCount = typeof snapshot?.participantCount === 'number'
-    ? snapshot.participantCount
-    : activeSessionIds?.length;
+  const participantCount =
+    typeof snapshot?.participantCount === 'number'
+      ? snapshot.participantCount
+      : activeSessionIds?.length;
   return {
     present: Boolean(view),
-    topologyKind: readTimingString(effective?.topologyKind) ??
+    topologyKind:
+      readTimingString(effective?.topologyKind) ??
       readTimingString(snapshot?.topology) ??
       readTimingString(snapshot?.kind),
     ...(participantCount !== undefined ? { participantCount } : {}),
@@ -1307,11 +1335,11 @@ function toQueueKeyRef(key: Key): string {
 }
 
 function readObject(input: unknown): Record<string, unknown> {
-  return input && typeof input === 'object' ? input as Record<string, unknown> : {};
+  return input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
 }
 
 function readRecord(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === 'object' ? input as Record<string, unknown> : undefined;
+  return input && typeof input === 'object' ? (input as Record<string, unknown>) : undefined;
 }
 
 function readTimingString(value: unknown): string | undefined {

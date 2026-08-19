@@ -92,7 +92,14 @@ import {
 } from '../services/create-api-crdt-document-authorizer.ts';
 import {
   createApiMutationInboxFactories,
+  resolveApiCrdtPolicies,
 } from '../services/create-api-mutation-inbox-factories.ts';
+
+export interface ApiV1MutationRuntimeResilience {
+  readonly inbox: ResilienceDto;
+  readonly outbox: ResilienceDto;
+  readonly appOutbox: ResilienceDto;
+}
 
 export interface CreateApiV1MutationRuntimeInput {
   readonly database: PSqlSql;
@@ -109,11 +116,7 @@ export interface CreateApiV1MutationRuntimeInput {
   ) => GroupPresenceSummaryTopologyIntent;
   readonly adminClientIds: readonly string[];
   readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[] | undefined;
-  readonly resilience: Readonly<{
-    inbox: ResilienceDto;
-    outbox: ResilienceDto;
-    appOutbox: ResilienceDto;
-  }>;
+  readonly resilience: ApiV1MutationRuntimeResilience;
 }
 
 export interface ApiV1MutationRuntime {
@@ -156,6 +159,22 @@ interface ApiV1StateMutationDependencies {
   readonly clientSnapshotCache: ClientStateSnapshotReadThroughCache;
   readonly groupSnapshotCache: GroupStateSnapshotReadThroughCache;
   readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
+}
+
+interface CreateAppGroupInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
+  readonly groupCapacity: ApiGroupCapacityConfig;
+  readonly groupStateDissemination: GroupStateDisseminationMode;
+  readonly createGroupFormationTopologyIntent: (
+    outboxQueueReader: OutboxQueueReader,
+  ) => GroupPresenceSummaryTopologyIntent;
+}
+
+interface CreateAppClientInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
+  readonly clientFormationDamping: GroupFormationDampingMode;
+}
+
+interface CreateAppAuthInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
+  readonly authCredentialSecret: string;
 }
 
 export function createApiV1MutationRuntime(
@@ -201,7 +220,7 @@ export function createApiV1MutationRuntime(
       }),
       adminClientIds: input.adminClientIds,
     },
-    crdtPolicies: input.crdtPolicies,
+    crdtPolicies: resolveApiCrdtPolicies(input.crdtPolicies),
   });
 
   return {
@@ -236,15 +255,7 @@ export function createApiV1MutationRuntime(
 }
 
 function createAppGroupInboxServiceFactory(
-  input:
-    & ApiV1StateMutationDependencies
-    & Readonly<{
-      groupCapacity: ApiGroupCapacityConfig;
-      groupStateDissemination: GroupStateDisseminationMode;
-      createGroupFormationTopologyIntent: (
-        outboxQueueReader: OutboxQueueReader,
-      ) => GroupPresenceSummaryTopologyIntent;
-    }>,
+  input: CreateAppGroupInboxServiceFactoryInput,
 ): CreateRallarMiddlewareOptions['createAppGroupInboxService'] {
   return ({ inboxQueueReader, outboxQueueReader, wakeQueueEngine }) => {
     const topologyIntent = input.createGroupFormationTopologyIntent(outboxQueueReader);
@@ -292,9 +303,7 @@ function createAppGroupInboxServiceFactory(
 }
 
 function createAppClientInboxServiceFactory(
-  input:
-    & ApiV1StateMutationDependencies
-    & Readonly<{ clientFormationDamping: GroupFormationDampingMode }>,
+  input: CreateAppClientInboxServiceFactoryInput,
 ): CreateRallarMiddlewareOptions['createAppClientInboxService'] {
   return ({ inboxQueueReader, wakeQueueEngine }) => {
     const clientStateService = createCachedClientStateService({
@@ -323,7 +332,7 @@ function createAppClientInboxServiceFactory(
 }
 
 function createAppAuthInboxServiceFactory(
-  input: ApiV1StateMutationDependencies & Readonly<{ authCredentialSecret: string }>,
+  input: CreateAppAuthInboxServiceFactoryInput,
 ): NonNullable<CreateRallarMiddlewareOptions['createAppAuthInboxService']> {
   const credentialIssuer = createHmacAuthCredentialIssuer(input.authCredentialSecret);
 

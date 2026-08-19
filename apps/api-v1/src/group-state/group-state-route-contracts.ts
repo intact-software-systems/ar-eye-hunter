@@ -55,6 +55,7 @@ export type GroupStateRouteAuthSession = Pick<
   | 'accessToken'
   | 'issuedAtEpochMs'
   | 'expiresAtEpochMs'
+  | 'username'
 >;
 
 interface GroupStateRouteCommandInputBase {

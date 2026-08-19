@@ -1,38 +1,53 @@
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrdtMutationRepository.ts';
-import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
-import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/AppInboxService.ts';
+// prettier-ignore
+import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/\
+psql-crdt-mutation-repository.ts';
+// prettier-ignore
+import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
+ResourceInboxRepository.ts';
+// prettier-ignore
+import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
+ResourceInboxResultsRepository.ts';
+// prettier-ignore
+import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/\
+app-crdt-inbox-service.ts';
+// prettier-ignore
+import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/\
+AppInboxService.ts';
+import type * as Crdt from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import {
-  type CrdtMutationCommand,
   createCrdtMutationService,
-} from '@shared-server/rallar-system/services/crdt-mutations.ts';
+} from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
-import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+
 import type { CurrentMutationAuthority } from './create-api-mutation-inbox-factories.ts';
 
+export interface CreateApiCrdtInboxServiceInput {
+  readonly inboxQueueReader: InboxQueueReader;
+  readonly resourceInboxRepository: ResourceInboxRepository;
+  readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
+  readonly database: PSqlSql;
+  readonly serviceId: string;
+  readonly timing: RallarTimingSink | undefined;
+  readonly options: AppInboxServiceOptions;
+  readonly currentAuthority: CurrentMutationAuthority;
+  readonly policies: readonly RallarCrdtDocumentTypePolicy[];
+  readonly wakeQueueEngine: () => void;
+  readonly auditDelivery?: AppCrdtInboxService.AuditDelivery;
+}
+
 export function createApiCrdtInboxService(
-  input: Readonly<{
-    inboxQueueReader: InboxQueueReader;
-    resourceInboxRepository: ResourceInboxRepository;
-    resourceInboxResultsRepository: ResourceInboxResultsRepository;
-    database: PSqlSql;
-    serviceId: string;
-    timing?: RallarTimingSink;
-    options?: AppInboxServiceOptions;
-    currentAuthority?: CurrentMutationAuthority;
-    policies?: readonly RallarCrdtDocumentTypePolicy[];
-    outboxQueueReader?: OutboxQueueReader;
-    wakeQueueEngine?: () => void;
-  }>,
+  input: CreateApiCrdtInboxServiceInput,
 ): AppCrdtInboxService {
-  const authorize = async (command: CrdtMutationCommand) => {
-    const session = await input.currentAuthority?.readSession(command.actor.sessionId);
+  const { currentAuthority, policies } = input;
+  const authorize = async (command: Crdt.CrdtMutationCommand) => {
+    const session = await currentAuthority.readSession(command.actor.sessionId);
     const nowEpochMs = input.options?.nowEpochMs?.() ?? Date.now();
-    if (!session) return { allowed: false, code: 'authentication-missing' };
+    if (!session) {
+      return { allowed: false, code: 'authentication-missing' };
+    }
     if (session.expiresAtEpochMs <= nowEpochMs) {
       return { allowed: false, code: 'authentication-expired' };
     }
@@ -41,39 +56,33 @@ export function createApiCrdtInboxService(
       session.username !== command.actor.principalId ||
       session.sessionId !== command.actor.sessionId ||
       command.responseAudience.senderSessionId !== session.sessionId
-    ) return { allowed: false, code: 'authorization-forbidden' };
+    ) {
+      return { allowed: false, code: 'authorization-forbidden' };
+    }
     if (command.responseAudience.kind === 'admin') {
-      const allowed = Boolean(input.currentAuthority?.adminClientIds.includes(session.clientId));
+      const allowed = currentAuthority.adminClientIds.includes(session.clientId);
       return { allowed, code: allowed ? 'allowed' : 'authorization-forbidden' };
     }
-    if (!input.currentAuthority) {
-      return { allowed: false, code: 'authorization-scope-denied' };
-    }
-    return await input.currentAuthority.authorizeDocument(command, session);
+    return await currentAuthority.authorizeDocument(command, session);
   };
-  const policies = input.policies && input.policies.length > 0
-    ? input.policies
-    : [{ documentType: '*', rollout: 'disabled' as const }];
-  const repository = new PSqlCrdtMutationRepository(input.database, authorize, policies);
+  const repository = new PSqlCrdtMutationRepository(
+    { sql: input.database, authorize },
+    { policies },
+  );
   return new AppCrdtInboxService(
-    input.inboxQueueReader,
-    input.resourceInboxRepository,
-    input.resourceInboxResultsRepository,
-    input.database,
-    createCrdtMutationService({
-      repository,
-      createWriter: (transaction: PSqlTransactionSql) =>
-        new PSqlCrdtMutationRepository(transaction, authorize, policies),
-      serviceId: input.serviceId,
-    }),
-    input.serviceId,
-    input.timing,
-    input.options,
     {
-      outboxQueueReader: input.outboxQueueReader,
-      wakeQueueEngine: input.wakeQueueEngine,
-      resolveCurrentSession: async (sessionId, atEpochMs) => {
-        const session = await input.currentAuthority?.readSession(sessionId);
+      inboxQueueReader: input.inboxQueueReader,
+      resourceInboxRepository: input.resourceInboxRepository,
+      resourceInboxResultsRepository: input.resourceInboxResultsRepository,
+      database: input.database,
+      mutationService: createCrdtMutationService({
+        repository,
+        createWriter: (transaction: PSqlTransactionSql) =>
+          new PSqlCrdtMutationRepository({ sql: transaction, authorize }, { policies }),
+        serviceId: input.serviceId,
+      }),
+      readCurrentSession: async ({ sessionId, atEpochMs }) => {
+        const session = await currentAuthority.readSession(sessionId);
         if (!session || session.expiresAtEpochMs <= atEpochMs) {
           throw Object.assign(new Error('CRDT current session is unavailable'), {
             code: 'authentication-missing',
@@ -88,6 +97,13 @@ export function createApiCrdtInboxService(
         }
         return session;
       },
+      wakeQueueEngine: input.wakeQueueEngine,
+      auditDelivery: input.auditDelivery,
+    },
+    {
+      serviceId: input.serviceId,
+      timing: input.timing,
+      appInbox: input.options,
     },
   );
 }

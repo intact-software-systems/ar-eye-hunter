@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+
 import {
   RALLAR_CRDT_OPERATION_VERSION,
   RALLAR_CRDT_PROTOCOL_VERSION,
@@ -6,14 +7,24 @@ import {
   type RallarCrdtOperationBatch,
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
-import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrdtMutationRepository.ts';
+// deno-fmt-ignore
+import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/\
+psql-crdt-mutation-repository.ts';
+// deno-fmt-ignore
+import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
+ResourceInboxRepository.ts';
+// deno-fmt-ignore
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/\
+create-crdt-mutation-service.ts';
 import {
-  CrdtMutationConflictError,
-  createCrdtMutationCommand,
-  createCrdtMutationService,
   type CrdtMutationCommand,
+  CrdtMutationConflictError,
   type CrdtMutationRepository,
-} from '@shared-server/rallar-system/services/crdt-mutations.ts';
+} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+// deno-fmt-ignore
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/\
+crdt-mutation-command-codec.ts';
+
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -29,28 +40,42 @@ const DOCUMENT: RallarCrdtDocumentRef = {
   },
 };
 
+interface CrdtDocumentRevisionRow {
+  readonly document_revision: string;
+  readonly update_count: string;
+}
+
+interface ResourceInboxTypeRow {
+  readonly ri_type_id: string;
+}
+
+interface SqlCountRow {
+  readonly count: string;
+}
+
 Deno.test('CRDT mutation CAS commits state and logical WS outbox atomically', async () => {
   await withPGliteSql(async (sql) => {
-    const repository = new PSqlCrdtMutationRepository(sql, () => Promise.resolve(true));
+    const repository = new PSqlCrdtMutationRepository(
+      { sql, authorize: () => Promise.resolve(true) },
+      { policies: [] },
+    );
     const service = createCrdtMutationService({
       repository,
-      createWriter: (transaction) => new PSqlCrdtMutationRepository(
-        transaction,
-        () => Promise.resolve(true),
-      ),
+      createWriter: (transaction) =>
+        new PSqlCrdtMutationRepository(
+          { sql: transaction, authorize: () => Promise.resolve(true) },
+          { policies: [] },
+        ),
       serviceId: 'server-1',
     });
     const first = await command('command-1', 'update-1', 1_000);
     await apply(sql, service, first);
 
-    const [document] = await sql<{
-      document_revision: string;
-      update_count: string;
-    }[]>`
+    const [document] = await sql<CrdtDocumentRevisionRow[]>`
       select document_revision, update_count from crdt_documents
       where document_key = ${first.documentKey}
     `;
-    const outbox = await sql<{ ri_type_id: string }[]>`
+    const outbox = await sql<ResourceInboxTypeRow[]>`
       select ri_type_id from resource_inbox
       where ri_type_id = 'WS_OUTBOX' order by ri_resource_id
     `;
@@ -62,10 +87,16 @@ Deno.test('CRDT mutation CAS commits state and logical WS outbox atomically', as
     const third = await command('command-3', 'update-3', 3_000);
     const secondRead = await service.read(second);
     const thirdRead = await service.read(third);
-    const secondComputed = service.compute(second, secondRead);
-    const thirdComputed = service.compute(third, thirdRead);
-    service.validate(second, secondRead, secondComputed);
-    service.validate(third, thirdRead, thirdComputed);
+    const secondComputed = service.compute({ command: second, read: secondRead });
+    const thirdComputed = service.compute({ command: third, read: thirdRead });
+    assert.deepEqual(
+      service.validate({ command: second, read: secondRead, computed: secondComputed }),
+      [],
+    );
+    assert.deepEqual(
+      service.validate({ command: third, read: thirdRead, computed: thirdComputed }),
+      [],
+    );
     await sql.begin(async (transaction) => await service.write(transaction, secondComputed));
     await assert.rejects(
       sql.begin(async (transaction) => await service.write(transaction, thirdComputed)),
@@ -76,13 +107,16 @@ Deno.test('CRDT mutation CAS commits state and logical WS outbox atomically', as
 
 Deno.test('CRDT mutation rolls metadata and update back when outbox write fails', async () => {
   await withPGliteSql(async (sql) => {
-    const repository = new PSqlCrdtMutationRepository(sql, () => Promise.resolve(true));
+    const repository = new PSqlCrdtMutationRepository(
+      { sql, authorize: () => Promise.resolve(true) },
+      { policies: [] },
+    );
     const failingService = createCrdtMutationService({
       repository,
       createWriter: (transaction): CrdtMutationRepository => {
         const writer = new PSqlCrdtMutationRepository(
-          transaction,
-          () => Promise.resolve(true),
+          { sql: transaction, authorize: () => Promise.resolve(true) },
+          { policies: [] },
         );
         return {
           readMutation: (command) => writer.readMutation(command),
@@ -94,19 +128,110 @@ Deno.test('CRDT mutation rolls metadata and update back when outbox write fails'
     });
     const input = await command('rollback-command', 'rollback-update', 1_000);
     const read = await failingService.read(input);
-    const computed = failingService.compute(input, read);
+    const computed = failingService.compute({ command: input, read });
     await assert.rejects(
       sql.begin(async (transaction) => await failingService.write(transaction, computed)),
       /injected outbox failure/,
     );
-    assert.equal(Number((await sql<{ count: string }[]>`
+    assert.equal(
+      Number(
+        (await sql<SqlCountRow[]>`
       select count(*) as count from crdt_documents
-    `)[0]?.count), 0);
-    assert.equal(Number((await sql<{ count: string }[]>`
+    `)[0]?.count,
+      ),
+      0,
+    );
+    assert.equal(
+      Number(
+        (await sql<SqlCountRow[]>`
       select count(*) as count from crdt_updates
-    `)[0]?.count), 0);
+    `)[0]?.count,
+      ),
+      0,
+    );
   });
 });
+
+Deno.test(
+  'CRDT mutation rejects an identical final WS outbox collision and rolls back every write',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const repository = new PSqlCrdtMutationRepository(
+        { sql, authorize: () => Promise.resolve(true) },
+        { policies: [] },
+      );
+      const service = createCrdtMutationService({
+        repository,
+        createWriter: (transaction) =>
+          new PSqlCrdtMutationRepository(
+            { sql: transaction, authorize: () => Promise.resolve(true) },
+            { policies: [] },
+          ),
+        serviceId: 'server-1',
+      });
+      const input = await command(
+        'identical-outbox-collision-command',
+        'identical-outbox-collision-update',
+        1_000,
+      );
+      const read = await service.read(input);
+      const computed = service.compute({ command: input, read });
+      assert.equal(computed.outcome, 'write');
+      if (computed.outcome !== 'write') {
+        throw new Error('Expected a CRDT write computation');
+      }
+
+      const resultEntry = computed.outboxEntries[0];
+      const collisionEntry = computed.outboxEntries.at(-1);
+      assert.ok(resultEntry);
+      assert.ok(collisionEntry);
+      assert.equal(resultEntry.typeId, 'WS_OUTBOX');
+      assert.equal(collisionEntry.typeId, 'WS_OUTBOX');
+      assert.notDeepEqual(resultEntry.key, collisionEntry.key);
+      await new ResourceInboxRepository(sql).write(collisionEntry);
+
+      const transactionFailure = await sql.begin(
+        async (transaction) => await service.write(transaction, computed),
+      ).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      const [document, update, durableResult, collision] = await Promise.all([
+        sql<SqlCountRow[]>`select count(*) as count from crdt_documents`,
+        sql<SqlCountRow[]>`select count(*) as count from crdt_updates`,
+        sql<SqlCountRow[]>`
+        select count(*) as count from resource_inbox
+        where ri_resource_id = ${resultEntry.key.resourceId}
+          and ri_topic_id = ${resultEntry.key.topicId}
+          and fk_ext_bank_id = ${resultEntry.key.contextId}
+      `,
+        sql<SqlCountRow[]>`
+        select count(*) as count from resource_inbox
+        where ri_resource_id = ${collisionEntry.key.resourceId}
+          and ri_topic_id = ${collisionEntry.key.topicId}
+          and fk_ext_bank_id = ${collisionEntry.key.contextId}
+      `,
+      ]);
+
+      assert.deepEqual(
+        {
+          transactionRejected: transactionFailure !== null,
+          documents: Number(document[0]?.count),
+          updates: Number(update[0]?.count),
+          durableResults: Number(durableResult[0]?.count),
+          collisions: Number(collision[0]?.count),
+        },
+        {
+          transactionRejected: true,
+          documents: 0,
+          updates: 0,
+          durableResults: 0,
+          collisions: 1,
+        },
+      );
+    });
+  },
+);
 
 async function apply(
   sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
@@ -114,8 +239,8 @@ async function apply(
   input: CrdtMutationCommand,
 ): Promise<void> {
   const read = await service.read(input);
-  const computed = service.compute(input, read);
-  service.validate(input, read, computed);
+  const computed = service.compute({ command: input, read });
+  assert.deepEqual(service.validate({ command: input, read, computed }), []);
   await sql.begin(async (transaction) => {
     await service.write(transaction, computed);
   });

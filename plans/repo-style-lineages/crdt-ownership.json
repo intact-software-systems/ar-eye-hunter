@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "ceaf724216f82e60a74d49d382123415fe40a5c4",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/AppCrdtInboxService.ts",
+        "blob": "492c477c67c182cd27657ac47218890e01a1cae7"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts",
+        "packages/shared-server/rallar-system/crdt/inbox/register-crdt-audit-delivery.ts",
+        "apps/api-v1/src/crdt/create-crdt-admin-mutations.ts"
+      ]
+    },
+    {
+      "mergeBase": "ceaf724216f82e60a74d49d382123415fe40a5c4",
+      "source": {
+        "path": "packages/shared-server/crdt/RallarCrdtServer.ts",
+        "blob": "a79908adf2425460ee1292453a990418aadee0cd"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/crdt/realtime/rallar-crdt-server-contracts.ts",
+        "packages/shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts",
+        "packages/shared-server/rallar-system/crdt/realtime/validate-rallar-crdt-server-live-envelope.ts",
+        "packages/shared-server/rallar-system/crdt/realtime/validate-rallar-crdt-catch-up-envelope.ts"
+      ]
+    },
+    {
+      "mergeBase": "ceaf724216f82e60a74d49d382123415fe40a5c4",
+      "source": {
+        "path": "packages/shared-server/crdt/InMemoryRallarCrdtLogRepository.ts",
+        "blob": "8bb63b7b59b4616f43aee77584ed52edbf88727a"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/crdt/persistence/in-memory-crdt-document-store.ts",
+        "packages/shared-server/rallar-system/crdt/persistence/compute-in-memory-crdt-append.ts",
+        "packages/shared-server/rallar-system/crdt/persistence/in-memory-crdt-append.ts",
+        "packages/shared-server/rallar-system/crdt/persistence/in-memory-crdt-administration.ts",
+        "packages/shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts"
+      ]
+    }
+  ]
+}

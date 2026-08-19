@@ -1,25 +1,45 @@
+import type { AuthSession } from '@shared/api/api-config.ts';
+import type {
+  AdminOperationsMutationGateway,
+} from '@shared-server/rallar-system/admin-operations/admin-operations-mutation-gateway.ts';
+// prettier-ignore
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/\
+auth-session-repository.ts';
+// prettier-ignore
+import type { AppAdminInboxService } from '@shared-server/rallar-system/services/\
+AppAdminInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 import {
   type AppGroupInboxService,
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import type { AppAdminInboxService } from '@shared-server/rallar-system/services/AppAdminInboxService.ts';
-import type { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
-import type {
-  AdminOperationsMutationGateway,
-} from '@shared-server/rallar-system/admin-operations/admin-operations-mutation-gateway.ts';
+
+import type { CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
+
+export interface ApiAdminPruneMutationPort {
+  readonly pruneExpired: AppAdminInboxService['pruneExpired'];
+}
+
+export interface ApiTopologyRecomputeMutationPort {
+  readonly processAuthenticatedEntryUntilCompletionResult:
+    AppGroupInboxService['processAuthenticatedEntryUntilCompletionResult'];
+}
+
+export interface CreateApiAdminMutationGatewayInput {
+  readonly appAdmin: ApiAdminPruneMutationPort;
+  readonly crdtAdminMutations: CrdtAdminMutations;
+  readonly appGroup: ApiTopologyRecomputeMutationPort;
+  readonly now: () => number;
+}
 
 export function createApiAdminMutationGateway(
-  input: Readonly<{
-    appAdmin: AppAdminInboxService;
-    appCrdt: AppCrdtInboxService;
-    appGroup: AppGroupInboxService;
-    now: () => number;
-  }>,
+  input: CreateApiAdminMutationGatewayInput,
 ): AdminOperationsMutationGateway {
   return {
     recomputeTopology: async ({ adminSession, request }) => {
-      if (!request.groupRef) throw new TypeError('Admin topology recompute requires groupRef');
+      if (!request.groupRef) {
+        throw new TypeError('Admin topology recompute requires groupRef');
+      }
       const command = await toTopologyAppInboxCommand({
         actor: { principalId: adminSession.clientId, sessionId: adminSession.sessionId },
         groupRef: request.groupRef,
@@ -42,13 +62,17 @@ export function createApiAdminMutationGateway(
           .map(encodeURIComponent).join(':'),
         senderId: command.actor.principalId,
         data: command,
-      }, adminSession as never);
-      if (result.right !== undefined) return result.right;
+      }, toIssuedAuthSession(adminSession, input.now()));
+      if (result.right !== undefined) {
+        return result.right;
+      }
       throw new Error(result.left?.message ?? 'Admin topology AppInbox processing failed');
     },
     pruneExpired: async (request) => {
       const result = await input.appAdmin.pruneExpired(request);
-      if (result.right !== undefined) return result.right;
+      if (result.right !== undefined) {
+        return result.right;
+      }
       if (result.left !== undefined) {
         throw Object.assign(new Error(result.left.message), {
           code: result.left.code,
@@ -59,10 +83,26 @@ export function createApiAdminMutationGateway(
       throw new Error('Admin prune AppInbox processing failed');
     },
     compactCrdt: async (request) =>
-      await input.appCrdt.processAdminMutationUntilCompletion('compact', request),
+      await input.crdtAdminMutations.writeCrdtAdminMutation({
+        operation: 'compact',
+        adminSession: request.adminSession,
+        request: request.request,
+      }),
     updateCrdtLifecycle: async (request) =>
-      await input.appCrdt.processAdminMutationUntilCompletion('lifecycle', request),
+      await input.crdtAdminMutations.writeCrdtAdminMutation({
+        operation: 'lifecycle',
+        adminSession: request.adminSession,
+        request: request.request,
+      }),
     eraseCrdt: async (request) =>
-      await input.appCrdt.processAdminMutationUntilCompletion('erase', request),
+      await input.crdtAdminMutations.writeCrdtAdminMutation({
+        operation: 'erase',
+        adminSession: request.adminSession,
+        request: request.request,
+      }),
   };
+}
+
+function toIssuedAuthSession(session: AuthSession, issuedAtEpochMs: number): IssuedAuthSession {
+  return { ...session, issuedAtEpochMs };
 }

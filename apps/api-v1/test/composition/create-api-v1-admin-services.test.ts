@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import { InMemoryRallarCrdtLogRepository } from '@shared-server/crdt/InMemoryRallarCrdtLogRepository.ts';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+// deno-fmt-ignore
+import {
+  InMemoryRallarCrdtLogRepository,
+} from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
+import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/formation-metrics.ts';
-import type { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
-import type { AppAdminInboxService } from '@shared-server/rallar-system/services/AppAdminInboxService.ts';
-import type { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
-import type { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+// deno-fmt-ignore
 
 import {
   createApiV1AdminServices,
@@ -67,38 +67,42 @@ Deno.test('admin services read current websocket status after construction', asy
   assert.equal(current.realtime.currentSessionOpen, true);
 });
 
-Deno.test('admin services propagate websocket status failures without an empty fallback', async () => {
-  const failure = new Error('websocket status failed');
-  const services = createApiV1AdminServices(
-    createInput(() => {
-      throw failure;
-    }),
-  );
+Deno.test(
+  'admin services propagate websocket status failures without an empty ' +
+    'fallback',
+  async () => {
+    const failure = new Error('websocket status failed');
+    const services = createApiV1AdminServices(
+      createInput(() => {
+        throw failure;
+      }),
+    );
 
-  assert.throws(
-    () => services.operations.readRealtime({ adminSession: ADMIN_SESSION }),
-    (error) => error === failure,
-  );
-  await assert.rejects(
-    () =>
-      services.support.explainClient({
-        adminSession: ADMIN_SESSION,
-        request: {
+    assert.throws(
+      () => services.operations.readRealtime({ adminSession: ADMIN_SESSION }),
+      (error) => error === failure,
+    );
+    await assert.rejects(
+      () =>
+        services.support.explainClient({
+          adminSession: ADMIN_SESSION,
+          request: {
+            scope: { applicationId: 'app', workspaceId: 'workspace' },
+            principalId: 'admin',
+          },
+        }),
+      (error) => error === failure,
+    );
+    await assert.rejects(
+      () =>
+        services.statistics.readMyRealtimeStatus({
+          authSession: ADMIN_SESSION,
           scope: { applicationId: 'app', workspaceId: 'workspace' },
-          principalId: 'admin',
-        },
-      }),
-    (error) => error === failure,
-  );
-  await assert.rejects(
-    () =>
-      services.statistics.readMyRealtimeStatus({
-        authSession: ADMIN_SESSION,
-        scope: { applicationId: 'app', workspaceId: 'workspace' },
-      }),
-    (error) => error === failure,
-  );
-});
+        }),
+      (error) => error === failure,
+    );
+  },
+);
 
 function createInput(
   readWebSocketStatus: CreateApiV1AdminServicesInput['readWebSocketStatus'],
@@ -118,7 +122,9 @@ function createInput(
     crdtAdminRepository: new InMemoryRallarCrdtLogRepository({
       now: () => NOW_EPOCH_MS,
     }),
-    topologyManagement: {} as GroupTopologyManagementService,
+    topologyManagement: {
+      readTopologyView: rejectUnusedOperation,
+    },
     clientStateService: {
       readSnapshot: () => Promise.resolve(undefined),
       readPresenceSnapshot: () => Promise.resolve(undefined),
@@ -136,29 +142,64 @@ function createInput(
         }),
       listEvents: () => Promise.resolve([]),
     },
-    appAdminInboxService: {} as AppAdminInboxService,
-    appCrdtInboxService: {} as AppCrdtInboxService,
-    appGroupInboxService: {} as AppGroupInboxService,
+    appAdminInboxService: {
+      pruneExpired: rejectUnusedOperation,
+    },
+    crdtAdminMutations: {
+      writeCrdtAdminMutation: () => Promise.reject(new Error('mutation not used')),
+    },
+    appGroupInboxService: {
+      processAuthenticatedEntryUntilCompletionResult: rejectUnusedOperation,
+    },
   };
 }
 
 function createDatabase(): PSqlSql {
   return Object.assign(
-    function <T>(_strings: TemplateStringsArray, ..._values: unknown[]): Promise<T> {
+    function <T>(
+      _stringsOrValues: TemplateStringsArray | readonly unknown[],
+      ..._values: unknown[]
+    ): Promise<T> {
       return Promise.reject(new Error('query not used'));
     },
     {
-      begin<T>(_operation: (transaction: PSqlSql) => Promise<T>): Promise<T> {
+      begin<T>(_operation: (transaction: PSqlTransactionSql) => Promise<T>): Promise<T> {
         return Promise.reject(new Error('transaction not used'));
       },
     },
-  ) as PSqlSql;
+  );
 }
 
-function createSocket(readyState: number): WebSocket {
-  return {
-    readyState,
-    addEventListener: () => {},
-    close: () => {},
-  } as never;
+function rejectUnusedOperation<T>(): Promise<T> {
+  return Promise.reject(new Error('operation not used'));
+}
+
+function createSocket(readyState: WebSocket['readyState']): WebSocket {
+  return new TestWebSocket(readyState);
+}
+
+class TestWebSocket extends EventTarget implements WebSocket {
+  readonly CONNECTING = WebSocket.CONNECTING;
+  readonly OPEN = WebSocket.OPEN;
+  readonly CLOSING = WebSocket.CLOSING;
+  readonly CLOSED = WebSocket.CLOSED;
+  readonly bufferedAmount = 0;
+  readonly extensions = '';
+  readonly protocol = '';
+  readonly url = 'ws://test.invalid';
+  readonly readyState: WebSocket['readyState'];
+  binaryType: BinaryType = 'blob';
+  onclose: ((this: WebSocket, event: CloseEvent) => unknown) | null = null;
+  onerror: ((this: WebSocket, event: Event) => unknown) | null = null;
+  onmessage: ((this: WebSocket, event: MessageEvent) => unknown) | null = null;
+  onopen: ((this: WebSocket, event: Event) => unknown) | null = null;
+
+  constructor(readyState: WebSocket['readyState']) {
+    super();
+    this.readyState = readyState;
+  }
+
+  close(): void {}
+
+  send(): void {}
 }

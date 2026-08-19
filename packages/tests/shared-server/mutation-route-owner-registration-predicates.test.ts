@@ -1,5 +1,10 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+// prettier-ignore
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 
 import { findMutationBoundaryViolationsFromRoots } from './mutation-boundary-analysis.ts';
 import {
@@ -10,7 +15,7 @@ import {
 const FIXTURES = 'packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers';
 const GROUP_OWNER = 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts';
 const AUTH_OWNER = 'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
-const CRDT_OWNER = 'packages/shared-server/rallar-system/services/AppCrdtInboxService.ts';
+const CRDT_OWNER = 'packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 
 describe('Mutation route owner registration predicates contracts', () => {
   it.each([
@@ -68,7 +73,8 @@ describe('Mutation route owner registration predicates contracts', () => {
     const source = readFileSync(AUTH_OWNER, 'utf8');
     const mutated = source.replace(
       'for (const type of AUTH_TYPES)',
-      'for (const type of AUTH_TYPES.filter((candidate) => candidate === AppInboxType.AUTH_USER_REGISTER))',
+      'for (const type of AUTH_TYPES.filter(' +
+        '(candidate) => candidate === AppInboxType.AUTH_USER_REGISTER))',
     );
     expect(mutated).not.toBe(source);
 
@@ -83,7 +89,8 @@ describe('Mutation route owner registration predicates contracts', () => {
     const source = readFileSync(CRDT_OWNER, 'utf8');
     const mutated = source.replace(
       'for (const type of CRDT_MUTATION_INBOX_TYPES)',
-      'for (const type of CRDT_MUTATION_INBOX_TYPES.filter((candidate) => candidate === AppInboxType.CRDT_UPDATE_APPEND))',
+      'for (const type of CRDT_MUTATION_INBOX_TYPES.filter(' +
+        '(candidate) => candidate === AppInboxType.CRDT_UPDATE_APPEND))',
     );
     expect(mutated).not.toBe(source);
 
@@ -112,10 +119,13 @@ describe('Mutation route owner registration predicates contracts', () => {
 
   it('evaluates safe logical includes and identity map chains exactly', () => {
     const source = readFileSync(AUTH_OWNER, 'utf8');
+    const safePredicate =
+      'candidate !== AppInboxType.AUTH_USER_REGISTER && ' +
+      '![AppInboxType.AUTH_SESSION_LOGOUT].includes(candidate)';
     const mutated = source.replace(
       'for (const type of AUTH_TYPES)',
       `for (const type of AUTH_TYPES
-            .filter((candidate) => candidate !== AppInboxType.AUTH_USER_REGISTER && ![AppInboxType.AUTH_SESSION_LOGOUT].includes(candidate))
+            .filter((candidate) => ${safePredicate})
             .map((candidate) => candidate))`,
     );
     expect(mutated).not.toBe(source);

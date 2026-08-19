@@ -33,7 +33,7 @@ also invalid, so this document cannot accumulate orphan approvals.
 
 ## Reviewed boundary groups
 
-The current 134 entries were reviewed by independently meaningful behavior,
+The current 140 entries were reviewed by independently meaningful behavior,
 not by vocabulary. The metadata below splits these groups further by exact
 executable assertion so a broad domain label cannot conceal unrelated evidence.
 
@@ -44,7 +44,7 @@ executable assertion so a broad domain label cannot conceal unrelated evidence.
 | Browser control protocol                         |       7 | Two approved assertions protect server import direction and shared-test monitor ownership.                       |
 | Auth compatibility                               |       3 | Wrapper mutations and the canonical-test inventory protect distinct compatibility edges.                         |
 | Repository style and release interfaces          |       2 | Automation consumes stable rule and release-gate mappings.                                                       |
-| AppInbox transport routing                       |       8 | Concrete route mutations must fail before they bypass the canonical transaction owner.                           |
+| AppInbox transport routing                       |      14 | Concrete route and command-binding mutations must fail before they bypass the canonical transaction owner.       |
 | Mutation-analysis implementation interface       |       3 | The audit must follow new files, re-exports, and type declarations fail-closed.                                  |
 | Mutation route and owner traversal               |      13 | Route, export, helper, and capability evasions must still resolve to AppInbox.                                   |
 | Group mutation construction                      |      14 | Missing, duplicate, reordered, conditional, or rebound owner calls must be rejected.                             |
@@ -148,12 +148,132 @@ moved or changed test.
       "coverageRelation": "The AppInbox transaction suite proves the canonical owner commits mutation, result, effects, and completion atomically; this mutation fixture proves the routing analyzer rejects the named way a transport could bypass or misroute that owner."
     },
     {
-      "id": "app-inbox-mutation-routing--rejects-a-crdt-route-connected-to-another-admin-operation",
+      "id": "app-inbox-crdt-route-intermediary",
       "domain": "Authoritative AppInbox mutation routing",
       "owner": "Rallar server maintainers",
-      "summary": "Authoritative state mutations enter through AppInbox-owned routes and cannot bypass their transaction boundary. Executable assertion: “rejects a CRDT route connected to another admin mutation operation”.",
-      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a CRDT route connected to another admin mutation operation",
-      "coverageRelation": "The AppInbox transaction suite proves the canonical owner commits mutation, result, effects, and completion atomically; this mutation fixture proves the routing analyzer rejects a CRDT route whose operation marker points at another canonical admin mutation."
+      "summary": "Direct CRDT routes reach AppInbox only through the API-owned admin mutation intermediary. Executable assertion: “rejects a CRDT route disconnected from the admin mutation intermediary”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a CRDT route disconnected from the admin mutation intermediary",
+      "coverageRelation": "The executable mutant renames the route’s live write call and requires the real routing analyzer to report that the compact route no longer reaches the canonical intermediary."
+    },
+    {
+      "id": "app-inbox-crdt-admin-intermediary",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "The API CRDT admin intermediary submits its command to terminal AppInbox processing. Executable assertion: “rejects an admin intermediary disconnected from terminal AppInbox processing”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects an admin intermediary disconnected from terminal AppInbox processing",
+      "coverageRelation": "The executable mutant renames the terminal submission and requires the real routing analyzer to reject every route whose durable command can no longer reach AppInbox."
+    },
+    {
+      "id": "app-inbox-crdt-command-operation",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "A compact admin request creates a compact command. Executable assertion: “rejects compact command construction rerouted to the lifecycle operation”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects compact command construction rerouted to the lifecycle operation",
+      "coverageRelation": "The executable mutant changes the compact switch case’s command operation and requires the real analyzer to reject the operation mismatch."
+    },
+    {
+      "id": "app-inbox-crdt-type-operation",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "A compact command maps to the compact AppInbox type. Executable assertion: “rejects compact mapped to the lifecycle AppInbox type”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects compact mapped to the lifecycle AppInbox type",
+      "coverageRelation": "The executable mutant changes the compact type return and requires the real analyzer to reject the queue-type mismatch."
+    },
+    {
+      "id": "app-inbox-crdt-helper-operation-binding",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "The direct route helper forwards the caller-selected operation unchanged. Executable assertion: “rejects a hardcoded lifecycle operation in the direct forwarding helper”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a hardcoded lifecycle operation in the direct forwarding helper",
+      "coverageRelation": "The executable mutant hardcodes lifecycle at the helper boundary while leaving a correct compact route call present; the analyzer must follow the live operation binding rather than accept both fragments independently."
+    },
+    {
+      "id": "app-inbox-crdt-submitted-command-binding",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "The exact command created for an admin mutation is the command submitted to AppInbox. Executable assertion: “rejects a correct command followed by submission of a lifecycle command”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a correct command followed by submission of a lifecycle command",
+      "coverageRelation": "The executable mutant retains the correct command creation but submits a second lifecycle command; the analyzer must preserve command-binding identity through the terminal submission."
+    },
+    {
+      "id": "app-inbox-crdt-type-live-return",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "Only the live compact switch return establishes its AppInbox type. Executable assertion: “rejects a dead compact type return followed by live lifecycle fallthrough”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a dead compact type return followed by live lifecycle fallthrough",
+      "coverageRelation": "The executable mutant puts the correct return in a literal-false branch and falls through to lifecycle; the analyzer must use the live terminal return."
+    },
+    {
+      "id": "app-inbox-crdt-command-live-return",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "Only the live compact switch return establishes the created command operation. Executable assertion: “rejects a dead correct compact builder masking the live lifecycle builder”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a dead correct compact builder masking the live lifecycle builder",
+      "coverageRelation": "The executable mutant retains a correct builder only in a literal-false branch and returns a live lifecycle builder; the analyzer must use the live terminal return."
+    },
+    {
+      "id": "app-inbox-crdt-route-live-call",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "Only the live direct route call establishes its operation. Executable assertion: “rejects a dead correct direct call masking the live lifecycle route call”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a dead correct direct call masking the live lifecycle route call",
+      "coverageRelation": "The executable mutant leaves a compact call in a literal-false branch and executes lifecycle; the analyzer must ignore the dead decoy."
+    },
+    {
+      "id": "app-inbox-crdt-gateway-live-call",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "Only the live general-admin gateway call establishes its operation. Executable assertion: “rejects a dead correct gateway call masking the live lifecycle call”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a dead correct gateway call masking the live lifecycle call",
+      "coverageRelation": "The executable mutant leaves a compact gateway call in a literal-false branch and executes lifecycle; the analyzer must ignore the dead decoy."
+    },
+    {
+      "id": "app-inbox-crdt-submitted-command-reassignment",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "The submitted command binding cannot be reassigned to another operation before AppInbox submission. Executable assertion: “rejects live reassignment of the submitted command to lifecycle”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects live reassignment of the submitted command to lifecycle",
+      "coverageRelation": "The executable mutant creates the correct compact command, reassigns that same live binding to lifecycle, and requires the analyzer to reject the submitted operation mismatch."
+    },
+    {
+      "id": "app-inbox-crdt-dead-command-reassignment",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "A command reassignment in a literal-false branch does not alter the submitted command. Executable assertion: “ignores a command reassignment in a dead branch”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#ignores a command reassignment in a dead branch",
+      "coverageRelation": "The executable mutant places the lifecycle reassignment in a literal-false branch and requires the analyzer to retain the live compact binding without a false routing failure."
+    },
+    {
+      "id": "app-inbox-crdt-submitted-command-lexical-shadow",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "The submitted identifier resolves to its own preceding lexical declaration rather than a later nested shadow. Executable assertion: “rejects a later nested compact command shadowing the submitted lifecycle command”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a later nested compact command shadowing the submitted lifecycle command",
+      "coverageRelation": "The executable mutant submits a lifecycle command and later declares an unused nested compact command with the same name; the analyzer must retain the submitted binding’s wrong operation."
+    },
+    {
+      "id": "app-inbox-crdt-nested-command-scope",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "A canonical command and its submission may share one nested lexical block. Executable assertion: “accepts canonical command submission inside one nested lexical block”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#accepts canonical command submission inside one nested lexical block",
+      "coverageRelation": "The executable mutant nests the complete canonical command workflow in one block and requires lexical binding analysis to preserve the valid owner-to-submission path."
+    },
+    {
+      "id": "app-inbox-crdt-submission-parameter-shadow",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "A callback parameter named command shadows an outer command binding at terminal submission. Executable assertion: “rejects a callback parameter shadowing the outer compact command”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a callback parameter shadowing the outer compact command",
+      "coverageRelation": "The executable mutant passes a lifecycle command through a same-name callback parameter while retaining an outer compact command; the analyzer must stop at the nearer parameter binding."
+    },
+    {
+      "id": "app-inbox-crdt-submission-unrelated-parameter",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "An unrelated callback parameter does not shadow the outer command used by terminal submission. Executable assertion: “accepts an unrelated callback parameter while submitting the outer command”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#accepts an unrelated callback parameter while submitting the outer command",
+      "coverageRelation": "The executable mutant adds an unrelated callback parameter but submits the canonical outer command, proving lexical resolution falls outward only when the nearer scope has no matching binding."
     },
     {
       "id": "app-inbox-mutation-routing--rejects-a-wrong-local-presence-route-constant",
@@ -870,17 +990,212 @@ moved or changed test.
   ],
   "entries": [
     {
-      "id": "test-structure-coupling-c00305d4ae5c95f0",
+      "id": "test-structure-coupling-d7acbcfe9dbac252",
       "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
-      "line": 168,
-      "column": 20,
+      "line": 171,
+      "column": 18,
       "kind": "production-source-read",
-      "contract": "app-inbox-mutation-routing--rejects-a-crdt-route-connected-to-another-admin-operation",
+      "contract": "app-inbox-crdt-route-intermediary",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Mutates the compact route to the lifecycle operation and requires the routing analyzer to reject the wrong canonical CRDT owner before publication.",
-      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a CRDT route connected to another admin mutation operation"
+      "rationale": "Renames the direct route’s live admin mutation call and requires the analyzer to reject the disconnected compact path.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a CRDT route disconnected from the admin mutation intermediary"
+    },
+    {
+      "id": "test-structure-coupling-3ad7f658eab26a1b",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 183,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-admin-intermediary",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Renames the terminal AppInbox submission and requires the analyzer to reject the disconnected API intermediary.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects an admin intermediary disconnected from terminal AppInbox processing"
+    },
+    {
+      "id": "test-structure-coupling-a833bf66bd140000",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 223,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-command-operation",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Changes the compact command builder’s effective operation and requires the analyzer to reject the mismatched command.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects compact command construction rerouted to the lifecycle operation"
+    },
+    {
+      "id": "test-structure-coupling-502028b84787e4aa",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 240,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-type-operation",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Changes the compact command’s AppInbox type return and requires the analyzer to reject the queue-type mismatch.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects compact mapped to the lifecycle AppInbox type"
+    },
+    {
+      "id": "test-structure-coupling-166e34970a9b47c6",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 257,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-helper-operation-binding",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Hardcodes lifecycle in the direct forwarding helper while retaining the compact caller, proving the analyzer follows the operation binding across that call boundary.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a hardcoded lifecycle operation in the direct forwarding helper"
+    },
+    {
+      "id": "test-structure-coupling-907e1b9456fe6bf4",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 269,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-submitted-command-binding",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Builds the correct command but submits a separately bound lifecycle command, proving creation and submission must share one binding.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a correct command followed by submission of a lifecycle command"
+    },
+    {
+      "id": "test-structure-coupling-86bbf2c91342113f",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 280,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-type-live-return",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Places the correct compact type return in a literal-false branch before live lifecycle fallthrough, proving only live terminal returns count.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a dead compact type return followed by live lifecycle fallthrough"
+    },
+    {
+      "id": "test-structure-coupling-8cfeafc43b6dd0f2",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 297,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-command-live-return",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Places the correct compact builder in a literal-false branch before the live lifecycle builder, proving only the live returned command counts.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a dead correct compact builder masking the live lifecycle builder"
+    },
+    {
+      "id": "test-structure-coupling-0cc56c40afdb259f",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 308,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-route-live-call",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Places the correct direct route call in a literal-false branch before the live lifecycle call, proving dead calls cannot satisfy operation ownership.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a dead correct direct call masking the live lifecycle route call"
+    },
+    {
+      "id": "test-structure-coupling-7b5bc6346df6024d",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 319,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-gateway-live-call",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Places the correct gateway call in a literal-false branch before the live lifecycle call, proving dead calls cannot satisfy general-admin ownership.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a dead correct gateway call masking the live lifecycle call"
+    },
+    {
+      "id": "test-structure-coupling-60e2d10a3f52f48b",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 330,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-submitted-command-reassignment",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Changes the canonical command declaration to a mutable binding, reassigns it to lifecycle before submission, and requires the analyzer to reject the live compact operation mismatch.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects live reassignment of the submitted command to lifecycle"
+    },
+    {
+      "id": "test-structure-coupling-0ce86c9bb4d7b2aa",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 341,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-dead-command-reassignment",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Places the lifecycle reassignment in a literal-false branch and requires the analyzer to preserve the live compact submission without a false finding.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#ignores a command reassignment in a dead branch"
+    },
+    {
+      "id": "test-structure-coupling-17dcc47cc79db4fd",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 348,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-submitted-command-lexical-shadow",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Submits a wrong lifecycle command, then declares an unused correct compact command with the same name in a later nested block, requiring exact lexical provenance instead of name-map overwrite.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a later nested compact command shadowing the submitted lifecycle command"
+    },
+    {
+      "id": "test-structure-coupling-0c7461932b8f8e31",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 359,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-nested-command-scope",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Wraps the canonical command creation and submission in one nested block, proving exact lexical binding does not reject a valid nested owner scope.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#accepts canonical command submission inside one nested lexical block"
+    },
+    {
+      "id": "test-structure-coupling-5bfa52c619ea3a3f",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 366,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-submission-parameter-shadow",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Passes a lifecycle command through a callback parameter named command while retaining an outer compact declaration, requiring the analyzer to stop at the nearer parameter binding.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a callback parameter shadowing the outer compact command"
+    },
+    {
+      "id": "test-structure-coupling-30dff7f68f1fdefa",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 377,
+      "column": 18,
+      "kind": "production-source-read",
+      "contract": "app-inbox-crdt-submission-unrelated-parameter",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Adds an unrelated callback parameter while submitting the outer command, proving lexical lookup can cross a nearer scope only when it has no matching binding.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#accepts an unrelated callback parameter while submitting the outer command"
     },
     {
       "id": "test-structure-coupling-18fc3cbf53d4a31b",
@@ -1013,9 +1328,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#repairs known Deno lockfile drift before the controlled rollout dirty checkout guard"
     },
     {
-      "id": "test-structure-coupling-0a1cd607030839cb",
+      "id": "test-structure-coupling-460946f4a393acd9",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts",
-      "line": 73,
+      "line": 78,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-collections--rejects-a-crdt-type-removed-from-its-imported-live-registration-",
@@ -1091,10 +1406,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app"
     },
     {
-      "id": "test-structure-coupling-3a878309715ba30c",
+      "id": "test-structure-coupling-7e006229f65f5582",
       "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
-      "line": 81,
-      "column": 20,
+      "line": 84,
+      "column": 18,
       "kind": "production-source-read",
       "contract": "app-inbox-mutation-routing--rejects-an-exact-route-registered-only-from-a-request-time-callb",
       "disposition": "durable-boundary",
@@ -1117,10 +1432,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects an uninventoryed live private owner and route in a family"
     },
     {
-      "id": "test-structure-coupling-db4d003fea035dc2",
+      "id": "test-structure-coupling-eaf828f9adf86094",
       "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
-      "line": 54,
-      "column": 20,
+      "line": 57,
+      "column": 18,
       "kind": "production-source-read",
       "contract": "app-inbox-mutation-routing--rejects-a-dead-exact-registration-masking-the-live-named-route-o",
       "disposition": "durable-boundary",
@@ -1468,10 +1783,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/hetzner/spa-env-script.test.ts#uses the control-server Deno config for Hetzner cache warming and systemd start"
     },
     {
-      "id": "test-structure-coupling-3db6ee5af71049ff",
+      "id": "test-structure-coupling-8e198f60531d6026",
       "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
-      "line": 108,
-      "column": 20,
+      "line": 111,
+      "column": 18,
       "kind": "production-source-read",
       "contract": "app-inbox-mutation-routing--rejects-a-membership-route-constant-swapped-to-the-presence-path",
       "disposition": "durable-boundary",
@@ -1481,9 +1796,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a membership route constant swapped to the presence path"
     },
     {
-      "id": "test-structure-coupling-62a137c454ed4aa1",
+      "id": "test-structure-coupling-a6d917893e39c448",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
-      "line": 83,
+      "line": 89,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-predicates--narrows-the-imported-crdt-collection-with-an-exact-equality-filt",
@@ -1533,9 +1848,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app"
     },
     {
-      "id": "test-structure-coupling-6dfda4a637579910",
+      "id": "test-structure-coupling-9b7f0cf6745b5d05",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts",
-      "line": 80,
+      "line": 85,
       "column": 24,
       "kind": "production-source-read",
       "contract": "mutation-registration-collections--rejects-a-crdt-type-removed-from-its-imported-live-registration-",
@@ -1585,9 +1900,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects an extra root-to-family argument"
     },
     {
-      "id": "test-structure-coupling-73308e24266bf2b3",
+      "id": "test-structure-coupling-5e0a3a647bc71ebc",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
-      "line": 68,
+      "line": 73,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-predicates--narrows-the-auth-registration-array-with-an-exact-equality-filte",
@@ -1637,9 +1952,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
     },
     {
-      "id": "test-structure-coupling-786f66e97640824a",
+      "id": "test-structure-coupling-d03beed5c5efcd0e",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts",
-      "line": 92,
+      "line": 97,
       "column": 19,
       "kind": "production-source-read",
       "contract": "mutation-registration-collections--binds-topology-loops-to-their-live-types",
@@ -1650,9 +1965,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts#binds topology loops to their live types"
     },
     {
-      "id": "test-structure-coupling-78c588b97aca4fac",
+      "id": "test-structure-coupling-1c6a23dcf6e6e6b0",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts",
-      "line": 49,
+      "line": 54,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-collections--rejects-group-create-removed-from-the-imported-live-group-regist",
@@ -1663,10 +1978,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts#rejects GROUP_CREATE removed from the imported live group registration collection"
     },
     {
-      "id": "test-structure-coupling-7464849d962314a4",
+      "id": "test-structure-coupling-a28d70141a2b8bbe",
       "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
-      "line": 153,
-      "column": 20,
+      "line": 156,
+      "column": 18,
       "kind": "production-source-read",
       "contract": "app-inbox-mutation-routing--rejects-a-translator-case-routed-to-another-operation-type",
       "disposition": "durable-boundary",
@@ -1702,9 +2017,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#observes committed socket authorization before clustered WS effects"
     },
     {
-      "id": "test-structure-coupling-7ff401b49afb7583",
+      "id": "test-structure-coupling-91496f02dbb053de",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
-      "line": 98,
+      "line": 105,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-predicates--fails-closed-for-an-opaque-registration-predicate",
@@ -1871,9 +2186,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps mutable state-cache access inside the state store"
     },
     {
-      "id": "test-structure-coupling-944da5d76ef196b1",
+      "id": "test-structure-coupling-60ab1835d5ff4dde",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts",
-      "line": 103,
+      "line": 108,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-collections--binds-direct-client-registrations-to-their-live-types",
@@ -1910,10 +2225,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#defines a no-browser three-server topology convergence recipe"
     },
     {
-      "id": "test-structure-coupling-d92e5182a2de7b9c",
+      "id": "test-structure-coupling-f16715babf543aaa",
       "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
-      "line": 39,
-      "column": 20,
+      "line": 42,
+      "column": 18,
       "kind": "production-source-read",
       "contract": "app-inbox-mutation-routing--rejects-a-wrong-local-presence-route-constant",
       "disposition": "durable-boundary",
@@ -2001,9 +2316,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#defines a no-browser three-server topology convergence recipe"
     },
     {
-      "id": "test-structure-coupling-a268845cf4b958c7",
+      "id": "test-structure-coupling-11ff1ddd4a8bbeca",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
-      "line": 114,
+      "line": 121,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-predicates--evaluates-safe-logical-includes-and-identity-map-chains-exactly",
@@ -2066,10 +2381,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects an extra family-to-private-owner argument"
     },
     {
-      "id": "test-structure-coupling-4e6e38cdb1471e2a",
+      "id": "test-structure-coupling-4e79b9ef9a808586",
       "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
-      "line": 138,
-      "column": 20,
+      "line": 139,
+      "column": 18,
       "kind": "production-source-read",
       "contract": "app-inbox-mutation-routing--fails-closed-when-a-named-route-path-uses-an-unknown-expression",
       "disposition": "durable-boundary",
@@ -2183,9 +2498,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/api-v1-medium-scale-recipe-routing.test.ts#names every group poll for the API node that executes it"
     },
     {
-      "id": "test-structure-coupling-d31a3190c19623b1",
+      "id": "test-structure-coupling-61b46cc23a8a3f38",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
-      "line": 38,
+      "line": 43,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-predicates--narrows-the-group-registration-array-with-an-exact-equality-filt",
@@ -2196,9 +2511,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#narrows the group registration array with an exact equality filter"
     },
     {
-      "id": "test-structure-coupling-d369671acfc79f49",
+      "id": "test-structure-coupling-9fcf3c8894a57f1c",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts",
-      "line": 61,
+      "line": 66,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-collections--rejects-an-auth-registration-loop-replaced-with-an-empty-iterabl",
@@ -2235,9 +2550,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/auth-server-compatibility-governance.test.ts#rejects export kind, target, and second-hop changes"
     },
     {
-      "id": "test-structure-coupling-dcbdd6335044f080",
+      "id": "test-structure-coupling-acd737fcce76e714",
       "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
-      "line": 53,
+      "line": 58,
       "column": 20,
       "kind": "production-source-read",
       "contract": "mutation-registration-predicates--rejects-a-group-registration-filter-that-is-always-false",
@@ -2391,9 +2706,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app"
     },
     {
-      "id": "test-structure-coupling-8eb21dccec2d6b5b",
+      "id": "test-structure-coupling-ebe34ce0111ace64",
       "path": "packages/tests/shared-server/mutation-boundary-analysis.ts",
-      "line": 140,
+      "line": 143,
       "column": 22,
       "kind": "exact-file-tree",
       "contract": "mutation-boundary-analysis-interface",
@@ -2482,10 +2797,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects a correct handoff found only in an uninvoked nested handler function"
     },
     {
-      "id": "test-structure-coupling-e426886fca4be29a",
+      "id": "test-structure-coupling-8e710aa6bfb63ef6",
       "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
-      "line": 123,
-      "column": 20,
+      "line": 124,
+      "column": 18,
       "kind": "production-source-read",
       "contract": "app-inbox-mutation-routing--rejects-a-remove-member-route-translated-through-the-ban-operati",
       "disposition": "durable-boundary",

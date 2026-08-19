@@ -10,17 +10,24 @@ import { decodeAuthMutationCommand }
   from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-command.ts';
 // prettier-ignore
 import { decodeCrdtMutationCommand }
-  from '@shared-server/rallar-system/services/crdt-mutation-codec.ts';
+  from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+
+export interface ExactStandaloneCommandIdsInput {
+  readonly type: AppInboxType;
+  readonly data: unknown;
+  readonly authority: unknown;
+  readonly fallback: string;
+}
 
 export function readExactStandaloneCommandIds(
-  type: AppInboxType,
-  data: unknown,
-  authority: unknown,
-  fallback: string,
+  input: ExactStandaloneCommandIdsInput,
 ): readonly string[] {
+  const { type, data, authority, fallback } = input;
   if (type.startsWith('AUTH_')) {
     const command = decodeAuthMutationCommand(data);
-    if (command.kind !== authKind(type)) throw new TypeError('auth command kind differs from type');
+    if (command.kind !== authKind(type)) {
+      throw new TypeError('auth command kind differs from type');
+    }
     return [command.requestId];
   }
   if (type.startsWith('CRDT_')) {
@@ -33,7 +40,9 @@ export function readExactStandaloneCommandIds(
   if (type === AppInboxType.ADMIN_PRUNE_EXPIRED) {
     return [decodeAdminPruneCommand(data).jobId];
   }
-  if (type === AppInboxType.RTC_RTT_SUBMIT) return [readRtcRttRequestId(data)];
+  if (type === AppInboxType.RTC_RTT_SUBMIT) {
+    return [readRtcRttRequestId(data)];
+  }
   if (type === AppInboxType.TOPOLOGY_RECONFIGURE) {
     return [readTopologyReconfigureCommand(authority).requestId];
   }
@@ -116,7 +125,9 @@ export function readGroupSessionCleanupCommand(data: unknown) {
     ['auth expiresAtEpochMs', authSession.expiresAtEpochMs],
     ['auth issuedAtEpochMs', authSession.issuedAtEpochMs],
   ] as const) {
-    if (!Number.isSafeInteger(value)) throw new TypeError(`${label} is invalid`);
+    if (!Number.isSafeInteger(value)) {
+      throw new TypeError(`${label} is invalid`);
+    }
   }
   readString(cleanup.reason, 'group session cleanup reason');
   return {
@@ -142,7 +153,9 @@ export function isTopologyConfigCommand(type: AppInboxType): boolean {
 }
 
 export function clientPayloadKeys(type: AppInboxType): readonly string[] {
-  if (type === AppInboxType.CLIENT_PRINCIPAL_UPSERT) return ['scope', 'principalId', 'request'];
+  if (type === AppInboxType.CLIENT_PRINCIPAL_UPSERT) {
+    return ['scope', 'principalId', 'request'];
+  }
   if (type === AppInboxType.CLIENT_INSTANCE_UPSERT) {
     return ['scope', 'principalId', 'clientInstanceId', 'request'];
   }
@@ -172,8 +185,9 @@ export function readExactRecord(
   label: string,
 ): Record<string, unknown> {
   const candidate = readRecord(value, label);
-  if (JSON.stringify(Object.keys(candidate).toSorted()) !== JSON.stringify([...keys].toSorted()))
+  if (JSON.stringify(Object.keys(candidate).toSorted()) !== JSON.stringify([...keys].toSorted())) {
     throw new TypeError(`${label} keys are invalid`);
+  }
   return candidate;
 }
 
@@ -185,7 +199,9 @@ export function readRecord(value: unknown, label: string): Record<string, unknow
 }
 
 export function readString(value: unknown, label: string): string {
-  if (typeof value !== 'string' || value.length === 0) throw new TypeError(`${label} is invalid`);
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new TypeError(`${label} is invalid`);
+  }
   return value;
 }
 
@@ -200,7 +216,9 @@ function authKind(type: AppInboxType): string {
     [AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME]: 'consume-agent-ticket',
   };
   const kind = kinds[type];
-  if (!kind) throw new TypeError('auth command type is unsupported');
+  if (!kind) {
+    throw new TypeError('auth command type is unsupported');
+  }
   return kind;
 }
 

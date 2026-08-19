@@ -1,5 +1,10 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+// prettier-ignore
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 
 import { findMutationBoundaryViolationsFromRoots } from './mutation-boundary-analysis.ts';
 import {
@@ -12,8 +17,8 @@ const GROUP_OWNER = 'packages/shared-server/rallar-system/services/AppGroupInbox
 const GROUP_TYPES =
   'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 const AUTH_OWNER = 'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
-const CRDT_OWNER = 'packages/shared-server/rallar-system/services/AppCrdtInboxService.ts';
-const CRDT_TYPES = 'packages/shared-server/rallar-system/services/crdt-mutation-contracts.ts';
+const CRDT_OWNER = 'packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
+const CRDT_TYPES = 'packages/shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 const CLIENT_OWNER =
   'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 

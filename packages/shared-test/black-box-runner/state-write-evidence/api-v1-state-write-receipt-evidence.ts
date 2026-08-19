@@ -1,365 +1,490 @@
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { PSqlRuntimeStateRepository } from
-    '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { ClientStateRepository } from
-    '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { GroupStateRepository } from
-    '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { GroupTopologyConfigRepository } from
-    '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
-import { validateClientMutationIdempotencyRecord } from
-    '@shared-server/rallar-system/services/client-state-mutations.ts';
-import { validateGroupMutationCommand } from
-    '@shared-server/rallar-system/services/group-state-mutations.ts';
-import { readTopologyConfigMutationRecordBoundary } from
-    '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
-import { validatePersistedAppInboxCommandIdentity } from
-    '@shared-server/rallar-system/services/app-inbox-command-identity.ts';
-import { AppInboxType } from
-    '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+import type {
+  RuntimeStateEntry,
+  RuntimeStateRepositoryLike,
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import * as ClientState from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import * as GroupState from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/mod.ts';
+import * as ClientMutations from '@shared-server/rallar-system/services/client-state-mutations.ts';
+import * as GroupMutations from '@shared-server/rallar-system/services/group-state-mutations.ts';
+// prettier-ignore
+import * as TopologyMutation
+  from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
+// prettier-ignore
+import * as AppInboxCommandIdentity
+  from '@shared-server/rallar-system/services/app-inbox-command-identity.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+
 import type { ApiV1StateWriteEvidenceQuery } from './api-v1-state-write-evidence-contracts.ts';
 import type {
-    AuthoritativeTopologyReceipt,
-    ReceiptEffectIdentityKind,
+  AuthoritativeTopologyReceipt,
+  ReceiptEffectIdentityKind,
 } from './api-v1-state-write-result-evidence.ts';
-import type { PublicResultReceiptIdentity } from
-    './api-v1-state-write-group-causal-evidence.ts';
+import type { PublicResultReceiptIdentity } from './api-v1-state-write-group-causal-evidence.ts';
 import {
-    clientPayloadKeys,
-    isGeneralClientCommand,
-    isTopologyConfigCommand,
-    readExactRecord,
-    readExactStandaloneCommandIds,
-    readGroupRef,
-    readRecord,
-    readScope,
-    readString,
-    readTopologyReconfigureCommand,
+  clientPayloadKeys,
+  isGeneralClientCommand,
+  isTopologyConfigCommand,
+  readExactRecord,
+  readExactStandaloneCommandIds,
+  readGroupRef,
+  readRecord,
+  readScope,
+  readString,
+  readTopologyReconfigureCommand,
 } from './api-v1-state-write-command-codecs.ts';
 import { toAuthoritativeReceiptEvidence } from './api-v1-state-write-receipt-projection.ts';
 
 export interface AuthoritativeReceiptEvidence extends PublicResultReceiptIdentity {
-    readonly appInboxResourceId: string;
-    readonly commandId: string;
-    readonly commandHash: string;
-    readonly outcome: string;
-    readonly outboxIds: readonly string[];
-    readonly identityKind: ReceiptEffectIdentityKind;
-    readonly topology?: AuthoritativeTopologyReceipt;
+  readonly appInboxResourceId: string;
+  readonly commandId: string;
+  readonly commandHash: string;
+  readonly outcome: string;
+  readonly outboxIds: readonly string[];
+  readonly identityKind: ReceiptEffectIdentityKind;
+  readonly topology?: AuthoritativeTopologyReceipt;
 }
 
 export interface PersistedCommandEvidence {
-    readonly appInboxResourceId: string;
-    readonly valid: boolean;
-    readonly commandType: string;
-    readonly commandIds: readonly string[];
-    readonly commandScope?: Readonly<{
-        applicationId: string;
-        workspaceId: string;
-        groupId?: string;
-    }>;
-    readonly receipt?: AuthoritativeReceiptEvidence;
-    readonly failure?: string;
+  readonly appInboxResourceId: string;
+  readonly valid: boolean;
+  readonly commandType: string;
+  readonly commandIds: readonly string[];
+  readonly commandScope?: Readonly<{
+    applicationId: string;
+    workspaceId: string;
+    groupId?: string;
+  }>;
+  readonly receipt?: AuthoritativeReceiptEvidence;
+  readonly failure?: string;
 }
 
 interface InboxCommandRow {
-    readonly ri_resource_id: string;
-    readonly ri_topic_id: string;
-    readonly ri_resource: string;
-    readonly result_status?: string | null;
+  readonly ri_resource_id: string;
+  readonly ri_topic_id: string;
+  readonly ri_resource: string;
+  readonly result_status?: string | null;
+}
+
+interface RuntimeStateEvidenceRow {
+  readonly store_key: string;
+  readonly store_value: string;
+  readonly updated_ts: string | Date;
+  readonly expire_at_ts: string | Date;
+  readonly revision: number | string;
+}
+
+function createStateWriteEvidenceRuntimeStateRepository(
+  sql: ApiV1StateWriteEvidenceQuery,
+): RuntimeStateRepositoryLike {
+  return {
+    findEntry: async (namespace, key) => {
+      const rows = await sql<readonly RuntimeStateEvidenceRow[]>`
+        select store_key, store_value, updated_ts, expire_at_ts, revision
+        from runtime_state_store
+        where store_namespace = ${namespace}
+          and store_key = ${key}
+        limit 1
+      `;
+      return rows[0] ? toRuntimeStateEvidenceEntry(rows[0]) : undefined;
+    },
+    findAllEntries: async () => {
+      throw unsupportedRuntimeStateEvidenceOperation('findAllEntries');
+    },
+    upsert: async () => {
+      throw unsupportedRuntimeStateEvidenceOperation('upsert');
+    },
+    deleteByKey: async () => {
+      throw unsupportedRuntimeStateEvidenceOperation('deleteByKey');
+    },
+    deleteExpired: async () => {
+      throw unsupportedRuntimeStateEvidenceOperation('deleteExpired');
+    },
+  };
+}
+
+function toRuntimeStateEvidenceEntry(row: RuntimeStateEvidenceRow): RuntimeStateEntry {
+  return {
+    key: row.store_key,
+    value: row.store_value,
+    expireAtTimestamp: readRuntimeStateEvidenceDate(row.expire_at_ts, 'expiry').getTime(),
+    updatedTimestamp: readRuntimeStateEvidenceDate(row.updated_ts, 'update').toISOString(),
+    revision: readRuntimeStateEvidenceRevision(row.revision),
+  };
+}
+
+function readRuntimeStateEvidenceDate(value: string | Date, label: string): Date {
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    throw new TypeError(`runtime state ${label} timestamp is invalid`);
+  }
+  return date;
+}
+
+function readRuntimeStateEvidenceRevision(value: number | string): number {
+  const revision =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^(0|[1-9]\d*)$/u.test(value)
+        ? Number(value)
+        : Number.NaN;
+  if (!Number.isSafeInteger(revision) || revision < 0 || Object.is(revision, -0)) {
+    throw new TypeError('runtime state revision is invalid');
+  }
+  return revision;
+}
+
+function unsupportedRuntimeStateEvidenceOperation(operation: string): Error {
+  return new Error(`State-write evidence does not support runtime state ${operation}`);
 }
 
 export async function readPersistedCommandEvidence(
-    sql: ApiV1StateWriteEvidenceQuery,
-    row: InboxCommandRow,
+  sql: ApiV1StateWriteEvidenceQuery,
+  row: InboxCommandRow,
 ): Promise<PersistedCommandEvidence> {
-    const identity = validatePersistedAppInboxCommandIdentity({
-        topicId: row.ri_topic_id,
-        resource: row.ri_resource,
+  const identity = AppInboxCommandIdentity.validatePersistedAppInboxCommandIdentity({
+    topicId: row.ri_topic_id,
+    resource: row.ri_resource,
+  });
+  if (!identity.valid) {
+    return invalid({
+      appInboxResourceId: row.ri_resource_id,
+      commandType: identity.identity.operation,
+      commandIds: [],
+      failure: 'malformed-app-inbox-command',
     });
-    if (!identity.valid) {
-        return invalid(row.ri_resource_id, identity.identity.operation, [], 'malformed-app-inbox-command');
-    }
-    const commandType = identity.command.type;
-    try {
-        const runtime = new PSqlRuntimeStateRepository(sql as unknown as PSqlSql);
-        const requireReceipt = row.result_status === 'COMPLETED';
-        if (isGeneralClientCommand(commandType)) {
-            return await readClientReceipt(
-                runtime,
-                row,
-                identity.command.data,
-                commandType,
-                requireReceipt,
-            );
-        }
-        if (commandType === AppInboxType.CLIENT_AUTHORISED_WS_CONNECT ||
-            commandType === AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT) {
-            return await readAuthorisedWsClientReceipt(
-                runtime,
-                row,
-                identity.command.data,
-                commandType,
-            );
-        }
-        if (commandType.startsWith('GROUP_') &&
-            commandType !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP) {
-            return await readGroupReceipt(
-                runtime,
-                row,
-                identity.command.authority,
-                commandType,
-                requireReceipt,
-            );
-        }
-        if (isTopologyConfigCommand(commandType)) {
-            return await readTopologyReceipt(
-                runtime,
-                row,
-                identity.command.authority,
-                commandType,
-                requireReceipt,
-            );
-        }
-        if (commandType === AppInboxType.TOPOLOGY_RECONFIGURE) {
-            const command = readTopologyReconfigureCommand(identity.command.authority);
-            return {
-                appInboxResourceId: row.ri_resource_id,
-                valid: true,
-                commandType,
-                commandIds: [command.requestId],
-                commandScope: command.groupRef,
-            };
-        }
-        return {
-            appInboxResourceId: row.ri_resource_id,
-            valid: true,
-            commandType,
-            commandIds: readExactStandaloneCommandIds(
-                commandType,
-                identity.command.data,
-                identity.command.authority,
-                row.ri_resource_id,
-            ),
-        };
-    } catch (error) {
-        return invalid(
-            row.ri_resource_id,
-            commandType,
-            [],
-            error instanceof Error ? error.message : String(error),
-        );
-    }
-}
-
-async function readClientReceipt(
-    runtime: PSqlRuntimeStateRepository,
-    row: InboxCommandRow,
-    data: unknown,
-    commandType: AppInboxType,
-    requireReceipt: boolean,
-): Promise<PersistedCommandEvidence> {
-    const payload = readExactRecord(data, clientPayloadKeys(commandType), 'client payload');
-    const scope = readScope(payload.scope);
-    const principalId = readString(payload.principalId, 'client principalId');
-    const request = readRecord(payload.request, 'client request');
-    const requestId = readString(request.requestId, 'client requestId');
-    return await readClientReceiptByIdentity(
+  }
+  const commandType = identity.command.type;
+  try {
+    const runtime = createStateWriteEvidenceRuntimeStateRepository(sql);
+    const requireReceipt = row.result_status === 'COMPLETED';
+    if (isGeneralClientCommand(commandType)) {
+      return await readClientReceipt({
         runtime,
         row,
+        data: identity.command.data,
         commandType,
-        { ...scope, principalId },
-        requestId,
-        !requireReceipt,
-    );
+        requireReceipt,
+      });
+    }
+    if (
+      commandType === AppInboxType.CLIENT_AUTHORISED_WS_CONNECT ||
+      commandType === AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT
+    ) {
+      return await readAuthorisedWsClientReceipt({
+        runtime,
+        row,
+        data: identity.command.data,
+        commandType,
+      });
+    }
+    if (
+      commandType.startsWith('GROUP_') &&
+      commandType !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP
+    ) {
+      return await readGroupReceipt({
+        runtime,
+        row,
+        authority: identity.command.authority,
+        commandType,
+        requireReceipt,
+      });
+    }
+    if (isTopologyConfigCommand(commandType)) {
+      return await readTopologyReceipt({
+        runtime,
+        row,
+        authority: identity.command.authority,
+        commandType,
+        requireReceipt,
+      });
+    }
+    if (commandType === AppInboxType.TOPOLOGY_RECONFIGURE) {
+      const command = readTopologyReconfigureCommand(identity.command.authority);
+      return {
+        appInboxResourceId: row.ri_resource_id,
+        valid: true,
+        commandType,
+        commandIds: [command.requestId],
+        commandScope: command.groupRef,
+      };
+    }
+    return {
+      appInboxResourceId: row.ri_resource_id,
+      valid: true,
+      commandType,
+      commandIds: readExactStandaloneCommandIds({
+        type: commandType,
+        data: identity.command.data,
+        authority: identity.command.authority,
+        fallback: row.ri_resource_id,
+      }),
+    };
+  } catch (error) {
+    return invalid({
+      appInboxResourceId: row.ri_resource_id,
+      commandType,
+      commandIds: [],
+      failure: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+interface ReadClientReceiptInput {
+  readonly runtime: RuntimeStateRepositoryLike;
+  readonly row: InboxCommandRow;
+  readonly data: unknown;
+  readonly commandType: AppInboxType;
+  readonly requireReceipt: boolean;
+}
+
+async function readClientReceipt(input: ReadClientReceiptInput): Promise<PersistedCommandEvidence> {
+  const { runtime, row, data, commandType, requireReceipt } = input;
+  const payload = readExactRecord(data, clientPayloadKeys(commandType), 'client payload');
+  const scope = readScope(payload.scope);
+  const principalId = readString(payload.principalId, 'client principalId');
+  const request = readRecord(payload.request, 'client request');
+  const requestId = readString(request.requestId, 'client requestId');
+  return await readClientReceiptByIdentity({
+    runtime,
+    row,
+    commandType,
+    ref: { ...scope, principalId },
+    requestId,
+    allowMissing: !requireReceipt,
+  });
+}
+
+interface ReadAuthorisedWsClientReceiptInput {
+  readonly runtime: RuntimeStateRepositoryLike;
+  readonly row: InboxCommandRow;
+  readonly data: unknown;
+  readonly commandType: AppInboxType;
 }
 
 async function readAuthorisedWsClientReceipt(
-    runtime: PSqlRuntimeStateRepository,
-    row: InboxCommandRow,
-    data: unknown,
-    commandType: AppInboxType,
+  input: ReadAuthorisedWsClientReceiptInput,
 ): Promise<PersistedCommandEvidence> {
-    const connection = commandType === AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT
-        ? readExactRecord(data, ['connection', 'disconnectedAtEpochMs', 'reason'], 'WS disconnect')
-            .connection
-        : data;
-    const payload = readExactRecord(connection, [
-        'authSession', 'generationId', 'generationStartedAtEpochMs', 'scope', 'principalId',
-        'clientInstanceId', 'displayName', 'userAgent', 'platform', 'capabilities',
-        'expiresAtEpochMs',
-    ], 'authorised WS client payload');
-    const authSession = readRecord(payload.authSession, 'authorised WS auth session');
-    const sessionId = readString(authSession.sessionId, 'authorised WS sessionId');
-    const generationId = readString(payload.generationId, 'authorised WS generationId');
-    const requestId = commandType === AppInboxType.CLIENT_AUTHORISED_WS_CONNECT
-        ? `authorised-ws:connect:${sessionId}:${generationId}`
-        : `authorised-ws:disconnect:${sessionId}:${generationId}`;
-    return await readClientReceiptByIdentity(
-        runtime,
-        row,
-        commandType,
-        {
-            ...readScope(payload.scope),
-            principalId: readString(payload.principalId, 'authorised WS principalId'),
-        },
-        requestId,
-        true,
-    );
+  const { runtime, row, data, commandType } = input;
+  const connection =
+    commandType === AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT
+      ? readExactRecord(data, ['connection', 'disconnectedAtEpochMs', 'reason'], 'WS disconnect')
+          .connection
+      : data;
+  const payload = readExactRecord(
+    connection,
+    [
+      'authSession',
+      'generationId',
+      'generationStartedAtEpochMs',
+      'scope',
+      'principalId',
+      'clientInstanceId',
+      'displayName',
+      'userAgent',
+      'platform',
+      'capabilities',
+      'expiresAtEpochMs',
+    ],
+    'authorised WS client payload',
+  );
+  const authSession = readRecord(payload.authSession, 'authorised WS auth session');
+  const sessionId = readString(authSession.sessionId, 'authorised WS sessionId');
+  const generationId = readString(payload.generationId, 'authorised WS generationId');
+  const requestId =
+    commandType === AppInboxType.CLIENT_AUTHORISED_WS_CONNECT
+      ? `authorised-ws:connect:${sessionId}:${generationId}`
+      : `authorised-ws:disconnect:${sessionId}:${generationId}`;
+  return await readClientReceiptByIdentity({
+    runtime,
+    row,
+    commandType,
+    ref: {
+      ...readScope(payload.scope),
+      principalId: readString(payload.principalId, 'authorised WS principalId'),
+    },
+    requestId,
+    allowMissing: true,
+  });
+}
+
+interface ReadClientReceiptByIdentityInput {
+  readonly runtime: RuntimeStateRepositoryLike;
+  readonly row: InboxCommandRow;
+  readonly commandType: AppInboxType;
+  readonly ref: Readonly<{ applicationId: string; workspaceId: string; principalId: string }>;
+  readonly requestId: string;
+  readonly allowMissing?: boolean;
 }
 
 async function readClientReceiptByIdentity(
-    runtime: PSqlRuntimeStateRepository,
-    row: InboxCommandRow,
-    commandType: AppInboxType,
-    ref: Readonly<{ applicationId: string; workspaceId: string; principalId: string }>,
-    requestId: string,
-    allowMissing = false,
+  input: ReadClientReceiptByIdentityInput,
 ): Promise<PersistedCommandEvidence> {
-    const stored = await new ClientStateRepository(runtime)
-        .findIdempotentClientMutationReceipt(ref, requestId);
-    if (!stored && allowMissing) {
-        return {
-            appInboxResourceId: row.ri_resource_id,
-            valid: true,
-            commandType,
-            commandIds: [requestId],
-        };
-    }
-    validateClientMutationIdempotencyRecord(stored);
-    if (stored.requestId !== requestId || stored.receipt.commandId !== requestId ||
-        stored.receipt.aggregateRef.applicationId !== ref.applicationId ||
-        stored.receipt.aggregateRef.workspaceId !== ref.workspaceId ||
-        stored.receipt.aggregateRef.principalId !== ref.principalId ||
-        stored.commandHash !== stored.receipt.commandHash) {
-        throw new TypeError('client authoritative receipt differs from command identity');
-    }
+  const { runtime, row, commandType, ref, requestId, allowMissing = false } = input;
+  const stored = await new ClientState.ClientStateRepository(
+    runtime,
+  ).findIdempotentClientMutationReceipt(ref, requestId);
+  if (!stored && allowMissing) {
     return {
-        appInboxResourceId: row.ri_resource_id,
-        valid: true,
-        commandType,
-        commandIds: [requestId],
-        receipt: toAuthoritativeReceiptEvidence(
-            row.ri_resource_id,
-            stored.receipt,
-            'physical-resource-id',
-        ),
+      appInboxResourceId: row.ri_resource_id,
+      valid: true,
+      commandType,
+      commandIds: [requestId],
     };
+  }
+  ClientMutations.validateClientMutationIdempotencyRecord(stored);
+  if (
+    stored.requestId !== requestId ||
+    stored.receipt.commandId !== requestId ||
+    stored.receipt.aggregateRef.applicationId !== ref.applicationId ||
+    stored.receipt.aggregateRef.workspaceId !== ref.workspaceId ||
+    stored.receipt.aggregateRef.principalId !== ref.principalId ||
+    stored.commandHash !== stored.receipt.commandHash
+  ) {
+    throw new TypeError('client authoritative receipt differs from command identity');
+  }
+  return {
+    appInboxResourceId: row.ri_resource_id,
+    valid: true,
+    commandType,
+    commandIds: [requestId],
+    receipt: toAuthoritativeReceiptEvidence(
+      row.ri_resource_id,
+      stored.receipt,
+      'physical-resource-id',
+    ),
+  };
 }
 
-async function readGroupReceipt(
-    runtime: PSqlRuntimeStateRepository,
-    row: InboxCommandRow,
-    authority: unknown,
-    commandType: AppInboxType,
-    requireReceipt: boolean,
-): Promise<PersistedCommandEvidence> {
-    const prepared = readExactRecord(authority, [
-        'authorityProof', 'descriptor', 'command', 'facts', 'causalToken', 'queueResourceId',
-    ], 'group preparation');
-    validateGroupMutationCommand(prepared.command);
-    const command = prepared.command;
-    const requestId = readString(command.requestId, 'group requestId');
-    const facts = readRecord(prepared.facts, 'group facts');
-    const commandHash = readString(facts.commandHash, 'group commandHash');
-    if (prepared.queueResourceId !== row.ri_resource_id) {
-        throw new TypeError('group queue resource differs from physical queue identity');
-    }
-    if (!requireReceipt) {
-        return {
-            appInboxResourceId: row.ri_resource_id,
-            valid: true,
-            commandType,
-            commandIds: [command.commandId],
-        };
-    }
-    const stored = await new GroupStateRepository(runtime)
-        .findIdempotentGroupMutationReceipt(command.aggregateRef, requestId);
-    if (!stored || stored.requestId !== requestId ||
-        stored.commandHash !== commandHash ||
-        stored.receipt.commandHash !== commandHash ||
-        stored.receipt.commandId !== command.commandId ||
-        stored.aggregateRef.applicationId !== command.aggregateRef.applicationId ||
-        stored.aggregateRef.workspaceId !== command.aggregateRef.workspaceId ||
-        stored.aggregateRef.groupId !== command.aggregateRef.groupId) {
-        throw new TypeError('group authoritative receipt differs from command identity');
-    }
+interface ReadGroupReceiptInput {
+  readonly runtime: RuntimeStateRepositoryLike;
+  readonly row: InboxCommandRow;
+  readonly authority: unknown;
+  readonly commandType: AppInboxType;
+  readonly requireReceipt: boolean;
+}
+
+async function readGroupReceipt(input: ReadGroupReceiptInput): Promise<PersistedCommandEvidence> {
+  const { runtime, row, authority, commandType, requireReceipt } = input;
+  const prepared = readExactRecord(
+    authority,
+    ['authorityProof', 'descriptor', 'command', 'facts', 'causalToken', 'queueResourceId'],
+    'group preparation',
+  );
+  GroupMutations.validateGroupMutationCommand(prepared.command);
+  const command = prepared.command;
+  const requestId = readString(command.requestId, 'group requestId');
+  const facts = readRecord(prepared.facts, 'group facts');
+  const commandHash = readString(facts.commandHash, 'group commandHash');
+  if (prepared.queueResourceId !== row.ri_resource_id) {
+    throw new TypeError('group queue resource differs from physical queue identity');
+  }
+  if (!requireReceipt) {
     return {
-        appInboxResourceId: row.ri_resource_id,
-        valid: true,
-        commandType,
-        commandIds: [command.commandId],
-        receipt: toAuthoritativeReceiptEvidence(
-            row.ri_resource_id,
-            stored.receipt,
-            'physical-resource-id',
-        ),
+      appInboxResourceId: row.ri_resource_id,
+      valid: true,
+      commandType,
+      commandIds: [command.commandId],
     };
+  }
+  const stored = await new GroupState.GroupStateRepository(
+    runtime,
+  ).findIdempotentGroupMutationReceipt(command.aggregateRef, requestId);
+  if (
+    !stored ||
+    stored.requestId !== requestId ||
+    stored.commandHash !== commandHash ||
+    stored.receipt.commandHash !== commandHash ||
+    stored.receipt.commandId !== command.commandId ||
+    stored.aggregateRef.applicationId !== command.aggregateRef.applicationId ||
+    stored.aggregateRef.workspaceId !== command.aggregateRef.workspaceId ||
+    stored.aggregateRef.groupId !== command.aggregateRef.groupId
+  ) {
+    throw new TypeError('group authoritative receipt differs from command identity');
+  }
+  return {
+    appInboxResourceId: row.ri_resource_id,
+    valid: true,
+    commandType,
+    commandIds: [command.commandId],
+    receipt: toAuthoritativeReceiptEvidence(
+      row.ri_resource_id,
+      stored.receipt,
+      'physical-resource-id',
+    ),
+  };
+}
+
+interface ReadTopologyReceiptInput {
+  readonly runtime: RuntimeStateRepositoryLike;
+  readonly row: InboxCommandRow;
+  readonly authority: unknown;
+  readonly commandType: AppInboxType;
+  readonly requireReceipt: boolean;
 }
 
 async function readTopologyReceipt(
-    runtime: PSqlRuntimeStateRepository,
-    row: InboxCommandRow,
-    authority: unknown,
-    commandType: AppInboxType,
-    requireReceipt: boolean,
+  input: ReadTopologyReceiptInput,
 ): Promise<PersistedCommandEvidence> {
-    const durableAuthority = readExactRecord(
-        authority,
-        ['kind', 'proof', 'command'],
-        'topology authority',
-    );
-    const command = readExactRecord(durableAuthority.command, [
-        'actor', 'groupRef', 'requestId', 'commandHash', 'capturedAtEpochMs',
-        'operation', 'payload',
-    ], 'topology command');
-    const groupRef = readGroupRef(command.groupRef);
-    const requestId = readString(command.requestId, 'topology requestId');
-    const commandHash = readString(command.commandHash, 'topology commandHash');
-    const expectedOperation: Readonly<Partial<Record<AppInboxType, string>>> = {
-        [AppInboxType.TOPOLOGY_CONFIG_PUT]: 'putConfig',
-        [AppInboxType.TOPOLOGY_CONFIG_DELETE]: 'deleteConfig',
-        [AppInboxType.TOPOLOGY_OVERRIDE_PUT]: 'putOverride',
-        [AppInboxType.TOPOLOGY_OVERRIDE_DELETE]: 'deleteOverride',
-    };
-    if (command.operation !== expectedOperation[commandType]) {
-        throw new TypeError('topology command operation differs from AppInbox type');
-    }
-    if (!requireReceipt) {
-        return {
-            appInboxResourceId: row.ri_resource_id,
-            valid: true,
-            commandType,
-            commandIds: [requestId],
-        };
-    }
-    const stored = await new GroupTopologyConfigRepository(runtime)
-        .findMutationRecord(groupRef, requestId);
-    const record = readTopologyConfigMutationRecordBoundary(
-        stored,
-        { groupRef, requestId },
-    );
-    if (record.commandHash !== commandHash || record.receipt.commandHash !== commandHash) {
-        throw new TypeError('topology authoritative receipt differs from command hash');
-    }
+  const { runtime, row, authority, commandType, requireReceipt } = input;
+  const durableAuthority = readExactRecord(
+    authority,
+    ['kind', 'proof', 'command'],
+    'topology authority',
+  );
+  const command = readExactRecord(
+    durableAuthority.command,
+    ['actor', 'groupRef', 'requestId', 'commandHash', 'capturedAtEpochMs', 'operation', 'payload'],
+    'topology command',
+  );
+  const groupRef = readGroupRef(command.groupRef);
+  const requestId = readString(command.requestId, 'topology requestId');
+  const commandHash = readString(command.commandHash, 'topology commandHash');
+  const expectedOperation: Readonly<Partial<Record<AppInboxType, string>>> = {
+    [AppInboxType.TOPOLOGY_CONFIG_PUT]: 'putConfig',
+    [AppInboxType.TOPOLOGY_CONFIG_DELETE]: 'deleteConfig',
+    [AppInboxType.TOPOLOGY_OVERRIDE_PUT]: 'putOverride',
+    [AppInboxType.TOPOLOGY_OVERRIDE_DELETE]: 'deleteOverride',
+  };
+  if (command.operation !== expectedOperation[commandType]) {
+    throw new TypeError('topology command operation differs from AppInbox type');
+  }
+  if (!requireReceipt) {
     return {
-        appInboxResourceId: row.ri_resource_id,
-        valid: true,
-        commandType,
-        commandIds: [requestId],
-        receipt: toAuthoritativeReceiptEvidence(
-            row.ri_resource_id,
-            record.receipt,
-            'logical-msg-id',
-        ),
+      appInboxResourceId: row.ri_resource_id,
+      valid: true,
+      commandType,
+      commandIds: [requestId],
     };
+  }
+  const stored = await new GroupTopologyConfigRepository(runtime).findMutationRecord(
+    groupRef,
+    requestId,
+  );
+  const record = TopologyMutation.readTopologyConfigMutationRecordBoundary(stored, {
+    groupRef,
+    requestId,
+  });
+  if (record.commandHash !== commandHash || record.receipt.commandHash !== commandHash) {
+    throw new TypeError('topology authoritative receipt differs from command hash');
+  }
+  return {
+    appInboxResourceId: row.ri_resource_id,
+    valid: true,
+    commandType,
+    commandIds: [requestId],
+    receipt: toAuthoritativeReceiptEvidence(row.ri_resource_id, record.receipt, 'logical-msg-id'),
+  };
 }
 
-function invalid(
-    appInboxResourceId: string,
-    commandType: string,
-    commandIds: readonly string[],
-    failure: string,
-): PersistedCommandEvidence {
-    return { appInboxResourceId, valid: false, commandType, commandIds, failure };
+interface InvalidEvidenceInput {
+  readonly appInboxResourceId: string;
+  readonly commandType: string;
+  readonly commandIds: readonly string[];
+  readonly failure: string;
+}
+
+function invalid(input: InvalidEvidenceInput): PersistedCommandEvidence {
+  const { appInboxResourceId, commandType, commandIds, failure } = input;
+  return { appInboxResourceId, valid: false, commandType, commandIds, failure };
 }
