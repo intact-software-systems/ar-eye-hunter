@@ -60,7 +60,7 @@ export function transitionGroupMemberLifecycle(
   status: GroupMemberStatus,
   audit: AuditStamp,
 ): GroupMember {
-  if (status === 'invited') {
+  if (status === 'invited' || status === 'pending') {
     return {
       ...member,
       status,
@@ -93,6 +93,8 @@ export function groupMemberEventType(status: GroupMemberStatus): GroupEventType 
   switch (status) {
     case 'invited':
       return 'member-invited';
+    case 'pending':
+      return 'member-admission-requested';
     case 'active':
       return 'member-joined';
     case 'left':

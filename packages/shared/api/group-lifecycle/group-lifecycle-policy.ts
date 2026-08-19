@@ -130,6 +130,7 @@ export type GroupLifecyclePolicyInput = Readonly<{
 
 export const GROUP_LIFECYCLE_POLICY_ISSUE_CODES = [
     'manager-initiator-without-manager',
+    'manager-approval-without-manager',
     'viable-rate-above-success-rate',
     'threshold-mode-requires-positive-rate',
     'deadline-mode-requires-positive-deadline',

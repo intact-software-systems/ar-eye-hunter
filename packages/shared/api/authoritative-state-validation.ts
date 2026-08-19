@@ -179,6 +179,7 @@ const GROUP_EVENT_TYPES = [
   'group-archived',
   'group-deleted',
   'member-invited',
+  'member-admission-requested',
   'member-joined',
   'member-left',
   'member-removed',
@@ -818,7 +819,7 @@ function validateGroupMember(value: unknown, ref: GroupRef): void {
   enumValue(member.role, ['owner', 'admin', 'member'], 'GroupSnapshot.member.role');
   enumValue(
     member.status,
-    ['invited', 'active', 'left', 'removed', 'banned'],
+    ['invited', 'pending', 'active', 'left', 'removed', 'banned'],
     'GroupSnapshot.member.status',
   );
   nullableAudit(member.joined, 'GroupSnapshot.member.joined');
@@ -831,8 +832,8 @@ function validateGroupMember(value: unknown, ref: GroupRef): void {
     member.invitationExpiresAtEpochMs,
     'GroupSnapshot.member.invitationExpiresAtEpochMs',
   );
-  if (member.status === 'invited' && member.joined !== null) {
-    fail('GroupSnapshot invited member joined must be null');
+  if ((member.status === 'invited' || member.status === 'pending') && member.joined !== null) {
+    fail('GroupSnapshot invited/pending member joined must be null');
   }
   if (member.status === 'active' && member.joined === null) {
     fail('GroupSnapshot active member joined is required');

@@ -28,6 +28,10 @@ import { createTestGroup } from '../create-test-group.ts';
 import {
     resolveGroupLifecyclePolicyPreset,
 } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+// prettier-ignore
+import {
+    computeGroupAdmissionDecision,
+} from '@shared/api/group-lifecycle/compute-group-admission-decision.ts';
 
 const NOW = 1_000;
 const ACTOR: GroupPolicyActor = {
@@ -189,6 +193,12 @@ describe('group policy helpers', () => {
         expect(readGroupVisibility({
             snapshot: snapshot({
                 members: [member('alice', {status: 'invited'})],
+            }),
+            actor: ACTOR,
+        })).toBe('invite');
+        expect(readGroupVisibility({
+            snapshot: snapshot({
+                members: [member('alice', {status: 'pending'})],
             }),
             actor: ACTOR,
         })).toBe('invite');
@@ -437,6 +447,27 @@ describe('group policy helpers', () => {
                 transition: 'start-establishment',
                 activeMemberPrincipalIds: [ACTOR.principalId ?? ''],
             })),
+            expectCode(toAdmissionResult(computeGroupAdmissionDecision({
+                admission: {mode: 'closed', untilEpochMs: null, untilMemberCount: null},
+                lifecycleState: 'active',
+                activeMemberCount: 1,
+                invited: false,
+                nowEpochMs: NOW,
+            }))),
+            expectCode(toAdmissionResult(computeGroupAdmissionDecision({
+                admission: {mode: 'open', untilEpochMs: NOW, untilMemberCount: null},
+                lifecycleState: 'forming',
+                activeMemberCount: 1,
+                invited: false,
+                nowEpochMs: NOW,
+            }))),
+            expectCode(toAdmissionResult(computeGroupAdmissionDecision({
+                admission: {mode: 'open', untilEpochMs: null, untilMemberCount: 1},
+                lifecycleState: 'forming',
+                activeMemberCount: 1,
+                invited: false,
+                nowEpochMs: NOW,
+            }))),
         ]);
 
         expect([...GROUP_POLICY_REASON_CODES].filter((code) => !coveredCodes.has(code)))
@@ -499,6 +530,12 @@ function denied(code: GroupPolicyReasonCode) {
         allowed: false,
         code,
     };
+}
+
+function toAdmissionResult(
+    decision: ReturnType<typeof computeGroupAdmissionDecision>,
+): ReturnType<typeof canJoinGroup> {
+    return decision.kind === 'deny' ? decision.denial : {allowed: true};
 }
 
 function expectCode(result: ReturnType<typeof canJoinGroup>): GroupPolicyReasonCode {
@@ -613,10 +650,10 @@ function member(
     if (options.status === 'banned') {
         return {...common, status: 'banned', left: null, removed: null, banned: options.banned ?? audit(1)};
     }
-    if (options.status === 'invited') {
+    if (options.status === 'invited' || options.status === 'pending') {
         return {
             ...common,
-            status: 'invited',
+            status: options.status,
             joined: null,
             left: null,
             removed: null,

@@ -4615,7 +4615,7 @@ components:
           enum: [owner, admin, member]
         status:
           type: string
-          enum: [invited, active, left, removed, banned]
+          enum: [invited, pending, active, left, removed, banned]
         joined:
           allOf:
             - $ref: '#/components/schemas/AuditStamp'
@@ -4786,6 +4786,7 @@ components:
             - group-archived
             - group-deleted
             - member-invited
+            - member-admission-requested
             - member-joined
             - member-left
             - member-removed

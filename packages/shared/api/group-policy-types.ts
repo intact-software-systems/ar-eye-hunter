@@ -16,6 +16,9 @@ export const GROUP_POLICY_REASON_CODES = [
     'last-owner',
     'lifecycle-transition-invalid',
     'lifecycle-manager-unavailable',
+    'group-admission-closed',
+    'group-admission-deadline-passed',
+    'group-admission-capacity-reached',
 ] as const;
 
 export type GroupPolicyReasonCode =

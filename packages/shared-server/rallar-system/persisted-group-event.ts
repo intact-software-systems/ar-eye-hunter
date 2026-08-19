@@ -17,6 +17,7 @@ const GROUP_EVENT_TYPES: Readonly<Record<GroupEventType, true>> = {
     'group-archived': true,
     'group-deleted': true,
     'member-invited': true,
+    'member-admission-requested': true,
     'member-joined': true,
     'member-left': true,
     'member-removed': true,

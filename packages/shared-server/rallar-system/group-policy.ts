@@ -305,6 +305,8 @@ export function readGroupVisibility(input: CanReadGroupSnapshotInput): GroupRead
       return isInviteExpired(member, input.nowEpochMs)
         ? readDirectoryVisibility(input.snapshot)
         : 'invite';
+    case 'pending':
+      return 'invite';
     case 'left':
     case undefined:
       return readDirectoryVisibility(input.snapshot);

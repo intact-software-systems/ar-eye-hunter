@@ -125,7 +125,7 @@ export function normalizePersistedGroupMember(value: unknown, ref: GroupRef): Gr
   );
   const status = legacy.status;
   const joined =
-    status === 'invited'
+    status === 'invited' || status === 'pending'
       ? null
       : Object.hasOwn(legacy, 'joined')
         ? normalizeNullablePersistedGroupAudit(legacy.joined, 'Stored member joined')

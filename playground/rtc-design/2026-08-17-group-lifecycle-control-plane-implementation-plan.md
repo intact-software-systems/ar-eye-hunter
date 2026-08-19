@@ -1,6 +1,6 @@
 # Group Lifecycle Control Plane — Implementation Plan (2026-08-17)
 
-Status: **in execution — slices 1–3 delivered** (slice 2 as PRs #263/#264/#266/#268/#270/#272, slice 3 as #277/#282). Implements
+Status: **in execution — slices 1–4 delivered** (slice 2 as PRs #263/#264/#266/#268/#270/#272, slice 3 as #277/#282, slice 4 as #286/#287). Implements
 `2026-08-08-group-lifecycle-and-policy-model.md` and, with it, Phase 5's formation window (M7) from
 `2026-08-08-group-formation-implementation-plan.md`. These are one workstream, not two: Phase 5's
 formation window is this document's FORMING state with a policy-driven trigger instead of a timer.
@@ -165,7 +165,7 @@ Intent is authoritative; this observation feeds the criterion and nothing else.
 | 3.4 | **Native `next_ts` scheduling replaced the planned requeue contract.** Landing it exposed a pre-existing skew: naive timestamp columns hold UTC wall clocks but the queue SQL compared them with session-zone `now()`; fixed with `(now() at time zone 'UTC')` throughout the resource-inbox SQL, pinned under deliberately skewed PGlite sessions. The timer consumer keeps a not-due throw as clock-skew defense. |
 | 3.5 | **The operator-driven transitions recipe pins `activation.mode: manual`** — the managed preset's default `threshold-or-deadline` would auto-activate underneath its deterministic state walk now that the evidence leg is live. |
 
-### Slice 4 — Manager role
+### Slice 4 — Manager role — **delivered**
 
 `ManagerPolicy` (`selection`, `count`, `succession`). Election uses the existing
 `rendezvous-score.ts` primitive, pinned to the formation epoch (correction 4). Zero-manager fallback
@@ -183,6 +183,15 @@ is explicit: manager absence blocks only manager-assigned actions, never group s
 `managed: creator` and `match: elected-by-rank` since slice 1; decision 2.2's interim predicate is
 what makes the managed creator work today, and the elected variants are what this slice activates.*
 
+#### Decisions taken during slice 4 execution (2026-08-19)
+
+| # | Decision |
+| --- | --- |
+| 4.3 | **Delivered as 4a (PR #286) and 4b (PR #287).** 4a, dark: `formationElectorate` on the aggregate — creation pins `[creator]`, every accepted transition re-pins to the active member set at the boundary — plus the pure `resolveGroupLifecycleManagers`. 4b: decision 2.2's interim predicate became the real resolution at both consumers — `canCommandGroupLifecycleTransition` and the formation view — with decision 4.2's preset switch and the manager-succession recipe. The predicate gained a live-roster input fed from the mutation read: the policy snapshot carries only the involved members, and the liveness filter needs every candidate. |
+| 4.4 | **`assigned` honours declared order and `count`.** The assigned list is the ranking and `count` takes from it; the interim predicate had treated it as an unordered authority set. |
+| 4.5 | **Succession is operation order, not a mechanism.** One resolution function: `next-by-selection` filters the ranking to live members before taking `count`, so successors fill; `none` takes before filtering, so departures leave holes, never successors. The order applies uniformly to every selection, which is how creator succession continues into the epoch-pinned election ranking. |
+| 4.6 | **The formation view carries `managerPrincipalIds`**, resolved at read time by the same pure function from a policy read added to the route dependencies, so an application can show who may act. The view moved out of `graph-topology-routes.ts` into its own `group-formation-view-read.ts` (the `*-read.ts` split pattern). |
+
 ### Slice 5 — Admission and data policies
 
 `AdmissionPolicy` at the existing `group-policy.ts` gate, where `maxMembers`, `maxSessionsPerMember`
@@ -192,6 +201,17 @@ join as pending, extending the existing invite/acceptance flow rather than addin
 
 Risk: touches the hot, well-covered join path. Every new rule is an added predicate at an existing
 enforcement point, never a parallel path.
+
+#### Decisions taken during slice 5 planning (2026-08-19)
+
+Recorded with their alternatives in `2026-08-19-pending-admission-representation-analysis.md`.
+
+| # | Decision |
+| --- | --- |
+| 5.1 | **Pending admission is a sixth member status, `pending`** — the consent-mirror of `invited` (an invite is the group's consent awaiting the principal's; a pending join is the principal's consent awaiting the group's), extending the invite/acceptance machinery per the recorded default. Grant completes `pending → active` (`member-joined`); decline mirrors invite revoke to `left`, so re-requesting stays possible and `banned` remains the keep-out tool; invited members bypass parking; both join surfaces — the join route and self-upsert activation — take the same admission decision. |
+| 5.2 | **Correction 5 fixed per mode**: `manager-approval` and the `untilEpochMs`/`untilMemberCount` windows bind in every state from creation; **`closed` binds outside FORMING**, so the roster freezes when establishment begins and a below-floor return to FORMING re-opens the lobby. `joinMode` is the credential; admission is the consent-and-timing overlay. |
+| 5.3 | **Grant/decline are manager-only**, resolved via `resolveGroupLifecycleManagers` at the command. Zero-manager recovery is governance's own consent channel — invite, then accept — never a widened grant authority. A new cross-field validity issue, `manager-approval-without-manager`, rejects `selection: 'none'` with `manager-approval` at creation; transient zero-manager states stay legal. |
+| 5.4 | **Delivered as 5a/5b/5c**: 5a the dark core (status arm, pure admission decision, validity rule — no behaviour change); 5b the admission wiring, grant/decline commands, recipes, and the medium-scale gate; 5c the `preActivationAppData` gate on the WS relay separately (different runtime surface, no AppInbox mutation), with the CRDT topics explicitly exempt. |
 
 ### Slice 6 — Read surface and scenario matrix
 
@@ -236,12 +256,11 @@ every slice boundary: **a group with no policy document behaves exactly as it do
 
 ## Open, to settle during execution
 
-- Pending-admission representation for `manager-approval`: extend invites, or a dedicated
-  pending-membership state. Decide when slice 5 is planned; extending invites is the lower-coupling
-  default.
+- ~~Pending-admission representation for `manager-approval`.~~ Settled at slice 5 planning as
+  decision 5.1: a sixth member status extending the invite/acceptance machinery
+  (`2026-08-19-pending-admission-representation-analysis.md`).
 - Rank source for `elected-by-rank`. Application-supplied member metadata is the least-coupled
   default.
-- Where the epoch-pinned electorate lives (correction 4). Nothing currently records the member set
-  at an epoch boundary, so slice 4 must either persist the electorate (or the election result) on
-  the aggregate at each epoch-advancing transition, or define the electorate derivably. Decide at
-  slice 4 planning.
+- ~~Where the epoch-pinned electorate lives (correction 4).~~ Settled at slice 4 planning as
+  decision 4.1: the aggregate records the electorate at each epoch-advancing transition, and
+  resolution stays pure.

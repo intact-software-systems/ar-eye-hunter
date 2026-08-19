@@ -153,6 +153,8 @@ function validateMembershipMutationInput(
       if (input.role !== undefined) {
         requireOneOf(input.role, ['owner', 'admin', 'member'], 'Group role');
       }
+      // 'pending' is deliberately absent: only the admission decision may
+      // compute it, never client input (plan decision 5.1).
       requireOneOf(
         input.status,
         ['invited', 'active', 'left', 'removed', 'banned'],
