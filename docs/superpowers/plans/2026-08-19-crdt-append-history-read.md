@@ -29,7 +29,7 @@ this child plan owns the separately approved performance follow-up.
 
 ## Global Constraints
 
-- Planning base is exact `origin/main`
+- Planning and measurement base was then-current exact `origin/main`
   `e29dadd2148e3923c395ac18030e7d6bb85b58a1`.
 - Preserve AppInbox as the only incoming database mutation owner. Do not move transaction, retry,
   optimistic compare-and-set, command decoding, compute, validation, final outbox, reply, or fanout
@@ -117,6 +117,11 @@ slice result is inconclusive and a new plan decision explicitly activates that w
   the CRDT repository changed by this plan. Its available local baseline also binds unrelated commit
   `224c850bf1e3632532b49c17995a6183c8c4c7a3`. Running it would create large unrelated evidence, not
   a proportional regression check for this slice.
+- After capture and final validation, `origin/main` advanced to
+  `ebc6e013e74ba172220e25e5d9ff5e0f75338065`. A read-only merge-tree check is conflict-free at tree
+  `90215f60af784aaa8bcec26f929045de54dce9c3`; the new main work changes group lifecycle policy and
+  matrix rows, not the CRDT repository. The branch is intentionally not rebased in this local-only
+  task because doing so would destroy the immutable before/after source pairing.
 
 | Case   | Path   | Baseline p50/p95 | Candidate p50/p95 | Candidate ratios |
 | ------ | ------ | ---------------- | ----------------- | ---------------- |
@@ -326,8 +331,8 @@ node scripts/perf/compare-api-v1-crdt-append-history-results.mjs \
 
 - [x] Run `npm run pr:delivery -- status` before broad final validation. Repair only a real source
       conflict; `BEHIND` alone creates no rebase/merge work.
-- [ ] Run focused CRDT, API, shared-test, and comparator tests.
-- [ ] Run:
+- [x] Run focused CRDT, API, shared-test, and comparator tests.
+- [x] Run:
 
 ```sh
 npm run typecheck
@@ -343,8 +348,8 @@ cd apps/api-v1 && deno fmt --check <every changed Deno-owned file>
 git diff --check e29dadd2148e3923c395ac18030e7d6bb85b58a1..HEAD
 ```
 
-- [ ] Review every changed file in full, rerun affected checks after every correction, and provide a
+- [x] Review every changed file in full, rerun affected checks after every correction, and provide a
       structured handoff with exact commands/results, artifact identities, measurements, issue
       disposition, and explicit skipped checks.
-- [ ] Do not push, create a PR, mark ready, merge, or mutate issue #265 unless the user separately
+- [x] Do not push, create a PR, mark ready, merge, or mutate issue #265 unless the user separately
       requests publication or issue updates.
