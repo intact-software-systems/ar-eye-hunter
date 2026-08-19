@@ -293,6 +293,13 @@ Validation per the plan: focused unit tests → the new/updated recipes →
 `test:api-v1:black-box:postgres:medium-scale` (hot join path; constants and assertions untouched),
 plus the OpenAPI/pinned-literal updates the status enum ripples into.
 
+## Decision taken (owner, 2026-08-19)
+
+All four recommendations, as recommended: the sixth member status (option A) with the
+invited-bypass and both-surfaces rules; `closed` binds outside FORMING; grant/decline manager-only
+with invite-based zero-manager recovery and the `manager-approval-without-manager` validity rule;
+the 5a/5b/5c split. Recorded as plan decisions 5.1–5.4.
+
 ## Defaults taken unless objected
 
 Decline lands `'left'` (re-requestable; `banned` is the keep-out tool). No pending TTL in v1 (no

@@ -202,6 +202,17 @@ join as pending, extending the existing invite/acceptance flow rather than addin
 Risk: touches the hot, well-covered join path. Every new rule is an added predicate at an existing
 enforcement point, never a parallel path.
 
+#### Decisions taken during slice 5 planning (2026-08-19)
+
+Recorded with their alternatives in `2026-08-19-pending-admission-representation-analysis.md`.
+
+| # | Decision |
+| --- | --- |
+| 5.1 | **Pending admission is a sixth member status, `pending`** — the consent-mirror of `invited` (an invite is the group's consent awaiting the principal's; a pending join is the principal's consent awaiting the group's), extending the invite/acceptance machinery per the recorded default. Grant completes `pending → active` (`member-joined`); decline mirrors invite revoke to `left`, so re-requesting stays possible and `banned` remains the keep-out tool; invited members bypass parking; both join surfaces — the join route and self-upsert activation — take the same admission decision. |
+| 5.2 | **Correction 5 fixed per mode**: `manager-approval` and the `untilEpochMs`/`untilMemberCount` windows bind in every state from creation; **`closed` binds outside FORMING**, so the roster freezes when establishment begins and a below-floor return to FORMING re-opens the lobby. `joinMode` is the credential; admission is the consent-and-timing overlay. |
+| 5.3 | **Grant/decline are manager-only**, resolved via `resolveGroupLifecycleManagers` at the command. Zero-manager recovery is governance's own consent channel — invite, then accept — never a widened grant authority. A new cross-field validity issue, `manager-approval-without-manager`, rejects `selection: 'none'` with `manager-approval` at creation; transient zero-manager states stay legal. |
+| 5.4 | **Delivered as 5a/5b/5c**: 5a the dark core (status arm, pure admission decision, validity rule — no behaviour change); 5b the admission wiring, grant/decline commands, recipes, and the medium-scale gate; 5c the `preActivationAppData` gate on the WS relay separately (different runtime surface, no AppInbox mutation), with the CRDT topics explicitly exempt. |
+
 ### Slice 6 — Read surface and scenario matrix
 
 Lifecycle state joins the group snapshot and read APIs beside the readiness derivation, so
@@ -245,9 +256,9 @@ every slice boundary: **a group with no policy document behaves exactly as it do
 
 ## Open, to settle during execution
 
-- Pending-admission representation for `manager-approval`: extend invites, or a dedicated
-  pending-membership state. Decide when slice 5 is planned; extending invites is the lower-coupling
-  default.
+- ~~Pending-admission representation for `manager-approval`.~~ Settled at slice 5 planning as
+  decision 5.1: a sixth member status extending the invite/acceptance machinery
+  (`2026-08-19-pending-admission-representation-analysis.md`).
 - Rank source for `elected-by-rank`. Application-supplied member metadata is the least-coupled
   default.
 - ~~Where the epoch-pinned electorate lives (correction 4).~~ Settled at slice 4 planning as
