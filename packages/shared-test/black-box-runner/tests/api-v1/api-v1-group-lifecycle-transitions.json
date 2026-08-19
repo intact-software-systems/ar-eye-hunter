@@ -181,7 +181,10 @@
           "group": {
             "groupId": "{managedGroupId}",
             "lifecycleState": "forming",
-            "formationEpoch": 0
+            "formationEpoch": 0,
+            "formationElectorate": [
+              "{aliceClientId}"
+            ]
           }
         }
       }

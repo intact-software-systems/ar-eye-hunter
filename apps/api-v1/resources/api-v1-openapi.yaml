@@ -4350,6 +4350,7 @@ components:
         - formationAttemptCount
         - lastFormationOutcome
         - establishmentStartedAtEpochMs
+        - formationElectorate
       discriminator:
         propertyName: status
       oneOf:
@@ -4463,6 +4464,10 @@ components:
           type: integer
           format: int64
           nullable: true
+        formationElectorate:
+          type: array
+          items:
+            type: string
 
     GroupFormationView:
       type: object

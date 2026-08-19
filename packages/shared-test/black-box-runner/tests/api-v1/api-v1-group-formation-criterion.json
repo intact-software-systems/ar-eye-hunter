@@ -280,7 +280,10 @@
           "group": {
             "groupId": "{deadlineGroupId}",
             "lifecycleState": "forming",
-            "formationEpoch": 0
+            "formationEpoch": 0,
+            "formationElectorate": [
+              "{aliceClientId}"
+            ]
           }
         }
       }
@@ -366,7 +369,11 @@
         "body": {
           "group": {
             "lifecycleState": "establishing",
-            "formationEpoch": 1
+            "formationEpoch": 1,
+            "formationElectorate": [
+              "{aliceClientId}",
+              "{bobClientId}"
+            ]
           }
         }
       }

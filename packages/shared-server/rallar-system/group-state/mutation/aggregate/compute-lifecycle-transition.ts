@@ -110,6 +110,9 @@ export function computeLifecycleTransition(
       }),
     );
   }
+  if (read.activeMemberPrincipalIds === null) {
+    throw new TypeError('Lifecycle transition compute requires the roster read');
+  }
   const outcome = computeGroupLifecycleTransition({
     transition,
     lifecycleState: stored.value.lifecycleState,
@@ -133,6 +136,7 @@ export function computeLifecycleTransition(
         ? stored.value.formationAttemptCount + 1
         : stored.value.formationAttemptCount,
     lastFormationOutcome: computeRecordedOutcome(command, stored.value, facts),
+    formationElectorate: read.activeMemberPrincipalIds,
     snapshotVersion: stored.value.snapshotVersion + 1,
     updated: auditStamp(command, facts, command.input.actorPrincipalId ?? undefined),
   };

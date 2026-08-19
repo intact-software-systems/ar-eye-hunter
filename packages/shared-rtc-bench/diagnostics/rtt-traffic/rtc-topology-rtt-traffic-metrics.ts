@@ -211,6 +211,7 @@ function createGroupSnapshot(groupId: string, memberSessionIds: readonly string[
       formationAttemptCount: 0,
       lastFormationOutcome: null,
       establishmentStartedAtEpochMs: null,
+        formationElectorate: [],
     },
     members: memberSessionIds.map((sessionId) => ({
       applicationId,

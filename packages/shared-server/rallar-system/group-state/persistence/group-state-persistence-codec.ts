@@ -53,6 +53,7 @@ const PERSISTED_GROUP_KEYS = [
   'formationAttemptCount',
   'lastFormationOutcome',
   'establishmentStartedAtEpochMs',
+  'formationElectorate',
 ] as const;
 
 export function normalizePersistedGroup(value: unknown, ref: GroupRef): Group {
@@ -93,6 +94,9 @@ export function normalizePersistedGroup(value: unknown, ref: GroupRef): Group {
       'establishmentStartedAtEpochMs',
       null,
     ),
+    // Legacy rows never pinned an electorate; empty resolves zero managers
+    // (honest unavailability) and heals at the next epoch advance.
+    formationElectorate: persistedOrDefault(legacy, 'formationElectorate', []),
   };
   validatePersistedGroup(canonical, ref);
   return canonical;
