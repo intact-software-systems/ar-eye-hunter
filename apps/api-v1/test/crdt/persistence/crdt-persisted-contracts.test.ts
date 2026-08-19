@@ -21,6 +21,7 @@ import {
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/\
 crdt-mutation-command-codec.ts';
 
+import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -42,6 +43,16 @@ interface CrdtDocumentCounterRow {
   readonly last_append_sequence: string | number;
 }
 
+interface CrdtUpdateReadRecorder {
+  readonly sql: PGliteSql;
+  readonly reads: RecordedSqlRead[];
+}
+
+interface RecordedSqlRead {
+  readonly bindings: readonly unknown[];
+  readonly rows: readonly unknown[];
+}
+
 Deno.test(
   'production CRDT mutation repository denies an explicit fail-closed authority decision',
   async () => {
@@ -60,6 +71,72 @@ Deno.test(
     });
   },
 );
+
+Deno.test(
+  'CRDT append reads only its candidate update while administration reads complete history',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const seedService = mutationService(sql);
+      const seeded = await Promise.all([
+        command('seed-command-1', 'seed-update-1', 1_000),
+        command('seed-command-2', 'seed-update-2', 2_000),
+        command('seed-command-3', 'seed-update-3', 3_000),
+      ]);
+      for (const input of seeded) {
+        await apply(sql, seedService, input);
+      }
+
+      const recorder = createCrdtUpdateReadRecorder(sql);
+      const service = mutationService(recorder.sql);
+      const newAppend = await command('new-command', 'new-update', 4_000);
+      const newRead = await service.read(newAppend);
+      assert.deepEqual(rowCountsBoundTo(recorder.reads, 'new-update'), [0]);
+      assert.equal(newRead.existingUpdate, null);
+      assert.equal(newRead.existingAppend, null);
+      assert.deepEqual(newRead.records, []);
+
+      recorder.reads.length = 0;
+      const duplicateRead = await service.read(seeded[1]);
+      const duplicate = service.compute({ command: seeded[1], read: duplicateRead });
+      assert.deepEqual(rowCountsBoundTo(recorder.reads, 'seed-update-2'), [1]);
+      assert.equal(duplicateRead.existingUpdate?.updateId, 'seed-update-2');
+      assert.deepEqual(duplicateRead.records, []);
+      assert.equal(duplicate.outcome, 'replay');
+
+      recorder.reads.length = 0;
+      const mismatchedCommand = await command('mismatch-command', 'seed-update-2', 5_000);
+      const mismatchedRead = await service.read(mismatchedCommand);
+      const mismatched = service.compute({ command: mismatchedCommand, read: mismatchedRead });
+      assert.deepEqual(rowCountsBoundTo(recorder.reads, 'seed-update-2'), [1]);
+      assert.equal(mismatched.outcome, 'rejected');
+      assert.equal('code' in mismatched ? mismatched.code : null, 'duplicate-hash-mismatch');
+
+      recorder.reads.length = 0;
+      const administration = await compactCommand('compact-read', 6_000);
+      const administrationRead = await service.read(administration);
+      assert.deepEqual(rowCountsContaining(recorder.reads, 'update_envelope'), [3]);
+      assert.deepEqual(
+        administrationRead.records.map((record) => record.update.updateId),
+        ['seed-update-1', 'seed-update-2', 'seed-update-3'],
+      );
+    });
+  },
+);
+
+Deno.test('CRDT administration retains complete persisted-counter validation', async () => {
+  await withPGliteSql(async (sql) => {
+    const service = mutationService(sql);
+    await apply(sql, service, await command('counter-base', 'counter-update', 1_000));
+    await sql`
+      update crdt_documents set update_count = 2, last_append_sequence = 2
+      where document_id = 'document-1'
+    `;
+    await assert.rejects(
+      service.read(await compactCommand('counter-compact', 2_000)),
+      /read set differs from document counters/,
+    );
+  });
+});
 
 Deno.test('CRDT CAS guards revision, lifecycle, and append sequence', async () => {
   await withPGliteSql(async (sql) => {
@@ -314,6 +391,36 @@ function mutationService(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]
   });
 }
 
+function createCrdtUpdateReadRecorder(sql: PGliteSql): CrdtUpdateReadRecorder {
+  const reads: RecordedSqlRead[] = [];
+  const recordingSql = new Proxy(sql, {
+    apply(target, thisArgument, argumentList) {
+      const result = Reflect.apply(target, thisArgument, argumentList);
+      return Promise.resolve(result).then((rows) => {
+        if (Array.isArray(rows)) {
+          reads.push({ bindings: argumentList.slice(1), rows });
+        }
+        return rows;
+      });
+    },
+  });
+  return { sql: recordingSql, reads };
+}
+
+function rowCountsBoundTo(reads: readonly RecordedSqlRead[], value: unknown): number[] {
+  return reads.filter((read) => read.bindings.includes(value)).map((read) => read.rows.length);
+}
+
+function rowCountsContaining(reads: readonly RecordedSqlRead[], field: string): number[] {
+  return reads
+    .filter((read) => read.rows.some((row) => hasOwnField(row, field)))
+    .map((read) => read.rows.length);
+}
+
+function hasOwnField(value: unknown, field: string): boolean {
+  return typeof value === 'object' && value !== null && Object.hasOwn(value, field);
+}
+
 async function apply(
   sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
   service: ReturnType<typeof mutationService>,
@@ -344,6 +451,31 @@ async function command(commandId: string, updateId: string, capturedAtEpochMs: n
       kind: 'room',
       senderSessionId: 'session-1',
       topicId: 'room.crdt',
+      contextId: 'group-1',
+    },
+  });
+}
+
+async function compactCommand(commandId: string, capturedAtEpochMs: number) {
+  return await createCrdtMutationCommand({
+    operation: 'compact',
+    commandId,
+    actor: {
+      actorId: 'actor-1',
+      principalId: 'client-1',
+      sessionId: 'session-1',
+      serverId: 'server-1',
+    },
+    capturedAtEpochMs,
+    expireAtEpochMs: capturedAtEpochMs + 60_000,
+    document: DOCUMENT,
+    snapshotId: `${commandId}-snapshot`,
+    snapshot: null,
+    reason: 'append-history-read-test',
+    responseAudience: {
+      kind: 'admin',
+      senderSessionId: 'session-1',
+      topicId: 'crdt.admin',
       contextId: 'group-1',
     },
   });

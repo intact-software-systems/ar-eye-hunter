@@ -49,6 +49,7 @@ to vary by machine, Postgres state, runtime version, cache warmth, and load.
 | `summarize-runtime-results.mjs`                      | Node helper that summarizes harness JSON into per-case duration and memory deltas.                                                                                                |
 | `api-v1-state-write-concurrency-bench.ts`            | Direct PostgreSQL API-v1 state-write benchmark for uncontended, shared-group, and hot-group concurrency.                                                                          |
 | `compare-api-v1-state-write-results.mjs`             | Validates state-write artifacts and enforces the relative performance and correctness gate.                                                                                       |
+| `compare-api-v1-crdt-append-history-results.mjs`     | Validates and compares diagnostic black-box append/replay timings at small, medium, and large bounded CRDT histories.                                                             |
 | `seed-perf-db.sql`                                   | Synthetic Postgres fixture for runtime state, app data, state events, queue rows, and CRDT rows.                                                                                  |
 | `explain-perf-db.sql`                                | EXPLAIN ANALYZE script for the seeded Postgres fixture.                                                                                                                           |
 | `seed-perf-db-sparse-queue.sql`                      | Worst-case sparse queue fixture and EXPLAIN for runnable-row selection.                                                                                                           |
@@ -86,6 +87,37 @@ mkdir -p tmp/perf/results tmp/perf/profiles tmp/perf/logs tmp/perf/artifacts
 
 The Deno harness uses `apps/api-v1/deno.json` for import aliases such as
 `@shared/` and `@shared-server/`.
+
+## CRDT append-history black-box diagnostic
+
+Issue #265 tracks the PostgreSQL CRDT append path reading and decoding a complete document history
+to determine whether one update is new or duplicated. The focused diagnostic exercises the real
+authenticated WebSocket -> AppInbox -> PostgreSQL -> committed-reply path rather than a synthetic
+repository-only benchmark.
+
+One parameterized recipe runs three cases. It seeds 10, 100, or 480 updates outside measurement,
+warms the duplicate path without growing history, and then measures 20 new appends plus 20 exact
+duplicate replays. The terminal histories are 30, 120, and 500 updates. Every replay uses a fresh
+outer delivery ID so ResourceInbox cannot bypass the CRDT repository lookup. Final integrity,
+catch-up, fanout, and AppInbox/outbox evidence remain correctness requirements.
+
+Capture the two sides against fresh managed PostgreSQL databases on the same host:
+
+```sh
+RALLAR_CRDT_APPEND_HISTORY_ARTIFACT_DIR=../../tmp/perf/crdt-append-history/baseline \
+  npm run test:api-v1:black-box:postgres:crdt-append-history
+RALLAR_CRDT_APPEND_HISTORY_ARTIFACT_DIR=../../tmp/perf/crdt-append-history/candidate \
+  npm run test:api-v1:black-box:postgres:crdt-append-history
+npm run perf:api-v1:crdt-append-history:compare -- \
+  tmp/perf/crdt-append-history/baseline/cluster \
+  tmp/perf/crdt-append-history/candidate/cluster
+```
+
+The comparison derives each end-to-end sample from the send step's start to the paired committed
+reply's end, validates exactly 20 successful pairs per operation and case, and prints p50/p95
+candidate-to-baseline ratios. It is diagnostic: malformed or failed artifacts cause a nonzero exit,
+but one noisy valid ratio is reported rather than promoted to a performance gate. The recipe does
+not measure process memory and its results do not support a memory claim.
 
 ## API-v1 State-write Concurrency Baseline
 
