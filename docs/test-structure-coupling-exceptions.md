@@ -1466,9 +1466,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a dead exact registration masking the live named route owner"
     },
     {
-      "id": "test-structure-coupling-dd6e9a473736ed3c",
+      "id": "test-structure-coupling-3dbbecadc0b567f3",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
-      "line": 424,
+      "line": 426,
       "column": 9,
       "kind": "symbol-assertion",
       "contract": "recipe-matrix-public-interface--advertises-the-api-v1-profile-in-recipe-matrix-cli-usage",
@@ -2740,9 +2740,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions"
     },
     {
-      "id": "test-structure-coupling-fe56265019c14a46",
+      "id": "test-structure-coupling-d1db7e3352ce50e1",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
-      "line": 422,
+      "line": 424,
       "column": 24,
       "kind": "production-source-read",
       "contract": "recipe-matrix-public-interface--advertises-the-api-v1-profile-in-recipe-matrix-cli-usage",
