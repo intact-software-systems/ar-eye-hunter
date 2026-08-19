@@ -175,7 +175,9 @@ export function createDefaultRallarServer(
     repositories: defaultRepositoryManager,
     appDataRepository: new PSqlAppDataRepository(database),
     ws: {
-      authorizeRoomMessage: createApiV1RoomWsAuthorizer(runtime.groupStateService),
+      authorizeRoomMessage: createApiV1RoomWsAuthorizer(runtime.groupStateService, {
+        readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
+      }),
       ...options.ws,
     },
     systemInstallers,

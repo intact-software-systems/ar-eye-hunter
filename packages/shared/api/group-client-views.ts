@@ -61,6 +61,25 @@ export function readGroupVersion(snapshot: AnyGroupPresence): number {
     return snapshot.group.snapshotVersion;
 }
 
+/**
+ * The snapshot a parked admission requester may see (plan decision 5.1):
+ * their own pending row and the aggregate facts, never the roster or the
+ * live sessions — the same invite visibility tier their reads get. Returns
+ * the snapshot unchanged for any principal who is not parked pending.
+ */
+export function toPendingMemberGroupSnapshot(
+    snapshot: GroupSnapshot,
+    principalId: string,
+): GroupSnapshot {
+    const member = snapshot.members.find(
+        (candidate) => candidate.principalId === principalId,
+    );
+    if (member?.status !== 'pending') {
+        return snapshot;
+    }
+    return { ...snapshot, members: [member], activeSessions: [] };
+}
+
 export function readGroupStateRevision(snapshot: AnyGroupPresence): number {
     return snapshot.stateRevision;
 }

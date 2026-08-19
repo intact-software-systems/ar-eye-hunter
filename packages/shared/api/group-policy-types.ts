@@ -19,6 +19,7 @@ export const GROUP_POLICY_REASON_CODES = [
     'group-admission-closed',
     'group-admission-deadline-passed',
     'group-admission-capacity-reached',
+    'group-data-blocked-until-active',
 ] as const;
 
 export type GroupPolicyReasonCode =

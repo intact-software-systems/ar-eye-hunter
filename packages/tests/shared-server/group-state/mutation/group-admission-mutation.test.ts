@@ -190,6 +190,36 @@ describe('group admission mutation', () => {
     expect(await memberStatus(runtime, 'upsert-room', 'bob')).toBe('pending');
   });
 
+  // An active member re-asserting membership is not joining: admission never
+  // demotes or re-gates an existing membership.
+  it('never re-gates an active member re-upserting themselves', async () => {
+    const runtime = new FakeRuntimeStateRepository();
+    await seedManagedGroup(runtime, 're-upsert-room', {
+      mode: 'manager-approval',
+      untilEpochMs: 5_000,
+    });
+    const service = createService(runtime, 2_000);
+
+    await service.joinGroup(SCOPE, 're-upsert-room', {
+      actorPrincipalId: 'bob',
+      requestId: 'park-bob',
+    });
+    await service.grantGroupAdmission(SCOPE, 're-upsert-room', 'bob', {
+      actorPrincipalId: 'alice',
+      requestId: 'grant-bob',
+    });
+    expect(await memberStatus(runtime, 're-upsert-room', 'bob')).toBe('active');
+
+    // Past the admission window, on a fresh requestId: still a no-op, never a
+    // demotion to pending and never a window denial.
+    await createService(runtime, 9_000).upsertMember(SCOPE, 're-upsert-room', 'bob', {
+      status: 'active',
+      actorPrincipalId: 'bob',
+      requestId: 'reassert-bob',
+    });
+    expect(await memberStatus(runtime, 're-upsert-room', 'bob')).toBe('active');
+  });
+
   it('denies joins outside forming under a closed admission mode', async () => {
     const runtime = new FakeRuntimeStateRepository();
     await seedManagedGroup(runtime, 'closed-room', { mode: 'closed' });

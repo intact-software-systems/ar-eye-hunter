@@ -1,4 +1,9 @@
-import { type ALMessage, type ALTargets, readALTargetGroupRef, } from '@shared/al-contracts/al-contract.ts';
+import {
+    type ALMessage,
+    type ALTargets,
+    isRoomScopedALMessage,
+    readALTargetGroupRef,
+} from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { isALControlTypeId, newALNackControlMessage, } from '@shared/al-contracts/al-control.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
@@ -725,11 +730,7 @@ export class RallarServerWsFacade {
         message: ALMessage,
         definition?: RallarServerWsTopicDefinition<unknown>,
     ): boolean {
-        return definition?.scope === 'room' ||
-            message.route.topicId.startsWith('room.') ||
-            message.targets?.mode === 'multicast' ||
-            (message.targets?.mode === 'broadcast' &&
-                message.targets.scope === 'room');
+        return definition?.scope === 'room' || isRoomScopedALMessage(message);
     }
 
     private readRoomId(message: ALMessage): string | undefined {

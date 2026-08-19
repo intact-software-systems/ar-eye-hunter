@@ -537,6 +537,39 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             .toBe(true);
     });
 
+    // A composition that installs the topic router owns room-scoped fanout
+    // behind its room authorizer, so it opts the ALM relay out — forwarding
+    // here would deliver messages the authorizer rejects.
+    it('skips room-broadcast forwarding when the composition disowns it', async () => {
+        const socket = createFakeWsServer();
+        const service = new shared.WsQueueBoxServerService(
+            new shared.InMemoryQueueBox(new Map()),
+            new shared.InMemoryQueueBox(new Map()),
+            socket as never,
+            'server-1',
+            {
+                targetResolver: createTargetResolver(),
+                forwardsRoomScopedMessages: false,
+            },
+        );
+        const msg = shared.newALBroadcastMessage(
+            'peer-1',
+            {
+                topicId: 'room.manual.message',
+                resourceId: 'room-broadcast-2',
+                contextId: 'group-1',
+            },
+            'room',
+            'room.manual.message',
+            { text: 'hello room' },
+            { groupRef: groupRef('group-1') },
+        );
+
+        await (service as any).handleIncomingServerMessage(msg, 'conn-1');
+
+        expect(socket.sent).toHaveLength(0);
+    });
+
     it('suppresses duplicate inbound delivery on the server wrapper', async () => {
         const socket = createFakeWsServer();
         const service = new shared.WsQueueBoxServerService(

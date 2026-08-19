@@ -116,12 +116,15 @@ async function readGroupMutationSequentially(
   command: GroupMutationCommand,
   lifecyclePolicy: GroupMutationRead['lifecyclePolicy'],
 ): Promise<GroupMutationRead> {
+  const primary = await readSequentialPrimaryEntries(repository, command);
+  // Read after the group entry whose revision anchors the write guard:
+  // membership writes bump that revision, so a roster older than the guard
+  // could pin a stale electorate the compare-and-set would never catch.
   const activeMemberPrincipalIds =
     isGroupLifecycleTransitionOperation(command.operation) ||
     isGroupAdmissionDecisionOperation(command.operation)
       ? toActiveMemberPrincipalIds(await repository.listMembers(command.aggregateRef))
       : null;
-  const primary = await readSequentialPrimaryEntries(repository, command);
   const identities = resolveSequentialIdentities(command, primary.groupRead.value?.value);
   const related = await readGroupMutationRelatedEntries({
     repository,

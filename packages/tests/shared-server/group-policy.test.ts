@@ -396,6 +396,37 @@ describe('group policy helpers', () => {
         nowEpochMs: NOW,
       }),
     ).toEqual({ allowed: true });
+    // Plan decision 5.4: blocked-until-active gates only before activation,
+    // and an absent value leaves application data ungated.
+    expect(
+      canSendRoomMessage({
+        snapshot: snapshot({
+          lifecycleState: 'establishing',
+          activeSessions: [session('alice-session', 'alice')],
+        }),
+        actor: ACTOR,
+        senderSessionId: 'alice-session',
+        preActivationAppData: 'blocked-until-active',
+      }),
+    ).toMatchObject(denied('group-data-blocked-until-active'));
+    expect(
+      canSendRoomMessage({
+        snapshot: snapshot({ activeSessions: [session('alice-session', 'alice')] }),
+        actor: ACTOR,
+        senderSessionId: 'alice-session',
+        preActivationAppData: 'blocked-until-active',
+      }),
+    ).toEqual({ allowed: true });
+    expect(
+      canSendRoomMessage({
+        snapshot: snapshot({
+          lifecycleState: 'establishing',
+          activeSessions: [session('alice-session', 'alice')],
+        }),
+        actor: ACTOR,
+        senderSessionId: 'alice-session',
+      }),
+    ).toEqual({ allowed: true });
     expect(
       canSendRoomMessage({
         snapshot: snapshot({
@@ -568,6 +599,17 @@ describe('group policy helpers', () => {
             nowEpochMs: NOW,
           }),
         ),
+      ),
+      expectCode(
+        canSendRoomMessage({
+          snapshot: snapshot({
+            lifecycleState: 'establishing',
+            activeSessions: [session('alice-session', 'alice')],
+          }),
+          actor: ACTOR,
+          senderSessionId: 'alice-session',
+          preActivationAppData: 'blocked-until-active',
+        }),
       ),
     ]);
 

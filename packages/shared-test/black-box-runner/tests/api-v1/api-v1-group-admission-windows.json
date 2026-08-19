@@ -353,8 +353,8 @@
           "x-client-id": "{aliceClientId}"
         },
         "poll": {
-          "maxAttempts": 20,
-          "maxDurationMs": 15000,
+          "maxAttempts": 40,
+          "maxDurationMs": 30000,
           "backoffMs": 250,
           "backoffMultiplier": 2
         }
@@ -552,8 +552,8 @@
           "x-client-id": "{aliceClientId}"
         },
         "poll": {
-          "maxAttempts": 20,
-          "maxDurationMs": 15000,
+          "maxAttempts": 40,
+          "maxDurationMs": 30000,
           "backoffMs": 250,
           "backoffMultiplier": 2
         }

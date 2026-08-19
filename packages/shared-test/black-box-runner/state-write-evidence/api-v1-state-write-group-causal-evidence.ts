@@ -23,7 +23,12 @@ const GROUP_PUBLIC_RESULT_EVENT_POLICY: Readonly<Record<string, GroupPublicResul
   },
   GROUP_INVITE_CREATE: { eventTypes: ['member-invited'], allowsNoOp: true },
   GROUP_INVITE_REVOKE: { eventTypes: ['member-left'], allowsNoOp: true },
-  GROUP_INVITE_ACCEPT: { eventTypes: ['member-joined'], allowsNoOp: true },
+  // Acceptance shares computeJoin: an uninvited caller on an open-join
+  // manager-approval group parks here exactly as a plain join would.
+  GROUP_INVITE_ACCEPT: {
+    eventTypes: ['member-joined', 'member-admission-requested'],
+    allowsNoOp: true,
+  },
   GROUP_ADMISSION_GRANT: { eventTypes: ['member-joined'], allowsNoOp: true },
   GROUP_ADMISSION_DECLINE: { eventTypes: ['member-left'], allowsNoOp: true },
   GROUP_JOIN_CODE_ROTATE: { eventTypes: ['group-updated'], allowsNoOp: false },

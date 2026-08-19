@@ -8,6 +8,7 @@ import type {
   RevokeGroupInviteRequest,
   RotateGroupJoinCodeRequest,
 } from '@shared/api/state-types.ts';
+import { toPendingMemberGroupSnapshot } from '@shared/api/group-client-views.ts';
 import type {
   AuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
@@ -74,7 +75,9 @@ function registerJoinGroupRoute(
           ),
         });
 
-        return context.json(written.snapshot);
+        return context.json(
+          toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId),
+        );
       } catch (error) {
         return toGroupStateErrorResponse(context, error);
       }
@@ -111,7 +114,9 @@ function registerAcceptGroupInviteRoute(
           ),
         });
 
-        return context.json(written.snapshot);
+        return context.json(
+          toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId),
+        );
       } catch (error) {
         return toGroupStateErrorResponse(context, error);
       }

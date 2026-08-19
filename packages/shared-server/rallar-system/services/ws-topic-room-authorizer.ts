@@ -1,6 +1,14 @@
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { readGroupVersion, } from '@shared/api/group-client-views.ts';
+// prettier-ignore
+import type {
+    GroupPreActivationAppData,
+} from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import {
+    RALLAR_CRDT_APP_TOPIC_ID,
+    RALLAR_CRDT_ROOM_TOPIC_ID,
+} from '@shared/crdt/crdt-types.ts';
 import type {
     RallarServerWsRoomAuthorizationDecision,
     RallarServerWsRoomAuthorizer,
@@ -23,6 +31,14 @@ export type CreateGroupRoomWsAuthorizerOptions = Readonly<{
     resolveGroupRef?: (
         input: Parameters<RallarServerWsRoomAuthorizer>[0],
     ) => MaybePromise<GroupRef | undefined>;
+    /**
+     * Resolves the group's data-policy value for the pre-activation gate
+     * (plan decision 5.4). Absent when the runtime supplies no policy
+     * source, which leaves application data ungated -- today's behaviour.
+     */
+    readPreActivationAppData?: (
+        ref: GroupRef,
+    ) => MaybePromise<GroupPreActivationAppData>;
     now?: RallarSnapshotPresenceClock;
 }>;
 
@@ -82,6 +98,7 @@ export function createGroupRoomWsAuthorizer(
             };
         }
 
+        const preActivationAppData = await resolvePreActivationAppData(options, input, snapshot);
         const policyResult = canSendRoomMessage({
             snapshot,
             actor: {
@@ -90,6 +107,7 @@ export function createGroupRoomWsAuthorizer(
             senderSessionId: input.senderId,
             minSnapshotVersion,
             nowEpochMs: options.now?.() ?? Date.now(),
+            ...(preActivationAppData === undefined ? {} : { preActivationAppData }),
         });
         if (!policyResult.allowed) {
             return toPolicyDeniedDecision(input.roomId, policyResult, serverSnapshotVersion);
@@ -97,6 +115,35 @@ export function createGroupRoomWsAuthorizer(
 
         return true;
     };
+}
+
+/**
+ * The data-policy gate covers plain WS-relayed application data only. The
+ * CRDT live topics share this choke point but are exempt by name: CRDT
+ * authority is the AppInbox append path, the topic only fans out committed
+ * updates, and collaborative documents stay alive while the group forms
+ * (plan decision 5.4). Active groups pay no policy read at all --
+ * `blocked-until-active` can only bind before activation.
+ */
+async function resolvePreActivationAppData(
+    options: CreateGroupRoomWsAuthorizerOptions,
+    input: Parameters<RallarServerWsRoomAuthorizer>[0],
+    snapshot: GroupSnapshot,
+): Promise<GroupPreActivationAppData | undefined> {
+    if (
+        input.topicId === RALLAR_CRDT_ROOM_TOPIC_ID ||
+        input.topicId === RALLAR_CRDT_APP_TOPIC_ID
+    ) {
+        return undefined;
+    }
+    if (snapshot.group.lifecycleState === 'active' || !options.readPreActivationAppData) {
+        return undefined;
+    }
+    return await options.readPreActivationAppData({
+        applicationId: snapshot.group.applicationId,
+        workspaceId: snapshot.group.workspaceId,
+        groupId: snapshot.group.groupId,
+    });
 }
 
 function toPolicyDeniedDecision(
