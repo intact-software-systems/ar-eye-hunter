@@ -66,7 +66,8 @@ This is behaviorally sound enough to preserve, but ownership is fragmented:
 - current mutation-route and phase-order analyzers still navigate to the generic service path;
 - an externally supplied prune `requestId` is currently hashed with newly captured time/expiry, so
   a later replay can conflict even though the caller-semantic identity is unchanged; the
-  convergent-service rule requires a focused RED before correcting this behavior;
+  convergent-service rule identifies a conflict, but changing this observable behavior requires a
+  separate explicit maintainer decision after focused characterization;
 - APP_OUTBOX retry exhaustion currently leaves the aggregate pending, while the synchronous result
   wait can finish before the queue retry horizon; both outcomes must remain explicit during this
   ownership change;
@@ -84,10 +85,11 @@ issues and create or reuse one accurate issue before handoff.
 - Preserve every REST path, OpenAPI request/response shape, WebSocket behavior, AppInbox type and
   topic, APP_OUTBOX topic, queue key, command/page/aggregate JSON shape, database schema, table/key
   identity, default, error class/status, retry horizon, page size, cutoff, and result-wait behavior.
-- The focused externally supplied `requestId` replay correction in Tasks 2 and 3 is the sole planned
-  behavior exception: caller-semantic identity must not change merely because a later invocation
-  materializes new time/expiry. Prove the behavior RED first and preserve captured facts from the
-  durable winner; do not assume an implementation mechanism before that evidence exists.
+- Preserve the current externally supplied `requestId` replay conflict unless a separate explicit
+  maintainer decision approves changing that observable behavior. Task 2 characterizes the current
+  result; production edits remain blocked until the maintainer decides whether to preserve it or
+  authorize a plan amendment for replay stability. This decision is separate from, and cannot be
+  inferred from, the public legacy-pruner decision below.
 - Preserve authorization order and timing. Initial prune and every page retry reread the current
   session/admin allowlist; no captured administrator decision becomes durable authority.
 - AppInbox remains the sole owner of the incoming prune transaction and retry. The admin mutation
@@ -123,7 +125,8 @@ issues and create or reuse one accurate issue before handoff.
 - Treat `AdminOperationsPruner.pruneExpired` and
   `PSqlAdminOperationsPruner.pruneExpired` as one affected public legacy compatibility decision.
   This plan does not choose removal or retention; obtain explicit maintainer approval before any
-  production edit in this plan.
+  production edit in this plan. Approval for this decision does not decide `requestId` replay
+  behavior, and approval for replay behavior does not decide this legacy surface.
 - Every changed human-authored file is reviewed and remediated in full.
 - Every support file modified by remediation enters closure recursively until closure.
 - Independent untouched code remains outside closure.
@@ -301,10 +304,13 @@ Expected: exact current main or a consciously amended base; no unidentified cons
 - [ ] Import the future canonical owner so RED first fails on the missing module.
 - [ ] Prove exact request defaults and one-time volatile reads: generated ID, captured time,
       retry-horizon expiry, default dry-run, default categories, and app-data validation.
-- [ ] Add a focused RED for replaying an externally supplied `requestId` after time advances. Prove
-      caller-semantic identity stays stable and a later invocation cannot conflict solely because
-      it materializes new time/expiry; require the durable winner's captured facts in the replayed
-      result without prescribing the implementation mechanism.
+- [ ] Add focused characterization for replaying an externally supplied `requestId` after time
+      advances. The test is RED initially only because the future canonical module is absent; after
+      that import exists, prove current production behavior: new captured time/expiry changes the
+      command identity and the later invocation conflicts instead of returning the durable winner.
+- [ ] Present that characterization as its own observable compatibility decision and obtain an
+      explicit maintainer choice before any production edit. Do not treat the convergent-service
+      rule, the test, or the legacy-pruner decision as approval to change replay behavior.
 - [ ] Prove registration and phase order for one accepted dry run and one accepted durable prune:
       current authority/count read -> compute -> validate -> AppInbox transaction -> result and
       aggregate/page writes -> commit return -> queue wake.
@@ -340,10 +346,10 @@ must fail on the named behavior rather than source text.
 - [ ] Preserve `AppAdminInboxService` as the narrow AppInbox stateful shell; use required named
       dependencies/config rather than the current ten positional constructor arguments.
 - [ ] Keep request normalization and immutable fact capture visible before enqueue.
-- [ ] Make the externally supplied `requestId` replay RED GREEN under the convergent-service rule:
-      preserve the durable winner's captured time/expiry and derived facts when the same
-      caller-semantic identity is replayed. Choose the mechanism only from test and persistence
-      evidence.
+- [ ] Implement only the separately approved `requestId` decision. If the maintainer chooses
+      preservation, keep the characterized replay conflict and volatile capture timing unchanged.
+      If the maintainer authorizes replay stability, amend this plan before production changes and
+      require the durable winner's captured facts without prescribing an unverified mechanism.
 - [ ] Keep handler flow visibly `decode -> read -> compute -> validate -> writeMutation`.
 - [ ] Use immutable stage contracts with direct predecessor provenance; make validation pure and
       all-issues when invalid computed data can be represented without throwing. Preserve current
@@ -471,10 +477,19 @@ Expected: FAIL on absent canonical modules, then on any named semantic mismatch.
 
 **Files:**
 
-- Move/modify the three API modules in the locked target.
-- Modify the six listed API composition/factory consumers.
-- Modify relevant OpenAPI/black-box files only if verification finds a real contract omission;
-  otherwise leave them byte-unchanged.
+- Move/modify:
+  `apps/api-v1/src/services/create-api-admin-inbox-service.ts`,
+  `apps/api-v1/src/services/create-api-admin-mutation-gateway.ts`, and
+  `apps/api-v1/src/routes/admin-operations-routes.ts` as specified in the locked target.
+- Modify these six composition/factory consumers atomically:
+  `apps/api-v1/src/services/create-api-mutation-inbox-factories.ts`,
+  `apps/api-v1/src/composition/create-api-v1-mutation-runtime.ts`,
+  `apps/api-v1/src/composition/create-api-v1-runtime.ts`,
+  `apps/api-v1/src/composition/create-api-v1-admin-services.ts`,
+  `apps/api-v1/src/composition/create-api-v1-route-installers.ts`, and
+  `apps/api-v1/src/composition/create-default-rallar-server.ts`.
+- Review `apps/api-v1/resources/api-v1-openapi.yaml` and leave it byte-unchanged unless semantic
+  verification finds a real contract omission.
 
 - [ ] Rename `init` to `registerAdminOperationsRoutes` and make the feature entry obvious.
 - [ ] Replace duplicate route-local service/input aliases with canonical named interfaces or direct
@@ -506,24 +521,109 @@ Expected: canonical API ownership, unchanged route behavior, and complete app ty
 
 **Files:**
 
-- Move API PGlite tests under `apps/api-v1/test/admin-operations/persistence`.
+- Review or migrate every traced API test consumer:
+  `apps/api-v1/test/composition/create-api-v1-admin-services.test.ts`,
+  `apps/api-v1/test/composition/create-api-v1-mutation-runtime.test.ts`,
+  `apps/api-v1/test/composition/create-api-v1-route-installers.test.ts`,
+  `apps/api-v1/test/routes/admin-operations-routes.test.ts`,
+  `apps/api-v1/test/swagger-routes.test.ts`,
+  `apps/api-v1/test/db/admin-operations-postgres-reader.test.ts`,
+  `apps/api-v1/test/db/pglite-admin-prune-real-engine-fixture.ts`,
+  `apps/api-v1/test/db/pglite-admin-prune-authority-correction.test.ts`,
+  `apps/api-v1/test/db/pglite-admin-prune-cutoff-and-expiry.test.ts`,
+  `apps/api-v1/test/db/pglite-admin-prune-pages.test.ts`, and
+  `apps/api-v1/test/db/pglite-admin-prune-wake-transaction.test.ts`. Move the route and PGlite
+  tests into the Task 6 and locked-target behavior paths; review the others for direct-path or
+  contract impact.
+- Review or migrate every traced shared/shared-server test consumer:
+  `packages/tests/shared/admin-operations-types.test.ts`,
+  `packages/tests/shared-server/admin-operations-service.test.ts`,
+  `packages/tests/shared-server/admin-prune-expired-work.test.ts`,
+  `packages/tests/shared-server/admin-prune-retry-lifetime.test.ts`,
+  `packages/tests/shared-server/admin-prune-correction-3.test.ts`,
+  `packages/tests/shared-server/admin-prune-task9-correction.test.ts`,
+  `packages/tests/shared-server/integration/postgres/admin-prune-page-delete.test.ts`,
+  `packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts`, and
+  `packages/tests/shared-server/crdt/inbox/app-crdt-inbox-service.test.ts`.
 - Modify: `apps/api-v1/src/composition/README.md`
 - Modify: shared-server admin README from Slice 1
-- Modify: mutation-route and phase-order semantic analyzer support
+- Review every traced supporting production/public module before moving its owner:
+  `packages/shared-server/rallar-system/admin-operations/admin-operations-mutation-gateway.ts`,
+  `packages/shared-server/rallar-system/admin-operations/admin-prune-options.ts`,
+  `packages/shared-server/postgres/admin-operations/p-sql-admin-operations-pruner.ts`,
+  `packages/shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts`,
+  `packages/shared-server/rallar-system/services/app-inbox-contracts.ts`,
+  `packages/shared-server/rallar-system/services/app-inbox-command-identity.ts`,
+  `packages/shared-server/rallar-system/services/app-inbox-error-classification.ts`,
+  `packages/shared-server/rallar-system/middleware/rallar-middleware-options.ts`, and
+  `packages/shared-server/rallar-system/middleware/RallarMiddleware.ts`.
+- Review or modify every traced analyzer support consumer:
+  `packages/tests/shared-server/mutation-boundary-analysis.ts`,
+  `packages/tests/shared-server/mutation-boundary-traversal.ts`,
+  `packages/tests/shared-server/mutation-routing-inventory.ts`,
+  `packages/tests/shared-server/mutation-routing-inventory-decoding.ts`,
+  `packages/tests/shared-server/mutation-routing-owner-inventory.ts`, and
+  `packages/tests/shared-server/mutation-routing-markers.ts`.
+- Review the complete traced mutation-route-owner test family:
+  `packages/tests/shared-server/mutation-route-owner-abrupt-completion.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-analysis.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-boundary-traversal.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-call-aliases.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-call-effects.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-control-flow-alternatives.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-execution-state.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-group-construction.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-lexical-resolution.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-logical-predicates.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-loop-and-switch-flow.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-loop-completion.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-loop-divergence.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-loop-fixed-point.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-map-projections.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-object-projections.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-provenance.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts`,
+  `packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts`, and
+  `packages/tests/shared-server/mutation-route-owner-state-coalescing.test.ts`.
 - Modify: `packages/shared-test/black-box-runner/tests/api-v1/api-v1-admin-operations.json`
   only if a semantic assertion needs strengthening, never for a path-only ratchet
-- Modify atomically as state-write evidence consumers:
+- Review or modify atomically every traced state-write evidence module:
+  `packages/shared-test/black-box-runner/api-v1-state-write-evidence.ts`,
+  `packages/shared-test/black-box-runner/scenario-black-box.ts`,
+  `packages/shared-test/black-box-runner/state-write-evidence/api-v1-fairness-proof.ts`,
   `packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-command-codecs.ts`,
+  `packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-contracts.ts`,
   `packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-derivation.ts`,
+  `packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-source.ts`,
+  `packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-sql.ts`,
+  `packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-group-causal-evidence.ts`,
+  `packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-json-evidence.ts`,
+  `packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts`,
+  `packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-projection.ts`,
   `packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-result-evidence.ts`,
-  their neighboring evidence modules reached by those imports, and the shared-test evidence tests
-  that exercise them, including `api-v1-state-write-result-identity.test.ts`,
-  `state-write-durable-result-evidence.test.ts`, `state-write-public-result-evidence.test.ts`,
-  `state-write-group-event-semantics-evidence.test.ts`, and
-  `state-write-recipe-evidence.test.ts`.
+  `packages/shared-test/black-box-runner/state-write-evidence/read-intermediate-mutation-intents.ts`,
+  `packages/shared-test/black-box-runner/state-write-evidence/read-pglite-black-box-evidence.mts`,
+  `packages/shared-test/black-box-runner/state-write-evidence/to-exact-persisted-evidence-matches.ts`,
+  and
+  `packages/shared-test/black-box-runner/state-write-evidence/validate-topology-mutation-result-payload.ts`.
+- Review every traced shared-test evidence test:
+  `packages/tests/shared-test/api-v1-state-write-convergence-recipe.test.ts`,
+  `packages/tests/shared-test/api-v1-state-write-evidence-source.test.ts`,
+  `packages/tests/shared-test/api-v1-state-write-result-identity.test.ts`,
+  `packages/tests/shared-test/state-write-attempt-evidence.test.ts`,
+  `packages/tests/shared-test/state-write-durable-result-evidence.test.ts`,
+  `packages/tests/shared-test/state-write-group-event-semantics-evidence.test.ts`,
+  `packages/tests/shared-test/state-write-public-result-evidence.test.ts`, and
+  `packages/tests/shared-test/state-write-recipe-evidence.test.ts`.
+- Review the traced public/documentation consumers:
+  `packages/shared/api/admin-operations-types.ts`, `packages/shared/mod.ts`,
+  `packages/shared-server/mod.ts`, and `docs/rallar-api-reference.md`.
 
 - [ ] Prove no old production/test path, old class/file vocabulary, direct authoritative mutator,
       or duplicate admin-prune decision remains.
+- [ ] Before any production move, classify every file named above as `path-update`,
+      `semantic-review`, or `verified-byte-unchanged`; no consumer may remain implicit.
 - [ ] Cold-trace from `packages/shared-server/mod.ts` and API route registration without using the
       plan: locate entry, owner, decisions, writes, failures, final result, and both retry boundaries
       without a wrong-file guess or pass-through hop.
