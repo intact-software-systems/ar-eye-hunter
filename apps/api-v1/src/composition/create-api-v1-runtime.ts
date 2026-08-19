@@ -1,5 +1,4 @@
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
-import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
   configureServerWsQBoxALRuntimeStores,
@@ -63,7 +62,7 @@ import type { RtcTopologyReplayMode } from '../runtime/rtc-topology/rtc-topology
 import {
   readAuthorisedWsConnectionIdentity,
 } from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
-import { findCurrentClientSnapshot } from '../services/create-api-crdt-document-authorizer.ts';
+import { findCurrentClientSnapshot } from '../crdt/create-api-crdt-document-authorizer.ts';
 import {
   type ApiStateSnapshotReadSelectors,
   createApiStateSnapshotReadSelectors,
@@ -103,11 +102,7 @@ export interface CreateApiV1RuntimeInput {
   readonly rtcTopologyReplayMode: RtcTopologyReplayMode;
   readonly adminClientIds: readonly string[];
   readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[] | undefined;
-  readonly resilience: Readonly<{
-    inbox: ResilienceDto;
-    outbox: ResilienceDto;
-    appOutbox: ResilienceDto;
-  }>;
+  readonly resilience: CreateApiV1MutationRuntimeInput['resilience'];
   readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
 }
 
@@ -136,6 +131,11 @@ interface CreateScalarRecomputeWorkerInput {
   readonly nowEpochMs: () => number;
 }
 
+interface ApiV1ScalarRecomputeWorker {
+  stop(): void;
+  readonly firstRun: Promise<number>;
+}
+
 export interface ApiV1RuntimeConstructionOperations {
   createMutationRuntime(input: CreateApiV1MutationRuntimeInput): ApiV1MutationRuntime;
   createRtcTopologyRuntime(input: CreateApiRtcTopologyRuntimeInput): ApiRtcTopologyRuntime;
@@ -145,10 +145,7 @@ export interface ApiV1RuntimeConstructionOperations {
   ): void;
   startRuntimeStateExpiry(input: StartRuntimeStateExpiryInput): void;
   createMiddleware(input: CreateSharedMiddlewareInput): RallarMiddlewareRuntime;
-  createScalarRecomputeWorker(input: CreateScalarRecomputeWorkerInput): Readonly<{
-    stop(): void;
-    firstRun: Promise<number>;
-  }>;
+  createScalarRecomputeWorker(input: CreateScalarRecomputeWorkerInput): ApiV1ScalarRecomputeWorker;
   startPresenceReconciliation(
     runtime: Pick<
       RallarMiddlewareRuntime,

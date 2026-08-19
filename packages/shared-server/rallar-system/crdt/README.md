@@ -1,6 +1,6 @@
 # Shared-server CRDT ownership
 
-The package public entry is [`packages/shared-server/mod.ts`](../../../mod.ts). Internal consumers
+The package public entry is [`packages/shared-server/mod.ts`](../../mod.ts). Internal consumers
 import the direct capability owner described below.
 
 ## Owner map
@@ -12,7 +12,8 @@ import the direct capability owner described below.
 - Read and administration repositories: `persistence/*-crdt-log-repository.ts`
 - Final effects: `mutation/create-crdt-mutation-outbox.ts` and
   `inbox/register-crdt-audit-delivery.ts`
-- API composition: `apps/api-v1/src/crdt/`
+- API administration routes: `apps/api-v1/src/crdt/register-crdt-admin-routes.ts`
+- API durable-inbox construction: `apps/api-v1/src/crdt/create-api-crdt-inbox-service.ts`
 
 ## Runtime paths
 
@@ -28,5 +29,5 @@ import the direct capability owner described below.
 - Read-only catch-up: the realtime installer authorizes the request, reads the page and optional
   snapshot from the configured log repository, and sends the existing catch-up response directly.
 - Erasure audit: the mutation commits its final APP outbox intent atomically. Optional external
-  delivery is registered after construction by `register-crdt-audit-delivery.ts` and never runs in
-  the mutation transaction.
+  delivery is registered during inbox construction by `register-crdt-audit-delivery.ts` when an
+  audit delivery dependency is provided, and it never runs in the mutation transaction.

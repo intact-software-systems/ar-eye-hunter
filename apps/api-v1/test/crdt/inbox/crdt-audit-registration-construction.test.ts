@@ -5,7 +5,7 @@ import type { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbo
 app-crdt-inbox-service.ts';
 
 // deno-fmt-ignore
-import type { CreateApiCrdtInboxServiceInput } from '../../../src/services/\
+import type { CreateApiCrdtInboxServiceInput } from '../../../src/crdt/\
 create-api-crdt-inbox-service.ts';
 
 Deno.test('CRDT inbox construction exposes one audit reader registration path', () => {

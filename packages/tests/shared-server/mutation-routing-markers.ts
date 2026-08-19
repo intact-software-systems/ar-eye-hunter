@@ -19,7 +19,7 @@ export const ROUTING_SOURCE_MARKERS = {
     'AppInboxType.TOPOLOGY_RECONFIGURE',
   ],
   'apps/api-v1/src/routes/config-route.ts': ['AppAuthInboxService', 'appAuthInbox'],
-  'apps/api-v1/src/routes/crdt-admin-routes.ts': ['writeCrdtAdminMutation'],
+  'apps/api-v1/src/crdt/register-crdt-admin-routes.ts': ['writeCrdtAdminMutation'],
   'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts': [
     'writeCrdtAdminMutation',
     'writeCrdtCommandUntilCompletion',
