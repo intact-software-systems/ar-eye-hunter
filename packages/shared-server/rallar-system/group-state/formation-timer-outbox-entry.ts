@@ -1,12 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
-// prettier-ignore
-import {
-  computeFormationRetryBackoffMs,
-} from '@shared/api/group-lifecycle/evaluate-group-activation-criterion.ts';
+import { computeFormationRetryBackoffMs } from '@shared/api/group-lifecycle/evaluate-group-activation-criterion.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-// prettier-ignore
 import type {
   GroupLifecycleTransitionOperation,
   GroupMutationCommand,
@@ -18,11 +14,7 @@ import { fnv1a64 } from '@shared/queuebox/AppQueueIdentity.ts';
 import { AppOutboxType } from '../services/AppOutboxService.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-// prettier-ignore
-import {
-  toAppQueueCreatedBy,
-  toAppQueueKey,
-} from '../services/app-inbox-queue-key.ts';
+import { toAppQueueCreatedBy, toAppQueueKey } from '../services/app-inbox-queue-key.ts';
 import { groupStateGroupStorageKey } from './persistence/group-state-storage-keys.ts';
 
 export const APP_OUTBOX_FORMATION_TIMER_TOPIC = 'app-outbox.formation-timer';

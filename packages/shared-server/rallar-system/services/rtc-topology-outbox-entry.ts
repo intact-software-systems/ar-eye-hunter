@@ -13,12 +13,8 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
-// prettier-ignore
-import { validateRtcRttMeasurement }
-  from '../rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
-// prettier-ignore
-import { toRtcRttMutationReceiptId }
-  from '../rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
+import { validateRtcRttMeasurement } from '../rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
+import { toRtcRttMutationReceiptId } from '../rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
 import { AppOutboxType } from './AppOutboxService.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from './app-inbox-queue-key.ts';
 

@@ -1,16 +1,12 @@
 import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-// prettier-ignore
 import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/\
 PSqlAdminOperationsStatsReader.ts';
-// prettier-ignore
 import { PSqlAdminSupportReader } from '@shared-server/postgres/admin-support/\
 PSqlAdminSupportReader.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-// prettier-ignore
 import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/\
 AdminOperationsService.ts';
-// prettier-ignore
 import {
   AdminSupportService,
   type AdminSupportTopologyManagement,
@@ -19,13 +15,10 @@ AdminSupportService.ts';
 import type {
   ClientStateService,
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-// prettier-ignore
 import type { RallarGroupFormationMetricsRecorder } from '@shared-server/rallar-system/\
 formation-metrics.ts';
-// prettier-ignore
 import type { GroupStateService } from '@shared-server/rallar-system/services/\
 group-state-service.ts';
-// prettier-ignore
 import { SpaStatisticsService } from '@shared-server/rallar-system/spa-statistics/\
 SpaStatisticsService.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';

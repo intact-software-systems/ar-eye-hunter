@@ -10,22 +10,14 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import * as processRttRepository from '@shared/repository/rtt-repository.ts';
 
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
-// prettier-ignore
-import {
-  GroupTopologyConfigMutationService,
-} from './config/group-topology-config-mutation-service.ts';
+import { GroupTopologyConfigMutationService } from './config/group-topology-config-mutation-service.ts';
 import type {
   GroupTopologyConfigMutationAttemptRead,
   GroupTopologyConfigMutationPreparation,
 } from './config/group-topology-config-mutation-service.ts';
 import { GroupTopologyConfigQueryService } from './config/group-topology-config-query-service.ts';
-// prettier-ignore
-import {
-  GroupTopologyConfigGenerationReadiness,
-} from './config/maintenance/group-topology-config-generation-readiness.ts';
-// prettier-ignore
-import type * as mutationContracts
-  from './config/mutation/group-topology-config-mutation-contracts.ts';
+import { GroupTopologyConfigGenerationReadiness } from './config/maintenance/group-topology-config-generation-readiness.ts';
+import type * as mutationContracts from './config/mutation/group-topology-config-mutation-contracts.ts';
 import {
   toTopologyConfigMutationResult,
   type GroupTopologyConfigMutationExecution,
@@ -42,10 +34,7 @@ import type {
   ReconfigureGroupTopologyInput,
   ReconcileGroupTopologyResult,
 } from './group-topology-management-contracts.ts';
-// prettier-ignore
-import type {
-  GroupTopologyPlanningAuthority,
-} from './planning/group-topology-planning-authority.ts';
+import type { GroupTopologyPlanningAuthority } from './planning/group-topology-planning-authority.ts';
 import {
   GroupTopologyPlanningService,
   type GroupTopologyPlanningServiceDependencies,
@@ -55,19 +44,13 @@ import type {
   GroupTopologyReconfigureComputed,
   GroupTopologyReconfigureRead,
 } from './reconfigure/group-topology-reconfigure-contracts.ts';
-// prettier-ignore
-import {
-  GroupTopologyReconfigureMutation,
-} from './reconfigure/group-topology-reconfigure-mutation.ts';
+import { GroupTopologyReconfigureMutation } from './reconfigure/group-topology-reconfigure-mutation.ts';
 
 export * from './group-topology-errors.ts';
 export type * from './group-topology-management-contracts.ts';
 export type * from './planning/group-topology-planning-authority.ts';
 export type * from './reconfigure/group-topology-reconfigure-contracts.ts';
-// prettier-ignore
-export type {
-  GroupTopologyConfigMutationExecution,
-} from './config/mutation/to-topology-config-mutation-result.ts';
+export type { GroupTopologyConfigMutationExecution } from './config/mutation/to-topology-config-mutation-result.ts';
 export { writeTopologyConfigMutation } from './config/mutation/write-topology-config-mutation.ts';
 export {
   createRtcOverlayTopologyBroadcastMessage,

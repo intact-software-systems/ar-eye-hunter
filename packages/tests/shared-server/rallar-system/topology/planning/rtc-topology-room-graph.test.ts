@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-// prettier-ignore
-import {
-  RallarRtcTopologyService,
-} from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-// prettier-ignore
-import {
-  computeCanonicalTopologyPairWeight,
-} from '@shared-server/rallar-system/topology/planning/canonical-topology-planning-input.ts';
-// prettier-ignore
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { computeCanonicalTopologyPairWeight } from '@shared-server/rallar-system/topology/planning/canonical-topology-planning-input.ts';
 import {
   createRtcRoomGraph,
   materializeSparseRtcRoomGraphFallback,
@@ -48,11 +41,7 @@ describe('RTC topology weighted room graph planning', () => {
       ['peer-1', 'peer-3'],
       ['peer-2', 'peer-3'],
     ]);
-    expect(
-      graph
-        .edges()
-        .map((edge) => [graph.extremities(edge), graph.getEdgeAttribute(edge, 'weight')]),
-    ).toEqual([
+    expect(graph.edges().map((edge) => [graph.extremities(edge), graph.getEdgeAttribute(edge, 'weight')])).toEqual([
       [['peer-1', 'peer-2'], computeCanonicalTopologyPairWeight('peer-1', 'peer-2')],
       [['peer-1', 'peer-3'], computeCanonicalTopologyPairWeight('peer-1', 'peer-3')],
       [['peer-2', 'peer-3'], computeCanonicalTopologyPairWeight('peer-2', 'peer-3')],
@@ -143,11 +132,7 @@ describe('RTC topology weighted room graph planning', () => {
     });
 
     const graph = expectReadyRoomGraph(result);
-    expect(
-      graph
-        .edges()
-        .map((edge) => [graph.extremities(edge), graph.getEdgeAttribute(edge, 'weight')]),
-    ).toEqual([
+    expect(graph.edges().map((edge) => [graph.extremities(edge), graph.getEdgeAttribute(edge, 'weight')])).toEqual([
       [['peer-1', 'peer-2'], 5],
       [['peer-2', 'peer-3'], 7],
       [['peer-1', 'peer-3'], computeCanonicalTopologyPairWeight('peer-1', 'peer-3')],
@@ -161,9 +146,7 @@ describe('RTC topology weighted room graph planning', () => {
     const fallbackGraph = service.createRoomGraph(group);
     const fallbackEdge = fallbackGraph.edge('peer-1', 'peer-3');
     expect(fallbackEdge).toBeDefined();
-    expect(fallbackGraph.getEdgeAttribute(fallbackEdge!, 'weight')).toBe(
-      computeCanonicalTopologyPairWeight('peer-1', 'peer-3'),
-    );
+    expect(fallbackGraph.getEdgeAttribute(fallbackEdge!, 'weight')).toBe(computeCanonicalTopologyPairWeight('peer-1', 'peer-3'));
     expect(fallbackGraph.getEdgeAttribute(fallbackEdge!, 'weight')).toBeGreaterThanOrEqual(1);
     expect(fallbackGraph.getEdgeAttribute(fallbackEdge!, 'weight')).toBeLessThan(32);
 
@@ -386,11 +369,7 @@ describe('RTC topology weighted room graph planning', () => {
   });
 });
 
-function edgeWeight(
-  graph: ReturnType<RallarRtcTopologyService['createRoomGraph']>,
-  from: string,
-  to: string,
-): number | undefined {
+function edgeWeight(graph: ReturnType<RallarRtcTopologyService['createRoomGraph']>, from: string, to: string): number | undefined {
   const edge = graph.edge(from, to);
   return edge === undefined ? undefined : graph.getEdgeAttribute(edge, 'weight');
 }

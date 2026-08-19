@@ -1,12 +1,6 @@
 import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-// prettier-ignore
-import {
-  ResourceInboxRepository,
-} from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-// prettier-ignore
-import {
-  requireConditionalWrite,
-} from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { AuthSessionRepository } from '../../persistence/auth-session-repository.ts';
 import { requireIssueSessionLifecycle } from '../../sessions/require-issue-session-lifecycle.ts';
 import type {

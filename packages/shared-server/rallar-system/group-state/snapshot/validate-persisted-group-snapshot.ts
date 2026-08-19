@@ -5,10 +5,7 @@ import {
   validatePersistedGroup,
   validatePersistedGroupMember,
 } from '../persistence/validate-persisted-group.ts';
-// prettier-ignore
-import {
-  validatePersistedGroupPresenceSession,
-} from '../persistence/validate-persisted-group-presence.ts';
+import { validatePersistedGroupPresenceSession } from '../persistence/validate-persisted-group-presence.ts';
 
 type PersistedSnapshotRecord = Record<string, unknown>;
 

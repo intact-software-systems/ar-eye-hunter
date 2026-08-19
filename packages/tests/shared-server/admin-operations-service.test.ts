@@ -9,10 +9,7 @@ import type {
 import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import type { AdminOperationsMutationGateway } from '@shared-server/rallar-system/admin-operations/admin-operations-mutation-gateway.ts';
 import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/AdminOperationsService.ts';
-// prettier-ignore
-import {
-  emptyGroupFormationMetrics,
-} from '@shared-server/rallar-system/formation-metrics.ts';
+import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/formation-metrics.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
@@ -272,16 +269,18 @@ describe('AdminOperationsService', () => {
       request: { document: CRDT_DOCUMENT },
     });
 
-    expect(calls).toEqual([{
-      document: CRDT_DOCUMENT,
-      options: {
-        reason: 'api-v1-admin-operations-debug-export',
-        redaction: {
-          payloadsRedacted: true,
-          reason: 'api-v1-admin-operations-redaction',
+    expect(calls).toEqual([
+      {
+        document: CRDT_DOCUMENT,
+        options: {
+          reason: 'api-v1-admin-operations-debug-export',
+          redaction: {
+            payloadsRedacted: true,
+            reason: 'api-v1-admin-operations-redaction',
+          },
         },
       },
-    }]);
+    ]);
     expect(result).toMatchObject({
       document: CRDT_DOCUMENT,
       redaction: { payloadsRedacted: true },
@@ -289,9 +288,7 @@ describe('AdminOperationsService', () => {
   });
 });
 
-function createService(
-  overrides: Partial<ConstructorParameters<typeof AdminOperationsService>[0]> = {},
-): AdminOperationsService {
+function createService(overrides: Partial<ConstructorParameters<typeof AdminOperationsService>[0]> = {}): AdminOperationsService {
   return new AdminOperationsService({
     now: () => NOW_EPOCH_MS,
     serverId: 'test-server',
@@ -310,9 +307,7 @@ function createService(
   });
 }
 
-function createMutationGateway(
-  overrides: Partial<AdminOperationsMutationGateway> = {},
-): AdminOperationsMutationGateway {
+function createMutationGateway(overrides: Partial<AdminOperationsMutationGateway> = {}): AdminOperationsMutationGateway {
   const completed = () => Promise.resolve({ status: 'completed', changed: false });
   return {
     recomputeTopology: completed,

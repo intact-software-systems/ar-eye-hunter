@@ -1,18 +1,13 @@
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-// prettier-ignore
 import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/\
 psql-crdt-mutation-repository.ts';
-// prettier-ignore
 import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
 ResourceInboxRepository.ts';
-// prettier-ignore
 import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
 ResourceInboxResultsRepository.ts';
-// prettier-ignore
 import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/\
 app-crdt-inbox-service.ts';
-// prettier-ignore
 import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/\
 AppInboxService.ts';
 import type * as Crdt from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';

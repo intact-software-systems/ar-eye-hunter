@@ -6,10 +6,7 @@ import type {
   RtcBaselineJson,
   RtcBaselineResult,
 } from '../contracts/rtc-baseline-contracts.ts';
-// prettier-ignore
-import {
-  validateRtcBaselineStoredArtifact,
-} from '../contracts/rtc-baseline-artifact-validation.ts';
+import { validateRtcBaselineStoredArtifact } from '../contracts/rtc-baseline-artifact-validation.ts';
 import { decodeRtcBaselineFailureOutcome } from '../acceptance/rtc-baseline-failure-accounting.ts';
 import {
   classifyRtcBaselineArtifactPath,

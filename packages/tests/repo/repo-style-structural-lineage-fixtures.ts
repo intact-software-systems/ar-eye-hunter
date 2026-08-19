@@ -48,17 +48,11 @@ export function createSplitFixture(input: CreateSplitFixtureInput): SplitFixture
   commitAll(root, 'base');
   const mergeBase = readGit(root, ['rev-parse', 'HEAD']).trim();
   const sourceBlob = readBlob(root, mergeBase, sourcePath);
-  const targetPaths =
-    input.targetPaths ??
-    input.targetFindings.map((_, index) => `apps/example/target-${letter(index)}.ts`);
+  const targetPaths = input.targetPaths ?? input.targetFindings.map((_, index) => `apps/example/target-${letter(index)}.ts`);
   writeFixture(
     root,
     sourcePath,
-    targetPaths
-      .map(
-        (targetPath) => `export * from './${path.basename(targetPath, path.extname(targetPath))}';`,
-      )
-      .join('\n'),
+    targetPaths.map((targetPath) => `export * from './${path.basename(targetPath, path.extname(targetPath))}';`).join('\n'),
   );
   targetPaths.forEach((targetPath, index) => {
     writeFixture(root, targetPath, input.targetFindings[index]?.join('') ?? '');
@@ -86,11 +80,7 @@ export function writeLineageManifest(root: string, lineages: readonly unknown[])
   writeLineageManifestAt(root, 'plans/repo-style-lineages/example.json', lineages);
 }
 
-export function writeLineageManifestAt(
-  root: string,
-  relativePath: string,
-  lineages: readonly unknown[],
-): void {
+export function writeLineageManifestAt(root: string, relativePath: string, lineages: readonly unknown[]): void {
   writeFixture(root, relativePath, `${JSON.stringify({ version: 1, lineages }, null, 2)}\n`);
 }
 
@@ -177,14 +167,10 @@ export function readBlob(root: string, revision: string, relativePath: string): 
 
 export function runChangedChecker(input: RunChangedCheckerInput) {
   const targetReference = input.targetReference ?? 'HEAD';
-  return spawnSync(
-    process.execPath,
-    [...(input.nodeArguments ?? []), checkerPath, input.mergeBase, targetReference],
-    {
-      cwd: input.root,
-      encoding: 'utf8',
-    },
-  );
+  return spawnSync(process.execPath, [...(input.nodeArguments ?? []), checkerPath, input.mergeBase, targetReference], {
+    cwd: input.root,
+    encoding: 'utf8',
+  });
 }
 
 export function runGit(root: string, args: readonly string[]): void {
@@ -203,10 +189,7 @@ export function overlongSource(label: string, extraLength = 0): string {
 }
 
 export function unknownSource(prefix: string, count: number): string {
-  return Array.from(
-    { length: count },
-    (_, index) => `const ${prefix}${index}: unknown = ${index};`,
-  ).join('\n');
+  return Array.from({ length: count }, (_, index) => `const ${prefix}${index}: unknown = ${index};`).join('\n');
 }
 
 function letter(index: number): string {

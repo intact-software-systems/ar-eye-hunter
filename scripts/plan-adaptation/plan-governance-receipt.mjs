@@ -1,12 +1,8 @@
 import { execFileSync } from 'node:child_process';
 
-// prettier-ignore
-import { verifyGovernanceDecisionCommit } from
-  '../governance-decisions/governance-decision-commit-verification.mjs';
+import { verifyGovernanceDecisionCommit } from '../governance-decisions/governance-decision-commit-verification.mjs';
 import { createGitHubGovernanceApi } from '../governance-decisions/github-governance-api.mjs';
-// prettier-ignore
-import { verifyGovernanceDecisionAdmission } from
-  '../governance-decisions/governance-decision-admission-verification.mjs';
+import { verifyGovernanceDecisionAdmission } from '../governance-decisions/governance-decision-admission-verification.mjs';
 import { readGitRepositorySnapshot } from '../governance-decisions/git-repository-snapshot.mjs';
 import { readChangedPathsBetweenRevisions } from '../repository-changes/read-git-changes.mjs';
 import { parseAdaptivePlanRecord } from './adaptive-plan-record.mjs';

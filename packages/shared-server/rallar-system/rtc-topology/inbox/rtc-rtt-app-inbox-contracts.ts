@@ -3,14 +3,8 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
 import type { RtcRttRepository } from '../persistence/rtc-rtt-repository.ts';
-// prettier-ignore
-import type {
-  GroupFormationRttMutationSink,
-} from '../../formation-metrics.ts';
-// prettier-ignore
-import type {
-  TopologyMutationAuthorityProof,
-} from '../../topology/inbox/topology-mutation-authority-proof.ts';
+import type { GroupFormationRttMutationSink } from '../../formation-metrics.ts';
+import type { TopologyMutationAuthorityProof } from '../../topology/inbox/topology-mutation-authority-proof.ts';
 
 export type RtcRttAppInboxCommand = Readonly<{
   actor: Readonly<{ principalId: string; sessionId: string }>;

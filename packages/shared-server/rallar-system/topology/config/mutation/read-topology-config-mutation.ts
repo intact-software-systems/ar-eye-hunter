@@ -1,12 +1,6 @@
-// prettier-ignore
-import type { GroupStateRepository }
-  from '../../../group-state/persistence/group-state-repository.ts';
-// prettier-ignore
-import type { GroupTopologyConfigRepository }
-  from '../persistence/group-topology-config-repository.ts';
-// prettier-ignore
-import { RuntimeStateWriteConflictError }
-  from '../../../../runtime-state/optimistic-runtime-state-write.ts';
+import type { GroupStateRepository } from '../../../group-state/persistence/group-state-repository.ts';
+import type { GroupTopologyConfigRepository } from '../persistence/group-topology-config-repository.ts';
+import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import type {
   GroupTopologyConfigMutationCommand,
   GroupTopologyConfigMutationRead,

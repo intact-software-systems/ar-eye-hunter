@@ -2,10 +2,7 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 import { GroupTopologyConfigRepository } from '../persistence/group-topology-config-repository.ts';
-// prettier-ignore
-import {
-  backfillGroupTopologyConfigGenerationsForRef,
-} from './backfill-group-topology-config-generations.ts';
+import { backfillGroupTopologyConfigGenerationsForRef } from './backfill-group-topology-config-generations.ts';
 
 export class GroupTopologyConfigGenerationReadiness {
   private readonly readinessByGroupKey = new Map<string, Promise<void>>();

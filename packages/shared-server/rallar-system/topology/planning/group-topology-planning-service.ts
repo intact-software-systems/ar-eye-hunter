@@ -18,9 +18,7 @@ import {
   type RallarRtcTopologyUpdateResult,
   type RtcTopologyPlanningIntent,
 } from '../../services/rallar-rtc-topology-service.ts';
-// prettier-ignore
-import { filterRtcRttMeasurementsForGroup }
-  from '../../rtc-topology/policy/rtc-rtt-measurement-policy.ts';
+import { filterRtcRttMeasurementsForGroup } from '../../rtc-topology/policy/rtc-rtt-measurement-policy.ts';
 import { GroupTopologyValidationError } from '../group-topology-errors.ts';
 import type {
   GroupTopologyGroupSnapshotReader,
@@ -28,19 +26,13 @@ import type {
   ReconfigureGroupTopologyInput,
   ReconcileGroupTopologyResult,
 } from '../group-topology-management-contracts.ts';
-// prettier-ignore
-import type {
-  GroupTopologyConfigQueryService,
-} from '../config/group-topology-config-query-service.ts';
+import type { GroupTopologyConfigQueryService } from '../config/group-topology-config-query-service.ts';
 import type { GroupTopologyServerOptions } from '../config/group-topology-config.ts';
 import type {
   GroupTopologyPlanningAuthority,
   ReadGroupTopologyPlanningAuthorityInput,
 } from './group-topology-planning-authority.ts';
-// prettier-ignore
-import {
-  createRtcOverlayTopologyBroadcastMessage,
-} from './materialize-rtc-overlay-topology-broadcast-message.ts';
+import { createRtcOverlayTopologyBroadcastMessage } from './materialize-rtc-overlay-topology-broadcast-message.ts';
 import {
   isGroupTopologyPlannableAt,
   selectGroupTopologyPlanningSnapshot,

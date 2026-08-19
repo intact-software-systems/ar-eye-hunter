@@ -3,10 +3,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 
-// prettier-ignore
-import {
-  DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
-} from '../../repositories/RtcTopologyPublicationRepository.ts';
+import { DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS } from '../../repositories/RtcTopologyPublicationRepository.ts';
 import { toRtcTopologyPublicationMessageId } from '../../rtc-topology-identifiers.ts';
 
 export interface RtcOverlayTopologyMessageFacts {

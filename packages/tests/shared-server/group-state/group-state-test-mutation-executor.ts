@@ -1,10 +1,7 @@
 import { Either } from '@shared/resilience/Either.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import {
-  hashMutationCommand,
-  type JsonWireValue,
-} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import {
   isRuntimeStateGuardedBatchRepositoryLike,
@@ -25,10 +22,7 @@ import {
   type toSessionCleanupCommand,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
-// prettier-ignore
-import {
-  GroupLifecyclePolicyRepository,
-} from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
+import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import type {
   GroupMutationComputed,
   GroupMutationComputedWrite,
@@ -46,8 +40,7 @@ type GroupStateTestMutationExecutorDependencies = Readonly<{
   sleep?: (delayMs: number) => Promise<void>;
 }>;
 
-type GroupStateTestMaintenanceCommand =
-  ReturnType<typeof toExpiryCommand> | ReturnType<typeof toSessionCleanupCommand>;
+type GroupStateTestMaintenanceCommand = ReturnType<typeof toExpiryCommand> | ReturnType<typeof toSessionCleanupCommand>;
 
 export class GroupStateTestMutationExecutor {
   private readonly dependencies: GroupStateTestMutationExecutorDependencies;
@@ -56,11 +49,7 @@ export class GroupStateTestMutationExecutor {
     this.dependencies = dependencies;
   }
 
-  async executeAuthenticated(
-    descriptor: GroupMutationDescriptor,
-    authority: AuthSession,
-    receiptOnly: boolean,
-  ): Promise<unknown> {
+  async executeAuthenticated(descriptor: GroupMutationDescriptor, authority: AuthSession, receiptOnly: boolean): Promise<unknown> {
     const prepared = await this.dependencies.durableService.prepareMutation(descriptor, authority);
     let computed: GroupMutationComputed | undefined;
     for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -94,10 +83,9 @@ export class GroupStateTestMutationExecutor {
     const commandHash = await hashMutationCommand(command as JsonWireValue);
     let computed: GroupMutationComputed | undefined;
     for (let attempt = 1; attempt <= 3; attempt += 1) {
-      const read =
-        await import('@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts').then(
-          ({ readGroupMutation }) => readGroupMutation(this.repository(), command),
-        );
+      const read = await import('@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts').then(
+        ({ readGroupMutation }) => readGroupMutation(this.repository(), command),
+      );
       const facts: GroupMutationFacts = {
         nowEpochMs: atEpochMs,
         expireAtEpochMs: TEST_OUTBOX_EXPIRE_AT_EPOCH_MS,
@@ -111,8 +99,7 @@ export class GroupStateTestMutationExecutor {
         formationDamping: 'legacy',
         authenticatedAuthority: null,
       };
-      const mutation =
-        await import('@shared-server/rallar-system/services/group-state-mutations.ts');
+      const mutation = await import('@shared-server/rallar-system/services/group-state-mutations.ts');
       computed = mutation.computeGroupMutation({ command, read, facts });
       mutation.validateGroupMutation({ command, read, facts, computed });
       if (computed.outcome === 'idempotency-conflict') {
@@ -172,10 +159,7 @@ export class GroupStateTestMutationExecutor {
         await writeConditionalMutation(repository, computed);
       }
       if (computed.lifecyclePolicy !== null) {
-        await new GroupLifecyclePolicyRepository(transaction).writePolicy(
-          computed.receipt.aggregateRef,
-          computed.lifecyclePolicy,
-        );
+        await new GroupLifecyclePolicyRepository(transaction).writePolicy(computed.receipt.aggregateRef, computed.lifecyclePolicy);
       }
       await repository.appendEvent(computed.event);
     });
@@ -188,57 +172,33 @@ export class GroupStateTestMutationExecutor {
     await this.dependencies.sleep?.(attempt === 1 ? 2 : 8);
   }
 
-  private async receiptEvent(
-    repository: GroupStateRepository,
-    receipt: GroupMutationReceipt,
-  ): Promise<GroupEvent | null> {
+  private async receiptEvent(repository: GroupStateRepository, receipt: GroupMutationReceipt): Promise<GroupEvent | null> {
     if (receipt.eventId === null) return null;
-    return (
-      (await repository.listEvents(receipt.aggregateRef)).find(
-        (event) => event.eventId === receipt.eventId,
-      ) ?? null
-    );
+    return (await repository.listEvents(receipt.aggregateRef)).find((event) => event.eventId === receipt.eventId) ?? null;
   }
 
-  private repository(
-    runtimeRepository = this.dependencies.runtimeRepository,
-  ): GroupStateRepository {
+  private repository(runtimeRepository = this.dependencies.runtimeRepository): GroupStateRepository {
     return new GroupStateRepository(runtimeRepository, {
       events: this.dependencies.createGroupStateEventStore?.(runtimeRepository),
     });
   }
 }
 
-async function writeGuardedBatch(
-  transaction: RuntimeStateGuardedBatchRepositoryLike,
-  computed: GroupMutationComputedWrite,
-): Promise<void> {
+async function writeGuardedBatch(transaction: RuntimeStateGuardedBatchRepositoryLike, computed: GroupMutationComputedWrite): Promise<void> {
   const materialized = materializeGroupStateGuardedBatch(computed);
-  const result = validateRuntimeStateGuardedBatchResult(
-    materialized.batch,
-    await transaction.executeGuardedBatch(materialized.batch),
-  );
-  if (
-    result.guard.status === 'conflict' ||
-    result.effects.some((effect) => effect.status !== 'applied')
-  ) {
+  const result = validateRuntimeStateGuardedBatchResult(materialized.batch, await transaction.executeGuardedBatch(materialized.batch));
+  if (result.guard.status === 'conflict' || result.effects.some((effect) => effect.status !== 'applied')) {
     throw new RuntimeStateWriteConflictError();
   }
 }
 
-async function writeConditionalMutation(
-  repository: GroupStateRepository,
-  computed: GroupMutationComputedWrite,
-): Promise<void> {
+async function writeConditionalMutation(repository: GroupStateRepository, computed: GroupMutationComputedWrite): Promise<void> {
   await writeConditionalGuard(repository, computed);
   if (computed.presenceAdmission) {
     requireConditionalWrite(
       computed.presenceAdmission.operation === 'insert'
         ? await repository.insertPresenceAdmission(computed.presenceAdmission.value)
-        : await repository.updatePresenceAdmission(
-            computed.presenceAdmission.value,
-            computed.presenceAdmission.expectedRevision,
-          ),
+        : await repository.updatePresenceAdmission(computed.presenceAdmission.value, computed.presenceAdmission.expectedRevision),
     );
   }
   for (const member of computed.members) await repository.putMember(member);
@@ -261,10 +221,7 @@ async function writeConditionalMutation(
   }
 }
 
-async function writeConditionalGuard(
-  repository: GroupStateRepository,
-  computed: GroupMutationComputedWrite,
-): Promise<void> {
+async function writeConditionalGuard(repository: GroupStateRepository, computed: GroupMutationComputedWrite): Promise<void> {
   if (computed.guard.kind === 'group') {
     requireConditionalWrite(
       computed.guard.operation === 'insert'

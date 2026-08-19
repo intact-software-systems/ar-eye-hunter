@@ -3,10 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  estimateCyclomaticComplexity,
-  extractRouteHandlerRanges,
-} from '../../../scripts/repo-style-check/factory-route-rules.mjs';
+import { estimateCyclomaticComplexity, extractRouteHandlerRanges } from '../../../scripts/repo-style-check/factory-route-rules.mjs';
 import { isTestRunnerConfigFile } from '../../../scripts/repo-style-check/repository-scan.mjs';
 
 const repoRoot = process.cwd();
@@ -33,9 +30,7 @@ describe('repo style checker', () => {
       ].join('\n'),
     });
 
-    expect(runChecker(fixtureRoot)).toContain(
-      'Command model CreateThingCommand contains optional fields',
-    );
+    expect(runChecker(fixtureRoot)).toContain('Command model CreateThingCommand contains optional fields');
   });
 
   it('keeps plain-object type guidance disabled unless explicitly requested', () => {
@@ -116,12 +111,7 @@ describe('repo style checker', () => {
         '  const runtimeShaped: number;',
         '}',
       ].join('\n'),
-      'ambient-vocabulary.d.ts': [
-        'export type AccountDto = Account;',
-        'export enum AccountStatus {',
-        '  Pending,',
-        '}',
-      ].join('\n'),
+      'ambient-vocabulary.d.ts': ['export type AccountDto = Account;', 'export enum AccountStatus {', '  Pending,', '}'].join('\n'),
     });
 
     expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
@@ -129,9 +119,7 @@ describe('repo style checker', () => {
 
   it('warns for TypeScript enum declarations', () => {
     const fixtureRoot = createFixture({
-      'account-status.ts': ['export enum AccountStatus {', '  Pending,', '  Complete,', '}'].join(
-        '\n',
-      ),
+      'account-status.ts': ['export enum AccountStatus {', '  Pending,', '  Complete,', '}'].join('\n'),
     });
 
     const result = runChecker(fixtureRoot);
@@ -141,38 +129,24 @@ describe('repo style checker', () => {
 
   it('keeps output-contract naming disabled unless explicitly requested', () => {
     const fixtureRoot = createFixture({
-      'computed.ts': ['function computeThing() {', '  return { first: 1, second: 2 };', '}'].join(
-        '\n',
-      ),
+      'computed.ts': ['function computeThing() {', '  return { first: 1, second: 2 };', '}'].join('\n'),
     });
 
     expect(runChecker(fixtureRoot)).not.toContain('without an explicit output contract');
-    expect(runChecker(fixtureRoot, '--output-contracts')).toContain(
-      'without an explicit output contract',
-    );
+    expect(runChecker(fixtureRoot, '--output-contracts')).toContain('without an explicit output contract');
   });
 
   it('does not require TypeScript output contracts in JavaScript modules', () => {
     const fixtureRoot = createFixture({
-      'computed.mjs': [
-        'export function computeThing() {',
-        '  return { first: 1, second: 2 };',
-        '}',
-      ].join('\n'),
+      'computed.mjs': ['export function computeThing() {', '  return { first: 1, second: 2 };', '}'].join('\n'),
     });
 
-    expect(runChecker(fixtureRoot, '--output-contracts')).not.toContain(
-      'without an explicit output contract',
-    );
+    expect(runChecker(fixtureRoot, '--output-contracts')).not.toContain('without an explicit output contract');
   });
 
   it('warns for an inline object return type when output checks are requested', () => {
     const fixtureRoot = createFixture({
-      'computed.ts': [
-        'function computeThing(): { first: number; second: number } {',
-        '  return { first: 1, second: 2 };',
-        '}',
-      ].join('\n'),
+      'computed.ts': ['function computeThing(): { first: number; second: number } {', '  return { first: 1, second: 2 };', '}'].join('\n'),
     });
 
     expect(runChecker(fixtureRoot, '--output-contracts')).toContain('Function computeThing');
@@ -233,10 +207,7 @@ describe('repo style checker', () => {
   });
 
   it('excludes generated declaration files from production warnings', () => {
-    const generatedLines = Array.from(
-      { length: 450 },
-      (_, index) => `export interface Generated${index} { readonly value: string; }`,
-    );
+    const generatedLines = Array.from({ length: 450 }, (_, index) => `export interface Generated${index} { readonly value: string; }`);
     const fixtureRoot = createFixture({
       'schema.generated.d.ts': generatedLines.join('\n'),
     });
@@ -247,7 +218,7 @@ describe('repo style checker', () => {
   // Tests are in scope for the standard, so the full checker reports them. Enforcement is staged
   // separately in the changed-range gate; this checker is warning-only either way.
   it('reports test and mock paths alongside production', () => {
-    const longLine = `const value = '${'x'.repeat(110)}';`;
+    const longLine = `const value = '${'x'.repeat(150)}';`;
     const fixtureRoot = createFixture({
       'tests/example.ts': longLine,
       'mocks/example.ts': longLine,
@@ -273,23 +244,14 @@ describe('repo style checker', () => {
   it('counts test sources in layout directory counts but never generated ones', () => {
     const fixtureRoot = createFixture({
       ...Object.fromEntries(
-        Array.from({ length: 20 }, (_, index) => [
-          `auth-command-${index}.ts`,
-          `export const authCommand${index} = ${index};`,
-        ]),
+        Array.from({ length: 20 }, (_, index) => [`auth-command-${index}.ts`, `export const authCommand${index} = ${index};`]),
       ),
       'schema.generated.ts': 'export const generatedSchema = true;',
       ...Object.fromEntries(
-        Array.from({ length: 21 }, (_, index) => [
-          `tests/test-command-${index}.ts`,
-          `export const testCommand${index} = ${index};`,
-        ]),
+        Array.from({ length: 21 }, (_, index) => [`tests/test-command-${index}.ts`, `export const testCommand${index} = ${index};`]),
       ),
       ...Object.fromEntries(
-        Array.from({ length: 21 }, (_, index) => [
-          `mocks/mock-command-${index}.ts`,
-          `export const mockCommand${index} = ${index};`,
-        ]),
+        Array.from({ length: 21 }, (_, index) => [`mocks/mock-command-${index}.ts`, `export const mockCommand${index} = ${index};`]),
       ),
       ...Object.fromEntries(
         Array.from({ length: 21 }, (_, index) => [
@@ -319,9 +281,7 @@ describe('repo style checker', () => {
     });
 
     expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
-    expect(readFileSync(path.join(repoRoot, 'docs/repo-human-style-guide.md'), 'utf8')).toMatch(
-      /test-runner\s+configuration files/,
-    );
+    expect(readFileSync(path.join(repoRoot, 'docs/repo-human-style-guide.md'), 'utf8')).toMatch(/test-runner\s+configuration files/);
   });
 
   it('classifies test-runner configuration filenames without regex backtracking', () => {
@@ -351,9 +311,7 @@ describe('repo style checker', () => {
       ].join('\n'),
     });
 
-    expect(runChecker(fixtureRoot)).toContain(
-      'Prefer required factory input and createDefaultServer()',
-    );
+    expect(runChecker(fixtureRoot)).toContain('Prefer required factory input and createDefaultServer()');
   });
 
   it('warns for hidden factory defaults regardless of the input type suffix', () => {
@@ -373,15 +331,11 @@ describe('repo style checker', () => {
       ].join('\n'),
     });
 
-    expect(runChecker(fixtureRoot)).toContain(
-      'Prefer required factory input and createDefaultServer()',
-    );
+    expect(runChecker(fixtureRoot)).toContain('Prefer required factory input and createDefaultServer()');
   });
 
   it('keeps the checker implementation free of self-reported style findings', () => {
-    expect(runChecker(path.join(repoRoot, 'scripts/repo-style-check'))).toContain(
-      'PASS (no issues found in this run)',
-    );
+    expect(runChecker(path.join(repoRoot, 'scripts/repo-style-check'))).toContain('PASS (no issues found in this run)');
   });
 
   it('reports conservative layout warnings by default and isolates them on request', () => {
@@ -389,9 +343,7 @@ describe('repo style checker', () => {
       ...Object.fromEntries(
         Array.from({ length: 21 }, (_, index) => [
           `auth-command-${index}.ts`,
-          index === 0
-            ? `export const authCommand${index} = '${'x'.repeat(110)}';`
-            : `export const authCommand${index} = ${index};`,
+          index === 0 ? `export const authCommand${index} = '${'x'.repeat(110)}';` : `export const authCommand${index} = ${index};`,
         ]),
       ),
     });
@@ -442,10 +394,7 @@ describe('repo style checker', () => {
   it('caps displayed warnings while preserving full finding and affected-item counts', () => {
     const files = {
       ...Object.fromEntries(
-        Array.from({ length: 205 }, (_, index) => [
-          `feature-${index}/long-line.ts`,
-          `const value${index} = '${'x'.repeat(110)}';`,
-        ]),
+        Array.from({ length: 205 }, (_, index) => [`feature-${index}/long-line.ts`, `const value${index} = '${'x'.repeat(110)}';`]),
       ),
       'BadOne.ts': 'export const badOne = true;',
       'BadTwo.ts': 'export const badTwo = true;',
@@ -467,9 +416,7 @@ describe('repo style checker', () => {
     expect(executeChecker(fixtureRoot).status).toBe(0);
     const strictResult = executeChecker(fixtureRoot, '--strict');
     expect(strictResult.status).toBe(1);
-    expect(`${strictResult.stdout}${strictResult.stderr}`).toContain(
-      'strict mode is not available',
-    );
+    expect(`${strictResult.stdout}${strictResult.stderr}`).toContain('strict mode is not available');
   });
 });
 

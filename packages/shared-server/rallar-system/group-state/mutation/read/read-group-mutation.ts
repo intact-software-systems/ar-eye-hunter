@@ -1,11 +1,7 @@
 import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
-// prettier-ignore
-import type {
-  GroupStateMutationExactReadResult,
-} from '../../persistence/read-exact-group-state-mutation.ts';
+import type { GroupStateMutationExactReadResult } from '../../persistence/read-exact-group-state-mutation.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
-// prettier-ignore
 import {
   isGroupAdmissionDecisionOperation,
   isGroupAdmissionPolicyReadOperation,

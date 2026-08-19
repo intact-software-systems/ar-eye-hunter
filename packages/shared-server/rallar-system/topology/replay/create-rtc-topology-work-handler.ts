@@ -1,28 +1,20 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-// prettier-ignore
-import { fromCanonicalGroupTopologyConfigPatch }
-  from '@shared/api/group-topology-config-canonical.ts';
+import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 
 import type { PSqlSql, PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
-// prettier-ignore
-import { ResourceInboxRepository }
-  from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxRepository } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import { runInTransaction } from '../../../postgres/run-in-transaction.ts';
-// prettier-ignore
-import { RuntimeStateWriteConflictError }
-  from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import {
   hashRtcTopologyExecutionCommand,
   type RtcTopologyPublication,
   toRtcTopologyPublicationId,
 } from '../../repositories/RtcTopologyPublicationRepository.ts';
-// prettier-ignore
-import type { RtcTopologyExecutionRepository }
-  from '../../repositories/RtcTopologyExecutionRepository.ts';
+import type { RtcTopologyExecutionRepository } from '../../repositories/RtcTopologyExecutionRepository.ts';
 import { finishRtcTopologyReservation, finishRtcTopologyWork } from './finish-rtc-topology-work.ts';
 import type { RtcTopologyDeliveryAppendPort } from './rtc-topology-delivery-append-port.ts';
 import { RtcTopologyDeliveryLeaseLostError } from './rtc-topology-delivery-stream-service.ts';
@@ -43,9 +35,7 @@ import {
 } from '../../services/rtc-topology-mutations.ts';
 import { writeRtcTopologyPublicationOutbox } from '../../services/rtc-topology-ws-outbox-entry.ts';
 import type { RtcTopologyWorkRuntime } from '../../services/RtcTopologyOutboxWork.ts';
-// prettier-ignore
-import type { RtcRttRefinementService }
-  from '../../rtc-topology/topic/rtc-rtt-refinement-service.ts';
+import type { RtcRttRefinementService } from '../../rtc-topology/topic/rtc-rtt-refinement-service.ts';
 import { isChangeGatedGroupRevisionWork } from './rtc-topology-coalesced-group-revision-work.ts';
 import { computeAuthorityTopologyInputFingerprint } from './rtc-topology-input-fingerprint.ts';
 import {
@@ -60,22 +50,10 @@ type AcceptedRtcTopologyMutation = Exclude<
   Readonly<{ outcome: 'loaded' | 'retry' }>
 >;
 
-// prettier-ignore
-import {
-  computeFormationCriterionCommand,
-} from './compute-formation-criterion-command.ts';
-// prettier-ignore
-import type {
-  GroupLifecyclePolicyRead,
-} from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
-// prettier-ignore
-import type {
-  GroupMutationCommand,
-} from '../../group-state/mutation/group-mutation-contracts.ts';
-// prettier-ignore
-import type {
-  GroupTopologyPlanningAuthority,
-} from '../planning/group-topology-planning-authority.ts';
+import { computeFormationCriterionCommand } from './compute-formation-criterion-command.ts';
+import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
+import type { GroupMutationCommand } from '../../group-state/mutation/group-mutation-contracts.ts';
+import type { GroupTopologyPlanningAuthority } from '../planning/group-topology-planning-authority.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
 export interface RtcTopologyDeliveryOptions {

@@ -1,11 +1,7 @@
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-// prettier-ignore
-import type { CanonicalGroupTopologyConfigPatch }
-    from '@shared/api/graph-topology-management-types.ts';
-// prettier-ignore
-import { toCanonicalGroupTopologyConfigPatch }
-    from '@shared/api/group-topology-config-canonical.ts';
+import type { CanonicalGroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { readGroupStateRevision } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';

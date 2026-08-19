@@ -1,18 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-// prettier-ignore
-import {
-  RallarRtcTopologyService,
-} from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-// prettier-ignore
-import {
-  RtcTopologyPlanner,
-} from '@shared-server/rallar-system/topology/planning/rtc-topology-planner.ts';
-// prettier-ignore
-import {
-  RtcTopologyMetrics,
-} from '@shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { RtcTopologyPlanner } from '@shared-server/rallar-system/topology/planning/rtc-topology-planner.ts';
+import { RtcTopologyMetrics } from '@shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts';
 
 import {
   createCentralRtcTopologyRttMeasurements,
@@ -49,26 +40,13 @@ describe('RTC topology process runtime integration', () => {
     expect(queued.newlyQueued).toBe(true);
     expect(queued.immediate).toBe(false);
     expect(queued.delayMs).toBe(50);
-    expect(
-      service.flushDueRttTopologyUpdate(
-        group,
-        createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'),
-      ),
-    ).toBeUndefined();
+    expect(service.flushDueRttTopologyUpdate(group, createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'))).toBeUndefined();
 
     now = 1_049;
-    expect(
-      service.flushDueRttTopologyUpdate(
-        group,
-        createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'),
-      ),
-    ).toBeUndefined();
+    expect(service.flushDueRttTopologyUpdate(group, createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'))).toBeUndefined();
 
     now = 1_050;
-    const second = service.flushDueRttTopologyUpdate(
-      group,
-      createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'),
-    );
+    const second = service.flushDueRttTopologyUpdate(group, createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'));
 
     expect(second?.changed).toBe(true);
     expect(second?.snapshot.version).toBe(first.snapshot.version + 1);
@@ -138,8 +116,7 @@ describe('RTC topology process runtime integration', () => {
     {
       name: 'plan reads active sessions before scope and retains its attempt',
       metric: 'topologyUpdateCount' as const,
-      invoke: (service: RallarRtcTopologyService, group: GroupSnapshot) =>
-        service.planGroupTopologyAt(group, [], {}, 100),
+      invoke: (service: RallarRtcTopologyService, group: GroupSnapshot) => service.planGroupTopologyAt(group, [], {}, 100),
       createGroup: createGroupWithThrowingSessionsAndScope,
       expectedError: 'group sessions unavailable',
       expectedClockReads: 0,
@@ -147,8 +124,7 @@ describe('RTC topology process runtime integration', () => {
     {
       name: 'queue retains its request before scope translation fails',
       metric: 'rttQueueRequestCount' as const,
-      invoke: (service: RallarRtcTopologyService, group: GroupSnapshot) =>
-        service.queueRttTopologyUpdate(group),
+      invoke: (service: RallarRtcTopologyService, group: GroupSnapshot) => service.queueRttTopologyUpdate(group),
       createGroup: createGroupWithThrowingScope,
       expectedError: 'group scope unavailable',
       expectedClockReads: 0,
@@ -156,8 +132,7 @@ describe('RTC topology process runtime integration', () => {
     {
       name: 'claim retains its attempt before scope translation fails',
       metric: 'rttFlushAttemptCount' as const,
-      invoke: (service: RallarRtcTopologyService, group: GroupSnapshot) =>
-        service.claimDueRttTopologyUpdate(group.group),
+      invoke: (service: RallarRtcTopologyService, group: GroupSnapshot) => service.claimDueRttTopologyUpdate(group.group),
       createGroup: createGroupWithThrowingNestedScope,
       expectedError: 'group scope unavailable',
       expectedClockReads: 0,
@@ -205,9 +180,7 @@ describe('RTC topology process runtime integration', () => {
     const group = createGroupWithThrowingActiveSessionRead(3);
     const service = new RallarRtcTopologyService({ now: () => 100 });
 
-    expect(() => planWeightedTopology(service, group, memberSessionIds)).toThrow(
-      'group sessions unavailable',
-    );
+    expect(() => planWeightedTopology(service, group, memberSessionIds)).toThrow('group sessions unavailable');
     expect(service.readMetrics()).toMatchObject({
       topologyUpdateCount: 1,
       updatesWithRttMeasurementCount: 1,
@@ -228,9 +201,7 @@ describe('RTC topology process runtime integration', () => {
     });
     const service = new RallarRtcTopologyService({ now: () => 100 });
 
-    expect(() => planWeightedTopology(service, group, memberSessionIds)).toThrow(
-      'group display name unavailable',
-    );
+    expect(() => planWeightedTopology(service, group, memberSessionIds)).toThrow('group display name unavailable');
     expect(service.readMetrics()).toMatchObject({
       weightedPlanCount: 1,
       topologyChangedCount: 0,
@@ -321,18 +292,10 @@ describe('RTC topology process runtime integration', () => {
 
     expect(queued.newlyQueued).toBe(true);
     expect(coalesced.newlyQueued).toBe(false);
-    expect(
-      service.flushDueRttTopologyUpdate(
-        group,
-        createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'),
-      ),
-    ).toBeUndefined();
+    expect(service.flushDueRttTopologyUpdate(group, createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'))).toBeUndefined();
 
     now = 1_050;
-    const second = service.flushDueRttTopologyUpdate(
-      group,
-      createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'),
-    );
+    const second = service.flushDueRttTopologyUpdate(group, createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'));
     expect(second?.changed).toBe(true);
     service.recordTopologyPublishResult(second?.changed ?? false);
 
@@ -405,9 +368,9 @@ describe('RTC topology process runtime integration', () => {
     const current = service.updateGroupTopology(group).snapshot;
     service.queueRttTopologyUpdate(group);
 
-    expect(() =>
-      service.observeCommittedTopologySnapshot({ ...current, name: 'Conflicting room' }),
-    ).toThrowError(new Error(`RTC topology process-cache revision conflict: ${current.overlayId}`));
+    expect(() => service.observeCommittedTopologySnapshot({ ...current, name: 'Conflicting room' })).toThrowError(
+      new Error(`RTC topology process-cache revision conflict: ${current.overlayId}`),
+    );
     expect(service.readRttTopologyUpdateDelayMs(group)).toBe(50);
 
     expect(
@@ -548,15 +511,6 @@ function createSparseRtcTopologyRttMeasurements() {
   ];
 }
 
-function planWeightedTopology(
-  service: RallarRtcTopologyService,
-  group: GroupSnapshot,
-  memberSessionIds: readonly string[],
-): void {
-  service.planGroupTopologyAt(
-    group,
-    createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'),
-    {},
-    100,
-  );
+function planWeightedTopology(service: RallarRtcTopologyService, group: GroupSnapshot, memberSessionIds: readonly string[]): void {
+  service.planGroupTopologyAt(group, createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'), {}, 100);
 }

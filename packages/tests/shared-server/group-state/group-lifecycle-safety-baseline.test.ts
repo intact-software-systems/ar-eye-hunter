@@ -2,35 +2,18 @@ import { describe, expect, it } from 'vitest';
 
 import type { AuditStamp, Group, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-// prettier-ignore
-import {
-  computeGroupMutation,
-} from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { computeGroupMutation } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import type {
   GroupMutationCommand,
   GroupMutationFacts,
   GroupMutationRead,
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import {
-  canConnectGroupPresenceSession,
-  canGovernGroupMember,
-  canJoinGroup,
-} from '@shared-server/rallar-system/group-policy.ts';
+import { canConnectGroupPresenceSession, canGovernGroupMember, canJoinGroup } from '@shared-server/rallar-system/group-policy.ts';
 import { createTestGroup } from '../../create-test-group.ts';
 
-import {
-  groupMemberStorageKey,
-  groupRef,
-  groupStorageKey,
-  storedEntry,
-} from './mutation/group-mutation-test-runtime.ts';
+import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from './mutation/group-mutation-test-runtime.ts';
 
-const EVERY_LIFECYCLE_STATE: readonly GroupLifecycleState[] = [
-  'forming',
-  'establishing',
-  'active',
-  'reconfiguring',
-];
+const EVERY_LIFECYCLE_STATE: readonly GroupLifecycleState[] = ['forming', 'establishing', 'active', 'reconfiguring'];
 
 /**
  * The safety-baseline invariant of the lifecycle plan: phases gate
@@ -41,31 +24,37 @@ const EVERY_LIFECYCLE_STATE: readonly GroupLifecycleState[] = [
 describe('group lifecycle safety baseline', () => {
   it('admits joins in every lifecycle state', () => {
     for (const lifecycleState of EVERY_LIFECYCLE_STATE) {
-      expect(canJoinGroup({
-        snapshot: snapshotIn(lifecycleState),
-        actor: { principalId: 'carol' },
-      })).toEqual({ allowed: true });
+      expect(
+        canJoinGroup({
+          snapshot: snapshotIn(lifecycleState),
+          actor: { principalId: 'carol' },
+        }),
+      ).toEqual({ allowed: true });
     }
   });
 
   it('admits presence sessions for active members in every lifecycle state', () => {
     for (const lifecycleState of EVERY_LIFECYCLE_STATE) {
-      expect(canConnectGroupPresenceSession({
-        snapshot: snapshotIn(lifecycleState),
-        actor: { principalId: 'alice' },
-        sessionId: 'alice-session',
-      })).toEqual({ allowed: true });
+      expect(
+        canConnectGroupPresenceSession({
+          snapshot: snapshotIn(lifecycleState),
+          actor: { principalId: 'alice' },
+          sessionId: 'alice-session',
+        }),
+      ).toEqual({ allowed: true });
     }
   });
 
   it('lets owners govern members in every lifecycle state', () => {
     for (const lifecycleState of EVERY_LIFECYCLE_STATE) {
-      expect(canGovernGroupMember({
-        snapshot: snapshotIn(lifecycleState),
-        actor: { principalId: 'alice' },
-        targetPrincipalId: 'bob',
-        action: 'invite',
-      })).toEqual({ allowed: true });
+      expect(
+        canGovernGroupMember({
+          snapshot: snapshotIn(lifecycleState),
+          actor: { principalId: 'alice' },
+          targetPrincipalId: 'bob',
+          action: 'invite',
+        }),
+      ).toEqual({ allowed: true });
     }
   });
 
@@ -172,10 +161,7 @@ function joinRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
   } as GroupMutationRead;
 }
 
-function memberRead(
-  lifecycleState: GroupLifecycleState,
-  principalId: string,
-): GroupMutationRead {
+function memberRead(lifecycleState: GroupLifecycleState, principalId: string): GroupMutationRead {
   const stored = baseRead(lifecycleState);
   return {
     ...stored,

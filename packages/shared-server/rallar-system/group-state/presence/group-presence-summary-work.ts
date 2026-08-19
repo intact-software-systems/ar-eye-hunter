@@ -10,27 +10,15 @@ import type {
 } from '@shared/api/group-types.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
-// prettier-ignore
-import type {
-  GroupPresenceSummaryWorkData,
-} from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-// prettier-ignore
-import {
-  toCanonicalGroupTopologyConfigPatch,
-} from '@shared/api/group-topology-config-canonical.ts';
+import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { requireConditionalWrite } from '../../../runtime-state/optimistic-runtime-state-write.ts';
-// prettier-ignore
-import type {
-  RuntimeStateOptimisticTransactionalRepositoryLike,
-} from '../../../runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
 import type { PSqlSql, PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
 import { runInTransaction } from '../../../postgres/run-in-transaction.ts';
-// prettier-ignore
-import {
-  ResourceInboxRepository,
-} from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxRepository } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import {
   createTransactionBoundGroupStateRepository,
   GroupStateRepository,
@@ -56,7 +44,6 @@ import {
   CoalescedAppOutboxWorkService,
   type ComputedCoalescedAppOutboxWork,
 } from '../../services/CoalescedAppOutboxWorkService.ts';
-// prettier-ignore
 import {
   computeCoalescedRtcTopologyGroupRevisionWork,
   toRtcTopologyCoalescedGroupRevisionResourceId,
@@ -64,14 +51,8 @@ import {
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../services/rtc-topology-outbox-entry.ts';
 import { toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
 import { groupStateGroupStorageKey } from '../persistence/group-state-storage-keys.ts';
-// prettier-ignore
-import type {
-  GroupFormationPresenceSummarySink,
-} from '../../formation-metrics.ts';
-// prettier-ignore
-import {
-  decodeCanonicalGroupPresenceSummaryWork,
-} from './decode-canonical-group-presence-summary-work.ts';
+import type { GroupFormationPresenceSummarySink } from '../../formation-metrics.ts';
+import { decodeCanonicalGroupPresenceSummaryWork } from './decode-canonical-group-presence-summary-work.ts';
 
 export type GroupPresenceSummaryTopologyIntent =
   | Readonly<{

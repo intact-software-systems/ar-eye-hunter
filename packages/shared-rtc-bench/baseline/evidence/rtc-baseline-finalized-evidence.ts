@@ -27,9 +27,7 @@ import type {
   RtcBaselineMetricSummary,
 } from './rtc-baseline-statistics.ts';
 import { summarizeRtcBaselineMetricPartitions } from './rtc-baseline-statistics.ts';
-// prettier-ignore
-import { computeRtcBaselineExpectedSampleIdentities } from
-  '../catalog/rtc-baseline-workload-manifest.ts';
+import { computeRtcBaselineExpectedSampleIdentities } from '../catalog/rtc-baseline-workload-manifest.ts';
 import {
   projectRtcBaselineArtifactOutcomes,
   type RtcBaselineArtifactProjection,

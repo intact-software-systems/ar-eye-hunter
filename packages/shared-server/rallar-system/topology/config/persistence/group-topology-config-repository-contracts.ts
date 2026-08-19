@@ -5,9 +5,7 @@ import type {
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type { RuntimeStateEntry } from '../../../../runtime-state/RuntimeStateRepository.ts';
-// prettier-ignore
-import type { GroupTopologyConfigGenerationTarget }
-  from '../mutation/group-topology-config-mutation-contracts.ts';
+import type { GroupTopologyConfigGenerationTarget } from '../mutation/group-topology-config-mutation-contracts.ts';
 
 export type GroupTopologyConfigCommitResult =
   Readonly<{ status: 'accepted'; storageRevision: number }> | Readonly<{ status: 'conflict' }>;
@@ -27,9 +25,7 @@ export interface GroupTopologyConfigGenerationSourceEntry {
   readonly value: StoredGroupTopologyConfig | StoredGroupTopologyOverride;
 }
 
-// prettier-ignore
-export interface GroupTopologyConfigLegacyKeyMigrationSource
-  extends GroupTopologyConfigGenerationSourceEntry {
+export interface GroupTopologyConfigLegacyKeyMigrationSource extends GroupTopologyConfigGenerationSourceEntry {
   readonly canonicalKey: string;
 }
 
@@ -44,10 +40,7 @@ export class GroupTopologyConfigRepositoryInvariantCorruptionError extends Error
 
   readonly storageKey: string;
 
-  constructor(
-    storageKey: string,
-    message: string,
-  ) {
+  constructor(storageKey: string, message: string) {
     super(`${message}: ${storageKey}`);
     this.storageKey = storageKey;
     this.name = 'GroupTopologyConfigRepositoryInvariantCorruptionError';

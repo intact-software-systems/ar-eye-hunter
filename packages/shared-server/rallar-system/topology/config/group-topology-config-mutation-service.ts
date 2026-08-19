@@ -8,14 +8,8 @@ import {
   validateTopologyConfigMutationIdempotency,
 } from './mutation/topology-config-mutation-idempotency.ts';
 import { validateTopologyConfigMutation } from './mutation/validate-topology-config-mutation.ts';
-// prettier-ignore
-import type {
-  GroupTopologyConfigGenerationReadiness,
-} from './maintenance/group-topology-config-generation-readiness.ts';
-// prettier-ignore
-import type {
-  GroupTopologyConfigRepository,
-} from './persistence/group-topology-config-repository.ts';
+import type { GroupTopologyConfigGenerationReadiness } from './maintenance/group-topology-config-generation-readiness.ts';
+import type { GroupTopologyConfigRepository } from './persistence/group-topology-config-repository.ts';
 import type { GroupStateRepository } from '../../group-state/persistence/group-state-repository.ts';
 
 export interface GroupTopologyConfigMutationServiceDependencies {

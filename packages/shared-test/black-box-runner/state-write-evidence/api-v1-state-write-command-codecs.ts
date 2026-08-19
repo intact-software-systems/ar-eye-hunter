@@ -1,16 +1,8 @@
-// prettier-ignore
-import { decodeAdminPruneCommand }
-  from '@shared-server/rallar-system/admin-operations/admin-prune-work-codec.ts';
-// prettier-ignore
-import { validateRtcRttMeasurement }
-  from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
+import { decodeAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/admin-prune-work-codec.ts';
+import { validateRtcRttMeasurement } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
-// prettier-ignore
-import { decodeAuthMutationCommand }
-  from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-command.ts';
-// prettier-ignore
-import { decodeCrdtMutationCommand }
-  from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+import { decodeAuthMutationCommand } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-command.ts';
+import { decodeCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 
 export interface ExactStandaloneCommandIdsInput {
   readonly type: AppInboxType;

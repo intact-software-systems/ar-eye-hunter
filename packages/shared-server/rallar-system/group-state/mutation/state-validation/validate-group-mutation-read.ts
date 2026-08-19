@@ -10,12 +10,8 @@ import {
   groupStatePresenceSessionStorageKey,
   groupStatePresenceSummaryStorageKey,
 } from '../../persistence/group-state-storage-keys.ts';
-// prettier-ignore
-import {
-  validateGroupExpiredStateAuthority,
-} from '../../presence/group-expired-state-authority.ts';
+import { validateGroupExpiredStateAuthority } from '../../presence/group-expired-state-authority.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
-// prettier-ignore
 import {
   isGroupAdmissionDecisionOperation,
   isGroupAdmissionPolicyReadOperation,
@@ -25,10 +21,7 @@ import {
   resolveGroupMutationReadIdentities,
   type GroupMutationReadIdentities,
 } from '../read/resolve-group-mutation-read-identities.ts';
-// prettier-ignore
-import {
-  validateGroupMutationIdempotencyRecord,
-} from '../result-validation/validate-group-mutation-result.ts';
+import { validateGroupMutationIdempotencyRecord } from '../result-validation/validate-group-mutation-result.ts';
 import {
   requireOneOf,
   assertExactKeys,

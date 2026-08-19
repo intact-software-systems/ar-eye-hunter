@@ -1,8 +1,5 @@
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
-// prettier-ignore
-import {
-  computeGroupPresenceSummaryEntry,
-} from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import type {
@@ -15,10 +12,7 @@ import {
   resolveGroupMutationTargetPrincipalId,
   resolveGroupMutationTargetSessionId,
 } from '../orchestration/resolve-group-mutation-target-identity.ts';
-// prettier-ignore
-import {
-  isPureLeaseRenewalHeartbeat,
-} from '../presence/compute-group-presence-mutation.ts';
+import { isPureLeaseRenewalHeartbeat } from '../presence/compute-group-presence-mutation.ts';
 import {
   validateGroupMutationIdempotencyRecord,
   validateMutationReceipt,
@@ -32,10 +26,7 @@ import {
   validatePresenceSession,
   validatePresenceSummaryValue,
 } from '../../persistence/validate-persisted-group-presence.ts';
-// prettier-ignore
-import {
-  validateInitialGroupPresenceSummaryCandidate,
-} from '../../presence/group-initial-presence-summary.ts';
+import { validateInitialGroupPresenceSummaryCandidate } from '../../presence/group-initial-presence-summary.ts';
 import {
   assertExactKeys,
   assertRequiredKeys,
@@ -43,17 +34,10 @@ import {
   requireOneOf,
 } from '../../group-state-validation-primitives.ts';
 import { validateGroupEvent } from '../../../persisted-group-event.ts';
-// prettier-ignore
-import {
-  createDefaultGroupLifecyclePolicy,
-} from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { Group } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-// prettier-ignore
-import {
-  computeFormationTimerEntries,
-} from '../../formation-timer-outbox-entry.ts';
-// prettier-ignore
+import { computeFormationTimerEntries } from '../../formation-timer-outbox-entry.ts';
 import {
   isGroupLifecycleTransitionOperation,
   type GroupLifecycleTransitionOperation,

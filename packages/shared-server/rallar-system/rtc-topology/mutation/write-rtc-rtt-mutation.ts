@@ -1,20 +1,12 @@
-// prettier-ignore
-import { toCanonicalGroupTopologyConfigPatch }
-    from '@shared/api/group-topology-config-canonical.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
-// prettier-ignore
-import { PSqlRuntimeStateRepository }
-    from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-// prettier-ignore
-import { RuntimeStateWriteConflictError }
-    from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { PSqlRuntimeStateRepository } from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 
 import { RtcRttRepository } from '../persistence/rtc-rtt-repository.ts';
 import { RTC_RTT_MUTATION_RETENTION_MS } from '../persistence/rtc-rtt-persistence-validation.ts';
 import { validateRtcRttWriteCandidate } from './validate-rtc-rtt-write-candidate.ts';
-// prettier-ignore
-import { writeRtcTopologyOutbox }
-    from '../../services/rtc-topology-outbox-entry.ts';
+import { writeRtcTopologyOutbox } from '../../services/rtc-topology-outbox-entry.ts';
 import type { RtcRttMutationComputed } from './rtc-rtt-mutation-contracts.ts';
 
 export async function writeRtcRttMutation(

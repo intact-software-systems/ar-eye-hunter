@@ -1,7 +1,4 @@
-// prettier-ignore
-import {
-  validateGroupLifecyclePolicy,
-} from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
+import { validateGroupLifecyclePolicy } from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
 import {
   createRallarGroupDirectorAppointment,
   mergeRallarGroupDirectorMetadata,

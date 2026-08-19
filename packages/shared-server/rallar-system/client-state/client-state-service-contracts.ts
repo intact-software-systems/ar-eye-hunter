@@ -9,19 +9,13 @@ import type {
 } from '@shared/api/client-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
-// prettier-ignore
-import type {
-  RuntimeStateOptimisticTransactionalRepositoryLike,
-} from '../../runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import type { ClientSessionExpiryCandidate } from '../repositories/session-expiry.ts';
 import type { ClientStateEventStore } from '../repositories/StateEventStore.ts';
 import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
 import type { StateEventListQuery } from '../state-event-listing.ts';
-// prettier-ignore
-import {
-  assertNeverClientMutationComputed,
-} from './mutation/compute/compute-client-mutation-result.ts';
+import { assertNeverClientMutationComputed } from './mutation/compute/compute-client-mutation-result.ts';
 import type {
   ClientMutationCommand,
   ClientMutationComputed,
@@ -29,10 +23,7 @@ import type {
   ClientMutationRead,
   ClientMutationReceipt,
 } from './mutation/client-mutation-contracts.ts';
-// prettier-ignore
-import type {
-  WsSessionGenerationLifecycleService,
-} from '../services/ws-session-generation-lifecycle.ts';
+import type { WsSessionGenerationLifecycleService } from '../services/ws-session-generation-lifecycle.ts';
 
 export type RegisterAuthorisedWsClientInput = Readonly<{
   applicationId?: string;

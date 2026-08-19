@@ -10,14 +10,8 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-// prettier-ignore
-import type {
-  ResourceInboxRepository,
-} from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-// prettier-ignore
-import type {
-  ResourceInboxResultsRepository,
-} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import type { AuthMutationService } from '../auth-mutation-service.ts';
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
 import { hashAuthSecret } from '../credentials/hash-auth-secret.ts';

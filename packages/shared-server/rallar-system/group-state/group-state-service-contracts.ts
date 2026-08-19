@@ -30,10 +30,7 @@ import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
-// prettier-ignore
-import type {
-  RuntimeStateOptimisticTransactionalRepositoryLike,
-} from '../../runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import type { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
 import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
@@ -50,10 +47,7 @@ import type {
 } from './mutation/group-mutation-contracts.ts';
 import type { GroupSessionCleanupInput } from './presence/group-session-cleanup.ts';
 import type { RallarTimingSink } from '../services/timing.ts';
-// prettier-ignore
-import type {
-  WsSessionGenerationLifecycleService,
-} from '../services/ws-session-generation-lifecycle.ts';
+import type { WsSessionGenerationLifecycleService } from '../services/ws-session-generation-lifecycle.ts';
 
 export type GroupWritten = Readonly<{
   snapshot: GroupSnapshot;

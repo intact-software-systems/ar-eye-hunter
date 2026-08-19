@@ -4,14 +4,8 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import { compareRtcTopologyIdentifiers } from '../../rtc-topology-identifiers.ts';
-// prettier-ignore
-import type {
-  RtcTopologyKindHysteresisWidths,
-} from '../../services/rallar-rtc-topology-service.ts';
-// prettier-ignore
-import type {
-  GroupTopologyPlanningAuthority,
-} from '../planning/group-topology-planning-authority.ts';
+import type { RtcTopologyKindHysteresisWidths } from '../../services/rallar-rtc-topology-service.ts';
+import type { GroupTopologyPlanningAuthority } from '../planning/group-topology-planning-authority.ts';
 import { groupStateGroupStorageKey } from '../../group-state-storage-keys.ts';
 import { sha256CanonicalJson } from '../../group-state/mutation/group-state-crypto.ts';
 import { RuntimeStateJsonStore } from '../../../runtime-state/RuntimeStateJsonStore.ts';

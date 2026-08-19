@@ -9,10 +9,7 @@ export {
   type OverdueRecoveryEvidence,
   type ParsedInboxRow,
 } from './state-write-evidence/api-v1-state-write-evidence-contracts.ts';
-// prettier-ignore
-export {
-  collectApiV1StateWriteEvidence,
-} from './state-write-evidence/api-v1-state-write-evidence-source.ts';
+export { collectApiV1StateWriteEvidence } from './state-write-evidence/api-v1-state-write-evidence-source.ts';
 export {
   collectApiV1StateWriteEvidenceFromSql,
   type ApiV1StateWriteEvidenceSqlSpec,

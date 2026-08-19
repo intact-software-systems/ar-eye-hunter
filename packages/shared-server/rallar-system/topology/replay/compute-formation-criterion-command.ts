@@ -1,29 +1,16 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-// prettier-ignore
-import {
-  computeGroupFormationReadiness,
-} from '@shared/api/group-lifecycle/compute-group-formation-readiness.ts';
-// prettier-ignore
-import {
-  evaluateGroupActivationCriterion,
-} from '@shared/api/group-lifecycle/evaluate-group-activation-criterion.ts';
-// prettier-ignore
-import {
-  createDefaultGroupLifecyclePolicy,
-} from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { computeGroupFormationReadiness } from '@shared/api/group-lifecycle/compute-group-formation-readiness.ts';
+import { evaluateGroupActivationCriterion } from '@shared/api/group-lifecycle/evaluate-group-activation-criterion.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
-// prettier-ignore
 import {
   toFailFormationCommand,
   toFormationActivateCommand,
 } from '../../group-state/group-formation-mutation-command.ts';
 import type { GroupMutationCommand } from '../../group-state/mutation/group-mutation-contracts.ts';
-// prettier-ignore
-import type {
-  GroupLifecyclePolicyRead,
-} from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
+import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
 
 export interface ComputeFormationCriterionCommandInput {
   readonly group: GroupSnapshot;
@@ -53,9 +40,8 @@ export async function computeFormationCriterionCommand(
   if (policyRead.status === 'corrupt') {
     return null;
   }
-  const policy = policyRead.status === 'present'
-    ? policyRead.policy
-    : createDefaultGroupLifecyclePolicy();
+  const policy =
+    policyRead.status === 'present' ? policyRead.policy : createDefaultGroupLifecyclePolicy();
   const readiness = computeGroupFormationReadiness({
     planned: input.planned,
     rttMeasurements: input.rttMeasurements,

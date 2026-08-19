@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-// prettier-ignore
-import {
-    RtcRttRefinementGate,
-} from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-gate.ts';
+import { RtcRttRefinementGate } from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-gate.ts';
 
 describe('rtc rtt refinement gate', () => {
   it('accumulates sub-threshold movement without refining, then refines once', () => {
@@ -71,11 +68,6 @@ describe('rtc rtt refinement gate', () => {
   });
 });
 
-function claim(
-  gate: RtcRttRefinementGate,
-  groupKey: string,
-  predictedDeltaMs: number,
-  nowEpochMs: number,
-): boolean {
+function claim(gate: RtcRttRefinementGate, groupKey: string, predictedDeltaMs: number, nowEpochMs: number): boolean {
   return gate.claimRefinement({ groupKey, predictedDeltaMs, nowEpochMs });
 }

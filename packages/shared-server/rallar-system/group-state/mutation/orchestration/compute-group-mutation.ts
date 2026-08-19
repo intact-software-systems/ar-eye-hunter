@@ -5,10 +5,7 @@ import type {
   GroupMutationIdempotencyProbe,
   GroupMutationRead,
 } from '../group-mutation-contracts.ts';
-// prettier-ignore
-import {
-  validateGroupMutationCommand,
-} from '../command-validation/validate-group-mutation-command.ts';
+import { validateGroupMutationCommand } from '../command-validation/validate-group-mutation-command.ts';
 import { validateGroupMutationRead } from '../state-validation/validate-group-mutation-read.ts';
 import {
   computeCreate,
@@ -16,10 +13,7 @@ import {
   computeRotateJoinCode,
   computeUpdate,
 } from '../aggregate/compute-group-aggregate-mutation.ts';
-// prettier-ignore
-import {
-  computeLifecycleTransition,
-} from '../aggregate/compute-lifecycle-transition.ts';
+import { computeLifecycleTransition } from '../aggregate/compute-lifecycle-transition.ts';
 import {
   computeGovernedMember,
   computeInvite,

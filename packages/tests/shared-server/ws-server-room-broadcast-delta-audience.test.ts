@@ -3,10 +3,7 @@ import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
-// prettier-ignore
-import {
-  createWsServerTargetResolver,
-} from '@shared-server/rallar-system/middleware/ws-server-target-resolver.ts';
+import { createWsServerTargetResolver } from '@shared-server/rallar-system/middleware/ws-server-target-resolver.ts';
 import {
   createDeltaEnvelopeFixture,
   createDeltaEnvelopeFixtureGroupSnapshot,
@@ -25,11 +22,7 @@ const JOINING = { principalId: 'joining', sessionId: 'joining-session', role: 'm
 // process-local snapshot names that session yet.
 describe('room-scope broadcast delivery of group-state delta envelopes', () => {
   it('delivers to the persisted audience without consulting a group snapshot', () => {
-    const server = createDeltaEnvelopeFixtureWebSocketServer([
-      'alice-session',
-      'joining-session',
-      'stranger-session',
-    ]);
+    const server = createDeltaEnvelopeFixtureWebSocketServer(['alice-session', 'joining-session', 'stranger-session']);
     const findGroupSnapshotByRef = vi.fn(() => createDeltaEnvelopeFixtureGroupSnapshot([ALICE]));
     const resolver = createWsServerTargetResolver(server, {
       findGroupSnapshotByRef,
@@ -41,10 +34,7 @@ describe('room-scope broadcast delivery of group-state delta envelopes', () => {
     });
     expect(() => validateGroupStateDeltaEnvelope(envelope)).not.toThrow();
 
-    const recipients = resolver.resolveBroadcastRecipients?.(
-      'room',
-      toRoomEnvelopeMessage(envelope),
-    );
+    const recipients = resolver.resolveBroadcastRecipients?.('room', toRoomEnvelopeMessage(envelope));
 
     expect(readFixtureConnectionIds(recipients)).toEqual(['alice-session', 'joining-session']);
     expect(findGroupSnapshotByRef).not.toHaveBeenCalled();
@@ -103,11 +93,7 @@ describe('room-scope broadcast delivery of group-state delta envelopes', () => {
       'room',
       newALBroadcastMessage(
         'rallar-server',
-        newALEventRoute(
-          AppTopics.groupStateSnapshot,
-          DELTA_ENVELOPE_FIXTURE_GROUP_REF.groupId,
-          'snapshot-1',
-        ),
+        newALEventRoute(AppTopics.groupStateSnapshot, DELTA_ENVELOPE_FIXTURE_GROUP_REF.groupId, 'snapshot-1'),
         'room',
         AppTopics.groupStateSnapshot,
         createDeltaEnvelopeFixtureGroupSnapshot([ALICE, JOINING]),
@@ -134,11 +120,7 @@ describe('room-scope broadcast delivery of group-state delta envelopes', () => {
       'room',
       newALBroadcastMessage(
         'rallar-server',
-        newALEventRoute(
-          AppTopics.groupStateEvent,
-          DELTA_ENVELOPE_FIXTURE_GROUP_REF.groupId,
-          'event-foreign',
-        ),
+        newALEventRoute(AppTopics.groupStateEvent, DELTA_ENVELOPE_FIXTURE_GROUP_REF.groupId, 'event-foreign'),
         'room',
         AppTopics.groupStateEvent,
         foreignEnvelope,
@@ -153,11 +135,7 @@ describe('room-scope broadcast delivery of group-state delta envelopes', () => {
 function toRoomEnvelopeMessage(envelope: GroupStateDeltaEnvelope) {
   return newALBroadcastMessage(
     'rallar-server',
-    newALEventRoute(
-      AppTopics.groupStateEvent,
-      DELTA_ENVELOPE_FIXTURE_GROUP_REF.groupId,
-      envelope.event.eventId,
-    ),
+    newALEventRoute(AppTopics.groupStateEvent, DELTA_ENVELOPE_FIXTURE_GROUP_REF.groupId, envelope.event.eventId),
     'room',
     AppTopics.groupStateEvent,
     envelope,

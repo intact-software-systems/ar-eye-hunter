@@ -16,12 +16,8 @@ export { hashAuthSecret } from './rallar-system/auth/credentials/hash-auth-secre
 export * from './rallar-system/auth/persistence/auth-user-repository.ts';
 export * from './rallar-system/client-state/persistence/client-state-repository.ts';
 export * from './rallar-system/repositories/GroupStateRepository.ts';
-// prettier-ignore
-export { GroupTopologyConfigRepository }
-  from './rallar-system/topology/config/persistence/group-topology-config-repository.ts';
-// prettier-ignore
-export { GroupTopologyConfigRepositoryInvariantCorruptionError }
-  from './rallar-system/topology/config/persistence/group-topology-config-repository-contracts.ts';
+export { GroupTopologyConfigRepository } from './rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+export { GroupTopologyConfigRepositoryInvariantCorruptionError } from './rallar-system/topology/config/persistence/group-topology-config-repository-contracts.ts';
 export type {
   GroupTopologyConfigCommitResult,
   GroupTopologyConfigDeleteResult,
@@ -50,10 +46,7 @@ export * from './rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 export * from './rallar-system/repositories/StateEventStore.ts';
 export * from './rallar-system/pubsub/QueueBoxPubSubBridge.ts';
 export * from './rallar-system/pubsub/RtcTopologyClusterTransport.ts';
-// prettier-ignore
-export {
-  ClientMutationRejectedError,
-} from './rallar-system/client-state/client-state-validation-primitives.ts';
+export { ClientMutationRejectedError } from './rallar-system/client-state/client-state-validation-primitives.ts';
 export {
   toClientMutationIssuedSessionAuthority,
   toClientMutationSystemAuthority,
@@ -67,24 +60,15 @@ export {
   toUpsertInstanceCommandInput,
   toUpsertPrincipalCommandInput,
 } from './rallar-system/client-state/mutation/client-mutation-command.ts';
-// prettier-ignore
-export {
-  ClientMutationIdempotencyConflictError,
-} from './rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+export { ClientMutationIdempotencyConflictError } from './rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 export { createClientStateService } from './rallar-system/client-state/client-state-service.ts';
 export {
   requiresClientWrite,
   toClientMutationReceipt,
   toClientStateWritten,
 } from './rallar-system/client-state/client-state-service-contracts.ts';
-// prettier-ignore
-export type {
-  ClientMutationPersistedFacts,
-} from './rallar-system/client-state/mutation/client-mutation-command.ts';
-// prettier-ignore
-export type {
-  ClientMutationReceipt,
-} from './rallar-system/client-state/mutation/client-mutation-contracts.ts';
+export type { ClientMutationPersistedFacts } from './rallar-system/client-state/mutation/client-mutation-command.ts';
+export type { ClientMutationReceipt } from './rallar-system/client-state/mutation/client-mutation-contracts.ts';
 export type {
   ClientMutationWritten,
   ClientStateService,
@@ -110,10 +94,7 @@ export {
   AUTH_STATE_APP_INBOX_TOPIC,
   toAuthAppInboxType,
 } from './rallar-system/auth/inbox/auth-app-inbox-routing.ts';
-// prettier-ignore
-export {
-  AppClientInboxService,
-} from './rallar-system/client-state/inbox/app-client-inbox-service.ts';
+export { AppClientInboxService } from './rallar-system/client-state/inbox/app-client-inbox-service.ts';
 export type {
   ClientAuthorisedWsSessionConnectAppInboxPayload,
   ClientAuthorisedWsSessionDisconnectAppInboxPayload,

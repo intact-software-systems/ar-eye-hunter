@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-// prettier-ignore
-import {
-  canCommandGroupLifecycleTransition,
-} from '@shared-server/rallar-system/group-policy.ts';
-// prettier-ignore
-import {
-  resolveGroupLifecyclePolicyPreset,
-} from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { canCommandGroupLifecycleTransition } from '@shared-server/rallar-system/group-policy.ts';
+import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecycleTransition } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { Group, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -69,16 +63,11 @@ function command(commandCase: CommandCase) {
     transition: commandCase.transition ?? 'start-establishment',
     activeMemberPrincipalIds:
       commandCase.activeMemberPrincipalIds ??
-      commandCase.members
-        .filter((candidate) => candidate.status === 'active')
-        .map((candidate) => candidate.principalId),
+      commandCase.members.filter((candidate) => candidate.status === 'active').map((candidate) => candidate.principalId),
   });
 }
 
-function withManager(
-  policy: GroupLifecyclePolicy,
-  manager: Partial<GroupLifecyclePolicy['manager']>,
-): GroupLifecyclePolicy {
+function withManager(policy: GroupLifecyclePolicy, manager: Partial<GroupLifecyclePolicy['manager']>): GroupLifecyclePolicy {
   return { ...policy, manager: { ...policy.manager, ...manager } };
 }
 
@@ -111,12 +100,11 @@ describe('canCommandGroupLifecycleTransition', () => {
   it('resolves the manager to the creator under managed', () => {
     const members = [member('alice', 'owner'), member('bob', 'admin')];
     const forming: Partial<Group> = { lifecycleState: 'forming', ownerPrincipalId: 'alice' };
-    expect(
-      command({ overrides: forming, members, actorPrincipalId: 'alice', policy: MANAGED }),
-    ).toEqual({ allowed: true });
-    expect(
-      command({ overrides: forming, members, actorPrincipalId: 'bob', policy: MANAGED }),
-    ).toMatchObject({ allowed: false, code: 'forbidden-role' });
+    expect(command({ overrides: forming, members, actorPrincipalId: 'alice', policy: MANAGED })).toEqual({ allowed: true });
+    expect(command({ overrides: forming, members, actorPrincipalId: 'bob', policy: MANAGED })).toMatchObject({
+      allowed: false,
+      code: 'forbidden-role',
+    });
   });
 
   it('honours assigned order and count: only the first count are managers', () => {
@@ -130,9 +118,10 @@ describe('canCommandGroupLifecycleTransition', () => {
     expect(command({ overrides: forming, members, actorPrincipalId: 'bob', policy })).toEqual({
       allowed: true,
     });
-    expect(
-      command({ overrides: forming, members, actorPrincipalId: 'carol', policy }),
-    ).toMatchObject({ allowed: false, code: 'forbidden-role' });
+    expect(command({ overrides: forming, members, actorPrincipalId: 'carol', policy })).toMatchObject({
+      allowed: false,
+      code: 'forbidden-role',
+    });
   });
 
   it('passes manager duty to the next assigned member when the first departs', () => {
@@ -156,12 +145,11 @@ describe('canCommandGroupLifecycleTransition', () => {
     // Epoch 0 pins the creator alone, so the sole electable manager is alice.
     const members = [member('alice', 'owner'), member('bob', 'member')];
     const forming: Partial<Group> = { lifecycleState: 'forming', formationElectorate: ['alice'] };
-    expect(
-      command({ overrides: forming, members, actorPrincipalId: 'alice', policy: MATCH }),
-    ).toEqual({ allowed: true });
-    expect(
-      command({ overrides: forming, members, actorPrincipalId: 'bob', policy: MATCH }),
-    ).toMatchObject({ allowed: false, code: 'forbidden-role' });
+    expect(command({ overrides: forming, members, actorPrincipalId: 'alice', policy: MATCH })).toEqual({ allowed: true });
+    expect(command({ overrides: forming, members, actorPrincipalId: 'bob', policy: MATCH })).toMatchObject({
+      allowed: false,
+      code: 'forbidden-role',
+    });
   });
 
   it('keeps the zero-manager fallback typed when nothing resolves', () => {

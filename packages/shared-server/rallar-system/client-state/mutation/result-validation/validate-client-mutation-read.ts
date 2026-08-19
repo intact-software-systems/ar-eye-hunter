@@ -18,10 +18,7 @@ import {
 } from '../../client-state-validation-primitives.ts';
 import { sameClientPrincipalRef } from '../../client-state-semantic-equality.ts';
 import type { ClientMutationCommand, ClientMutationRead } from '../client-mutation-contracts.ts';
-// prettier-ignore
-import {
-  validateClientExpiredSessionAuthority,
-} from '../validate-client-expired-session-authority.ts';
+import { validateClientExpiredSessionAuthority } from '../validate-client-expired-session-authority.ts';
 
 export function validateClientMutationRead(
   command: ClientMutationCommand,

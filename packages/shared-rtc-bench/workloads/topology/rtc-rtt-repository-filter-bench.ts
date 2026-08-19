@@ -1,17 +1,9 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-// prettier-ignore
-import { validateRtcRttMeasurement }
-  from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
-// prettier-ignore
-import { RtcRttRepository }
-  from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
-// prettier-ignore
-import { RTC_RTT_LATEST_NAMESPACE }
-  from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-runtime-namespaces.ts';
+import { validateRtcRttMeasurement } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
+import { RtcRttRepository } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
+import { RTC_RTT_LATEST_NAMESPACE } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-runtime-namespaces.ts';
 
-// prettier-ignore
-import { SyntheticRtcRttRuntimeStateRepository } from
-  './synthetic-rtc-rtt-runtime-state-repository.ts';
+import { SyntheticRtcRttRuntimeStateRepository } from './synthetic-rtc-rtt-runtime-state-repository.ts';
 
 import {
   rtcBaselineIssue,
@@ -23,9 +15,7 @@ import {
   parseRtcBaselineOneTokenOptions,
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-validation.ts';
-// prettier-ignore
-import { runRtcBaselineAcceptedWorkerSamples } from
-  '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
+import { runRtcBaselineAcceptedWorkerSamples } from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 
 export interface RtcRttRepositoryFilterInput {
   readonly roomSessions: number;

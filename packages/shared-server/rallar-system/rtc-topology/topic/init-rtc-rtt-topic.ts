@@ -4,9 +4,7 @@ import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-// prettier-ignore
-import * as groupStateSnapshotsRepository
-  from '@shared/repository/group-state-snapshots-repository.ts';
+import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as rttRepository from '@shared/repository/rtt-repository.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
@@ -18,9 +16,7 @@ import type { RtcRttRefinementGate } from './rtc-rtt-refinement-gate.ts';
 
 import type { RtcTopologyRuntimeState } from '../../ws-rtc-topology-runtime.ts';
 import type { RtcTopologyWorkPublisher } from '../../services/RtcTopologyOutboxWork.ts';
-// prettier-ignore
-import type { GroupTopologyGroupSnapshotReader }
-  from '../../topology/group-topology-management-service.ts';
+import type { GroupTopologyGroupSnapshotReader } from '../../topology/group-topology-management-service.ts';
 import type { RallarRtcTopologyService } from '../../services/rallar-rtc-topology-service.ts';
 import {
   evaluateRtcRttMeasurement,

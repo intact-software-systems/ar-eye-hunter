@@ -3,25 +3,15 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-// prettier-ignore
-import {
-  toFormationRetryEstablishCommand,
-} from '../../group-state/group-formation-mutation-command.ts';
-// prettier-ignore
+import { toFormationRetryEstablishCommand } from '../../group-state/group-formation-mutation-command.ts';
 import {
   decodeFormationTimerWork,
   type GroupFormationTimerWork,
 } from '../../group-state/formation-timer-outbox-entry.ts';
 import type { GroupMutationCommand } from '../../group-state/mutation/group-mutation-contracts.ts';
-// prettier-ignore
-import type {
-  GroupLifecyclePolicyRead,
-} from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
+import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
 import type { GroupTopologyPlanningService } from '../planning/group-topology-planning-service.ts';
-// prettier-ignore
-import {
-  computeFormationCriterionCommand,
-} from './compute-formation-criterion-command.ts';
+import { computeFormationCriterionCommand } from './compute-formation-criterion-command.ts';
 
 interface OnMessageCallback {
   onMessage(message: ALMessage, entry: ResourceEntry): Promise<void>;

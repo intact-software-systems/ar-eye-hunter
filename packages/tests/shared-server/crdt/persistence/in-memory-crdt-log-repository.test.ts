@@ -1,10 +1,4 @@
-// prettier-ignore
-import {
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   createRallarCrdtAppendRequestEnvelope,
@@ -31,11 +25,7 @@ import {
   toRallarCrdtDocumentKey,
   verifyRallarCrdtDebugBundle,
 } from '@shared/mod.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  InMemoryRallarCrdtLogRepository,
-} from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
+import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 
 const roomRef = {
   applicationId: 'rallar-test',
@@ -119,9 +109,7 @@ describe('InMemoryRallarCrdtLogRepository', () => {
       serverId: 'server-a',
       authorizationScope: 'room',
     });
-    expect(duplicate.status === 'duplicate' && duplicate.append).toEqual(
-      accepted.status === 'accepted' && accepted.append,
-    );
+    expect(duplicate.status === 'duplicate' && duplicate.append).toEqual(accepted.status === 'accepted' && accepted.append);
   });
 
   it('stores encrypted updates durably without plaintext and restores them', async () => {
@@ -153,9 +141,7 @@ describe('InMemoryRallarCrdtLogRepository', () => {
     expect(isRallarCrdtEncryptedOperationBatch(encrypted.payload)).toBe(true);
     expect(JSON.stringify(backup)).not.toContain('Sensitive durable title');
     expect(restoredRecord?.update.payload).toEqual(encrypted.payload);
-    expect(
-      (await decryptRallarCrdtUpdateEnvelope(restoredRecord!.update, keyring)).payload.operations,
-    ).toEqual([
+    expect((await decryptRallarCrdtUpdateEnvelope(restoredRecord!.update, keyring)).payload.operations).toEqual([
       {
         kind: 'register.set',
         path: ['title'],
@@ -219,29 +205,26 @@ describe('InMemoryRallarCrdtLogRepository', () => {
     expect(clock.callCount()).toBe(1);
   });
 
-  it(
-    'does not read a creation clock while rejecting an existing ' + 'mismatched duplicate',
-    async () => {
-      const clock = createRecordingClock(2_000);
-      const repository = new InMemoryRallarCrdtLogRepository({
-        now: clock.now,
-      });
-      await repository.append(toAppendInput(createUpdateEnvelope('clock-rejected-1')));
-      clock.reset();
-      clock.throwOnCall(2);
+  it('does not read a creation clock while rejecting an existing ' + 'mismatched duplicate', async () => {
+    const clock = createRecordingClock(2_000);
+    const repository = new InMemoryRallarCrdtLogRepository({
+      now: clock.now,
+    });
+    await repository.append(toAppendInput(createUpdateEnvelope('clock-rejected-1')));
+    clock.reset();
+    clock.throwOnCall(2);
 
-      const rejected = await repository.append(
-        toAppendInput(
-          createUpdateEnvelope('clock-rejected-1', {
-            payload: batchWithTitle('Mismatched duplicate'),
-          }),
-        ),
-      );
+    const rejected = await repository.append(
+      toAppendInput(
+        createUpdateEnvelope('clock-rejected-1', {
+          payload: batchWithTitle('Mismatched duplicate'),
+        }),
+      ),
+    );
 
-      expect(rejected.status === 'rejected' && rejected.code).toBe('duplicate-hash-mismatch');
-      expect(clock.callCount()).toBe(1);
-    },
-  );
+    expect(rejected.status === 'rejected' && rejected.code).toBe('duplicate-hash-mismatch');
+    expect(clock.callCount()).toBe(1);
+  });
 
   it('serves catch-up pages by append sequence and cursor', async () => {
     const repository = new InMemoryRallarCrdtLogRepository({
@@ -261,10 +244,7 @@ describe('InMemoryRallarCrdtLogRepository', () => {
       limit: 2,
     });
 
-    expect(firstPage.records.map((record) => record.update.updateId)).toEqual([
-      'update-1',
-      'update-2',
-    ]);
+    expect(firstPage.records.map((record) => record.update.updateId)).toEqual(['update-1', 'update-2']);
     expect(firstPage).toMatchObject({
       firstSequence: 1,
       lastSequence: 2,
@@ -332,43 +312,37 @@ describe('InMemoryRallarCrdtLogRepository', () => {
     expect(clock.callCount()).toBe(0);
   });
 
-  it(
-    'does not read the clock for an existing lifecycle change with an ' + 'explicit timestamp',
-    async () => {
-      const clock = createRecordingClock(2_000);
-      const repository = new InMemoryRallarCrdtLogRepository({ now: clock.now });
-      await repository.append(toAppendInput(createUpdateEnvelope('lifecycle-clock-1')));
-      clock.reset();
-      clock.throwOnCall(1);
+  it('does not read the clock for an existing lifecycle change with an ' + 'explicit timestamp', async () => {
+    const clock = createRecordingClock(2_000);
+    const repository = new InMemoryRallarCrdtLogRepository({ now: clock.now });
+    await repository.append(toAppendInput(createUpdateEnvelope('lifecycle-clock-1')));
+    clock.reset();
+    clock.throwOnCall(1);
 
-      const metadata = await repository.updateDocumentLifecycle({
-        document: documentRef,
-        lifecycle: 'archived',
-        changedAtEpochMs: 3_000,
-      });
+    const metadata = await repository.updateDocumentLifecycle({
+      document: documentRef,
+      lifecycle: 'archived',
+      changedAtEpochMs: 3_000,
+    });
 
-      expect(metadata.updatedAtEpochMs).toBe(3_000);
-      expect(clock.callCount()).toBe(0);
-    },
-  );
+    expect(metadata.updatedAtEpochMs).toBe(3_000);
+    expect(clock.callCount()).toBe(0);
+  });
 
-  it(
-    'does not read the clock for an existing debug export with an ' + 'explicit timestamp',
-    async () => {
-      const clock = createRecordingClock(2_000);
-      const repository = new InMemoryRallarCrdtLogRepository({ now: clock.now });
-      await repository.append(toAppendInput(createUpdateEnvelope('debug-clock-1')));
-      clock.reset();
-      clock.throwOnCall(1);
+  it('does not read the clock for an existing debug export with an ' + 'explicit timestamp', async () => {
+    const clock = createRecordingClock(2_000);
+    const repository = new InMemoryRallarCrdtLogRepository({ now: clock.now });
+    await repository.append(toAppendInput(createUpdateEnvelope('debug-clock-1')));
+    clock.reset();
+    clock.throwOnCall(1);
 
-      const bundle = await repository.exportDebugBundle(documentRef, {
-        exportedAtEpochMs: 4_000,
-      });
+    const bundle = await repository.exportDebugBundle(documentRef, {
+      exportedAtEpochMs: 4_000,
+    });
 
-      expect(bundle.exportedAtEpochMs).toBe(4_000);
-      expect(clock.callCount()).toBe(0);
-    },
-  );
+    expect(bundle.exportedAtEpochMs).toBe(4_000);
+    expect(clock.callCount()).toBe(0);
+  });
 
   it('rejects appends after a document is archived', async () => {
     const lifecycleHook = vi.fn();
@@ -451,9 +425,7 @@ describe('InMemoryRallarCrdtLogRepository', () => {
       },
     });
 
-    expect((await repository.append(toAppendInput(createUpdateEnvelope('update-1')))).status).toBe(
-      'accepted',
-    );
+    expect((await repository.append(toAppendInput(createUpdateEnvelope('update-1')))).status).toBe('accepted');
     const rateLimited = await repository.append(toAppendInput(createUpdateEnvelope('update-2')));
     expect(rateLimited.status === 'rejected' && rateLimited.code).toBe('rate-limited');
 
@@ -486,75 +458,72 @@ describe('InMemoryRallarCrdtLogRepository', () => {
     expect(rejected.status === 'rejected' && rejected.code).toBe('quota-exceeded');
   });
 
-  it(
-    'lists admin status, exports debug bundles, restores backups, and ' + 'rebuilds projections',
-    async () => {
-      const rebuildHook = vi.fn();
-      const audit = new InMemoryRallarCrdtAuditSink();
-      const repository = new InMemoryRallarCrdtLogRepository({
-        now: fixedNow(2_000),
-        audit,
-        hooks: {
-          rebuild: rebuildHook,
-        },
-      });
-      await repository.append(toAppendInput(createUpdateEnvelope('update-1')));
+  it('lists admin status, exports debug bundles, restores backups, and ' + 'rebuilds projections', async () => {
+    const rebuildHook = vi.fn();
+    const audit = new InMemoryRallarCrdtAuditSink();
+    const repository = new InMemoryRallarCrdtLogRepository({
+      now: fixedNow(2_000),
+      audit,
+      hooks: {
+        rebuild: rebuildHook,
+      },
+    });
+    await repository.append(toAppendInput(createUpdateEnvelope('update-1')));
 
-      const list = await repository.listDocuments({
-        documentType: 'checklist',
-      });
-      const debugBundle = await repository.exportDebugBundle(documentRef, {
-        reason: 'test-export',
-      });
-      const backup = await repository.exportBackupBundle(documentRef);
-      const rebuildReport = await repository.rebuildProjection(documentRef, 'checklist-summary');
-      await repository.writeSnapshot({
-        snapshot: {
-          protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
-          document: documentRef,
-          snapshotId: 'snapshot-compact-1',
-          schemaVersion: 1,
-          createdAtEpochMs: 3_000,
-          maxLamport: 1,
-          includedUpdateIds: ['update-1'],
-          value: {
-            title: 'Title update-1',
-          },
-          metadata: {
-            updateCount: 1,
-          },
+    const list = await repository.listDocuments({
+      documentType: 'checklist',
+    });
+    const debugBundle = await repository.exportDebugBundle(documentRef, {
+      reason: 'test-export',
+    });
+    const backup = await repository.exportBackupBundle(documentRef);
+    const rebuildReport = await repository.rebuildProjection(documentRef, 'checklist-summary');
+    await repository.writeSnapshot({
+      snapshot: {
+        protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+        document: documentRef,
+        snapshotId: 'snapshot-compact-1',
+        schemaVersion: 1,
+        createdAtEpochMs: 3_000,
+        maxLamport: 1,
+        includedUpdateIds: ['update-1'],
+        value: {
+          title: 'Title update-1',
         },
-        appendSequence: 1,
-        reason: 'non-destructive-compaction',
-      });
-      const restored = new InMemoryRallarCrdtLogRepository({
-        now: fixedNow(4_000),
-        audit,
-      });
+        metadata: {
+          updateCount: 1,
+        },
+      },
+      appendSequence: 1,
+      reason: 'non-destructive-compaction',
+    });
+    const restored = new InMemoryRallarCrdtLogRepository({
+      now: fixedNow(4_000),
+      audit,
+    });
 
-      expect(list.documents).toHaveLength(1);
-      expect(debugBundle.integrity.updateCount).toBe(1);
-      expect(backup?.integrity.updateCount).toBe(1);
-      expect(rebuildReport.valid).toBe(true);
-      expect(rebuildHook).toHaveBeenCalledWith(documentRef);
-      expect(
-        await restored.restoreBackupBundle(backup!, {
-          overwrite: true,
-        }),
-      ).toMatchObject({
-        restoredUpdateCount: 1,
-        firstAppendSequence: 1,
-        lastAppendSequence: 1,
-      });
-      expect((await restored.listAfter({ document: documentRef })).records).toHaveLength(1);
-      expect(audit.count('append')).toBe(1);
-      expect(audit.count('export')).toBeGreaterThanOrEqual(2);
-      expect(audit.count('backup')).toBeGreaterThanOrEqual(1);
-      expect(audit.count('compact')).toBe(1);
-      expect(audit.count('restore')).toBe(1);
-      expect(audit.count('rebuild')).toBe(1);
-    },
-  );
+    expect(list.documents).toHaveLength(1);
+    expect(debugBundle.integrity.updateCount).toBe(1);
+    expect(backup?.integrity.updateCount).toBe(1);
+    expect(rebuildReport.valid).toBe(true);
+    expect(rebuildHook).toHaveBeenCalledWith(documentRef);
+    expect(
+      await restored.restoreBackupBundle(backup!, {
+        overwrite: true,
+      }),
+    ).toMatchObject({
+      restoredUpdateCount: 1,
+      firstAppendSequence: 1,
+      lastAppendSequence: 1,
+    });
+    expect((await restored.listAfter({ document: documentRef })).records).toHaveLength(1);
+    expect(audit.count('append')).toBe(1);
+    expect(audit.count('export')).toBeGreaterThanOrEqual(2);
+    expect(audit.count('backup')).toBeGreaterThanOrEqual(1);
+    expect(audit.count('compact')).toBe(1);
+    expect(audit.count('restore')).toBe(1);
+    expect(audit.count('rebuild')).toBe(1);
+  });
 
   it('rejects a valid cross-document backup without changing either document', async () => {
     const source = new InMemoryRallarCrdtLogRepository({ now: fixedNow(2_000) });
@@ -646,17 +615,12 @@ describe('InMemoryRallarCrdtLogRepository', () => {
             }
           : sourceBackup!.metadata,
       snapshot:
-        testCase.change === 'snapshot-document'
-          ? { ...sourceBackup!.snapshot!, document: otherDocumentRef }
-          : sourceBackup!.snapshot,
+        testCase.change === 'snapshot-document' ? { ...sourceBackup!.snapshot!, document: otherDocumentRef } : sourceBackup!.snapshot,
       records: [
         {
           ...record,
           document: testCase.change === 'record-document' ? otherDocumentRef : record.document,
-          documentKey:
-            testCase.change === 'record-key'
-              ? toRallarCrdtDocumentKey(otherDocumentRef)
-              : record.documentKey,
+          documentKey: testCase.change === 'record-key' ? toRallarCrdtDocumentKey(otherDocumentRef) : record.documentKey,
         },
       ],
     });
@@ -671,47 +635,44 @@ describe('InMemoryRallarCrdtLogRepository', () => {
     expect(await target.listAfter({ document: otherDocumentRef })).toMatchObject({ records: [] });
   });
 
-  it(
-    'pages larger update logs and verifies integrity digests without ' + 'unbounded payloads',
-    async () => {
-      const repository = new InMemoryRallarCrdtLogRepository({
-        now: fixedNow(2_000),
+  it('pages larger update logs and verifies integrity digests without ' + 'unbounded payloads', async () => {
+    const repository = new InMemoryRallarCrdtLogRepository({
+      now: fixedNow(2_000),
+    });
+    for (let index = 1; index <= 25; index += 1) {
+      await repository.append(toAppendInput(createUpdateEnvelope(`large-${index}`)));
+    }
+
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    let pageCount = 0;
+    do {
+      const page = await repository.listAfter({
+        document: documentRef,
+        afterCursor: cursor,
+        limit: 7,
       });
-      for (let index = 1; index <= 25; index += 1) {
-        await repository.append(toAppendInput(createUpdateEnvelope(`large-${index}`)));
+      pageCount += 1;
+      seen.push(...page.records.map((record) => record.update.updateId));
+      cursor = page.nextCursor;
+      if (!page.hasMore) {
+        break;
       }
+    } while (cursor);
 
-      const seen: string[] = [];
-      let cursor: string | undefined;
-      let pageCount = 0;
-      do {
-        const page = await repository.listAfter({
-          document: documentRef,
-          afterCursor: cursor,
-          limit: 7,
-        });
-        pageCount += 1;
-        seen.push(...page.records.map((record) => record.update.updateId));
-        cursor = page.nextCursor;
-        if (!page.hasMore) {
-          break;
-        }
-      } while (cursor);
+    const integrity = await repository.verifyIntegrity(documentRef);
 
-      const integrity = await repository.verifyIntegrity(documentRef);
-
-      expect(pageCount).toBe(4);
-      expect(seen).toHaveLength(25);
-      expect(seen[0]).toBe('large-1');
-      expect(seen.at(-1)).toBe('large-25');
-      expect(integrity).toMatchObject({
-        valid: true,
-        checkedUpdateCount: 25,
-        sequenceGaps: [],
-      });
-      expect(integrity.bundleHash).toMatch(/^crdt-fnv1a32:/);
-    },
-  );
+    expect(pageCount).toBe(4);
+    expect(seen).toHaveLength(25);
+    expect(seen[0]).toBe('large-1');
+    expect(seen.at(-1)).toBe('large-25');
+    expect(integrity).toMatchObject({
+      valid: true,
+      checkedUpdateCount: 25,
+      sequenceGaps: [],
+    });
+    expect(integrity.bundleHash).toMatch(/^crdt-fnv1a32:/);
+  });
 });
 
 function toAppendInput(update: RallarCrdtUpdateEnvelope) {
@@ -726,10 +687,7 @@ function toAppendInput(update: RallarCrdtUpdateEnvelope) {
     },
   };
 }
-function createUpdateEnvelope(
-  updateId: string,
-  overrides: Partial<RallarCrdtUpdateEnvelope> = {},
-): RallarCrdtUpdateEnvelope {
+function createUpdateEnvelope(updateId: string, overrides: Partial<RallarCrdtUpdateEnvelope> = {}): RallarCrdtUpdateEnvelope {
   return {
     protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
     document: documentRef,

@@ -8,10 +8,7 @@ import {
   isRuntimeStateReadBatchRepositoryLike,
   type RuntimeStateReadBatchSelector,
 } from '../../../runtime-state/RuntimeStateReadBatch.ts';
-// prettier-ignore
-import {
-  resolveRuntimeStateReadBatchLiveValues,
-} from '../../../runtime-state/RuntimeStateReadBatchLiveValues.ts';
+import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/RuntimeStateReadBatchLiveValues.ts';
 import { groupStateGroupStorageKey } from './group-state-storage-keys.ts';
 import {
   GROUPS_NAMESPACE,

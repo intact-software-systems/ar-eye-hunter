@@ -1,9 +1,4 @@
-// prettier-ignore
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   hashRallarCrdtJson,
@@ -15,19 +10,12 @@ import {
   type RallarCrdtUpdateEnvelope,
   toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
-import {
-  DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
-  retryAfterAttempt,
-} from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  installRallarCrdtWsTopics,
-} from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
+import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 import {
   type DocumentRow,
   type SnapshotRow,
@@ -40,21 +28,9 @@ import {
   createCrdtMutationCommand,
   decodeCrdtMutationCommand,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  decodeCrdtMutationResult,
-} from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  computeCrdtMutation,
-} from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  toCrdtAuditOutbox,
-} from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-outbox.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
+import { computeCrdtMutation } from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
+import { toCrdtAuditOutbox } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-outbox.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
@@ -239,19 +215,12 @@ describe('CRDT persisted mutation contract invariants', () => {
       }
     }
 
-    expect(Number(entry.audit.expiryTs.epochMilliseconds)).toBeGreaterThanOrEqual(
-      finalRetryAtEpochMs + 60_000,
-    );
+    expect(Number(entry.audit.expiryTs.epochMilliseconds)).toBeGreaterThanOrEqual(finalRetryAtEpochMs + 60_000);
   });
 
   it('never configures update topics for live-only fanout without mutation ingress', () => {
     const socket = new JsonWebSocketServer();
-    const service = new WsQueueBoxServerService(
-      new InMemoryQueueBox(),
-      new InMemoryQueueBox(),
-      socket,
-      'server-1',
-    );
+    const service = new WsQueueBoxServerService(new InMemoryQueueBox(), new InMemoryQueueBox(), socket, 'server-1');
     const bridge = installRallarCrdtWsTopics(new RallarServerWsFacade(service));
 
     expect(

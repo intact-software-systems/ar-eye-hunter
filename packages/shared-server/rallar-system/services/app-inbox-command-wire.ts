@@ -1,9 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { readCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
-// prettier-ignore
-import { validateRtcRttMeasurement }
-  from '../rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
+import { validateRtcRttMeasurement } from '../rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
 import { hashCanonicalCommand } from './canonical-command-hash.ts';
 import {
   serializeCanonicalMutationCommand,

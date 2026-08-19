@@ -1,15 +1,9 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-// prettier-ignore
-import { validateRtcRttMeasurement }
-  from '../../rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
+import { validateRtcRttMeasurement } from '../../rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-// prettier-ignore
-import { readCanonicalGroupTopologyConfigPatch }
-  from '@shared/api/group-topology-config-canonical.ts';
-// prettier-ignore
-import type { CanonicalGroupTopologyConfigPatch }
-  from '@shared/api/graph-topology-management-types.ts';
+import { readCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+import type { CanonicalGroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import { readGroupStateRevision } from '@shared/api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 

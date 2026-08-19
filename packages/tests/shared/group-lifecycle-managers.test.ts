@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import type { GroupManagerPolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-// prettier-ignore
 import {
   resolveGroupLifecycleManagers,
   type ResolveGroupLifecycleManagersInput,
@@ -20,9 +19,7 @@ function managerPolicy(overrides: Partial<GroupManagerPolicy> = {}): GroupManage
   };
 }
 
-function resolutionInput(
-  overrides: Partial<ResolveGroupLifecycleManagersInput> = {},
-): ResolveGroupLifecycleManagersInput {
+function resolutionInput(overrides: Partial<ResolveGroupLifecycleManagersInput> = {}): ResolveGroupLifecycleManagersInput {
   return {
     manager: managerPolicy(),
     ownerPrincipalId: 'owner',
@@ -54,9 +51,7 @@ describe('group lifecycle manager resolution', () => {
   it('resolves the creator while active and leaves a hole without succession', () => {
     const input = resolutionInput({ manager: managerPolicy({ selection: 'creator' }) });
     expect(resolveGroupLifecycleManagers(input)).toEqual(['owner']);
-    expect(
-      resolveGroupLifecycleManagers({ ...input, activePrincipalIds: new Set(['bob']) }),
-    ).toEqual([]);
+    expect(resolveGroupLifecycleManagers({ ...input, activePrincipalIds: new Set(['bob']) })).toEqual([]);
   });
 
   it('continues the creator into the election ranking under next-by-selection', () => {
@@ -68,20 +63,16 @@ describe('group lifecycle manager resolution', () => {
         activePrincipalIds: new Set(['bob', 'carol', 'dave']),
       }),
     );
-    const successor = expectedElectionOrder(electorate, 1).filter(
-      (principalId) => principalId !== 'owner',
-    )[0];
+    const successor = expectedElectionOrder(electorate, 1).filter((principalId) => principalId !== 'owner')[0];
     expect(managers).toEqual([successor]);
   });
 
   it('keeps assigned order and lets succession decide whether holes fill', () => {
     const manager = managerPolicy({ selection: 'assigned', assignedPrincipalIds: ['a', 'b', 'c'] });
     const active = new Set(['b', 'c']);
-    expect(
-      resolveGroupLifecycleManagers(
-        resolutionInput({ manager: { ...manager, count: 2 }, activePrincipalIds: active }),
-      ),
-    ).toEqual(['b']);
+    expect(resolveGroupLifecycleManagers(resolutionInput({ manager: { ...manager, count: 2 }, activePrincipalIds: active }))).toEqual([
+      'b',
+    ]);
     expect(
       resolveGroupLifecycleManagers(
         resolutionInput({
@@ -145,9 +136,7 @@ describe('group lifecycle manager resolution', () => {
       activePrincipalIds: new Set(electorate),
     });
     expect(resolveGroupLifecycleManagers(input)).toEqual(expectedElectionOrder(electorate, 1));
-    expect(resolveGroupLifecycleManagers({ ...input, formationEpoch: 2 })).toEqual(
-      expectedElectionOrder(electorate, 2),
-    );
+    expect(resolveGroupLifecycleManagers({ ...input, formationEpoch: 2 })).toEqual(expectedElectionOrder(electorate, 2));
   });
 
   it('ranks elected-by-rank by the supplied source and resolves nobody without one', () => {

@@ -14,10 +14,7 @@ import {
   type ClientStateServiceDependencies,
 } from './client-state-service-contracts.ts';
 import { createTimedClientStateService } from './client-state-service-timing.ts';
-// prettier-ignore
-import {
-  createWsSessionGenerationLifecycleService,
-} from '../services/ws-session-generation-lifecycle.ts';
+import { createWsSessionGenerationLifecycleService } from '../services/ws-session-generation-lifecycle.ts';
 
 export function createClientStateService(
   dependencies: ClientStateServiceDependencies,

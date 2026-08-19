@@ -1,16 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
-// prettier-ignore
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { findMutationBoundaryViolations } from './mutation-boundary-analysis.ts';
 import { readFunctionBody, readMethodBody } from './authoritative-mutation-source-analysis.ts';
-// prettier-ignore
-import { authoritativeMutationRuntimeSourcePaths }
-  from './authoritative-mutation-runtime-source-inventory.ts';
+import { authoritativeMutationRuntimeSourcePaths } from './authoritative-mutation-runtime-source-inventory.ts';
 
 // Retain permanently as cross-domain semantic phase-order evidence.
 const read = (file: string): string => readFileSync(file, 'utf8');
@@ -37,16 +30,13 @@ const sharedValidationPrimitiveNames = [
   'nullablePositiveSafeInteger',
 ] as const;
 const forbiddenPersistenceOwnerImport = new RegExp(
-  String.raw`from ['"](?:\.\.\/)+` +
-    String.raw`(?:mutation|services|inbox|repositories\/GroupStateRepository)(?:\/|\.ts)`,
+  String.raw`from ['"](?:\.\.\/)+` + String.raw`(?:mutation|services|inbox|repositories\/GroupStateRepository)(?:\/|\.ts)`,
 );
 
 const sources = {
   appAdmin: read(`${serviceRoot}/AppAdminInboxService.ts`),
   authHandler: read(`${authRoot}/inbox/auth-inbox-handler.ts`),
-  appClient: read(
-    'packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts',
-  ),
+  appClient: read('packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts'),
   appCrdt: read('packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts'),
   crdtAdminMutations: read('apps/api-v1/src/crdt/create-crdt-admin-mutations.ts'),
   appGroup: read(`${serviceRoot}/AppGroupInboxService.ts`),
@@ -54,9 +44,7 @@ const sources = {
   rtcHandler: read(`${rtcInboxRoot}/rtc-rtt-app-inbox-handler.ts`),
   groupHandler: read(`${groupStateRoot}/inbox/group-state-inbox-handler.ts`),
   groupService: read(`${groupStateRoot}/group-state-service.ts`),
-  client: read(
-    'packages/shared-server/rallar-system/client-state/mutation/write/write-client-mutation.ts',
-  ),
+  client: read('packages/shared-server/rallar-system/client-state/mutation/write/write-client-mutation.ts'),
   group: read(`${groupStateRoot}/mutation/write/write-group-mutation.ts`),
   topologyConfig: read(`${topologyRoot}/config/mutation/write-topology-config-mutation.ts`),
   topologyReconfigure: read(`${topologyRoot}/reconfigure/group-topology-reconfigure-mutation.ts`),
@@ -99,30 +87,18 @@ it('keeps group-state service and inbox ownership in the target modules', () => 
 });
 
 it('keeps persistence validators below mutation and stateful owners', () => {
-  for (const file of [
-    `${persistenceRoot}/validate-persisted-group.ts`,
-    `${persistenceRoot}/validate-persisted-group-presence.ts`,
-  ]) {
+  for (const file of [`${persistenceRoot}/validate-persisted-group.ts`, `${persistenceRoot}/validate-persisted-group-presence.ts`]) {
     const source = read(file);
     expect(source, file).not.toMatch(forbiddenPersistenceOwnerImport);
   }
 });
 
 it('keeps one implementation of each shared group-state validation primitive', () => {
-  const validatorPaths = [
-    `${persistenceRoot}/validate-persisted-group.ts`,
-    `${persistenceRoot}/validate-persisted-group-presence.ts`,
-  ];
-  const ownerSources = [validationPrimitivesPath, oldValidationPath, ...validatorPaths]
-    .filter(existsSync)
-    .map(read)
-    .join('\n');
+  const validatorPaths = [`${persistenceRoot}/validate-persisted-group.ts`, `${persistenceRoot}/validate-persisted-group-presence.ts`];
+  const ownerSources = [validationPrimitivesPath, oldValidationPath, ...validatorPaths].filter(existsSync).map(read).join('\n');
 
   for (const name of sharedValidationPrimitiveNames) {
-    expect(
-      ownerSources.match(new RegExp(`function\\s+${name}\\s*\\(`, 'g')) ?? [],
-      name,
-    ).toHaveLength(1);
+    expect(ownerSources.match(new RegExp(`function\\s+${name}\\s*\\(`, 'g')) ?? [], name).toHaveLength(1);
   }
 });
 
@@ -130,10 +106,7 @@ it('keeps shared validation primitives in the feature root', () => {
   expect(existsSync(validationPrimitivesPath), validationPrimitivesPath).toBe(true);
   expect(existsSync(oldValidationPath), oldValidationPath).toBe(false);
 
-  for (const file of [
-    `${persistenceRoot}/validate-persisted-group.ts`,
-    `${persistenceRoot}/validate-persisted-group-presence.ts`,
-  ]) {
+  for (const file of [`${persistenceRoot}/validate-persisted-group.ts`, `${persistenceRoot}/validate-persisted-group-presence.ts`]) {
     expect(read(file), file).toContain("from '../group-state-validation-primitives.ts'");
   }
 });
@@ -167,12 +140,7 @@ it.each([
     name: 'admin AppInbox',
     source: sources.appAdmin,
     owner: 'processCommand',
-    calls: [
-      'this.read(command)',
-      'this.compute(command, read)',
-      'this.validate(command, read, computed)',
-      'this.writeMutation(context',
-    ],
+    calls: ['this.read(command)', 'this.compute(command, read)', 'this.validate(command, read, computed)', 'this.writeMutation(context'],
   },
   {
     name: 'client AppInbox',
@@ -224,12 +192,7 @@ it.each([
     name: 'RTC RTT AppInbox',
     source: sources.rtcHandler,
     owner: 'processMutation',
-    calls: [
-      'readRtcRttMutation(',
-      'computeRtcRttMutation(',
-      'validateRtcRttMutation(',
-      'this.commitMutation(',
-    ],
+    calls: ['readRtcRttMutation(', 'computeRtcRttMutation(', 'validateRtcRttMutation(', 'this.commitMutation('],
   },
 ])('$name keeps one visible read/compute/validate/write path', ({ source, owner, calls }) => {
   const body = readMethodBody(source, owner);
@@ -309,12 +272,7 @@ it('fences explicit reconfigure authority before inserting APP_OUTBOX', () => {
 
 it('writes RTT admission, measurement, receipt, and direct APP_OUTBOX rows atomically', () => {
   const seam = readFunctionBody(sources.rtt, 'writeRtcRttMutation');
-  expectInOrder(seam, [
-    'commitEndpointAdmission(',
-    'commitMeasurement(',
-    'insertMutationReceipt(',
-    'writeRtcTopologyOutbox(transaction,',
-  ]);
+  expectInOrder(seam, ['commitEndpointAdmission(', 'commitMeasurement(', 'insertMutationReceipt(', 'writeRtcTopologyOutbox(transaction,']);
   expect(seam).not.toContain('insertRecomputeIntent');
   expect(seam).not.toContain('StateMutation' + 'Outbox');
 });
@@ -341,13 +299,7 @@ it('keeps all topology and RTT computed effects direct and mandatory', () => {
 });
 
 it('does not reintroduce intermediate state-mutation intents on Task 7 paths', () => {
-  for (const source of [
-    sources.appGroup,
-    sources.topologyConfig,
-    sources.topologyReconfigure,
-    sources.rtt,
-    sources.topologyWorker,
-  ]) {
+  for (const source of [sources.appGroup, sources.topologyConfig, sources.topologyReconfigure, sources.rtt, sources.topologyWorker]) {
     expect(source).not.toContain('StateMutation' + 'OutboxWork');
   }
   expect(sources.topologyConfig).not.toContain('StateMutation' + 'OutboxRepository');

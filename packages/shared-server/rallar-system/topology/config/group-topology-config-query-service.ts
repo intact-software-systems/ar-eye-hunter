@@ -9,10 +9,7 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
 import type { GroupTopologyGroupSnapshotReader } from '../group-topology-management-contracts.ts';
-// prettier-ignore
-import type {
-  GroupTopologyConfigGenerationReadiness,
-} from './maintenance/group-topology-config-generation-readiness.ts';
+import type { GroupTopologyConfigGenerationReadiness } from './maintenance/group-topology-config-generation-readiness.ts';
 import {
   resolveGroupTopologyConfig,
   type GroupTopologyServerOptions,

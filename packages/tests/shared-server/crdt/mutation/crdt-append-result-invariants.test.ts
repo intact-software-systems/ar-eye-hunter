@@ -1,9 +1,4 @@
-// prettier-ignore
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   RALLAR_CRDT_OPERATION_VERSION,
@@ -21,47 +16,15 @@ import {
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  AppCrdtInboxService,
-} from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
+import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  ResourceInboxRepository,
-} from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  ResourceInboxResultsRepository,
-} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  createCrdtMutationService,
-} from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  createCrdtMutationCommand,
-} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  decodeCrdtMutationResult,
-} from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  computeCrdtMutation,
-} from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  appendRejectionReason,
-} from '@shared-server/rallar-system/crdt/mutation/crdt-append-rejection.ts';
+import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
+import { computeCrdtMutation } from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
+import { appendRejectionReason } from '@shared-server/rallar-system/crdt/mutation/crdt-append-rejection.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
@@ -73,29 +36,24 @@ const DOCUMENT: RallarCrdtDocumentRef = {
 };
 
 describe('CRDT append and administration result invariants', () => {
-  it(
-    'keeps semantic append identity stable while delivery identity and ' + 'retry lifetime vary',
-    async () => {
-      const capturedAtEpochMs = 1_000;
-      const service = appCrdt();
-      const command = await service.createAndEnqueueAppend({
-        update: update('semantic-update'),
-        deliveryId: 'transport-delivery-1',
-        actor: actor(),
-        responseAudience: audience('principal'),
-        capturedAtEpochMs,
-        expireAtEpochMs: capturedAtEpochMs + 60_000,
-      });
+  it('keeps semantic append identity stable while delivery identity and ' + 'retry lifetime vary', async () => {
+    const capturedAtEpochMs = 1_000;
+    const service = appCrdt();
+    const command = await service.createAndEnqueueAppend({
+      update: update('semantic-update'),
+      deliveryId: 'transport-delivery-1',
+      actor: actor(),
+      responseAudience: audience('principal'),
+      capturedAtEpochMs,
+      expireAtEpochMs: capturedAtEpochMs + 60_000,
+    });
 
-      expect(command.commandId).toBe('semantic-update');
-      expect(command).toMatchObject({ deliveryId: 'transport-delivery-1' });
-      expect(command.expireAtEpochMs).toBe(
-        capturedAtEpochMs +
-          DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS +
-          RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS,
-      );
-    },
-  );
+    expect(command.commandId).toBe('semantic-update');
+    expect(command).toMatchObject({ deliveryId: 'transport-delivery-1' });
+    expect(command.expireAtEpochMs).toBe(
+      capturedAtEpochMs + DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS + RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS,
+    );
+  });
 
   it('allows replay only for append producers', async () => {
     const command = await lifecycleCommand();
@@ -306,10 +264,7 @@ function appCrdt(): AppCrdtInboxService {
 
 function createUnusedDatabase(): PSqlSql {
   const database: PSqlSql = Object.assign(
-    <T>(
-      _stringsOrValues: TemplateStringsArray | readonly unknown[],
-      ..._values: unknown[]
-    ): Promise<T> =>
+    <T>(_stringsOrValues: TemplateStringsArray | readonly unknown[], ..._values: unknown[]): Promise<T> =>
       Promise.reject(new Error('Unexpected SQL execution in mutation invariant test')),
     {
       begin: <T>(_run: (sql: PSqlTransactionSql) => Promise<T>): Promise<T> =>

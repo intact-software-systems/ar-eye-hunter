@@ -1,13 +1,9 @@
-// prettier-ignore
-import { PSqlRtcTopologyDeliveryRepository } from
-  '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts';
+import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts';
 import type {
   RtcTopologyDeliveryAppendInput,
   RtcTopologyDeliveryAppendResult,
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-contracts.ts';
-// prettier-ignore
-import { isRtcTopologyDeliveryRetryableConflict } from
-  '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-validation.ts';
+import { isRtcTopologyDeliveryRetryableConflict } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-validation.ts';
 import {
   type BenchmarkSql,
   RTC_TOPOLOGY_DELIVERY_LOG_BENCHMARK_POLICY,

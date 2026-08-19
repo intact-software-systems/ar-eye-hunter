@@ -14,9 +14,7 @@ import {
   type RuntimeStateReadBatchSelector,
   validateRuntimeStateReadBatchResult,
 } from '../../../../runtime-state/RuntimeStateReadBatch.ts';
-// prettier-ignore
-import { resolveRuntimeStateReadBatchLiveValues }
-  from '../../../../runtime-state/RuntimeStateReadBatchLiveValues.ts';
+import { resolveRuntimeStateReadBatchLiveValues } from '../../../../runtime-state/RuntimeStateReadBatchLiveValues.ts';
 import type {
   GroupTopologyConfigGeneration,
   GroupTopologyConfigGenerationTarget,

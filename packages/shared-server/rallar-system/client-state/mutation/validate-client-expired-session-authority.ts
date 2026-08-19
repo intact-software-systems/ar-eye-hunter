@@ -1,8 +1,5 @@
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
-// prettier-ignore
-import {
-  validateRuntimeStateExpiredAuthority,
-} from '@shared-server/runtime-state/RuntimeStateExpiredEntry.ts';
+import { validateRuntimeStateExpiredAuthority } from '@shared-server/runtime-state/RuntimeStateExpiredEntry.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { clientStateSessionStorageKey } from '../persistence/client-state-storage-keys.ts';
 

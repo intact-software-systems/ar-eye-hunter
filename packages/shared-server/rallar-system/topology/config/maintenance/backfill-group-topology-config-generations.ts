@@ -6,9 +6,7 @@ import {
   RuntimeStateWriteConflictError,
   waitForRuntimeStateWriteRetry,
 } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
-// prettier-ignore
-import type { GroupTopologyConfigGenerationSource }
-  from '../persistence/group-topology-config-repository-contracts.ts';
+import type { GroupTopologyConfigGenerationSource } from '../persistence/group-topology-config-repository-contracts.ts';
 import { GroupTopologyConfigRepository } from '../persistence/group-topology-config-repository.ts';
 
 export interface GroupTopologyConfigGenerationBackfillResult {

@@ -1,15 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-// prettier-ignore
-import {
-  GroupStateInboxHandler,
-} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
+import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 
-// prettier-ignore
-import {
-  createGroupStateTransactionBoundaryHarness,
-} from './group-state-transaction-boundary-fixture.ts';
+import { createGroupStateTransactionBoundaryHarness } from './group-state-transaction-boundary-fixture.ts';
 
 const EXPECTED_CREATE_GROUP_DURABLE_JSON =
   '{"status":"created","result":{"right":{"snapshot":' +
@@ -64,9 +58,7 @@ describe('group-state AppInbox transaction result boundary', () => {
     const rawDurableResult = JSON.parse(persisted!.resource) as Record<string, unknown>;
     expect(Object.keys(rawDurableResult)).toEqual(['status', 'result']);
     expect(Object.keys(rawDurableResult.result as Record<string, unknown>)).toEqual(['right']);
-    expect(
-      Object.keys((rawDurableResult.result as { right: Record<string, unknown> }).right),
-    ).toEqual(['snapshot', 'event']);
+    expect(Object.keys((rawDurableResult.result as { right: Record<string, unknown> }).right)).toEqual(['snapshot', 'event']);
     expect(rawDurableResult).toEqual(created);
     expect(harness.transactionWriter.read(harness.context)).toEqual({
       state: 'transaction-finalized',
@@ -85,9 +77,7 @@ describe('group-state AppInbox transaction result boundary', () => {
     expect(harness.formationMutationEvents).toEqual([]);
     await harness.handler.processGroupStateMutation(harness.context);
 
-    expect(harness.formationMutationEvents).toEqual([
-      { operation: 'createGroup', outcome: 'write' },
-    ]);
+    expect(harness.formationMutationEvents).toEqual([{ operation: 'createGroup', outcome: 'write' }]);
   });
 
   it('persists an inactive presence result once without active mutation effects', async () => {
@@ -142,9 +132,7 @@ describe('group-state AppInbox transaction result boundary', () => {
       wakeQueue: () => actions.push('wake'),
     });
     const result = await handler.processGroupStateMutation(inactiveConnectContext());
-    expect(JSON.stringify(result)).toBe(
-      '{"status":"inactive","sessionId":"inactive-session","generationId":"inactive-generation"}',
-    );
+    expect(JSON.stringify(result)).toBe('{"status":"inactive","sessionId":"inactive-session","generationId":"inactive-generation"}');
     expect(actions).toEqual(['inactive-transaction']);
     expect(writeMutation).toHaveBeenCalledOnce();
     expect(writeMutationWithAfterCommitResult).not.toHaveBeenCalled();
@@ -158,8 +146,7 @@ describe('group-state AppInbox transaction result boundary', () => {
     vi.doMock('@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts', () => ({
       readGroupStateInboxResult: readResult,
     }));
-    const { actions, handler, observed, writeMutationWithAfterCommitResult } =
-      await createCommittedSnapshotObservationFixture();
+    const { actions, handler, observed, writeMutationWithAfterCommitResult } = await createCommittedSnapshotObservationFixture();
 
     await expect(
       handler.processGroupStateMutation({
@@ -191,27 +178,18 @@ describe('group-state AppInbox transaction result boundary', () => {
       result: { right: { value: 0, omitted: null } },
     } as const;
 
-    const returned = await harness.transactionWriter.writeMutation(
-      harness.context,
-      async () => durableResult,
-    );
+    const returned = await harness.transactionWriter.writeMutation(harness.context, async () => durableResult);
     const persisted = await harness.results.findByKey(harness.context.entry.key);
 
     expect(returned).toBe(durableResult);
-    expect(persisted?.resource).toBe(
-      '{"status":"legacy-compatible","result":{"right":{"value":0,"omitted":null}}}',
-    );
-    expect(Object.keys(JSON.parse(persisted!.resource) as Record<string, unknown>)).toEqual([
-      'status',
-      'result',
-    ]);
+    expect(persisted?.resource).toBe('{"status":"legacy-compatible","result":{"right":{"value":0,"omitted":null}}}');
+    expect(Object.keys(JSON.parse(persisted!.resource) as Record<string, unknown>)).toEqual(['status', 'result']);
     expect(harness.transactionWriter.read(harness.context)).toEqual({
       state: 'transaction-finalized',
       status: EntityStatus.COMPLETED,
       result: durableResult,
     });
   });
-
 });
 
 interface CommittedSnapshotFixture {

@@ -1,21 +1,10 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 
 import * as sharedServer from '@shared-server/mod.ts';
-// prettier-ignore
-import * as compatibilityInbox from
-  '@shared-server/rallar-system/services/AppClientInboxService.ts';
-// prettier-ignore
-import * as compatibilityService from
-  '@shared-server/rallar-system/services/client-state-service.ts';
-// prettier-ignore
-import {
-  ClientMutationIdempotencyConflictError,
-} from
-'@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
-// prettier-ignore
-import {
-  ClientMutationRejectedError,
-} from '@shared-server/rallar-system/client-state/client-state-validation-primitives.ts';
+import * as compatibilityInbox from '@shared-server/rallar-system/services/AppClientInboxService.ts';
+import * as compatibilityService from '@shared-server/rallar-system/services/client-state-service.ts';
+import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/client-state-validation-primitives.ts';
 import {
   toClientMutationIssuedSessionAuthority,
   toClientMutationSystemAuthority,
@@ -29,19 +18,13 @@ import {
   toUpsertInstanceCommandInput,
   toUpsertPrincipalCommandInput,
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
-// prettier-ignore
-import {
-  createClientStateService,
-} from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import {
   requiresClientWrite,
   toClientMutationReceipt,
   toClientStateWritten,
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-// prettier-ignore
-import {
-  AppClientInboxService,
-} from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import type * as PublicSharedServer from '@shared-server/mod.ts';
 import type {
   ClientAuthorisedWsSessionConnectAppInboxPayload,
@@ -53,14 +36,8 @@ import type {
   ClientSessionDisconnectAppInboxPayload,
   ClientSessionHeartbeatAppInboxPayload,
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
-// prettier-ignore
-import type {
-  ClientMutationPersistedFacts,
-} from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
-// prettier-ignore
-import type {
-  ClientMutationReceipt,
-} from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import type { ClientMutationPersistedFacts } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import type { ClientMutationReceipt } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import type {
   ClientMutationWritten,
   ClientStateService,
@@ -70,19 +47,10 @@ import type {
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 
 describe('shared-server client-state public API contract', () => {
-  it(
-    'keeps every predecessor runtime export as an identical canonical binding',
-    assertPredecessorRuntimeExports,
-  );
-  it(
-    'keeps public, canonical, and compatibility runtime exports identical',
-    assertPublicCanonicalCompatibilityRuntimeIdentity,
-  );
+  it('keeps every predecessor runtime export as an identical canonical binding', assertPredecessorRuntimeExports);
+  it('keeps public, canonical, and compatibility runtime exports identical', assertPublicCanonicalCompatibilityRuntimeIdentity);
   it('does not leak internal client-state construction or handler bindings', assertNoInternalLeaks);
-  it(
-    'keeps predecessor public types equal to their canonical and compatibility contracts',
-    assertPredecessorPublicTypeIdentity,
-  );
+  it('keeps predecessor public types equal to their canonical and compatibility contracts', assertPredecessorPublicTypeIdentity);
 });
 
 // @ts-expect-error Public callers must not receive the handler-only mutation capability.
@@ -98,13 +66,9 @@ type PublicClientStateInboxHandlerDependencies =
 type PublicClientStateInboxAfterCommitResult = PublicSharedServer.ClientStateInboxAfterCommitResult;
 
 function assertPredecessorRuntimeExports(): void {
-  expect(sharedServer.ClientMutationIdempotencyConflictError).toBe(
-    ClientMutationIdempotencyConflictError,
-  );
+  expect(sharedServer.ClientMutationIdempotencyConflictError).toBe(ClientMutationIdempotencyConflictError);
   expect(sharedServer.ClientMutationRejectedError).toBe(ClientMutationRejectedError);
-  expect(sharedServer.toClientMutationIssuedSessionAuthority).toBe(
-    toClientMutationIssuedSessionAuthority,
-  );
+  expect(sharedServer.toClientMutationIssuedSessionAuthority).toBe(toClientMutationIssuedSessionAuthority);
   expect(sharedServer.toClientMutationSystemAuthority).toBe(toClientMutationSystemAuthority);
   expect(sharedServer.toClientMutationCommand).toBe(toClientMutationCommand);
   expect(sharedServer.toConnectCommandInput).toBe(toConnectCommandInput);
@@ -123,64 +87,36 @@ function assertPredecessorRuntimeExports(): void {
 function assertPublicCanonicalCompatibilityRuntimeIdentity(): void {
   expect(sharedServer.createClientStateService).toBe(compatibilityService.createClientStateService);
   expect(sharedServer.AppClientInboxService).toBe(compatibilityInbox.AppClientInboxService);
-  expect(sharedServer.ClientMutationRejectedError).toBe(
-    compatibilityService.ClientMutationRejectedError,
-  );
-  expect(sharedServer.ClientMutationIdempotencyConflictError).toBe(
-    compatibilityService.ClientMutationIdempotencyConflictError,
-  );
+  expect(sharedServer.ClientMutationRejectedError).toBe(compatibilityService.ClientMutationRejectedError);
+  expect(sharedServer.ClientMutationIdempotencyConflictError).toBe(compatibilityService.ClientMutationIdempotencyConflictError);
   expect(sharedServer.toClientMutationCommand).toBe(compatibilityService.toClientMutationCommand);
-  expect(sharedServer.toClientMutationIssuedSessionAuthority).toBe(
-    compatibilityService.toClientMutationIssuedSessionAuthority,
-  );
+  expect(sharedServer.toClientMutationIssuedSessionAuthority).toBe(compatibilityService.toClientMutationIssuedSessionAuthority);
 }
 
 function assertNoInternalLeaks(): void {
-  for (const internalExport of [
-    'CLIENT_STATE_INBOX_REGISTRATION_TYPES',
-    'createTimedClientStateService',
-    'ClientStateInboxHandler',
-  ]) {
+  for (const internalExport of ['CLIENT_STATE_INBOX_REGISTRATION_TYPES', 'createTimedClientStateService', 'ClientStateInboxHandler']) {
     expect(Object.hasOwn(sharedServer, internalExport), internalExport).toBe(false);
   }
 }
 
 function assertPredecessorPublicTypeIdentity(): void {
-  // prettier-ignore
-  expectTypeOf<PublicSharedServer.ClientMutationPersistedFacts>()
-    .toEqualTypeOf<ClientMutationPersistedFacts>();
+  expectTypeOf<PublicSharedServer.ClientMutationPersistedFacts>().toEqualTypeOf<ClientMutationPersistedFacts>();
   expectTypeOf<PublicSharedServer.ClientMutationReceipt>().toEqualTypeOf<ClientMutationReceipt>();
-  // prettier-ignore
-  expectTypeOf<PublicSharedServer.RegisterAuthorisedWsClientInput>()
-    .toEqualTypeOf<RegisterAuthorisedWsClientInput>();
+  expectTypeOf<PublicSharedServer.RegisterAuthorisedWsClientInput>().toEqualTypeOf<RegisterAuthorisedWsClientInput>();
   expectTypeOf<PublicSharedServer.ClientMutationWritten>().toEqualTypeOf<ClientMutationWritten>();
   expectTypeOf<PublicSharedServer.ClientStateWritten>().toEqualTypeOf<ClientStateWritten>();
   expectTypeOf<PublicSharedServer.ClientStateService>().toEqualTypeOf<ClientStateService>();
-  // prettier-ignore
-  expectTypeOf<PublicSharedServer.ClientStateServiceDependencies>()
-    .toEqualTypeOf<ClientStateServiceDependencies>();
-  // prettier-ignore
-  expectTypeOf<PublicSharedServer.ClientPrincipalUpsertAppInboxPayload>()
-    .toEqualTypeOf<ClientPrincipalUpsertAppInboxPayload>();
-  // prettier-ignore
-  expectTypeOf<PublicSharedServer.ClientInstanceUpsertAppInboxPayload>()
-    .toEqualTypeOf<ClientInstanceUpsertAppInboxPayload>();
-  // prettier-ignore
-  expectTypeOf<PublicSharedServer.ClientSessionConnectAppInboxPayload>()
-    .toEqualTypeOf<ClientSessionConnectAppInboxPayload>();
-  // prettier-ignore
-  expectTypeOf<PublicSharedServer.ClientSessionHeartbeatAppInboxPayload>()
-    .toEqualTypeOf<ClientSessionHeartbeatAppInboxPayload>();
-  // prettier-ignore
-  expectTypeOf<PublicSharedServer.ClientSessionDisconnectAppInboxPayload>()
-    .toEqualTypeOf<ClientSessionDisconnectAppInboxPayload>();
+  expectTypeOf<PublicSharedServer.ClientStateServiceDependencies>().toEqualTypeOf<ClientStateServiceDependencies>();
+  expectTypeOf<PublicSharedServer.ClientPrincipalUpsertAppInboxPayload>().toEqualTypeOf<ClientPrincipalUpsertAppInboxPayload>();
+  expectTypeOf<PublicSharedServer.ClientInstanceUpsertAppInboxPayload>().toEqualTypeOf<ClientInstanceUpsertAppInboxPayload>();
+  expectTypeOf<PublicSharedServer.ClientSessionConnectAppInboxPayload>().toEqualTypeOf<ClientSessionConnectAppInboxPayload>();
+  expectTypeOf<PublicSharedServer.ClientSessionHeartbeatAppInboxPayload>().toEqualTypeOf<ClientSessionHeartbeatAppInboxPayload>();
+  expectTypeOf<PublicSharedServer.ClientSessionDisconnectAppInboxPayload>().toEqualTypeOf<ClientSessionDisconnectAppInboxPayload>();
   // prettier-ignore
   expectTypeOf<PublicSharedServer.ClientAuthorisedWsSessionConnectAppInboxPayload>()
     .toEqualTypeOf<ClientAuthorisedWsSessionConnectAppInboxPayload>();
   // prettier-ignore
   expectTypeOf<PublicSharedServer.ClientAuthorisedWsSessionDisconnectAppInboxPayload>()
     .toEqualTypeOf<ClientAuthorisedWsSessionDisconnectAppInboxPayload>();
-  // prettier-ignore
-  expectTypeOf<PublicSharedServer.ClientExpiredSessionsAppInboxPayload>()
-    .toEqualTypeOf<ClientExpiredSessionsAppInboxPayload>();
+  expectTypeOf<PublicSharedServer.ClientExpiredSessionsAppInboxPayload>().toEqualTypeOf<ClientExpiredSessionsAppInboxPayload>();
 }

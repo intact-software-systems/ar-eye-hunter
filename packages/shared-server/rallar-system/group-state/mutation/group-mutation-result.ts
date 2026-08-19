@@ -9,10 +9,7 @@ import type {
 } from '@shared/api/group-types.ts';
 import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
-// prettier-ignore
-import {
-  computeGroupPresenceSummaryEntry,
-} from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 
 import type {
@@ -27,10 +24,7 @@ import type {
   PresenceGuardCandidate,
 } from './group-mutation-contracts.ts';
 import { GroupMutationRejectedError } from './group-mutation-contracts.ts';
-// prettier-ignore
-import type {
-  InitialGroupPresenceSummaryCandidate,
-} from '../presence/group-initial-presence-summary.ts';
+import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
@@ -132,7 +126,7 @@ export function computeGroupMutationWriteResult(
     idempotency: toGroupMutationIdempotency(command, facts, receipt),
     outboxEntries,
     lifecyclePolicy:
-      command.operation === 'createGroup' ? command.input.lifecyclePolicy ?? null : null,
+      command.operation === 'createGroup' ? (command.input.lifecyclePolicy ?? null) : null,
   };
 }
 

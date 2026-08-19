@@ -3,10 +3,7 @@ import type { GroupStateService } from '../../group-state/group-state-service-co
 import { validateRtcRttMeasurement } from '../persistence/rtc-rtt-persistence-validation.ts';
 import { toRtcRttMutationReceiptId } from '../mutation/rtc-rtt-mutation-identifiers.ts';
 import { hashCanonicalCommand } from '../../services/canonical-command-hash.ts';
-// prettier-ignore
-import {
-  createTopologyMutationAuthorityProof,
-} from '../../topology/inbox/topology-mutation-authority-proof.ts';
+import { createTopologyMutationAuthorityProof } from '../../topology/inbox/topology-mutation-authority-proof.ts';
 import type { AppInboxEnqueueInput } from '../../services/AppInboxService.ts';
 import { AppInboxType } from '../../services/AppInboxService.ts';
 import {

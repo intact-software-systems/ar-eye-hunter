@@ -8,10 +8,7 @@ import type {
   GroupStateMutationCommand,
   GroupStateMutationService,
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
-// prettier-ignore
-import {
-  processGroupPresenceConnect,
-} from '@shared-server/rallar-system/group-state/presence/group-presence-service.ts';
+import { processGroupPresenceConnect } from '@shared-server/rallar-system/group-state/presence/group-presence-service.ts';
 import type {
   WsSessionGenerationLifecycleComputed,
   WsSessionGenerationLifecycleRead,
@@ -32,47 +29,42 @@ describe('group presence connect decision', () => {
       sessionGenerationLifecycle: dependencies.sessionGenerationLifecycle,
     });
 
-    expect(JSON.stringify(outcome)).toBe(
-      '{"status":"inactive","sessionId":"session-1","generationId":"generation-1"}',
-    );
+    expect(JSON.stringify(outcome)).toBe('{"status":"inactive","sessionId":"session-1","generationId":"generation-1"}');
     expect(phases).toEqual(['lifecycle-read', 'lifecycle-closed-check']);
   });
 
-  it(
-    'returns the exact computed mutation and lifecycle guard ' + 'for the handler to commit',
-    async () => {
-      const phases: string[] = [];
-      const dependencies = createDecisionDependencies({
-        phases,
-        closedAtObservation: false,
-      });
+  it('returns the exact computed mutation and lifecycle guard ' + 'for the handler to commit', async () => {
+    const phases: string[] = [];
+    const dependencies = createDecisionDependencies({
+      phases,
+      closedAtObservation: false,
+    });
 
-      const outcome = await processGroupPresenceConnect({
-        command: dependencies.command,
-        mutationService: dependencies.mutationService,
-        sessionGenerationLifecycle: dependencies.sessionGenerationLifecycle,
-      });
+    const outcome = await processGroupPresenceConnect({
+      command: dependencies.command,
+      mutationService: dependencies.mutationService,
+      sessionGenerationLifecycle: dependencies.sessionGenerationLifecycle,
+    });
 
-      expect(outcome).toEqual({
-        status: 'ready-to-commit',
-        computed: dependencies.computed,
-        lifecycleGuard: dependencies.lifecycleGuard,
-      });
-      if (outcome.status !== 'ready-to-commit') {
-        throw new Error('Expected a ready-to-commit presence decision');
-      }
-      expect(outcome.computed).toBe(dependencies.computed);
-      expect(outcome.lifecycleGuard).toBe(dependencies.lifecycleGuard);
-      expect(phases).toEqual([
-        'lifecycle-read',
-        'lifecycle-closed-check',
-        'mutation-read',
-        'mutation-compute',
-        'mutation-validate',
-        'lifecycle-compute-guard',
-      ]);
-    },
-  );
+    expect(outcome).toEqual({
+      status: 'ready-to-commit',
+      computed: dependencies.computed,
+      lifecycleGuard: dependencies.lifecycleGuard,
+    });
+    if (outcome.status !== 'ready-to-commit') {
+      throw new Error('Expected a ready-to-commit presence decision');
+    }
+    expect(outcome.computed).toBe(dependencies.computed);
+    expect(outcome.lifecycleGuard).toBe(dependencies.lifecycleGuard);
+    expect(phases).toEqual([
+      'lifecycle-read',
+      'lifecycle-closed-check',
+      'mutation-read',
+      'mutation-compute',
+      'mutation-validate',
+      'lifecycle-compute-guard',
+    ]);
+  });
 });
 
 interface CreateDecisionDependenciesInput {
@@ -111,10 +103,7 @@ function createDecisionDependencies(input: CreateDecisionDependenciesInput): Dec
   };
 }
 
-function createMutationServiceFixture(
-  command: GroupStateMutationCommand,
-  phases: string[],
-): MutationServiceFixture {
+function createMutationServiceFixture(command: GroupStateMutationCommand, phases: string[]): MutationServiceFixture {
   const read = {} as GroupMutationRead;
   const computed = {
     outcome: 'no-op',
@@ -145,9 +134,7 @@ function createMutationServiceFixture(
   return { computed, service };
 }
 
-function createLifecycleServiceFixture(
-  input: CreateDecisionDependenciesInput,
-): LifecycleServiceFixture {
+function createLifecycleServiceFixture(input: CreateDecisionDependenciesInput): LifecycleServiceFixture {
   const lifecycleRead = lifecycleReadFixture();
   const lifecycleGuard = lifecycleGuardFixture(lifecycleRead);
   const service: WsSessionGenerationLifecycleService = {
@@ -202,9 +189,7 @@ function lifecycleReadFixture(): WsSessionGenerationLifecycleRead {
   };
 }
 
-function lifecycleGuardFixture(
-  lifecycleRead: WsSessionGenerationLifecycleRead,
-): WsSessionGenerationLifecycleComputed {
+function lifecycleGuardFixture(lifecycleRead: WsSessionGenerationLifecycleRead): WsSessionGenerationLifecycleComputed {
   return {
     outcome: 'insert',
     key: lifecycleRead.key,

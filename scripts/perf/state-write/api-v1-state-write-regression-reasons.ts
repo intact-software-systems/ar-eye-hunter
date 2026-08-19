@@ -1,6 +1,4 @@
-// prettier-ignore
-import type { StateWriteBenchmarkRegressionReason } from
-  './api-v1-state-write-benchmark-artifact.ts';
+import type { StateWriteBenchmarkRegressionReason } from './api-v1-state-write-benchmark-artifact.ts';
 
 const DURABLE_APPEND_RESOURCE_REASON =
   'Atomic RTC topology publication now executes one durable per-process stream ' +

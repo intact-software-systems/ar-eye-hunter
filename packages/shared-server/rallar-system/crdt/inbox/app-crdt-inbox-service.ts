@@ -5,10 +5,8 @@ import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
 import type { PSqlSql } from '../../../postgres/PostgresSqlClient.ts';
-// prettier-ignore
 import type { ResourceInboxRepository } from '../../../postgres/resource-inbox/\
 ResourceInboxRepository.ts';
-// prettier-ignore
 import type { ResourceInboxResultsRepository } from '../../../postgres/resource-inbox/\
 ResourceInboxResultsRepository.ts';
 import type { AppInboxFailure } from '../../services/app-inbox-failure.ts';

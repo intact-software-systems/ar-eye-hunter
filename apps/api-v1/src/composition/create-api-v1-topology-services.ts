@@ -12,10 +12,8 @@ import type {
 import type {
   GroupFormationRttMutationSink,
 } from '@shared-server/rallar-system/formation-metrics.ts';
-// prettier-ignore
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/\
 GroupStateRepository.ts';
-// prettier-ignore
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/\
 RtcTopologySnapshotRepository.ts';
 import {
@@ -24,23 +22,19 @@ import {
 } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import { sendStateSyncMessage } from '@shared-server/rallar-system/state-sync-routing.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
-// prettier-ignore
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/\
 persistence/group-topology-config-repository.ts';
-// prettier-ignore
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/\
 group-topology-management-service.ts';
 import type {
   RtcRttAppInboxDependencies,
 } from '@shared-server/rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox-contracts.ts';
-// prettier-ignore
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-topology/persistence/\
 rtc-rtt-repository.ts';
 import {
   RtcRttRefinementGate,
   type RtcRttRefinementGateConfig,
 } from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-gate.ts';
-// prettier-ignore
 import { RtcRttRefinementService } from '@shared-server/rallar-system/rtc-topology/topic/\
 rtc-rtt-refinement-service.ts';
 

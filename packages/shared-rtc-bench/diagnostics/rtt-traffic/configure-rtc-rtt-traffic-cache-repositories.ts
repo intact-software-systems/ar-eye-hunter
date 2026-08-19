@@ -1,7 +1,5 @@
 import { configureOverlayRepository } from '@shared/repository/overlays-repository.ts';
-// prettier-ignore
-import { initialiseRallarServerCacheRepositories } from
-  '@shared-server/rallar-system/cache-repositories.ts';
+import { initialiseRallarServerCacheRepositories } from '@shared-server/rallar-system/cache-repositories.ts';
 
 const MINUTE_MS = 60_000;
 

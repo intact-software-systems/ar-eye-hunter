@@ -6,12 +6,8 @@ import {
   groupStateGroupStorageKey,
   groupStateIdempotencyStorageKey,
 } from '../../../group-state/persistence/group-state-storage-keys.ts';
-// prettier-ignore
-import type { GroupTopologyConfigGenerationTarget }
-  from '../mutation/group-topology-config-mutation-contracts.ts';
-// prettier-ignore
-import { toGroupTopologyConfigRepositoryCorruption }
-  from './group-topology-config-repository-contracts.ts';
+import type { GroupTopologyConfigGenerationTarget } from '../mutation/group-topology-config-mutation-contracts.ts';
+import { toGroupTopologyConfigRepositoryCorruption } from './group-topology-config-repository-contracts.ts';
 
 interface GroupTopologyChildStorageKey {
   readonly groupRef: GroupRef;

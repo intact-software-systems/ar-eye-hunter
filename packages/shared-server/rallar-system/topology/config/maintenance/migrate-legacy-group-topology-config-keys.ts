@@ -9,16 +9,10 @@ import {
   isRuntimeStateTransactionalRepositoryLike,
   type RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '../../../../runtime-state/RuntimeStateRepository.ts';
-// prettier-ignore
-import type { GroupTopologyConfigGenerationTarget }
-  from '../mutation/group-topology-config-mutation-contracts.ts';
-// prettier-ignore
-import type { GroupTopologyConfigLegacyKeyMigrationSource }
-  from '../persistence/group-topology-config-repository-contracts.ts';
+import type { GroupTopologyConfigGenerationTarget } from '../mutation/group-topology-config-mutation-contracts.ts';
+import type { GroupTopologyConfigLegacyKeyMigrationSource } from '../persistence/group-topology-config-repository-contracts.ts';
 import { GroupTopologyConfigRepository } from '../persistence/group-topology-config-repository.ts';
-// prettier-ignore
-import { groupTopologyConfigSourceNamespace }
-  from '../persistence/group-topology-config-runtime-namespaces.ts';
+import { groupTopologyConfigSourceNamespace } from '../persistence/group-topology-config-runtime-namespaces.ts';
 
 interface GroupTopologyConfigLegacyKeyMigrationOptions {
   readonly oldWritersStopped: true;

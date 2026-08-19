@@ -1,12 +1,6 @@
 import type { PSqlTransactionSql } from '../../../../postgres/PostgresSqlClient.ts';
-// prettier-ignore
-import {
-  PSqlRuntimeStateRepository,
-} from '../../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-// prettier-ignore
-import {
-  RuntimeStateWriteConflictError,
-} from '../../../../runtime-state/optimistic-runtime-state-write.ts';
+import { PSqlRuntimeStateRepository } from '../../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { GroupStateRepository } from '../../../group-state/persistence/group-state-repository.ts';
 import { writeRtcTopologyOutbox } from '../../../services/rtc-topology-outbox-entry.ts';
 import { GroupTopologyConfigRepository } from '../persistence/group-topology-config-repository.ts';

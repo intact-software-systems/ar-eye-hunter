@@ -10,10 +10,7 @@ import {
   evaluateRtcBaselineWorkloadRepeatOutcome,
   rtcBaselineTriggeredWorkloads,
 } from './rtc-baseline-statistics.ts';
-// prettier-ignore
-import type {
-  RtcBaselineFinalizedArtifactVerifier,
-} from './rtc-baseline-finalized-verification.ts';
+import type { RtcBaselineFinalizedArtifactVerifier } from './rtc-baseline-finalized-verification.ts';
 
 function failed(path: string, code: string, message: string): RtcBaselineResult<never> {
   return { ok: false, issues: [{ path, code, message }] };

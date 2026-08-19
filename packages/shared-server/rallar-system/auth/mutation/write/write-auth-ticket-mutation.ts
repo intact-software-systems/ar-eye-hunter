@@ -1,7 +1,4 @@
-// prettier-ignore
-import {
-  requireConditionalWrite,
-} from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { AuthSessionRepository } from '../../persistence/auth-session-repository.ts';
 import { requireAuthTicket } from '../validate/auth-mutation-validation.ts';
 import type { AuthMutationComputed, AuthMutationRead } from '../auth-mutation-contracts.ts';

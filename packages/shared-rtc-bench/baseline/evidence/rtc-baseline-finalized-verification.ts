@@ -1,6 +1,4 @@
-// prettier-ignore
-import { computeRtcBaselineExpectedSampleIdentities } from
-  '../catalog/rtc-baseline-workload-manifest.ts';
+import { computeRtcBaselineExpectedSampleIdentities } from '../catalog/rtc-baseline-workload-manifest.ts';
 import type { RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
 import {
   validateRtcBaselineArtifactReconciliation,
@@ -28,10 +26,7 @@ import {
   type RtcBaselineFinalizedReaderDependencies,
   type RtcBaselineReadFinalizedArtifacts,
 } from './rtc-baseline-finalized-artifact-reader.ts';
-// prettier-ignore
-import {
-  validateRtcBaselineArtifactOutcomeReconciliation,
-} from './rtc-baseline-artifact-projection.ts';
+import { validateRtcBaselineArtifactOutcomeReconciliation } from './rtc-baseline-artifact-projection.ts';
 
 export interface RtcBaselineFinalizedArtifactVerifier {
   readVerifiedArtifacts(

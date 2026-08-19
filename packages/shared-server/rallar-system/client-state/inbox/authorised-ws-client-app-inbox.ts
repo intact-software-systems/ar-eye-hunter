@@ -5,10 +5,7 @@ import {
 } from '@shared/api/state-types.ts';
 import type { IssuedAuthSession } from '../../repositories/AuthSessionRepository.ts';
 import type { RegisterAuthorisedWsClientInput } from '../client-state-service-contracts.ts';
-// prettier-ignore
-import {
-  toClientMutationIssuedSessionAuthority,
-} from '../mutation/client-mutation-authority.ts';
+import { toClientMutationIssuedSessionAuthority } from '../mutation/client-mutation-authority.ts';
 import type { AppInboxEnqueueInput } from '../../services/AppInboxService.ts';
 import { AppInboxType } from '../../services/AppInboxService.ts';
 import type {

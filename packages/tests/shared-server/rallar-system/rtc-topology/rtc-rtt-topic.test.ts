@@ -15,17 +15,10 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { latestRttById } from '@shared/repository/rtt-repository.ts';
-import {
-  initRallarSystemWsTopics,
-  type InitRallarSystemWsTopicsOptions,
-} from '@shared-server/rallar-system/ws-system-topics.ts';
+import { initRallarSystemWsTopics, type InitRallarSystemWsTopicsOptions } from '@shared-server/rallar-system/ws-system-topics.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
-// prettier-ignore
-import type {
-  GroupTopologyGroupSnapshotReader,
-} from
-'@shared-server/rallar-system/topology/group-topology-management-contracts.ts';
+import type { GroupTopologyGroupSnapshotReader } from '@shared-server/rallar-system/topology/group-topology-management-contracts.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import * as vivaldiService from '@shared-graph/vivaldi-service.ts';
 import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
@@ -124,20 +117,12 @@ describe('RTC RTT websocket topic', () => {
 
   it('rejects RTT measurements outside the reporting edge policy', async () => {
     configureTestCacheRepositories();
-    const { sockets, topologyService } = createRttHarness(
-      ['session-a', 'session-b', 'session-c', 'session-d'],
-      {
-        rtcTopologyOptions: {
-          rttReportingDegreeLimit: 1,
-        },
+    const { sockets, topologyService } = createRttHarness(['session-a', 'session-b', 'session-c', 'session-d'], {
+      rtcTopologyOptions: {
+        rttReportingDegreeLimit: 1,
       },
-    );
-    const group = createGroupSnapshot('room-1', [
-      'session-a',
-      'session-b',
-      'session-c',
-      'session-d',
-    ]);
+    });
+    const group = createGroupSnapshot('room-1', ['session-a', 'session-b', 'session-c', 'session-d']);
     groupStateSnapshotsRepository.setGroupStateSnapshot(group);
     topologyService.updateGroupTopology(group);
 
@@ -291,24 +276,13 @@ describe('RTC RTT websocket topic', () => {
       configureTestCacheRepositories();
 
       const server = new JsonWebSocketServer();
-      const sockets = createSockets([
-        'session-a',
-        'session-b',
-        'session-c',
-        'session-d',
-        'session-e',
-      ]);
+      const sockets = createSockets(['session-a', 'session-b', 'session-c', 'session-d', 'session-e']);
 
       for (const [sessionId, socket] of sockets) {
         server.addConnection(new ConnectionContext(sessionId, socket as never));
       }
 
-      const service = new WsQueueBoxServerService(
-        new InMemoryQueueBox(new Map()),
-        new InMemoryQueueBox(new Map()),
-        server,
-        'server-1',
-      );
+      const service = new WsQueueBoxServerService(new InMemoryQueueBox(new Map()), new InMemoryQueueBox(new Map()), server, 'server-1');
       initRallarSystemWsTopics(service, {
         rtcTopologyOptions: {
           rttRebuildDebounceMs: 100,
@@ -316,9 +290,7 @@ describe('RTC RTT websocket topic', () => {
       });
 
       const group = createGroupSnapshot('room-1', [...sockets.keys()]);
-      clientStateSnapshotsRepository.setClientStateSnapshots(
-        [...sockets.keys()].map(createClientSnapshot),
-      );
+      clientStateSnapshotsRepository.setClientStateSnapshots([...sockets.keys()].map(createClientSnapshot));
       const senderSocket = sockets.get('session-a')!;
 
       await senderSocket.dispatchMessage(
@@ -377,13 +349,7 @@ describe('RTC RTT websocket topic', () => {
       configureTestCacheRepositories();
 
       const server = new JsonWebSocketServer();
-      const sockets = createSockets([
-        'session-a',
-        'session-b',
-        'session-c',
-        'session-d',
-        'session-e',
-      ]);
+      const sockets = createSockets(['session-a', 'session-b', 'session-c', 'session-d', 'session-e']);
 
       for (const [sessionId, socket] of sockets) {
         server.addConnection(new ConnectionContext(sessionId, socket as never));
@@ -393,12 +359,7 @@ describe('RTC RTT websocket topic', () => {
       const runtimeRepository = new FakeRuntimeStateRepository();
       const outboxQueueReader = new OutboxQueueReader(appOutboxQueue);
       const wake = vi.fn();
-      const service = new WsQueueBoxServerService(
-        new InMemoryQueueBox(new Map()),
-        new InMemoryQueueBox(new Map()),
-        server,
-        'server-1',
-      );
+      const service = new WsQueueBoxServerService(new InMemoryQueueBox(new Map()), new InMemoryQueueBox(new Map()), server, 'server-1');
       const group = createGroupSnapshot('room-1', [...sockets.keys()]);
       const findGroupSnapshotByRef = vi.fn(() => Promise.resolve(group));
       initRallarSystemWsTopics(service, {
@@ -414,9 +375,7 @@ describe('RTC RTT websocket topic', () => {
         },
       });
 
-      clientStateSnapshotsRepository.setClientStateSnapshots(
-        [...sockets.keys()].map(createClientSnapshot),
-      );
+      clientStateSnapshotsRepository.setClientStateSnapshots([...sockets.keys()].map(createClientSnapshot));
       const senderSocket = sockets.get('session-a')!;
 
       await senderSocket.dispatchMessage(
@@ -547,18 +506,11 @@ function createRttHarness(
     server.addConnection(new ConnectionContext(sessionId, socket as never));
   }
 
-  const service = new WsQueueBoxServerService(
-    new InMemoryQueueBox(new Map()),
-    new InMemoryQueueBox(new Map()),
-    server,
-    'server-1',
-  );
+  const service = new WsQueueBoxServerService(new InMemoryQueueBox(new Map()), new InMemoryQueueBox(new Map()), server, 'server-1');
   const topologyService = new RallarRtcTopologyService(options.rtcTopologyOptions);
   initRallarSystemWsTopics(service, {
     rtcTopologyService: topologyService,
-    ...(options.runtimeRepository
-      ? { rtcTopologyRuntimeState: { repository: options.runtimeRepository } }
-      : {}),
+    ...(options.runtimeRepository ? { rtcTopologyRuntimeState: { repository: options.runtimeRepository } } : {}),
     enqueueRtcRttMutation: options.enqueueRtcRttMutation,
   });
 
@@ -590,9 +542,7 @@ async function dispatchRtt(
 }
 
 function countSentTopologyMessages(sockets: ReadonlyMap<string, FakeSocket>): number {
-  return [...sockets.values()]
-    .flatMap((socket) => socket.sent)
-    .filter((sent) => sent.payload.typeId === AppTopics.overlayTopology).length;
+  return [...sockets.values()].flatMap((socket) => socket.sent).filter((sent) => sent.payload.typeId === AppTopics.overlayTopology).length;
 }
 
 function createTopologyExecutionDependencies(runtimeRepository: FakeRuntimeStateRepository) {
@@ -613,13 +563,9 @@ function createTopologyManagement(
 }
 
 function createUnusedDatabase(): PSqlSql {
-  return Object.assign(
-    (..._values: readonly unknown[]) =>
-      Promise.reject(new Error('Unexpected SQL execution in WS routing unit test')),
-    {
-      begin: () => Promise.reject(new Error('Unexpected transaction in WS routing unit test')),
-    },
-  );
+  return Object.assign((..._values: readonly unknown[]) => Promise.reject(new Error('Unexpected SQL execution in WS routing unit test')), {
+    begin: () => Promise.reject(new Error('Unexpected transaction in WS routing unit test')),
+  });
 }
 
 function createCentralRttMeasurements(

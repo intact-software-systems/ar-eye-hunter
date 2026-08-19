@@ -7,9 +7,7 @@ import type {
   RuntimeStateEntryPageOptions,
   RuntimeStateRepositoryLike,
 } from '../../../../runtime-state/RuntimeStateRepository.ts';
-// prettier-ignore
-import type { GroupTopologyConfigGenerationTarget }
-  from '../mutation/group-topology-config-mutation-contracts.ts';
+import type { GroupTopologyConfigGenerationTarget } from '../mutation/group-topology-config-mutation-contracts.ts';
 import {
   decodeCanonicalGroupTopologyGenerationSourceEntry,
   decodeGroupTopologyLegacyKeyMigrationEntry,

@@ -1,5 +1,4 @@
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-// prettier-ignore
 import { PSqlRuntimeStateRepository }
   from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import {

@@ -1,21 +1,15 @@
-// prettier-ignore
-import { createTransactionBoundGroupStateRepository } from
-  '../persistence/group-state-repository.ts';
+import { createTransactionBoundGroupStateRepository } from '../persistence/group-state-repository.ts';
 import {
   type InactiveGroupPresenceResult,
   processGroupPresenceConnect,
 } from '../presence/group-presence-service.ts';
 import type { AppInboxMessageContext } from '../../services/AppInboxService.ts';
-// prettier-ignore
-import type { AppInboxMutationTransactionWriter } from
-  '../../services/app-inbox-transaction-writer.ts';
+import type { AppInboxMutationTransactionWriter } from '../../services/app-inbox-transaction-writer.ts';
 import type { GroupMutationComputed } from '../mutation/group-mutation-contracts.ts';
-// prettier-ignore
 import type {
   WsSessionGenerationLifecycleComputed,
   WsSessionGenerationLifecycleService,
-} from
-  '../../services/ws-session-generation-lifecycle.ts';
+} from '../../services/ws-session-generation-lifecycle.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type {
   GroupMutationPreparation,
@@ -23,7 +17,6 @@ import type {
   GroupStateMutationService,
   GroupStateService,
 } from '../group-state-service-contracts.ts';
-// prettier-ignore
 import type {
   GroupFormationGroupMutationSink,
   GroupFormationMutationOutcome,

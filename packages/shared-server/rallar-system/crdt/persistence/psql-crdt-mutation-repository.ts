@@ -9,7 +9,6 @@ import {
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../../postgres/PostgresSqlClient.ts';
-// prettier-ignore
 import { ResourceInboxRepository } from '../../../postgres/resource-inbox/\
 ResourceInboxRepository.ts';
 import {
