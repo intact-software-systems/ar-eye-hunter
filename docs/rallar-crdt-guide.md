@@ -30,6 +30,27 @@ locks are coordination-only; CRDT document-row and advisory locks are not
 queue-claim exceptions. Authoritative persisted/shared CRDT contracts use
 mandatory fields by default.
 
+## Source Owners
+
+Start from `packages/shared-server/mod.ts` for the supported server surface. The
+direct capability owners are:
+
+- WebSocket registration:
+  `packages/shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts`
+- durable command and retry entry:
+  `packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts`
+- read, compute, validate, and guarded write phases:
+  `packages/shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts`
+- PostgreSQL conditional mutation writes:
+  `packages/shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts`
+- API administration routes:
+  `apps/api-v1/src/crdt/register-crdt-admin-routes.ts`
+
+The colocated package map at
+`packages/shared-server/rallar-system/crdt/README.md` describes the complete
+runtime paths, including read-only catch-up and optional external audit
+delivery.
+
 ## When To Use It
 
 Use CRDT documents for:
@@ -53,28 +74,28 @@ Do not use CRDT documents for:
 
 ```ts
 const doc = await rallar.crdt.open('room-checklist', {
-    documentType: 'checklist',
-    documentId: room.group.groupId,
-    scope: {
-        kind: 'room',
-        roomRef: room.group,
-    },
-    transport: 'ws-then-rtc',
+  documentType: 'checklist',
+  documentId: room.group.groupId,
+  scope: {
+    kind: 'room',
+    roomRef: room.group,
+  },
+  transport: 'ws-then-rtc',
 });
 
 await doc.applyLocal({
-    kind: 'batch',
-    operations: [
-        {
-            kind: 'orset.add',
-            path: ['items'],
-            elementId: crypto.randomUUID(),
-            value: {
-                text: 'Inspect north entrance',
-                done: false,
-            },
-        },
-    ],
+  kind: 'batch',
+  operations: [
+    {
+      kind: 'orset.add',
+      path: ['items'],
+      elementId: crypto.randomUUID(),
+      value: {
+        text: 'Inspect north entrance',
+        done: false,
+      },
+    },
+  ],
 });
 ```
 
@@ -114,11 +135,12 @@ The bridge validates document refs, operation paths, payload shape, payload
 size, room target `groupRef`, and document type/version policy. Room messages
 also go through the existing room authorizer.
 
-When configured with `PSqlCrdtLogRepository`, the bridge appends first, sends an
-append response to the sender, and only fans out accepted updates. Rejected
-updates are acknowledged as rejected and are not fanned out. Durable catch-up
-requests are answered from snapshots plus append-log pages rather than peer
-state.
+When configured with the durable mutation ingress, the bridge enqueues an
+accepted update through `AppCrdtInboxService`; the committed mutation produces
+the append response and permitted fanout as final outbox work. Rejected updates
+are acknowledged as rejected and are not fanned out. `PSqlCrdtLogRepository`
+is the bridge's read-only source for durable catch-up from snapshots plus
+append-log pages rather than peer state.
 
 ## Durable Log
 
