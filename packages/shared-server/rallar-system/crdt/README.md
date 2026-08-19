@@ -29,5 +29,5 @@ import the direct capability owner described below.
 - Read-only catch-up: the realtime installer authorizes the request, reads the page and optional
   snapshot from the configured log repository, and sends the existing catch-up response directly.
 - Erasure audit: the mutation commits its final APP outbox intent atomically. Optional external
-  delivery is registered after construction by `register-crdt-audit-delivery.ts` and never runs in
-  the mutation transaction.
+  delivery is registered during inbox construction by `register-crdt-audit-delivery.ts` when an
+  audit delivery dependency is provided, and it never runs in the mutation transaction.
