@@ -44,17 +44,14 @@ import {
   type AppInboxServiceOptions,
 } from '../../services/AppInboxService.ts';
 // prettier-ignore
-import {
-  AppInboxType,
-  type AppInboxMessageContext,
-} from '../../services/app-inbox-contracts.ts';
+import { type AppInboxMessageContext, AppInboxType } from '../../services/app-inbox-contracts.ts';
 // prettier-ignore
 import {
   validatePersistedAppInboxCommandIdentity,
 } from '../../services/app-inbox-command-identity.ts';
 import {
-  recordRallarTiming,
   type RallarTimingSink,
+  recordRallarTiming,
   timeRallarAsync,
 } from '../../services/timing.ts';
 import {
@@ -146,15 +143,19 @@ export class AppAdminInboxService extends AppInboxService {
 
   constructor(dependencies: AppAdminInboxServiceDependencies, config: AppAdminInboxServiceConfig) {
     super(
-      dependencies.inboxQueueReader,
-      dependencies.resourceInboxRepository,
-      dependencies.resourceInboxResultsRepository,
-      dependencies.database,
-      config.serviceId,
-      ADMIN_APP_INBOX_TOPIC,
-      config.timing,
-      config.appInbox,
-      dependencies.wakeQueueEngine,
+      {
+        inboxQueueReader: dependencies.inboxQueueReader,
+        resourceInboxRepository: dependencies.resourceInboxRepository,
+        resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+        database: dependencies.database,
+      },
+      {
+        serviceId: config.serviceId,
+        defaultTopicId: ADMIN_APP_INBOX_TOPIC,
+        timing: config.timing,
+        options: config.appInbox,
+        wakeOwningQueue: dependencies.wakeQueueEngine,
+      },
     );
     this.dependencies = dependencies;
     this.config = config;
@@ -210,14 +211,17 @@ export class AppAdminInboxService extends AppInboxService {
       const enqueued = await this.processEntryUntilCompletionResult<
         AdminPruneCommand,
         AdminPruneEnqueueResult
-      >({
-        type: AppInboxType.ADMIN_PRUNE_EXPIRED,
-        topicId: ADMIN_APP_INBOX_TOPIC,
-        resourceId: command.jobId,
-        contextId: command.requestedBy,
-        senderId: command.requestedSessionId,
-        data: command,
-      });
+      >(
+        {
+          type: AppInboxType.ADMIN_PRUNE_EXPIRED,
+          topicId: ADMIN_APP_INBOX_TOPIC,
+          resourceId: command.jobId,
+          contextId: command.requestedBy,
+          senderId: command.requestedSessionId,
+          data: command,
+        },
+        decodeAdminPruneEnqueueResult,
+      );
       return await this.toCallerResult(command, enqueued);
     } catch (error) {
       if (!(error instanceof AppInboxIdempotencyConflictError)) {

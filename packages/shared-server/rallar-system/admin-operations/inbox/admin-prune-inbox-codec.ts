@@ -87,8 +87,7 @@ function readCategories(
   if (!Array.isArray(value) || value.length === 0) {
     throw new TypeError('categories are invalid');
   }
-  const requested = new Set(value.map(readCategory));
-  return ADMIN_PRUNE_EXPIRED_CATEGORIES.filter((category) => requested.has(category));
+  return [...new Set(value.map(readCategory))];
 }
 
 function readAppData(value: AdminPruneExpiredRequest['appData']): AdminPruneAppData | null {

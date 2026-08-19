@@ -9,14 +9,27 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
-  decodeAdminPruneCommand,
   type AdminPruneCommand,
+  createAdminPruneCommand,
+  decodeAdminPruneCommand,
 } from '@shared-server/rallar-system/admin-operations/admin-prune-work-codec.ts';
-import { ADMIN_PRUNE_AGGREGATE_TOPIC } from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
-import { AppInboxIdempotencyConflictError } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { hashCanonicalCommand } from '@shared-server/rallar-system/services/canonical-command-hash.ts';
+// prettier-ignore
+import {
+  ADMIN_PRUNE_AGGREGATE_TOPIC,
+} from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
+import {
+  AppInboxIdempotencyConflictError,
+  AppInboxType,
+} from '@shared-server/rallar-system/services/AppInboxService.ts';
+// prettier-ignore
+import {
+  hashCanonicalCommand,
+} from '@shared-server/rallar-system/services/canonical-command-hash.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
-import { AppAdminInboxService } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
+import {
+  ADMIN_APP_INBOX_TOPIC,
+  AppAdminInboxService,
+} from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
 import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
 import {
   createResilience,
@@ -93,7 +106,7 @@ describe('AppAdminInboxService initial prune command', () => {
     await expect(pending).resolves.toMatchObject({ right: { status: 'dry-run' } });
   });
 
-  it('rejects app-data pruning without a namespace before any volatile or mutation work', async () => {
+  it('rejects app-data without a namespace before volatile or mutation work', async () => {
     const harness = createAdminInboxHarness();
 
     await expect(
@@ -111,7 +124,7 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.wakeQueueEngine).not.toHaveBeenCalled();
   });
 
-  it('reuses a matching same-client same-session request without recapturing volatile facts', async () => {
+  it('reuses a same-client same-session request without recapturing facts', async () => {
     const harness = createAdminInboxHarness();
     const request = {
       requestId: 'matching-replay',
@@ -136,6 +149,62 @@ describe('AppAdminInboxService initial prune command', () => {
     ).resolves.toEqual(first);
 
     expect(await readOnlyCommand(harness.queue, 'matching-replay', 'admin')).toEqual(firstCommand);
+    expect(harness.readWorkCounts()).toEqual(beforeReplay);
+  });
+
+  it('preserves first-occurrence category order for fresh command and result facts', async () => {
+    const harness = createAdminInboxHarness();
+    const result = await completePrune(harness, createAdminSession('admin', 'admin-session'), {
+      requestId: 'first-occurrence-order',
+      categories: ['resource-inbox-results', 'runtime-state', 'resource-inbox-results'],
+      dryRun: true,
+    });
+
+    const command = await readOnlyCommand(harness.queue, 'first-occurrence-order', 'admin');
+    expect(command.categories).toEqual(['resource-inbox-results', 'runtime-state']);
+    expect(result.right?.results.map(({ category }) => category)).toEqual([
+      'resource-inbox-results',
+      'runtime-state',
+    ]);
+  });
+
+  it('replays predecessor category order for the same reordered set', async () => {
+    const harness = createAdminInboxHarness();
+    const predecessorCommand = await createAdminPruneCommand({
+      jobId: 'predecessor-order-replay',
+      requestedBy: 'admin',
+      requestedSessionId: 'admin-session',
+      capturedAtEpochMs: INITIAL_TIME_EPOCH_MS,
+      expireAtEpochMs: INITIAL_TIME_EPOCH_MS + RETRY_EXPIRY_OFFSET_MS,
+      dryRun: true,
+      categories: ['resource-inbox-results', 'runtime-state'],
+      appData: null,
+      pageSize: 25,
+    });
+    await harness.service.enqueue({
+      type: AppInboxType.ADMIN_PRUNE_EXPIRED,
+      topicId: ADMIN_APP_INBOX_TOPIC,
+      resourceId: predecessorCommand.jobId,
+      contextId: predecessorCommand.requestedBy,
+      senderId: predecessorCommand.requestedSessionId,
+      data: predecessorCommand,
+    });
+    await dequeueInitialCommand(harness);
+    const beforeReplay = harness.readWorkCounts();
+
+    const replay = await harness.service.pruneExpired({
+      adminSession: createAdminSession('admin', 'admin-session'),
+      request: {
+        requestId: predecessorCommand.jobId,
+        categories: ['runtime-state', 'resource-inbox-results'],
+        dryRun: true,
+      },
+    });
+
+    expect(replay.right?.results.map(({ category }) => category)).toEqual([
+      'resource-inbox-results',
+      'runtime-state',
+    ]);
     expect(harness.readWorkCounts()).toEqual(beforeReplay);
   });
 
@@ -195,7 +264,7 @@ describe('AppAdminInboxService initial prune command', () => {
     },
   );
 
-  it('uses a distinct AppInbox key for another authenticated client with the same request ID', async () => {
+  it('uses a distinct key for another client with the same request ID', async () => {
     const harness = createAdminInboxHarness();
     const request = {
       requestId: 'client-scoped-request-id',
@@ -213,7 +282,7 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.pruner.countExpired).toHaveBeenCalledTimes(2);
   });
 
-  it('runs a dry-run through current reads, one transaction, result commit, and no post-commit wake', async () => {
+  it('runs dry-run reads and one commit without post-commit wake', async () => {
     const harness = createAdminInboxHarness();
 
     await completePrune(harness, createAdminSession('admin', 'admin-session'), {
@@ -243,7 +312,7 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.database.outboxEntries.size).toBe(0);
   });
 
-  it('commits initial aggregate and page work before waking the queue for a durable prune', async () => {
+  it('commits aggregate and page work before waking the queue', async () => {
     const harness = createAdminInboxHarness();
 
     await completePrune(harness, createAdminSession('admin', 'admin-session'), {
@@ -278,7 +347,7 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.database.outboxEntries.size).toBe(2);
   });
 
-  it('rolls back initial durable work on an outbox collision without loading a winner or waking', async () => {
+  it('rolls back an outbox collision without loading a winner or waking', async () => {
     const harness = createAdminInboxHarness({ failOutboxWrite: true, waitForResult: false });
 
     await expect(
@@ -301,7 +370,7 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.wakeQueueEngine).toHaveBeenCalledOnce();
   });
 
-  it('restarts the complete read and write sequence after an optimistic transaction conflict', async () => {
+  it('restarts read and write after an optimistic transaction conflict', async () => {
     const harness = createAdminInboxHarness({ conflictFirstTransaction: true });
 
     await completePrune(

@@ -14,11 +14,10 @@ import type {
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 import {
   type AppGroupInboxService,
+  decodeTopologyReconfigureInboxResult,
+  type TopologyReconfigureInboxResult,
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import type {
-  TopologyReconfigureInboxResult,
-} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 
 import type {
   CrdtAdminMutations,
@@ -63,18 +62,22 @@ export function createApiAdminMutationGateway(
       const result = await input.appGroup.processAuthenticatedEntryUntilCompletionResult<
         typeof command,
         TopologyReconfigureInboxResult
-      >({
-        type: AppInboxType.TOPOLOGY_RECONFIGURE,
-        resourceId: command.requestId,
-        contextId: [
-          command.groupRef.applicationId,
-          command.groupRef.workspaceId,
-          command.groupRef.groupId,
-        ]
-          .map(encodeURIComponent).join(':'),
-        senderId: command.actor.principalId,
-        data: command,
-      }, toIssuedAuthSession(adminSession, input.now()));
+      >(
+        {
+          type: AppInboxType.TOPOLOGY_RECONFIGURE,
+          resourceId: command.requestId,
+          contextId: [
+            command.groupRef.applicationId,
+            command.groupRef.workspaceId,
+            command.groupRef.groupId,
+          ]
+            .map(encodeURIComponent).join(':'),
+          senderId: command.actor.principalId,
+          data: command,
+        },
+        toIssuedAuthSession(adminSession, input.now()),
+        decodeTopologyReconfigureInboxResult,
+      );
       if (result.right !== undefined) {
         return result.right;
       }

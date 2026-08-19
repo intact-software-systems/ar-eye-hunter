@@ -4,8 +4,6 @@ import type {
   RallarCrdtDocumentMetadata,
   RallarCrdtDocumentRef,
   RallarCrdtIntegrityReport,
-  RallarCrdtQuotaPolicy,
-  RallarCrdtRetentionPolicy,
   RallarCrdtSnapshotEnvelope,
 } from '@shared/crdt/mod.ts';
 import { toRallarCrdtDocumentKey } from '@shared/crdt/mod.ts';
@@ -22,9 +20,6 @@ import type {
 import {
   createCrdtMutationCommand,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import {
-  decodeCrdtMutationResult,
-} from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import {
   decodeExactDocumentRef,
   decodeExactProjectionIds,
@@ -114,7 +109,7 @@ export function createCrdtAdminMutations(
       if (completed.right === undefined) {
         throw new Error('CRDT AppInbox result is missing');
       }
-      const result = decodeCrdtMutationResult(completed.right);
+      const result = completed.right;
       if (result.status === 'rejected') {
         throw toAdminMutationError(result.code);
       }

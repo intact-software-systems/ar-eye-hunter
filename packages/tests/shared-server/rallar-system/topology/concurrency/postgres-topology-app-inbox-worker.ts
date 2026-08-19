@@ -1,25 +1,41 @@
 import postgres from 'postgres';
 
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
-import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
+// prettier-ignore
+import type {
+  GroupTopologyConfigMutationReceipt,
+} from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import type { GroupTopologyConfigMutationExecution } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+// prettier-ignore
+import type {
+  IssuedAuthSession,
+} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+// prettier-ignore
+import type {
+  GroupTopologyConfigMutationExecution,
+} from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import {
-  AppInboxType,
   type AppInboxFailure,
+  AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+// prettier-ignore
+import {
+  toTopologyAppInboxCommand,
+} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+// prettier-ignore
+import {
+  decodeTopologyAppInboxResult,
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import {
   createPostgresAppInboxWorkerRuntime,
   type PostgresAppInboxWorkerRuntime,
   type PostgresAppInboxWorkerTrace,
   type TopologyReadBarrierPrimitive,
-  type WorkerBarrier,
   waitForPostgresWorkerBarrier,
+  type WorkerBarrier,
 } from '../../../fixtures/postgres-app-inbox-worker-runtime.ts';
 
 interface WorkerInput {
@@ -167,6 +183,13 @@ async function writeTopologyAppInboxCommand(
         data,
       },
       authority,
+      (value) => {
+        const decoded = decodeTopologyAppInboxResult(value);
+        if (!('receipt' in decoded)) {
+          throw new TypeError('Expected topology config mutation result');
+        }
+        return decoded;
+      },
     ),
   );
   return result;

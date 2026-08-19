@@ -1,9 +1,12 @@
-import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
+import {
+  ADMIN_PRUNE_EXPIRED_CATEGORIES,
+  type AdminPruneExpiredCategory,
+} from '@shared/api/admin-operations-types.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { AdminPruneAppData, AdminPruneCommand } from '../AdminPruneExpiredWork.ts';
 import { AppInboxIdempotencyConflictError } from '../../services/AppInboxService.ts';
-import { AppInboxType, type AppInboxMessageContext } from '../../services/app-inbox-contracts.ts';
+import { type AppInboxMessageContext, AppInboxType } from '../../services/app-inbox-contracts.ts';
 import { toAppInboxQueueKey } from '../../services/app-inbox-queue-key.ts';
 import { hashCanonicalCommand } from '../../services/canonical-command-hash.ts';
 
@@ -35,7 +38,12 @@ export async function createAdminPruneIdempotencyIdentity(
   return {
     version: 1,
     ...input,
-    semanticHash: await hashCanonicalCommand(input),
+    semanticHash: await hashCanonicalCommand({
+      ...input,
+      categories: ADMIN_PRUNE_EXPIRED_CATEGORIES.filter((category) =>
+        input.categories.includes(category),
+      ),
+    }),
   };
 }
 
@@ -68,7 +76,8 @@ export function assertMatchingAdminPruneIdentity(
     identity.requestedBy === command.requestedBy &&
     identity.requestedSessionId === command.requestedSessionId &&
     identity.dryRun === command.dryRun &&
-    JSON.stringify(identity.categories) === JSON.stringify(command.categories) &&
+    identity.categories.length === command.categories.length &&
+    identity.categories.every((category) => command.categories.includes(category)) &&
     JSON.stringify(identity.appData) === JSON.stringify(command.appData);
   if (!matches) {
     throw new AppInboxIdempotencyConflictError(

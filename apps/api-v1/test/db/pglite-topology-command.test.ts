@@ -1,0 +1,693 @@
+import assert from 'node:assert/strict';
+
+import {
+  ResourceInboxInvariantCorruptionError,
+  ResourceInboxRepository,
+} from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/\
+PSqlRuntimeStateRepository.ts';
+import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/\
+optimistic-runtime-state-write.ts';
+import { RtcTopologyDeliveryLeaseLostError } from '@shared-server/rallar-system/topology/replay/\
+rtc-topology-delivery-stream-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/\
+GroupStateRepository.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/\
+persistence/group-topology-config-repository.ts';
+import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/\
+RtcTopologyExecutionRepository.ts';
+import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/\
+RtcTopologySnapshotRepository.ts';
+import { RtcRttRepository } from '@shared-server/rallar-system/rtc-topology/persistence/\
+rtc-rtt-repository.ts';
+import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/\
+group-topology-management-service.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/\
+rallar-rtc-topology-service.ts';
+import {
+  type TopologyAppInboxCommand,
+} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import {
+  APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
+  createRtcTopologyOutboxPublisher,
+  createRtcTopologyWorkHandler,
+} from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
+
+import { toResilienceDto } from '../../src/middleware-resilience.ts';
+import { withPGliteSql } from './pglite-auth-test-harness.ts';
+import {
+  activeTopologySnapshot,
+  canonicalAuditStamp,
+  createPGliteRemovalPlanningScenario,
+  createPGliteTopologyWorkFixture,
+  readRtcTopologyDeliveryState,
+  topologyGroupSnapshot,
+  topologyGroupSnapshotWithSessionIds,
+} from './pglite-sql-adapter-test-runtime.ts';
+
+interface ResourceInboxStatusRow {
+  readonly ri_type_id: string;
+  readonly ri_status: string;
+}
+
+interface NumericCountRow {
+  readonly count: string | number;
+}
+
+interface StringCountRow {
+  readonly count: string;
+}
+
+interface ResourceInboxLifecycleRow {
+  readonly ri_resource_id: string;
+  readonly ri_topic_id: string;
+  readonly ri_type_id: string;
+  readonly ri_status: string;
+  readonly ri_resource: string;
+}
+
+interface ResourceInboxForeignKeyRow {
+  readonly ri_topic_id: string;
+  readonly ri_resource_id: string;
+  readonly fk_ext_bank_id: string;
+}
+
+interface ResourceInboxTopicTypeRow {
+  readonly ri_topic_id: string;
+  readonly ri_type_id: string;
+}
+
+interface NumericValueRow {
+  readonly value: number;
+}
+
+interface StringValueRow {
+  readonly value: string;
+}
+
+interface RuntimeStateExpiryRow {
+  readonly store_key: string;
+  readonly expire_at_ts: string;
+}
+
+interface ResourceInboxAttemptStatusRow {
+  readonly ri_attempts: string | number;
+  readonly ri_status: string;
+}
+
+interface ResourceInboxPayloadRow {
+  readonly ri_resource: string;
+}
+
+interface EpochMillisecondsRow {
+  readonly epoch_ms: string | number;
+}
+
+interface GroupEventWorkspaceRow {
+  readonly workspace_key: string;
+}
+
+interface CreatedTimestampRow {
+  readonly created_ts: string;
+}
+
+interface ExpireTimestampRow {
+  readonly expire_ts: string;
+}
+
+interface StartTimestampRow {
+  readonly start_ts: string;
+}
+
+interface EndTimestampRow {
+  readonly end_ts: string;
+}
+
+interface TopologyCommandPayload {
+  readonly data: TopologyAppInboxCommand;
+}
+
+interface DurableTopologyAuthorityProof {
+  readonly principalId: string;
+  readonly sessionId: string;
+  readonly sessionIssuedAtEpochMs: number;
+}
+
+interface DurableTopologyAuthorityValue {
+  readonly proof: DurableTopologyAuthorityProof;
+}
+
+interface DurableTopologyAuthority {
+  readonly authority: DurableTopologyAuthorityValue;
+}
+
+interface ResourceInboxKeyFields {
+  readonly topicId: string;
+  readonly resourceId: string;
+  readonly contextId: string;
+}
+
+interface RtcTopologyDeliveryState {
+  readonly headSequence: number;
+  readonly sequences: readonly number[];
+}
+
+interface RtcTopologyDeliveryStreamRow {
+  readonly head_sequence: number;
+}
+
+interface RtcTopologyDeliveryEntryRow {
+  readonly sequence: number;
+}
+
+Deno.test(
+  'PGlite topology planning uses the immutable group update time for a planned removal tombstone',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const scenario = await createPGliteRemovalPlanningScenario(sql, {
+        name: 'immutable-removal-time',
+        status: 'archived',
+        expiresAtEpochMs: null,
+        updatedAtEpochMs: 123,
+      });
+
+      const result = scenario.service.computeTopologyFromAuthority(
+        scenario.authority,
+        scenario.previous,
+      );
+
+      assert.equal(result.snapshot.state, 'removed');
+      assert.equal(result.snapshot.updatedAtEpochMs, 123);
+      assert.equal(result.snapshot.createdAtEpochMs, 1);
+    });
+  },
+);
+
+Deno.test(
+  'PGlite topology planning does not let a stale removal delete a newer active topology',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const scenario = await createPGliteRemovalPlanningScenario(sql, {
+        name: 'newer-active',
+        status: 'active',
+        expiresAtEpochMs: null,
+        updatedAtEpochMs: 200,
+      });
+
+      const result = scenario.service.computeTopologyFromAuthority(
+        scenario.authority,
+        scenario.previous,
+      );
+
+      assert.equal(scenario.authority.group.group.status, 'active');
+      assert.equal(result.snapshot.state, 'active');
+      assert.deepEqual(
+        result.snapshot.sourceGroupStateCausalRevision,
+        scenario.authority.group.causalRevision,
+      );
+    });
+  },
+);
+
+Deno.test(
+  'PGlite topology planning does not treat a newer expired active group as removal cancellation',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const scenario = await createPGliteRemovalPlanningScenario(sql, {
+        name: 'newer-expired',
+        status: 'active',
+        expiresAtEpochMs: 999,
+        updatedAtEpochMs: 201,
+      });
+
+      const result = scenario.service.computeTopologyFromAuthority(
+        scenario.authority,
+        scenario.previous,
+      );
+
+      assert.equal(scenario.authority.group.group.status, 'active');
+      assert.equal(result.snapshot.state, 'removed');
+      assert.deepEqual(
+        result.snapshot.sourceGroupStateCausalRevision,
+        scenario.authority.group.causalRevision,
+      );
+    });
+  },
+);
+
+Deno.test(
+  'PGlite topology planning replans a stale removal from the newer terminal group authority',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const scenario = await createPGliteRemovalPlanningScenario(sql, {
+        name: 'newer-terminal',
+        status: 'archived',
+        expiresAtEpochMs: null,
+        updatedAtEpochMs: 202,
+      });
+
+      const result = scenario.service.computeTopologyFromAuthority(
+        scenario.authority,
+        scenario.previous,
+      );
+
+      assert.equal(scenario.authority.group.group.status, 'archived');
+      assert.equal(result.snapshot.state, 'removed');
+      assert.equal(result.snapshot.updatedAtEpochMs, 202);
+      assert.deepEqual(
+        result.snapshot.sourceGroupStateCausalRevision,
+        scenario.authority.group.causalRevision,
+      );
+    });
+  },
+);
+
+Deno.test(
+  'PGlite topology planning filters RTTs outside recomputed group reporting edges',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const nowEpochMs = 1_000;
+      const groupRef = {
+        applicationId: 'pglite-topology-rtt-filter',
+        workspaceId: 'planning',
+        groupId: 'room',
+      };
+      const group = topologyGroupSnapshotWithSessionIds(
+        groupRef,
+        ['session-a', 'session-b', 'session-c'],
+        nowEpochMs,
+      );
+      const runtime = new PSqlRuntimeStateRepository(sql);
+      const groups = new GroupStateRepository(runtime);
+      assert.equal((await groups.insertGroup(group.group)).status, 'applied');
+      for (const member of group.members) {
+        await groups.putMember(member);
+      }
+      for (const session of group.activeSessions) {
+        await groups.putPresenceSession(session);
+      }
+      const rttRepository = new RtcRttRepository(runtime, {
+        now: () => nowEpochMs,
+      });
+      const storedRtt = {
+        sessionIdFrom: 'session-a',
+        sessionIdTo: 'session-c',
+        rttMs: 7,
+        createdAtEpochMs: nowEpochMs,
+        version: 1,
+      };
+      assert.equal(await rttRepository.putMeasurementIfNewer(storedRtt), true);
+      let plannedRtts: readonly typeof storedRtt[] = [];
+      class RecordingTopologyService extends RallarRtcTopologyService {
+        override planGroupTopologyAt(
+          ...args: Parameters<RallarRtcTopologyService['planGroupTopologyAt']>
+        ): ReturnType<RallarRtcTopologyService['planGroupTopologyAt']> {
+          plannedRtts = args[1] as readonly typeof storedRtt[];
+          return super.planGroupTopologyAt(...args);
+        }
+      }
+      const topologyService = new RecordingTopologyService({
+        now: () => nowEpochMs,
+        topologyKind: 'tree',
+        degreeLimit: 2,
+        rttReportingDegreeLimit: 1,
+      });
+      const service = new GroupTopologyManagementService({
+        findGroupSnapshotByRef: () => group,
+        groupStateRepository: groups,
+        configRepository: new GroupTopologyConfigRepository(runtime),
+        topologyService,
+        rttRepository,
+        serverDefaults: {
+          topologyKind: 'tree',
+          degreeLimit: 2,
+          rttReportingDegreeLimit: 1,
+        },
+        now: () => nowEpochMs,
+      });
+      const previous = activeTopologySnapshot({
+        groupRef,
+        sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 1 },
+        activeSessionIds: ['session-a', 'session-b', 'session-c'],
+        nextHopsBySessionId: {
+          'session-a': ['session-b'],
+          'session-b': ['session-a', 'session-c'],
+          'session-c': ['session-b'],
+        },
+      });
+      const authority = await service.readTopologyPlanningAuthority(groupRef);
+      assert.deepEqual(authority.rttMeasurements, [storedRtt]);
+
+      service.computeTopologyFromAuthority(authority, previous);
+
+      assert.deepEqual(plannedRtts, []);
+    });
+  },
+);
+
+Deno.test(
+  'PGlite topology worker rereads authority and predecessor after removal CAS conflict',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const nowEpochMs = 1_000;
+      const groupRef = {
+        applicationId: 'pglite-removal-retry',
+        workspaceId: 'planning',
+        groupId: 'room',
+      };
+      const active = topologyGroupSnapshot(groupRef);
+      const terminal: GroupSnapshot = {
+        ...active,
+        group: {
+          ...active.group,
+          status: 'archived',
+          updated: canonicalAuditStamp(100),
+          archived: canonicalAuditStamp(100),
+          deleted: null,
+        },
+      };
+      const runtimeRepository = new PSqlRuntimeStateRepository(sql);
+      const groups = new GroupStateRepository(runtimeRepository);
+      assert.equal((await groups.insertGroup(terminal.group)).status, 'applied');
+      for (const member of terminal.members) {
+        await groups.putMember(member);
+      }
+      const durableTerminal = await groups.readSnapshot(groupRef);
+      assert.ok(durableTerminal);
+      const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
+      const predecessor = activeTopologySnapshot({
+        groupRef,
+        sourceGroupStateCausalRevision: { groupRevision: 0, presenceRevision: 0 },
+        activeSessionIds: [],
+        nextHopsBySessionId: {},
+      });
+      assert.equal(await snapshots.observeSnapshot(predecessor), 'inserted');
+      const movedPredecessor = { ...predecessor, version: 1, updatedAtEpochMs: 2 };
+      let authorityReadCount = 0;
+      const topologyManagement = new GroupTopologyManagementService({
+        findGroupSnapshotByRef: (ref) => groups.readSnapshot(ref),
+        groupStateRepository: groups,
+        configRepository: new GroupTopologyConfigRepository(runtimeRepository),
+        topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
+        topologySnapshotRepository: snapshots,
+        processRttReader: () => [],
+        now: () => nowEpochMs,
+      });
+      const readTopologyPlanningAuthority = topologyManagement.planningService
+        .readTopologyPlanningAuthority.bind(
+          topologyManagement.planningService,
+        );
+      topologyManagement.planningService.readTopologyPlanningAuthority = async (input) => {
+        const authority = await readTopologyPlanningAuthority(input);
+        authorityReadCount += 1;
+        if (authorityReadCount === 1) {
+          assert.equal(await snapshots.observeSnapshot(movedPredecessor), 'advanced');
+        }
+        return authority;
+      };
+      const resourceInbox = new ResourceInboxRepository(sql);
+      let retryReleaseCount = 0;
+      class RetryObservedQueueBox extends PSqlQueueBox {
+        override async releaseEntries(
+          ...args: Parameters<PSqlQueueBox['releaseEntries']>
+        ): ReturnType<PSqlQueueBox['releaseEntries']> {
+          const released = await super.releaseEntries(...args);
+          if (args[1].status === EntityStatus.RETRY) {
+            retryReleaseCount += 1;
+          }
+          return released;
+        }
+      }
+      const outboxReader = new OutboxQueueReader(
+        new RetryObservedQueueBox(resourceInbox),
+      );
+      const workRuntime = createRtcTopologyOutboxPublisher({
+        outboxQueueReader: outboxReader,
+        senderId: 'pglite-removal-retry',
+        now: () => nowEpochMs,
+      });
+      const executionRepository = new RtcTopologyExecutionRepository(
+        runtimeRepository,
+        60_000,
+        () => nowEpochMs,
+      );
+      outboxReader.onOutboxMessageDo(
+        workRuntime.workType,
+        createRtcTopologyWorkHandler({
+          runtime: workRuntime,
+          database: sql,
+          topologyPlanning: topologyManagement.planningService,
+          executionRepository,
+        }),
+      );
+      await workRuntime.publisher.enqueueForGroupSnapshot(durableTerminal);
+
+      await outboxReader.dequeueOutbox(
+        OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+        toResilienceDto(),
+      );
+
+      const [work] = await sql<ResourceInboxAttemptStatusRow[]>`
+      select ri_attempts, ri_status from resource_inbox
+      where ri_type_id = 'APP_OUTBOX'
+        and ri_topic_id = ${APP_OUTBOX_RTC_TOPOLOGY_TOPIC}
+    `;
+      assert.equal(retryReleaseCount, 1);
+      assert.equal(Number(work?.ri_attempts), 2);
+      assert.equal(work?.ri_status, EntityStatus.COMPLETED);
+      assert.equal(authorityReadCount, 2);
+      const committed = await executionRepository.findSnapshot(groupRef);
+      assert.equal(committed?.state, 'removed');
+      assert.equal(committed?.version, movedPredecessor.version);
+      assert.deepEqual(
+        committed?.sourceGroupStateCausalRevision,
+        durableTerminal.causalRevision,
+      );
+    });
+  },
+);
+
+Deno.test('PGlite topology worker classifies exact WS outbox replay as idempotent', async () => {
+  await withPGliteSql(async (sql) => {
+    const fixture = await createPGliteTopologyWorkFixture(
+      sql,
+      'pglite-topology-ws-replay',
+    );
+    await new ResourceInboxRepository(sql).write(fixture.publicationEntry);
+
+    await fixture.handler.onMessage(fixture.message, fixture.reserved);
+    assert.equal(fixture.readReplayWakeCount(), 1);
+
+    const consumed = await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key);
+    assert.equal(consumed?.status, EntityStatus.COMPLETED);
+    assert.deepEqual(
+      await fixture.executionRepository.findPublicationForWork(
+        fixture.groupRef,
+        fixture.workId,
+      ),
+      fixture.publication,
+    );
+    assert.deepEqual(
+      await fixture.executionRepository.findSnapshot(fixture.groupRef),
+      fixture.topology,
+    );
+    assert.equal(
+      Number(
+        (await sql<NumericCountRow[]>`
+        select count(*) as count
+        from resource_inbox
+        where ri_type_id = 'WS_OUTBOX'
+      `)[0]?.count,
+      ),
+      1,
+    );
+    assert.deepEqual(
+      await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
+      { headSequence: 1, sequences: [1] },
+    );
+  });
+});
+
+Deno.test(
+  'PGlite topology worker revalidates durable delivery on a loaded work claim',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const fixture = await createPGliteTopologyWorkFixture(
+        sql,
+        'pglite-topology-loaded-delivery',
+      );
+      await fixture.handler.onMessage(fixture.message, fixture.reserved);
+      assert.equal(fixture.readAppendCount(), 1);
+      assert.equal(fixture.readReplayWakeCount(), 1);
+      await sql`
+      update resource_inbox
+      set ri_status = 'RESERVED', ri_attempts = 2,
+          start_ts = now() at time zone 'UTC', end_ts = null, next_ts = null
+      where ri_topic_id = ${fixture.workEntry.key.topicId}
+        and ri_resource_id = ${fixture.workEntry.key.resourceId}
+        and fk_ext_bank_id = ${fixture.workEntry.key.contextId}
+    `;
+      const replayReservation = await fixture.resourceInbox.findAnyByKey(
+        fixture.workEntry.key,
+      );
+      assert.ok(replayReservation);
+
+      await fixture.handler.onMessage(fixture.message, replayReservation);
+
+      assert.equal(fixture.readAppendCount(), 2);
+      assert.equal(fixture.readReplayWakeCount(), 2);
+      assert.deepEqual(
+        await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
+        { headSequence: 1, sequences: [1] },
+      );
+      assert.equal(
+        (await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key))?.status,
+        EntityStatus.COMPLETED,
+      );
+    });
+  },
+);
+
+Deno.test(
+  'PGlite topology worker fails closed and rolls back after delivery lease loss',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const fixture = await createPGliteTopologyWorkFixture(
+        sql,
+        'pglite-topology-delivery-lease-loss',
+      );
+      await sql`
+      update rtc_topology_delivery_stream
+      set lease_expires_at = clock_timestamp() - interval '1 second'
+      where stream_id = ${fixture.publisherStreamId}
+    `;
+
+      await assert.rejects(
+        () => fixture.handler.onMessage(fixture.message, fixture.reserved),
+        RtcTopologyDeliveryLeaseLostError,
+      );
+
+      assert.equal(
+        await fixture.executionRepository.findPublicationForWork(
+          fixture.groupRef,
+          fixture.workId,
+        ),
+        undefined,
+      );
+      assert.equal(
+        await fixture.resourceInbox.findAnyByKey(fixture.publicationEntry.key),
+        null,
+      );
+      assert.deepEqual(
+        await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
+        { headSequence: 0, sequences: [] },
+      );
+      assert.equal(
+        (await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key))?.status,
+        EntityStatus.RESERVED,
+      );
+      assert.equal(fixture.readReplayWakeCount(), 0);
+    });
+  },
+);
+
+Deno.test(
+  'PGlite topology worker rolls state and receipt back on divergent WS outbox collision',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const fixture = await createPGliteTopologyWorkFixture(
+        sql,
+        'pglite-topology-ws-collision',
+      );
+      const divergentResource = JSON.stringify({
+        collision: 'preexisting-divergent-topology-publication',
+      });
+      await fixture.resourceInbox.write({
+        ...fixture.publicationEntry,
+        resource: divergentResource,
+      });
+
+      await assert.rejects(
+        () => fixture.handler.onMessage(fixture.message, fixture.reserved),
+        ResourceInboxInvariantCorruptionError,
+      );
+
+      assert.equal(
+        await fixture.executionRepository.findPublicationForWork(
+          fixture.groupRef,
+          fixture.workId,
+        ),
+        undefined,
+      );
+      assert.equal(
+        await fixture.executionRepository.findSnapshot(fixture.groupRef),
+        undefined,
+      );
+      const consumed = await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key);
+      assert.equal(consumed?.status, EntityStatus.RESERVED);
+      assert.equal(consumed?.dequeueAudit.attempts, 1);
+      assert.equal(
+        (await fixture.resourceInbox.findAnyByKey(fixture.publicationEntry.key))
+          ?.resource,
+        divergentResource,
+      );
+      assert.deepEqual(
+        await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
+        { headSequence: 0, sequences: [] },
+      );
+      assert.equal(fixture.readReplayWakeCount(), 0);
+    });
+  },
+);
+
+Deno.test(
+  'PGlite topology worker rolls every effect back when reservation completion loses its fence',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const fixture = await createPGliteTopologyWorkFixture(
+        sql,
+        'pglite-topology-finish-fence',
+      );
+
+      await assert.rejects(
+        () =>
+          fixture.handler.onMessage(fixture.message, {
+            ...fixture.reserved,
+            dequeueAudit: {
+              ...fixture.reserved.dequeueAudit,
+              attempts: fixture.reserved.dequeueAudit.attempts + 1,
+            },
+          }),
+        RuntimeStateWriteConflictError,
+      );
+
+      assert.equal(
+        await fixture.executionRepository.findPublicationForWork(
+          fixture.groupRef,
+          fixture.workId,
+        ),
+        undefined,
+      );
+      assert.equal(
+        await fixture.executionRepository.findSnapshot(fixture.groupRef),
+        undefined,
+      );
+      assert.equal(
+        await fixture.resourceInbox.findAnyByKey(fixture.publicationEntry.key),
+        null,
+      );
+      const consumed = await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key);
+      assert.equal(consumed?.status, EntityStatus.RESERVED);
+      assert.equal(consumed?.dequeueAudit.attempts, 1);
+      assert.deepEqual(
+        await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
+        { headSequence: 0, sequences: [] },
+      );
+      assert.equal(fixture.readReplayWakeCount(), 0);
+    });
+  },
+);

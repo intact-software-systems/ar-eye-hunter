@@ -34,6 +34,7 @@ import {
   type AppInboxEnqueueInput,
   type AppInboxFailure,
   type AppInboxMessageContext,
+  type AppInboxResultDecoder,
   AppInboxService,
   type AppInboxServiceOptions,
   AppInboxType,
@@ -83,6 +84,13 @@ export type {
 
 export { toTopologyAppInboxCommand } from '../topology/inbox/topology-app-inbox-command.ts';
 
+export {
+  decodeTopologyAppInboxResult,
+  decodeTopologyReconfigureInboxResult,
+  type TopologyAppInboxResult,
+  type TopologyReconfigureInboxResult,
+} from '../topology/inbox/topology-app-inbox-handler.ts';
+
 export type {
   RtcRttAppInboxCommand,
   RtcRttAppInboxDependencies,
@@ -125,15 +133,19 @@ class AppGroupInboxService extends AppInboxService {
     formationMetrics?: GroupFormationGroupMutationSink,
   ) {
     super(
-      inbox,
-      resourceInbox,
-      resourceInboxResults,
-      database,
-      serviceId,
-      SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
-      timing,
-      options,
-      wakeQueue,
+      {
+        inboxQueueReader: inbox,
+        resourceInboxRepository: resourceInbox,
+        resourceInboxResultsRepository: resourceInboxResults,
+        database,
+      },
+      {
+        serviceId,
+        defaultTopicId: SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
+        timing,
+        options,
+        wakeOwningQueue: wakeQueue,
+      },
     );
     this.groupStateService = groupStateService;
     this.wakeQueue = wakeQueue;
@@ -245,14 +257,16 @@ class AppGroupInboxService extends AppInboxService {
   public async processAuthenticatedEntryUntilCompletionResult<V, R = V>(
     enqueue: AppInboxEnqueueInput<V>,
     authority: IssuedAuthSession,
+    decodeResult: AppInboxResultDecoder<R>,
   ): Promise<Either<AppInboxFailure, R>> {
     if (isTopologyConfigInboxType(enqueue.type)) {
       return await super.processEntryUntilCompletionResult<V, R>(
         await this.topologyAppInboxHandler.createAuthenticatedEnqueue(enqueue, authority),
+        decodeResult,
       );
     }
     const prepared = await this.prepareAuthenticatedGroupMutation(enqueue, authority);
-    return await super.processEntryUntilCompletionResult<V, R>(prepared);
+    return await super.processEntryUntilCompletionResult<V, R>(prepared, decodeResult);
   }
 
   setTopologyManagementService(service: GroupTopologyManagementService): void {
