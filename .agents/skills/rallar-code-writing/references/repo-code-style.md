@@ -342,6 +342,16 @@ data-literal discount replaces registry entries for declarative files: large
 schema, manifest, and lookup data needs no exception while the code around it
 stays navigable.
 
+Test files carry a `1,500`-line backstop instead. The tiers above are calibrated
+on the production corpus; measured the same way, the test corpus is 13-23%
+longer at every percentile and its p99 is 1,242 lines, so `1,500` preserves the
+same "top ~1% of files" meaning the production number carries. No other file
+metric is relaxed for tests: the test corpus is roughly half as cognitively
+dense as production at every percentile (p95 49 against 75, p99 116 against
+161), and `0.4%` of test files export twelve or more runtime values against
+`2.5%` of production files. A cohesive suite is worth more than a split one,
+and the cost of splitting it is not repaid by a metric tests already satisfy.
+
 An existing file already inside a warning tier enters touched-file standards
 closure when changed. Resolve its applicable tier and cohesion noncompliance
 throughout the touched file, using a coherent responsibility split when needed.
@@ -355,6 +365,15 @@ including blank lines and comments:
 - `50-60` physical lines: required separation review;
 - `>60` physical lines: refactor or record an approved symbol-level exception in
   [the repo code-style exception registry](../../../../docs/repo-code-style-exceptions.md).
+
+These thresholds apply to named functions, including test helpers and fixture
+builders, which already satisfy them more often than production functions do
+(`6.2%` over forty lines against `8.0%`). They do not apply to a `describe`,
+`it`, or `test` body. Those are suite structure rather than functions: a
+`describe` body has a median of 124 lines and a p85 of 363, so a forty-line
+function target would demand splitting one cohesive suite across files, which
+is the cognitive overhead this standard's first principle rejects. File metrics
+govern the suite; the function thresholds govern the helpers it calls.
 
 Route handlers retain the stricter `<=30`-line target. Split route modules by
 business action, normally `*-read.ts`, `*-write.ts`, and `*-admin.ts`. Shared
