@@ -138,7 +138,9 @@ function readOptions(arguments_) {
   for (let index = 0; index < arguments_.length; index += 2) {
     const name = arguments_[index];
     const value = arguments_[index + 1];
-    if (!name.startsWith('--') || value === '' || options.has(name)) {
+    // An empty value is data, not a malformed argument: GitHub Actions yields '' for the output
+    // of a job that never ran. Let it through so the validators can report the real cause.
+    if (!name.startsWith('--') || value === undefined || options.has(name)) {
       throw new Error(`invalid option: ${name}`);
     }
     options.set(name, value);
