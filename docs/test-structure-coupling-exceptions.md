@@ -2242,7 +2242,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "Reads a caller-selected recipe path through the shared loader, providing the exact checked-in YAML/JSON fixture exercised by the topology semantics suite.",
+      "rationale": "Loads recipe-matrix.json through the same repository-root-aware fixture interface so catalog resolution is tested against the published matrix.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#defines a no-browser three-server topology convergence recipe"
     },
     {
@@ -2324,16 +2324,16 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects a removed private-owner call from the exported family registrar"
     },
     {
-      "id": "test-structure-coupling-a267014f00d96251",
+      "id": "test-structure-coupling-8fc3f39a4953f5f3",
       "path": "packages/tests/shared-test/api-v1-recipe-test-fixture.ts",
-      "line": 26,
+      "line": 34,
       "column": 21,
       "kind": "production-source-read",
       "contract": "api-v1-recipe-fixture-interface",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "Loads recipe-matrix.json through the same repository-root-aware fixture interface so catalog resolution is tested against the published matrix.",
+      "rationale": "Reads a caller-selected recipe path through the shared loader, providing the exact checked-in YAML/JSON fixture exercised by the topology semantics suite.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#defines a no-browser three-server topology convergence recipe"
     },
     {

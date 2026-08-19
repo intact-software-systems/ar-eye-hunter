@@ -107,8 +107,25 @@ slice result is inconclusive and a new plan decision explicitly activates that w
   queue cadence therefore masks database-read scaling at the approved maximum of 500 updates. The
   black-box recipe remains the end-to-end correctness and no-regression layer; the real-PGlite
   repository test owns the precise 0/1-row boundary proof.
-- Slice 2 is implemented and focused validation is green. Immutable candidate capture and final
-  repository validation remain.
+- Slice 2 is implemented and its immutable candidate capture passed all three cases at commit
+  `72b4f565c4e97594da0847a9aa21bcd304e4e2e9`. The authenticated comparison reports no artifact
+  issues. Candidate/baseline p50 and p95 ratios stay between 1.00 and 1.04 without increasing with
+  history size, so they are classified as queue-cadence noise rather than a history-dependent
+  regression.
+- The general state-write benchmark was reviewed and is not run: its operation inventory is client
+  profile/instance, group presence/configuration, and topology-source mutation; it does not execute
+  the CRDT repository changed by this plan. Its available local baseline also binds unrelated commit
+  `224c850bf1e3632532b49c17995a6183c8c4c7a3`. Running it would create large unrelated evidence, not
+  a proportional regression check for this slice.
+
+| Case   | Path   | Baseline p50/p95 | Candidate p50/p95 | Candidate ratios |
+| ------ | ------ | ---------------- | ----------------- | ---------------- |
+| small  | new    | 104/131 ms       | 108/134 ms        | 1.038/1.023      |
+| small  | replay | 104/131 ms       | 107/131 ms        | 1.029/1.000      |
+| medium | new    | 104/129 ms       | 106/134 ms        | 1.019/1.039      |
+| medium | replay | 105/130 ms       | 107/131 ms        | 1.019/1.008      |
+| large  | new    | 103/130 ms       | 107/133 ms        | 1.039/1.023      |
+| large  | replay | 104/130 ms       | 107/133 ms        | 1.029/1.023      |
 
 ---
 
@@ -278,9 +295,9 @@ cd apps/api-v1 && deno task check
 - Generated only:
   `tmp/perf/crdt-append-history/candidate-<head>/`
 
-- [ ] Use the same host, managed PostgreSQL workflow, recipe rows, environment, and run identity
+- [x] Use the same host, managed PostgreSQL workflow, recipe rows, environment, and run identity
       shape as baseline. Use a fresh database.
-- [ ] Run:
+- [x] Run:
 
 ```sh
 RALLAR_CRDT_APPEND_HISTORY_ARTIFACT_DIR=\
@@ -291,19 +308,14 @@ node scripts/perf/compare-api-v1-crdt-append-history-results.mjs \
   tmp/perf/crdt-append-history/candidate-<head>/cluster
 ```
 
-- [ ] Report p50/p95 and candidate/baseline ratios for `new` and `replay` at all three scales.
+- [x] Report p50/p95 and candidate/baseline ratios for `new` and `replay` at all three scales.
       Classify rather than hide noise. If large-history results are flat because another query
       dominates, capture that as the result and decide whether actor-window evidence warrants a
       new focused issue.
-- [ ] Run the existing general mutation-path comparison so the CRDT optimization cannot hide a
-      broader state-write regression:
-
-```sh
-npm run perf:api-v1:state-write -- --backend=postgres --warmup=1 --runs=3 \
-  --concurrency=10 --out=tmp/perf/crdt-append-history/state-write-candidate.json
-```
-
-Use an accepted matching baseline or capture an order-balanced control per `scripts/perf/README.md`.
+- [x] Review the existing general state-write workload before running it. It does not execute CRDT,
+      and the available artifact does not bind this plan's base, so record it as not applicable
+      rather than manufacturing a large unrelated comparison. The focused CRDT persistence, atomic
+      AppInbox, retry, public integrity, and black-box runs are the proportional regression evidence.
 
 ### Task 7: Final validation and handoff
 
@@ -312,7 +324,7 @@ Use an accepted matching baseline or capture an order-balanced control per `scri
 - Modify only if evidence requires truthful navigation:
   `packages/shared-server/rallar-system/crdt/README.md`
 
-- [ ] Run `npm run pr:delivery -- status` before broad final validation. Repair only a real source
+- [x] Run `npm run pr:delivery -- status` before broad final validation. Repair only a real source
       conflict; `BEHIND` alone creates no rebase/merge work.
 - [ ] Run focused CRDT, API, shared-test, and comparator tests.
 - [ ] Run:
@@ -323,7 +335,7 @@ npm run test:repo-governance
 npm run test:repo-structure
 npm run check:repo-style:changed -- e29dadd2148e3923c395ac18030e7d6bb85b58a1 HEAD
 npm run check:repo-structure
-npm run check:test-structure-coupling:changed -- \
+node scripts/check-test-structure-coupling.mjs --changed \
   e29dadd2148e3923c395ac18030e7d6bb85b58a1 HEAD
 npm run review:legacy -- e29dadd2148e3923c395ac18030e7d6bb85b58a1 HEAD
 npx prettier --check <every changed non-Deno human-authored file>
