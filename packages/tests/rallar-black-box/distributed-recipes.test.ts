@@ -443,16 +443,15 @@ describe('distributed recipes helpers', () => {
         } | undefined;
         const preview = distributedRecipeCommandPreview(recipe);
 
-        expect(createGroupCommand?.request.body).toMatchObject({
-            requestId: createRallarBlackBoxEnsureGroupRequestId({
-                requestPrefix: 'rtc-realtime',
-                group: {
-                    applicationId: 'game-app',
-                    workspaceId: 'live',
-                    groupId: 'arena-1',
-                },
-            }),
+        const groupRequestId = createRallarBlackBoxEnsureGroupRequestId({
+            requestPrefix: 'rtc-realtime',
+            group: {
+                applicationId: 'game-app',
+                workspaceId: 'live',
+                groupId: 'arena-1',
+            },
         });
+        expect(groupRequestId).not.toMatch(/game-app|live|arena-1|auth/);
 
         expect(recipe.recipeId).toBe('rtc-realtime');
         expect(recipe.commands).toHaveLength(5);
@@ -461,9 +460,8 @@ describe('distributed recipes helpers', () => {
             commandId: 'rtc-realtime-ensure-group',
             request: {
                 method: 'POST',
-                path: '/api/state/apps/game-app/workspaces/live/groups',
+                path: `/api/state/apps/game-app/workspaces/live/groups/requests/${groupRequestId}`,
                 body: {
-                    requestId: 'rtc-realtime:ensure-group:game-app:live:arena-1:{auth.sessionId}',
                     groupId: 'arena-1',
                     displayName: 'arena-1',
                     kind: 'room',
@@ -480,10 +478,10 @@ describe('distributed recipes helpers', () => {
             commandId: 'rtc-realtime-ensure-member',
             request: {
                 method: 'PUT',
-                path: '/api/state/apps/game-app/workspaces/live/groups/arena-1/members/{auth.clientId}',
+                path: expect.stringMatching(
+                    /^\/api\/state\/apps\/game-app\/workspaces\/live\/groups\/arena-1\/members\/\{auth\.clientId\}\/requests\/[^/]+$/,
+                ),
                 body: {
-                    requestId:
-                        'rtc-realtime:ensure-member:game-app:live:arena-1:{auth.clientId}:{auth.sessionId}',
                     status: 'active',
                 },
             },
@@ -739,9 +737,10 @@ describe('distributed recipes helpers', () => {
             commandId: 'rtc-smoke-ensure-group',
             request: {
                 method: 'POST',
-                path: '/api/state/apps/game-app/workspaces/live/groups',
+                path: expect.stringMatching(
+                    /^\/api\/state\/apps\/game-app\/workspaces\/live\/groups\/requests\/[^/]+-\{runId\}$/,
+                ),
                 body: {
-                    requestId: 'rtc-smoke:ensure-group:game-app:live:arena-1:{auth.sessionId}',
                     groupId: 'arena-1',
                     joinMode: 'open',
                 },
@@ -752,10 +751,10 @@ describe('distributed recipes helpers', () => {
             commandId: 'rtc-smoke-ensure-member',
             request: {
                 method: 'PUT',
-                path: '/api/state/apps/game-app/workspaces/live/groups/arena-1/members/{auth.clientId}',
+                path: expect.stringMatching(
+                    /^\/api\/state\/apps\/game-app\/workspaces\/live\/groups\/arena-1\/members\/\{auth\.clientId\}\/requests\/[^/]+-\{runId\}$/,
+                ),
                 body: {
-                    requestId:
-                        'rtc-smoke:ensure-member:game-app:live:arena-1:{auth.clientId}:{auth.sessionId}',
                     status: 'active',
                 },
             },
@@ -855,7 +854,9 @@ describe('distributed recipes helpers', () => {
             commandId: 'parity-ensure-group',
             request: {
                 method: 'POST',
-                path: '/api/state/apps/game-app/workspaces/live/groups',
+                path: expect.stringMatching(
+                    /^\/api\/state\/apps\/game-app\/workspaces\/live\/groups\/requests\/[^/]+$/,
+                ),
             },
         });
         expect(recipe.commands[2]).toMatchObject({
@@ -863,7 +864,9 @@ describe('distributed recipes helpers', () => {
             commandId: 'parity-ensure-member',
             request: {
                 method: 'PUT',
-                path: '/api/state/apps/game-app/workspaces/live/groups/arena-1/members/{auth.clientId}',
+                path: expect.stringMatching(
+                    /^\/api\/state\/apps\/game-app\/workspaces\/live\/groups\/arena-1\/members\/\{auth\.clientId\}\/requests\/[^/]+$/,
+                ),
             },
         });
         expect(connectCommand).toMatchObject({
@@ -1019,8 +1022,18 @@ describe('distributed recipes helpers', () => {
             expect.stringContaining('RTC recipes require real Rallar signaling'),
         ]));
         expect(preflight.tree.map(row => [row.kind, row.summary])).toEqual([
-            ['http.request', 'POST /api/state/apps/game-app/workspaces/live/groups'],
-            ['http.request', 'PUT /api/state/apps/game-app/workspaces/live/groups/arena-1/members/{auth.clientId}'],
+            [
+                'http.request',
+                expect.stringMatching(
+                    /^POST \/api\/state\/apps\/game-app\/workspaces\/live\/groups\/requests\/[^/]+-\{runId\}$/,
+                ),
+            ],
+            [
+                'http.request',
+                expect.stringMatching(
+                    /^PUT \/api\/state\/apps\/game-app\/workspaces\/live\/groups\/arena-1\/members\/\{auth\.clientId\}\/requests\/[^/]+-\{runId\}$/,
+                ),
+            ],
             ['rtc.connect', 'connect RTC - rtcRealtime - arena-1'],
             ['loop', 'loop x40'],
             ['rtc.send', 'send RTC - rtcRealtime - arena-1'],
@@ -1217,7 +1230,9 @@ describe('distributed recipes helpers', () => {
         expect(rtcSmoke?.item.recipe.commands[0]).toMatchObject({
             kind: 'http.request',
             request: {
-                path: '/api/state/apps/game-app/workspaces/live/groups',
+                path: expect.stringMatching(
+                    /^\/api\/state\/apps\/game-app\/workspaces\/live\/groups\/requests\/[^/]+$/,
+                ),
             },
         });
         expect(providerParity?.item.recipe.commands[0]).toMatchObject({
@@ -1244,7 +1259,9 @@ describe('distributed recipes helpers', () => {
             expect(configuredRecipe?.commands[0]).toMatchObject({
                 kind: 'http.request',
                 request: {
-                    path: '/api/state/apps/game-app/workspaces/live/groups',
+                    path: expect.stringMatching(
+                        /^\/api\/state\/apps\/game-app\/workspaces\/live\/groups\/requests\/[^/]+$/,
+                    ),
                 },
             });
             expect(configuredRecipe?.commands.find(command => command.kind === 'rtc.connect'))

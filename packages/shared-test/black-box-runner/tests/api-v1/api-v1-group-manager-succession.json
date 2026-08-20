@@ -56,7 +56,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -95,7 +95,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-bob-002-{runId}",
         "body": {
           "username": "{bobUsername}",
           "password": "{bobPassword}"
@@ -134,13 +134,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{bobClientId}/principal",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{bobClientId}/principal/requests/client-create-bob-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "client-create-bob-{runId}",
           "username": "{bobUsername}",
           "displayName": "Succession owner {runId}",
           "status": "active",
@@ -157,13 +156,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-succession-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "group-create-succession-{runId}",
           "groupId": "{managerGroupId}",
           "displayName": "Succession group {runId}",
           "kind": "room",
@@ -203,13 +201,13 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/join/requests/join-alice-succession-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "join-alice-succession-{runId}"
+
         }
       },
       "expect": {
@@ -242,19 +240,22 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/lifecycle/establish/requests/establish-bob-denied-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "establish-bob-denied-{runId}"
+
         }
       },
       "expect": {
         "status": 403,
         "body": {
-          "code": "forbidden-role"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "forbidden-role",
+          "status": 403
         }
       }
     },
@@ -264,13 +265,13 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/lifecycle/establish/requests/establish-alice-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "establish-alice-{runId}"
+
         }
       },
       "expect": {
@@ -290,13 +291,13 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/members/{aliceClientId}/remove",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/members/{aliceClientId}/remove/requests/remove-alice-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "remove-alice-{runId}"
+
         }
       },
       "expect": {
@@ -328,13 +329,13 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/lifecycle/activate",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/lifecycle/activate/requests/activate-bob-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "activate-bob-{runId}"
+
         }
       },
       "expect": {
@@ -713,13 +714,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-zero-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "group-create-zero-{runId}",
           "groupId": "{zeroManagerGroupId}",
           "displayName": "Zero manager group {runId}",
           "kind": "room",
@@ -775,19 +775,22 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroManagerGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroManagerGroupId}/lifecycle/establish/requests/establish-zero-denied-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "establish-zero-denied-{runId}"
+
         }
       },
       "expect": {
         "status": 403,
         "body": {
-          "code": "lifecycle-manager-unavailable"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "lifecycle-manager-unavailable",
+          "status": 403
         }
       }
     },
@@ -797,13 +800,13 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroManagerGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroManagerGroupId}/join/requests/join-alice-zero-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "join-alice-zero-{runId}"
+
         }
       },
       "expect": {

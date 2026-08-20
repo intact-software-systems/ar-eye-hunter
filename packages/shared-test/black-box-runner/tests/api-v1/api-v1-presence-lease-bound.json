@@ -61,7 +61,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -105,13 +105,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "create-{groupId}-{runId}",
           "groupId": "{groupId}",
           "displayName": "{groupName}",
           "kind": "room",
@@ -133,13 +132,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{aliceClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{aliceClientId}/requests/join-scope-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "join-{groupId}-{aliceClientId}-{runId}",
           "status": "active"
         }
       },
@@ -161,20 +159,25 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/presence-future-hb-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "presence-future-hb-{aliceSessionId}-{runId}",
           "generationId": "generation-hb-{runId}",
           "principalId": "{aliceClientId}",
           "lastHeartbeatAtEpochMs": 9007199254740991
         }
       },
       "expect": {
-        "status": 400
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "api-mutation-request-invalid",
+          "status": 400
+        }
       }
     },
     {
@@ -183,20 +186,25 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/presence-future-conn-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "presence-future-conn-{aliceSessionId}-{runId}",
           "generationId": "generation-conn-{runId}",
           "principalId": "{aliceClientId}",
           "connectedAtEpochMs": 9007199254740991
         }
       },
       "expect": {
-        "status": 400
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "api-mutation-request-invalid",
+          "status": 400
+        }
       }
     },
     {
@@ -205,13 +213,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/presence-ok-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "presence-ok-{aliceSessionId}-{runId}",
           "generationId": "generation-ok-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -231,13 +238,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal/requests/upsert-principal-lease-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "upsert-principal-lease-{aliceClientId}-{runId}",
           "username": "{aliceUsername}",
           "displayName": "Alice lease bound {runId}",
           "status": "active"
@@ -258,13 +264,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}/requests/upsert-instance-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "upsert-instance-{clientInstanceId}-{runId}",
           "status": "active",
           "platform": "server"
         }
@@ -287,13 +292,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}/sessions/{aliceSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}/sessions/{aliceSessionId}/requests/connect-session-future-hb-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "connect-session-future-hb-{aliceSessionId}-{runId}",
           "generationId": "client-generation-hb-{runId}",
           "presenceState": "online",
           "transport": "ws",
@@ -301,7 +305,13 @@
         }
       },
       "expect": {
-        "status": 400
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "api-mutation-request-invalid",
+          "status": 400
+        }
       }
     },
     {
@@ -310,13 +320,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}/sessions/{aliceSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}/sessions/{aliceSessionId}/requests/connect-session-ok-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "connect-session-ok-{aliceSessionId}-{runId}",
           "generationId": "client-generation-ok-{runId}",
           "presenceState": "online",
           "transport": "ws"

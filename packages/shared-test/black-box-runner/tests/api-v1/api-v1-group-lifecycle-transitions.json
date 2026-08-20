@@ -62,7 +62,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -101,7 +101,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-bob-002-{runId}",
         "body": {
           "username": "{bobUsername}",
           "password": "{bobPassword}"
@@ -140,13 +140,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal/requests/client-create-alice-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "client-create-alice-{runId}",
           "username": "{aliceUsername}",
           "displayName": "Lifecycle manager {runId}",
           "status": "active",
@@ -163,13 +162,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-managed-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-managed-{runId}",
           "groupId": "{managedGroupId}",
           "displayName": "Managed group {runId}",
           "kind": "room",
@@ -443,19 +441,22 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/establish/requests/bob-start-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "bob-start-{runId}"
+
         }
       },
       "expect": {
         "status": 403,
         "body": {
-          "code": "forbidden-role"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "forbidden-role",
+          "status": 403
         }
       }
     },
@@ -465,13 +466,13 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/establish/requests/start-establishment-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "start-establishment-{runId}"
+
         }
       },
       "expect": {
@@ -553,13 +554,13 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/activate",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/activate/requests/activate-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "activate-{runId}"
+
         }
       },
       "expect": {
@@ -578,13 +579,13 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/reopen",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/reopen/requests/bb-request-reopen-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "reopen-{runId}"
+
         }
       },
       "expect": {
@@ -603,13 +604,13 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/activate",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/activate/requests/reactivate-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "reactivate-{runId}"
+
         }
       },
       "expect": {
@@ -628,17 +629,23 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/establish/requests/start-from-active-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "start-from-active-{runId}"
+
         }
       },
       "expect": {
-        "status": 403
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "lifecycle-transition-invalid",
+          "status": 403
+        }
       }
     },
     {
@@ -647,13 +654,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-plain-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-plain-{runId}",
           "groupId": "{plainGroupId}",
           "displayName": "Plain group {runId}",
           "kind": "room",

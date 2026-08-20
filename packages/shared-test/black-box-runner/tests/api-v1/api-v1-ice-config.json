@@ -53,7 +53,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-demo-alice-001-0001",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"

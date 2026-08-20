@@ -1,0 +1,514 @@
+{
+  "variables": {
+    "runId": { "env": "RALLAR_BB_RUN_ID", "default": "local" },
+    "rallarApiBaseUrl": { "env": "RALLAR_API_BASE_URL", "default": "http://127.0.0.1:18080" },
+    "rallarApiBaseUrlSecondary": { "env": "RALLAR_API_BASE_URL_SECONDARY", "default": "http://127.0.0.1:18081" },
+    "rallarApiBaseUrlTertiary": { "env": "RALLAR_API_BASE_URL_TERTIARY", "default": "http://127.0.0.1:18082" },
+    "rallarWsBaseUrl": { "env": "RALLAR_WS_BASE_URL", "default": "ws://127.0.0.1:18080" },
+    "applicationId": { "env": "RALLAR_BB_APPLICATION_ID", "default": "idempotency-contract-{runId}" },
+    "workspaceId": { "env": "RALLAR_BB_WORKSPACE_ID", "default": "primary-{runId}" },
+    "groupId": { "env": "RALLAR_BB_GROUP_ID", "default": "contract-group-{runId}" }
+  },
+  "execution": { "correlation": { "injectHeaders": true, "injectPayloads": false } },
+  "connections": {
+    "apiPrimary": { "type": "http", "baseUrl": "{rallarApiBaseUrl}", "headers": { "Content-Type": "application/json" }, "timeoutMs": 15000 },
+    "apiSecondary": { "type": "http", "baseUrl": "{rallarApiBaseUrlSecondary}", "headers": { "Content-Type": "application/json" }, "timeoutMs": 15000 },
+    "apiTertiary": { "type": "http", "baseUrl": "{rallarApiBaseUrlTertiary}", "headers": { "Content-Type": "application/json" }, "timeoutMs": 15000 },
+    "wsPrimary": { "type": "ws", "timeoutMs": 20000 }
+  },
+  "steps": [
+    {
+      "name": "loginPrimaryAdmin",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/idem-contract-login-primary-{runId}",
+        "body": { "username": "admin", "password": "admin" },
+        "outputs": {
+          "adminClientId": "body.clientId",
+          "adminSessionId": "body.sessionId",
+          "adminAccessToken": { "path": "body.accessToken", "secret": true }
+        }
+      },
+      "expect": { "status": 200, "body": { "clientId": "admin", "sessionId": "string", "accessToken": "string" } }
+    },
+    {
+      "name": "deriveAdminAuthHeader",
+      "type": "set",
+      "output": "adminAuthHeader",
+      "secret": true,
+      "redactAs": "adminAuthHeader",
+      "transform": { "concat": ["Bearer ", { "path": "outputs.adminAccessToken" }] }
+    },
+    {
+      "name": "createContractGroup",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/idem-contract-create-group-{runId}",
+        "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Idempotency contract {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{adminClientId}"
+        }
+      },
+      "expect": { "status": 201, "body": { "group": { "groupId": "{groupId}" } } }
+    },
+    {
+      "name": "firstGroupMutation",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/idem-contract-group-replay-{runId}",
+        "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" },
+        "body": { "displayName": "Canonical contract {runId}", "description": "semantic replay" },
+        "outputs": { "firstGroupMutationBody": "body" }
+      },
+      "expect": { "status": 200, "body": { "group": { "displayName": "Canonical contract {runId}" } } }
+    },
+    {
+      "name": "renewAdminSession",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/idem-contract-login-renewed-{runId}",
+        "body": { "username": "admin", "password": "admin" },
+        "outputs": { "renewedAccessToken": { "path": "body.accessToken", "secret": true } }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "deriveRenewedAdminAuthHeader",
+      "type": "set",
+      "output": "renewedAdminAuthHeader",
+      "secret": true,
+      "redactAs": "renewedAdminAuthHeader",
+      "transform": { "concat": ["Bearer ", { "path": "outputs.renewedAccessToken" }] }
+    },
+    {
+      "name": "exactGroupReplayAfterSessionRenewal",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/idem-contract-group-replay-{runId}",
+        "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" },
+        "body": { "displayName": "Canonical contract {runId}", "description": "semantic replay" },
+        "outputs": { "exactGroupReplayBody": "body" }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "normalizedGroupReplay",
+      "type": "http",
+      "connection": "apiTertiary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/idem-contract-group-replay-{runId}",
+        "headers": { "x-client-id": "{adminClientId}", "Authorization": "{renewedAdminAuthHeader}" },
+        "body": { "description": "semantic replay", "displayName": "Canonical contract {runId}" },
+        "outputs": { "normalizedGroupReplayBody": "body" }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "assertGroupReplayBodies",
+      "type": "assert",
+      "actual": { "first": "{firstGroupMutationBody}", "exact": "{exactGroupReplayBody}", "normalized": "{normalizedGroupReplayBody}" },
+      "expect": { "body": { "first": "{firstGroupMutationBody}", "exact": "{firstGroupMutationBody}", "normalized": "{firstGroupMutationBody}" } }
+    },
+    {
+      "name": "rejectChangedGroupIntent",
+      "type": "http",
+      "connection": "apiTertiary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/idem-contract-group-replay-{runId}",
+        "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" },
+        "body": { "displayName": "Changed contract {runId}" }
+      },
+      "expect": { "status": 409, "body": { "type": "api-mutation-failure", "version": "canonical.v1", "code": "group-mutation-idempotency-conflict", "status": 409 } }
+    },
+    {
+      "name": "rejectBodyRequestIdentity",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/idem-contract-reject-body-{runId}",
+        "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" },
+        "body": { "requestId": "forbidden-body-request-id", "description": "rejected" }
+      },
+      "expect": { "status": 400, "body": { "type": "api-mutation-failure", "version": "canonical.v1", "code": "api-mutation-request-invalid", "status": 400 } }
+    },
+    {
+      "name": "rejectHeaderRequestIdentity",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/idem-contract-reject-header-{runId}",
+        "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}", "Idempotency-Key": "forbidden-header-request-id" },
+        "body": { "description": "rejected" }
+      },
+      "expect": { "status": 400, "body": { "type": "api-mutation-failure", "version": "canonical.v1", "code": "api-mutation-request-invalid", "status": 400 } }
+    },
+    {
+      "name": "rejectOldMutationPath",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" },
+        "body": { "description": "old path" }
+      },
+      "expect": { "status": 404 }
+    },
+    {
+      "name": "acceptMinimumRequestId",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/12345678901234567890",
+        "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" },
+        "body": { "description": "minimum identity" }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "acceptMaximumRequestId",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" },
+        "body": { "description": "maximum identity" }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "performNoOpMutation",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/idem-contract-no-op-{runId}",
+        "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" },
+        "body": { "description": "maximum identity" },
+        "outputs": { "noOpBody": "body" }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "replayNoOpMutation",
+      "type": "http",
+      "connection": "apiTertiary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/idem-contract-no-op-{runId}",
+        "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" },
+        "body": { "description": "maximum identity" },
+        "outputs": { "noOpReplayBody": "body" }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "raceEqualContendersAcrossThreeNodes",
+      "type": "parallel",
+      "maxConcurrency": 3,
+      "timeoutMs": 30000,
+      "groups": [
+        { "name": "equal-primary", "steps": [{
+          "name": "equalContenderPrimary", "type": "http", "connection": "apiPrimary",
+          "request": { "method": "PUT", "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config/requests/idem-contract-equal-contenders-{runId}", "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "config": { "topologyKind": "tree", "degreeLimit": 2 } }, "outputs": { "equalPrimaryBody": "body" } },
+          "expect": { "status": 200 }
+        }] },
+        { "name": "equal-secondary", "steps": [{
+          "name": "equalContenderSecondary", "type": "http", "connection": "apiSecondary",
+          "request": { "method": "PUT", "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config/requests/idem-contract-equal-contenders-{runId}", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "config": { "degreeLimit": 2, "topologyKind": "tree" } }, "outputs": { "equalSecondaryBody": "body" } },
+          "expect": { "status": 200 }
+        }] },
+        { "name": "equal-tertiary", "steps": [{
+          "name": "equalContenderTertiary", "type": "http", "connection": "apiTertiary",
+          "request": { "method": "PUT", "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config/requests/idem-contract-equal-contenders-{runId}", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "config": { "topologyKind": "tree", "degreeLimit": 2 } }, "outputs": { "equalTertiaryBody": "body" } },
+          "expect": { "status": 200 }
+        }] }
+      ]
+    },
+    {
+      "name": "assertEqualContenderResults",
+      "type": "assert",
+      "actual": { "primary": "{equalPrimaryBody}", "secondary": "{equalSecondaryBody}", "tertiary": "{equalTertiaryBody}" },
+      "expect": { "body": { "primary": "{equalPrimaryBody}", "secondary": "{equalPrimaryBody}", "tertiary": "{equalPrimaryBody}" } }
+    },
+    {
+      "name": "raceDifferentContendersAcrossNodes",
+      "type": "parallel",
+      "maxConcurrency": 2,
+      "timeoutMs": 30000,
+      "groups": [
+        { "name": "different-primary", "steps": [{
+          "name": "differentContenderPrimary", "type": "http", "connection": "apiPrimary",
+          "request": { "method": "PUT", "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override/requests/idem-contract-different-contenders-{runId}", "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "config": { "degreeLimit": 3 }, "ttlMs": 60000 } },
+          "expect": { "statusCode": [200, 409] }
+        }] },
+        { "name": "different-secondary", "steps": [{
+          "name": "differentContenderSecondary", "type": "http", "connection": "apiSecondary",
+          "request": { "method": "PUT", "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override/requests/idem-contract-different-contenders-{runId}", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "config": { "degreeLimit": 4 }, "ttlMs": 60000 } },
+          "expect": { "statusCode": [200, 409] }
+        }] }
+      ]
+    },
+    {
+      "name": "assertOneDifferentIntentWinner",
+      "type": "assert",
+      "actual": { "statuses": ["{resultsByName.differentContenderPrimary.0.actual.statusCode}", "{resultsByName.differentContenderSecondary.0.actual.statusCode}"] },
+      "expect": { "anyOf": [{ "statuses": [200, 409] }, { "statuses": [409, 200] }] }
+    },
+    {
+      "name": "proveOperationIsolation",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": { "method": "POST", "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure/requests/idem-contract-equal-contenders-{runId}", "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "publish": false } },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "registerIsolationActor",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": { "method": "POST", "path": "/api/auth/register/requests/idem-contract-register-actor-{runId}", "body": { "username": "idempotency-actor-{runId}", "password": "contract-password-{runId}", "displayName": "Isolation actor" } },
+      "expect": { "status": 201 }
+    },
+    {
+      "name": "seedActorIsolation",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": { "method": "POST", "path": "/api/auth/login/requests/idem-contract-actor-isolation-{runId}", "body": { "username": "admin", "password": "admin" } },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "proveActorIsolation",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": { "method": "POST", "path": "/api/auth/login/requests/idem-contract-actor-isolation-{runId}", "body": { "username": "idempotency-actor-{runId}", "password": "contract-password-{runId}" } },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "seedScopeIsolation",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": { "method": "POST", "path": "/api/state/apps/{applicationId}/workspaces/scope-a-{runId}/groups/requests/idem-contract-scope-isolation-{runId}", "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "groupId": "scope-group-{runId}", "displayName": "Scoped group", "kind": "room", "joinMode": "open", "createdByPrincipalId": "{adminClientId}" } },
+      "expect": { "status": 201 }
+    },
+    {
+      "name": "proveScopeIsolation",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": { "method": "POST", "path": "/api/state/apps/{applicationId}/workspaces/scope-b-{runId}/groups/requests/idem-contract-scope-isolation-{runId}", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "groupId": "scope-group-{runId}", "displayName": "Scoped group", "kind": "room", "joinMode": "open", "createdByPrincipalId": "{adminClientId}" } },
+      "expect": { "status": 201 }
+    },
+    {
+      "name": "replayTerminalFailureFirst",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": { "method": "PUT", "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/missing-{runId}/requests/idem-contract-terminal-failure-{runId}", "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "displayName": "Missing" }, "outputs": { "terminalFailureBody": "body" } },
+      "expect": { "status": 400, "body": { "type": "api-mutation-failure", "version": "canonical.v1", "code": "group-mutation-rejected", "status": 400 } }
+    },
+    {
+      "name": "replayTerminalFailure",
+      "type": "http",
+      "connection": "apiTertiary",
+      "request": { "method": "PUT", "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/missing-{runId}/requests/idem-contract-terminal-failure-{runId}", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "displayName": "Missing" }, "outputs": { "terminalFailureReplayBody": "body" } },
+      "expect": { "status": 400, "body": { "type": "api-mutation-failure", "version": "canonical.v1", "code": "group-mutation-rejected", "status": 400 } }
+    },
+    {
+      "name": "issueWebSocketTicket",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": { "method": "POST", "path": "/api/auth/ws-ticket/requests/idem-contract-ws-ticket-{runId}", "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" }, "outputs": { "contractWsTicket": { "path": "body.ticket", "secret": true } } },
+      "expect": { "status": 200, "body": { "ticket": "string" } }
+    },
+    {
+      "name": "deriveContractWsUrl",
+      "type": "set",
+      "output": "contractWsUrl",
+      "secret": true,
+      "redactAs": "contractWsUrl",
+      "transform": { "concat": [{ "path": "variables.rallarWsBaseUrl" }, "/api/ws/{adminSessionId}?ticket=", { "urlEncode": { "path": "outputs.contractWsTicket" } }] }
+    },
+    { "name": "openContractWebSocket", "type": "ws.open", "connection": "wsPrimary", "request": { "url": "{contractWsUrl}" } },
+    { "name": "waitForContractWebSocketAuthorization", "type": "ws.wait", "connection": "wsPrimary", "expect": { "connection": "wsPrimary", "withinMs": 15000, "consume": true, "messages": [{ "payload": { "typeId": "client-state.snapshot" } }] } },
+    { "name": "captureCrdtTimestamp", "type": "set", "output": "crdtCreatedAtEpochMs", "transform": { "timestamp": true } },
+    {
+      "name": "encodeContractCrdtUpdate",
+      "type": "set",
+      "output": "contractCrdtUpdate",
+      "transform": { "jsonStringify": { "protocolVersion": 1, "document": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "scope": "app", "documentType": "contract-map", "documentId": "contract-document-{runId}" }, "updateId": "idem-contract-crdt-update-{runId}", "replicaId": "contract-replica-{runId}", "actorId": "{adminClientId}", "sessionId": "{adminSessionId}", "lamport": 1, "parents": [], "schemaVersion": 1, "operationVersion": 1, "createdAtEpochMs": "{crdtCreatedAtEpochMs}", "payload": { "kind": "batch", "operations": [{ "kind": "register.set", "path": ["title"], "policy": "lww", "value": "contract" }] } } }
+    },
+    {
+      "name": "appendCrdtUpdateThroughWebSocket",
+      "type": "ws.send",
+      "connection": "wsPrimary",
+      "request": { "send": { "id": { "v": 2, "msgId": "idem-contract-crdt-delivery-first-{runId}", "ts": 0, "senderId": "{adminSessionId}", "sessionId": "{adminSessionId}" }, "route": { "topicId": "app.crdt", "resourceId": "idem-contract-crdt-update-{runId}", "contextId": "{applicationId}" }, "targets": { "mode": "broadcast", "scope": "world" }, "delivery": { "reliability": "best-effort", "ack": "none" }, "payload": { "typeId": "rallar.crdt.update.v1", "contentType": "application/json", "resource": "{contractCrdtUpdate}" } } }
+    },
+    { "name": "observeFirstCrdtAppendReply", "type": "ws.wait", "connection": "wsPrimary", "expect": { "connection": "wsPrimary", "withinMs": 20000, "consume": true, "messages": [{ "payload": { "typeId": "rallar.crdt.append-response.v1" } }] } },
+    {
+      "name": "redeliverCrdtUpdateWithDistinctDeliveryId",
+      "type": "ws.send",
+      "connection": "wsPrimary",
+      "request": { "send": { "id": { "v": 2, "msgId": "idem-contract-crdt-delivery-retry-{runId}", "ts": 0, "senderId": "{adminSessionId}", "sessionId": "{adminSessionId}" }, "route": { "topicId": "app.crdt", "resourceId": "idem-contract-crdt-update-{runId}", "contextId": "{applicationId}" }, "targets": { "mode": "broadcast", "scope": "world" }, "delivery": { "reliability": "best-effort", "ack": "none" }, "payload": { "typeId": "rallar.crdt.update.v1", "contentType": "application/json", "resource": "{contractCrdtUpdate}" } } }
+    },
+    { "name": "observeDuplicateCrdtAppendReply", "type": "ws.wait", "connection": "wsPrimary", "expect": { "connection": "wsPrimary", "withinMs": 20000, "consume": true, "messages": [{ "payload": { "typeId": "rallar.crdt.append-response.v1" } }] } },
+    {
+      "name": "readCrdtThroughTertiary",
+      "type": "http",
+      "connection": "apiTertiary",
+      "request": { "method": "POST", "path": "/api/crdt/catch-up", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "protocolVersion": 1, "requestId": "idem-contract-catch-up-{runId}", "replicaId": "contract-reader-{runId}", "createdAtEpochMs": "{crdtCreatedAtEpochMs}", "includeSnapshot": true, "document": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "scope": "app", "documentType": "contract-map", "documentId": "contract-document-{runId}" } } },
+      "expect": { "status": 200, "body": { "ok": true } }
+    },
+    {
+      "name": "firstCrdtHttpMutation",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": { "method": "POST", "path": "/api/crdt/admin/documents/compact/requests/idem-contract-crdt-http-{runId}", "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "document": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "scope": "app", "documentType": "contract-map", "documentId": "contract-document-{runId}" }, "reason": "idempotency-contract" } },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "replayCrdtHttpMutation",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": { "method": "POST", "path": "/api/crdt/admin/documents/compact/requests/idem-contract-crdt-http-{runId}", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "reason": "idempotency-contract", "document": { "documentId": "contract-document-{runId}", "documentType": "contract-map", "scope": "app", "workspaceId": "{workspaceId}", "applicationId": "{applicationId}" } } },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "rejectChangedCrdtHttpIntent",
+      "type": "http",
+      "connection": "apiTertiary",
+      "request": { "method": "POST", "path": "/api/crdt/admin/documents/compact/requests/idem-contract-crdt-http-{runId}", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "document": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "scope": "app", "documentType": "contract-map", "documentId": "contract-document-{runId}" }, "reason": "changed" } },
+      "expect": { "status": 409, "body": { "type": "api-mutation-failure", "version": "canonical.v1", "code": "app-inbox-idempotency-conflict", "status": 409 } }
+    },
+    {
+      "name": "seedDocumentIsolation",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": { "method": "POST", "path": "/api/crdt/admin/documents/compact/requests/idem-contract-document-isolation-{runId}", "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "document": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "scope": "app", "documentType": "contract-map", "documentId": "document-a-{runId}" }, "reason": "isolation" } },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "proveDocumentIsolation",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": { "method": "POST", "path": "/api/crdt/admin/documents/compact/requests/idem-contract-document-isolation-{runId}", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "document": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "scope": "app", "documentType": "contract-map", "documentId": "document-b-{runId}" }, "reason": "isolation" } },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "firstNormalizedPruneCategories",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": { "method": "POST", "path": "/api/admin/operations/maintenance/prune-expired/requests/idem-contract-prune-normalized-{runId}", "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "dryRun": true, "categories": ["runtime-state", "resource-inbox-results"], "reason": "idempotency-contract" } },
+      "expect": { "status": 200, "body": { "status": "dry-run", "changed": false } }
+    },
+    {
+      "name": "replayNormalizedPruneCategories",
+      "type": "http",
+      "connection": "apiTertiary",
+      "request": { "method": "POST", "path": "/api/admin/operations/maintenance/prune-expired/requests/idem-contract-prune-normalized-{runId}", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "reason": "idempotency-contract", "categories": ["resource-inbox-results", "runtime-state"], "dryRun": true } },
+      "expect": { "status": 200, "body": { "status": "dry-run", "changed": false } }
+    },
+    {
+      "name": "proveAdminActorIsolation",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": { "method": "POST", "path": "/api/admin/operations/maintenance/prune-expired/requests/idem-contract-prune-normalized-{runId}", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "not-the-authenticated-admin" }, "body": { "dryRun": true, "categories": ["runtime-state", "resource-inbox-results"], "reason": "idempotency-contract" } },
+      "expect": { "status": 401, "body": { "type": "api-mutation-failure", "version": "canonical.v1", "code": "authentication-required", "status": 401 } }
+    },
+    {
+      "name": "firstTopologyRestartBoundary",
+      "type": "http",
+      "connection": "apiTertiary",
+      "request": { "method": "POST", "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure/requests/idem-contract-topology-restart-{runId}", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "publish": true } },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "replayTopologyAfterRestartBoundary",
+      "type": "http",
+      "connection": "apiTertiary",
+      "request": { "method": "POST", "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure/requests/idem-contract-topology-restart-{runId}", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "publish": true } },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "issueSingleUseAgentTicket",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": { "method": "POST", "path": "/api/auth/agent-session-tickets/requests/idem-contract-issue-agent-ticket-{runId}", "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "agentIds": ["contract-agent-{runId}"] }, "outputs": { "singleUseAgentTicket": { "path": "body.tickets.0.ticket", "secret": true } } },
+      "expect": { "status": 200, "body": { "tickets": [{ "ticket": "string" }] } }
+    },
+    {
+      "name": "raceSingleUseAgentTicketConsumption",
+      "type": "parallel",
+      "maxConcurrency": 2,
+      "timeoutMs": 15000,
+      "groups": [
+        { "name": "ticket-primary", "steps": [{ "name": "consumeAgentTicketPrimary", "type": "http", "connection": "apiPrimary", "request": { "method": "POST", "path": "/api/auth/agent-session-tickets/consume/requests/idem-contract-consume-ticket-primary-{runId}", "body": { "ticket": "{singleUseAgentTicket}" } }, "expect": { "statusCode": [200, 404] } }] },
+        { "name": "ticket-secondary", "steps": [{ "name": "consumeAgentTicketSecondary", "type": "http", "connection": "apiSecondary", "request": { "method": "POST", "path": "/api/auth/agent-session-tickets/consume/requests/idem-contract-consume-ticket-secondary-{runId}", "body": { "ticket": "{singleUseAgentTicket}" } }, "expect": { "statusCode": [200, 404] } }] }
+      ]
+    },
+    {
+      "name": "assertSingleTicketConsumption",
+      "type": "assert",
+      "actual": { "statuses": ["{resultsByName.consumeAgentTicketPrimary.0.actual.statusCode}", "{resultsByName.consumeAgentTicketSecondary.0.actual.statusCode}"] },
+      "expect": { "anyOf": [{ "statuses": [200, 404] }, { "statuses": [404, 200] }] }
+    },
+    {
+      "name": "loginLogoutProbe",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": { "method": "POST", "path": "/api/auth/login/requests/idem-contract-login-logout-probe-{runId}", "body": { "username": "admin", "password": "admin" }, "outputs": { "logoutProbeClientId": "body.clientId", "logoutProbeAccessToken": { "path": "body.accessToken", "secret": true } } },
+      "expect": { "status": 200 }
+    },
+    { "name": "deriveLogoutProbeHeader", "type": "set", "output": "logoutProbeHeader", "secret": true, "redactAs": "logoutProbeHeader", "transform": { "concat": ["Bearer ", { "path": "outputs.logoutProbeAccessToken" }] } },
+    {
+      "name": "firstLogout",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": { "method": "POST", "path": "/api/auth/logout/requests/idem-contract-logout-replay-{runId}", "headers": { "Authorization": "{logoutProbeHeader}", "x-client-id": "{logoutProbeClientId}" } },
+      "expect": { "status": 200, "body": { "loggedOut": true } }
+    },
+    {
+      "name": "replayLogout",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": { "method": "POST", "path": "/api/auth/logout/requests/idem-contract-logout-replay-{runId}", "headers": { "Authorization": "{logoutProbeHeader}", "x-client-id": "{logoutProbeClientId}" } },
+      "expect": { "status": 200, "body": { "loggedOut": true } }
+    },
+    {
+      "name": "exposeStateWriteEvidence",
+      "type": "set.state-write-evidence",
+      "output": "stateWriteEvidence",
+      "request": { "stateWriteEvidence": { "match": "idem-contract-group-replay-{runId}", "commandTypes": ["GROUP_UPDATE"], "commandIdPrefixes": ["idem-contract-group-replay-"], "minimumMatchedRows": 1, "expectedEffectsByCommandType": { "GROUP_UPDATE": ["group-presence-summary"] } } }
+    },
+    {
+      "name": "assertAtomicAppInboxCompletion",
+      "type": "assert",
+      "actual": { "atomicCompletionFailures": "{stateWriteEvidence.atomicCompletionFailures}", "intermediateMutationIntentCount": "{stateWriteEvidence.intermediateMutationIntentCount}", "completedAppInboxCount": "{stateWriteEvidence.completedAppInboxCount}", "appInbox": "{stateWriteEvidence.appInbox}", "receiptOutboxIds": "{stateWriteEvidence.receiptOutboxIds}", "resourceOutbox": "{stateWriteEvidence.resourceOutbox}" },
+      "expect": { "body": { "atomicCompletionFailures": 0, "intermediateMutationIntentCount": 0, "completedAppInboxCount": "integer", "appInbox": "array", "receiptOutboxIds": "array", "resourceOutbox": "array" } }
+    },
+    {
+      "name": "assertSecretsStayRedacted",
+      "type": "assert",
+      "actual": { "selector": "idem-contract-{runId}" },
+      "expect": { "body": { "selector": "idem-contract-{runId}" } }
+    },
+    { "name": "closeContractWebSocket", "type": "ws.close", "connection": "wsPrimary", "request": { "code": 1000, "reason": "done" } }
+  ]
+}

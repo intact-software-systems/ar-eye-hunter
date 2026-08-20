@@ -61,7 +61,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-user-001-0001",
         "body": {
           "username": "{username}",
           "password": "{password}"
@@ -107,13 +107,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-request-create-scope",
         "headers": {
           "Authorization": "{authHeader}",
           "x-client-id": "{clientId}"
         },
         "body": {
-          "requestId": "create-{groupId}",
           "groupId": "{groupId}",
           "displayName": "{groupName}",
           "kind": "room",
@@ -146,13 +145,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{clientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{clientId}/requests/bb-request-join-scope-scope",
         "headers": {
           "Authorization": "{authHeader}",
           "x-client-id": "{clientId}"
         },
         "body": {
-          "requestId": "join-{groupId}-{clientId}",
           "status": "active"
         }
       },
@@ -177,13 +175,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/requests/bb-request-presence-scope",
         "headers": {
           "Authorization": "{authHeader}",
           "x-client-id": "{clientId}"
         },
         "body": {
-          "requestId": "presence-{sessionId}",
           "principalId": "{clientId}"
         }
       },
@@ -251,7 +248,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-create-web-socket-ticket-005-0001",
         "headers": {
           "Authorization": "{authHeader}",
           "x-client-id": "{clientId}"
@@ -375,13 +372,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/disconnect",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/disconnect/requests/bb-request-disconnect-scope",
         "headers": {
           "Authorization": "{authHeader}",
           "x-client-id": "{clientId}"
         },
         "body": {
-          "requestId": "disconnect-{sessionId}",
           "principalId": "{clientId}"
         }
       },
@@ -400,7 +396,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/logout",
+        "path": "/api/auth/logout/requests/bb-logout-user-007-0001",
         "headers": {
           "Authorization": "{authHeader}",
           "x-client-id": "{clientId}"

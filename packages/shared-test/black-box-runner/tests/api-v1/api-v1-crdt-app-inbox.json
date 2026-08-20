@@ -23,7 +23,7 @@
       "type": "http",
       "connection": "apiPrimary",
       "request": {
-        "method": "POST", "path": "/api/auth/login",
+        "method": "POST", "path": "/api/auth/login/requests/bb-login-crdt-writer-001-{runId}",
         "body": { "username": "admin", "password": "admin" },
         "outputs": {
           "crdtClientId": "body.clientId", "crdtSessionId": "body.sessionId",
@@ -40,7 +40,7 @@
     {
       "name": "loginCrdtReader", "type": "http", "connection": "apiSecondary",
       "request": {
-        "method": "POST", "path": "/api/auth/login",
+        "method": "POST", "path": "/api/auth/login/requests/bb-login-crdt-reader-002-{runId}",
         "body": { "username": "admin", "password": "admin" },
         "outputs": {
           "crdtReaderClientId": "body.clientId", "crdtReaderSessionId": "body.sessionId",
@@ -61,7 +61,7 @@
     {
       "name": "issuePrimaryCrdtWsTicket", "type": "http", "connection": "apiPrimary",
       "request": {
-        "method": "POST", "path": "/api/auth/ws-ticket",
+        "method": "POST", "path": "/api/auth/ws-ticket/requests/bb-issue-primary-crdt-ws-ticket-003-{runId}",
         "headers": { "Authorization": "{crdtAuthHeader}", "x-client-id": "{crdtClientId}" },
         "outputs": { "primaryCrdtWsTicket": { "path": "body.ticket", "secret": true } }
       },
@@ -70,7 +70,7 @@
     {
       "name": "issueSecondaryCrdtWsTicket", "type": "http", "connection": "apiSecondary",
       "request": {
-        "method": "POST", "path": "/api/auth/ws-ticket",
+        "method": "POST", "path": "/api/auth/ws-ticket/requests/bb-issue-secondary-crdt-ws-ticket-004-{runId}",
         "headers": { "Authorization": "{crdtReaderAuthHeader}", "x-client-id": "{crdtReaderClientId}" },
         "outputs": { "secondaryCrdtWsTicket": { "path": "body.ticket", "secret": true } }
       },

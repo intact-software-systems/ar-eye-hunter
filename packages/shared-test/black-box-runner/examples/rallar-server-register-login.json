@@ -35,7 +35,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-register-user-001-0001",
         "body": {
           "username": "{username}",
           "password": "{password}",
@@ -64,7 +64,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-registered-user-002-0001",
         "body": {
           "username": "{username}",
           "password": "{password}"
@@ -101,7 +101,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/logout",
+        "path": "/api/auth/logout/requests/bb-logout-registered-user-003-0001",
         "headers": {
           "Authorization": "{authHeader}",
           "x-client-id": "{clientId}"
@@ -120,7 +120,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-reject-wrong-password-004-0001",
         "body": {
           "username": "{username}",
           "password": "wrong-password"
@@ -129,7 +129,10 @@
       "expect": {
         "status": 401,
         "body": {
-          "error": "Invalid username or password"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "authentication-required",
+          "status": 401
         }
       }
     }

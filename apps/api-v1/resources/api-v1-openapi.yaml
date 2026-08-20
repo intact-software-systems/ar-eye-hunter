@@ -45,9 +45,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiConfig'
-
-  /api/auth/login:
+  /api/auth/login/requests/{requestId}:
     post:
+      parameters:
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       tags: [Auth]
       summary: Login client
       description: |
@@ -69,12 +70,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/LoginResponse'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '429':
-          $ref: '#/components/responses/TooManyRequests'
-
-  /api/auth/register:
+          $ref: '#/components/responses/RateLimitedApiMutationFailure'
+  /api/auth/register/requests/{requestId}:
     post:
+      parameters:
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       tags: [Auth]
       summary: Register client
       description: |
@@ -97,26 +99,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/RegisterResponse'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          $ref: '#/components/responses/ApiMutationFailure'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          description: Admin auth session required.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          description: Username already exists.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/ApiMutationFailure'
         '429':
-          $ref: '#/components/responses/TooManyRequests'
-
-  /api/auth/logout:
+          $ref: '#/components/responses/RateLimitedApiMutationFailure'
+  /api/auth/logout/requests/{requestId}:
     post:
+      parameters:
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       tags: [Auth]
       summary: Logout current session
       description: Revokes the authenticated server-side auth session.
@@ -131,10 +126,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/LogoutResponse'
         '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /api/auth/ws-ticket:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/auth/ws-ticket/requests/{requestId}:
     post:
+      parameters:
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       tags: [Auth]
       summary: Create websocket auth ticket
       description: |
@@ -151,12 +147,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/WebSocketTicketResponse'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '429':
-          $ref: '#/components/responses/TooManyRequests'
-
-  /api/auth/agent-session-tickets:
+          $ref: '#/components/responses/RateLimitedApiMutationFailure'
+  /api/auth/agent-session-tickets/requests/{requestId}:
     post:
+      parameters:
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       tags: [Auth]
       summary: Create agent auth session tickets
       description: |
@@ -181,12 +178,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionTicketResponse'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          $ref: '#/components/responses/ApiMutationFailure'
         '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /api/auth/agent-session-tickets/consume:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/auth/agent-session-tickets/consume/requests/{requestId}:
     post:
+      parameters:
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       tags: [Auth]
       summary: Consume an agent auth session ticket
       description: |
@@ -207,10 +205,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/LoginResponse'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
-
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/black-box/control-token:
     post:
       tags: [Auth]
@@ -243,7 +240,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-
   /api/webrtc/ice:
     get:
       tags: [WebRTC]
@@ -279,7 +275,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-
   /api/ws/{sessionId}:
     get:
       tags: [WebRTC]
@@ -304,7 +299,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients:
     get:
       tags: [Client State]
@@ -326,7 +320,6 @@ paths:
                   $ref: '#/components/schemas/ClientSnapshot'
         '401':
           $ref: '#/components/responses/Unauthorized'
-
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}:
     get:
       tags: [Client State]
@@ -367,7 +360,6 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
-
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/presence:
     get:
       tags: [Client State]
@@ -390,7 +382,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/events:
     get:
       tags: [Client State]
@@ -413,7 +404,6 @@ paths:
                   $ref: '#/components/schemas/ClientEvent'
         '401':
           $ref: '#/components/responses/Unauthorized'
-
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/events/page:
     get:
       tags: [Client State]
@@ -439,8 +429,7 @@ paths:
                 $ref: '#/components/schemas/ClientEventPage'
         '401':
           $ref: '#/components/responses/Unauthorized'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/principal:
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/principal/requests/{requestId}:
     put:
       tags: [Client State]
       summary: Upsert the authenticated client principal
@@ -454,6 +443,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -468,11 +458,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClientSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/requests/{requestId}:
     put:
       tags: [Client State]
       summary: Upsert an authenticated client instance
@@ -484,6 +473,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/PrincipalId'
         - $ref: '#/components/parameters/ClientInstanceId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -498,11 +488,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClientSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}/requests/{requestId}:
     put:
       tags: [Client State]
       summary: Connect an authenticated client session
@@ -515,6 +504,7 @@ paths:
         - $ref: '#/components/parameters/PrincipalId'
         - $ref: '#/components/parameters/ClientInstanceId'
         - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -529,11 +519,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClientSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}/heartbeat:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}/heartbeat/requests/{requestId}:
     post:
       tags: [Client State]
       summary: Heartbeat an authenticated client session
@@ -546,6 +535,7 @@ paths:
         - $ref: '#/components/parameters/PrincipalId'
         - $ref: '#/components/parameters/ClientInstanceId'
         - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -560,13 +550,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClientSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}/disconnect:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}/disconnect/requests/{requestId}:
     post:
       tags: [Client State]
       summary: Disconnect an authenticated client session
@@ -579,6 +568,7 @@ paths:
         - $ref: '#/components/parameters/PrincipalId'
         - $ref: '#/components/parameters/ClientInstanceId'
         - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -593,12 +583,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClientSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
-
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups:
     get:
       tags: [Group State]
@@ -620,6 +609,7 @@ paths:
                   $ref: '#/components/schemas/GroupSnapshot'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Create a group
@@ -633,6 +623,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -647,10 +638,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          $ref: '#/components/responses/Conflict'
-
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}:
     get:
       tags: [Group State]
@@ -694,6 +684,7 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/{requestId}:
     put:
       tags: [Group State]
       summary: Update a group
@@ -707,6 +698,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -721,13 +713,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Join a group through server-side admission policy
@@ -743,6 +734,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -757,19 +749,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          $ref: '#/components/responses/ApiMutationFailure'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          $ref: '#/components/responses/Conflict'
+          $ref: '#/components/responses/ApiMutationFailure'
         '429':
-          $ref: '#/components/responses/TooManyRequests'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/accept:
+          $ref: '#/components/responses/RateLimitedApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/accept/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Accept an existing group invite
@@ -780,6 +771,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -794,17 +786,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          $ref: '#/components/responses/Conflict'
+          $ref: '#/components/responses/ApiMutationFailure'
         '429':
-          $ref: '#/components/responses/TooManyRequests'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join-code/rotate:
+          $ref: '#/components/responses/RateLimitedApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join-code/rotate/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Rotate a group join code
@@ -818,6 +809,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -832,15 +824,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupJoinCodeResponse'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          $ref: '#/components/responses/ApiMutationFailure'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{principalId}:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{principalId}/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Invite a principal to a group
@@ -852,6 +843,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -866,13 +858,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{principalId}/revoke:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{principalId}/revoke/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Revoke a group invite
@@ -884,6 +875,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -898,13 +890,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/admissions/{principalId}/grant:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/admissions/{principalId}/grant/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Grant a pending group admission
@@ -920,6 +911,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -934,13 +926,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
 
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/admissions/{principalId}/decline:
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/admissions/{principalId}/decline/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Decline a pending group admission
@@ -955,6 +947,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -969,13 +962,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
 
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/remove:
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/remove/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Remove a group member
@@ -987,6 +980,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -1001,15 +995,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          $ref: '#/components/responses/Conflict'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/ban:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/ban/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Ban a group member
@@ -1021,6 +1014,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -1035,15 +1029,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          $ref: '#/components/responses/Conflict'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/unban:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/unban/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Unban a group member
@@ -1055,6 +1048,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -1069,13 +1063,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/role:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/role/requests/{requestId}:
     put:
       tags: [Group State]
       summary: Set a group member role
@@ -1087,6 +1080,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -1101,15 +1095,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          $ref: '#/components/responses/Conflict'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Transfer group ownership
@@ -1120,6 +1113,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -1134,15 +1128,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          $ref: '#/components/responses/Conflict'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/director/appoint:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/director/appoint/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Appoint the browser director
@@ -1162,6 +1155,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -1176,16 +1170,15 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          $ref: '#/components/responses/ApiMutationFailure'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          $ref: '#/components/responses/Conflict'
-
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation:
     get:
       tags: [Group State]
@@ -1216,8 +1209,7 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/establish:
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/establish/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Start group establishment
@@ -1237,6 +1229,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -1251,17 +1244,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          $ref: '#/components/responses/ApiMutationFailure'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          $ref: '#/components/responses/Conflict'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/activate:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/activate/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Activate the group
@@ -1281,6 +1273,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -1295,17 +1288,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          $ref: '#/components/responses/ApiMutationFailure'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          $ref: '#/components/responses/Conflict'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/reopen:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/reopen/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Reopen group establishment
@@ -1325,6 +1317,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -1339,16 +1332,15 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          $ref: '#/components/responses/ApiMutationFailure'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          $ref: '#/components/responses/Conflict'
-
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events:
     get:
       tags: [Group State]
@@ -1371,7 +1363,6 @@ paths:
                   $ref: '#/components/schemas/GroupEvent'
         '401':
           $ref: '#/components/responses/Unauthorized'
-
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events/page:
     get:
       tags: [Group State]
@@ -1397,8 +1388,7 @@ paths:
                 $ref: '#/components/schemas/GroupEventPage'
         '401':
           $ref: '#/components/responses/Unauthorized'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}:
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/requests/{requestId}:
     put:
       tags: [Group State]
       summary: Update self membership state for a group
@@ -1414,6 +1404,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -1428,15 +1419,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '429':
-          $ref: '#/components/responses/TooManyRequests'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}:
+          $ref: '#/components/responses/RateLimitedApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/requests/{requestId}:
     put:
       tags: [Group State]
       summary: Connect self presence session in a group
@@ -1451,6 +1441,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -1465,15 +1456,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '429':
-          $ref: '#/components/responses/TooManyRequests'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/heartbeat:
+          $ref: '#/components/responses/RateLimitedApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/heartbeat/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Heartbeat self group presence session
@@ -1485,6 +1475,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -1499,13 +1490,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/disconnect:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/disconnect/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Disconnect self group presence session
@@ -1517,6 +1507,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -1531,12 +1522,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
-
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/stats/summary:
     get:
       tags: [SPA Statistics]
@@ -1571,7 +1561,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/stats:
     get:
       tags: [SPA Statistics]
@@ -1607,7 +1596,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/stats/me/realtime:
     get:
       tags: [SPA Statistics]
@@ -1640,7 +1628,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global:
     get:
       tags: [Graph]
@@ -1662,7 +1649,6 @@ paths:
                 $ref: '#/components/schemas/GraphDiagnosticReadResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
-
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest:
     get:
       tags: [Graph]
@@ -1689,7 +1675,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology:
     get:
       tags: [Topology]
@@ -1714,7 +1699,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config:
     get:
       tags: [Topology]
@@ -1739,6 +1723,7 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config/requests/{requestId}:
     put:
       tags: [Topology]
       summary: Write durable group topology config
@@ -1749,7 +1734,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
-        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -1764,17 +1749,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/PutGroupTopologyConfigResponse'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
         '422':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
         '503':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
     delete:
       tags: [Topology]
       summary: Delete durable group topology config
@@ -1785,7 +1770,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
-        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       responses:
         '200':
           description: Delete result.
@@ -1794,18 +1779,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/DeleteGroupTopologyConfigResponse'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
         '422':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
         '503':
-          $ref: '#/components/responses/TopologyMutationFailure'
-
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override:
     get:
       tags: [Topology]
@@ -1826,6 +1810,7 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override/requests/{requestId}:
     put:
       tags: [Topology]
       summary: Write temporary group topology override
@@ -1836,7 +1821,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
-        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
         content:
@@ -1851,17 +1836,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/PutGroupTopologyOverrideResponse'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
         '422':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
         '503':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
     delete:
       tags: [Topology]
       summary: Delete temporary group topology override
@@ -1872,7 +1857,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
-        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       responses:
         '200':
           description: Delete result.
@@ -1881,19 +1866,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/DeleteGroupTopologyConfigResponse'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
         '422':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
         '503':
-          $ref: '#/components/responses/TopologyMutationFailure'
-
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure/requests/{requestId}:
     post:
       tags: [Topology]
       summary: Recompute and optionally publish group topology
@@ -1904,7 +1888,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
-        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: false
         content:
@@ -1919,18 +1903,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/QueuedGroupTopologyReconfigureResponse'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ApiMutationFailure'
         '409':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
         '422':
-          $ref: '#/components/responses/TopologyMutationFailure'
+          $ref: '#/components/responses/ApiMutationFailure'
         '503':
-          $ref: '#/components/responses/TopologyMutationFailure'
-
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/crdt/catch-up:
     post:
       tags: [CRDT]
@@ -1973,7 +1956,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CrdtRouteErrorResponse'
-
   /api/crdt/admin/documents/list:
     post:
       tags: [CRDT]
@@ -1999,7 +1981,6 @@ paths:
           $ref: '#/components/responses/CrdtRouteError'
         '401':
           $ref: '#/components/responses/Unauthorized'
-
   /api/crdt/admin/documents/integrity:
     post:
       tags: [CRDT]
@@ -2025,7 +2006,6 @@ paths:
           $ref: '#/components/responses/CrdtRouteError'
         '401':
           $ref: '#/components/responses/Unauthorized'
-
   /api/crdt/admin/documents/debug-export:
     post:
       tags: [CRDT]
@@ -2051,7 +2031,6 @@ paths:
           $ref: '#/components/responses/CrdtRouteError'
         '401':
           $ref: '#/components/responses/Unauthorized'
-
   /api/crdt/admin/documents/backup-export:
     post:
       tags: [CRDT]
@@ -2077,9 +2056,10 @@ paths:
           $ref: '#/components/responses/CrdtRouteError'
         '401':
           $ref: '#/components/responses/Unauthorized'
-
-  /api/crdt/admin/documents/rebuild-projection:
+  /api/crdt/admin/documents/rebuild-projection/requests/{requestId}:
     post:
+      parameters:
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       tags: [CRDT]
       summary: Rebuild a CRDT projection
       description: Requires a CRDT admin auth session.
@@ -2100,12 +2080,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/RallarCrdtIntegrityReportApiResponse'
         '400':
-          $ref: '#/components/responses/CrdtRouteError'
+          $ref: '#/components/responses/ApiMutationFailure'
         '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /api/crdt/admin/documents/compact:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/crdt/admin/documents/compact/requests/{requestId}:
     post:
+      parameters:
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       tags: [CRDT]
       summary: Compact a CRDT document snapshot
       description: |
@@ -2128,12 +2109,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/RallarCrdtCompactApiResponse'
         '400':
-          $ref: '#/components/responses/CrdtRouteError'
+          $ref: '#/components/responses/ApiMutationFailure'
         '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /api/crdt/admin/documents/lifecycle:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/crdt/admin/documents/lifecycle/requests/{requestId}:
     post:
+      parameters:
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       tags: [CRDT]
       summary: Update CRDT document lifecycle
       description: Requires a CRDT admin auth session.
@@ -2154,12 +2136,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/RallarCrdtDocumentMetadataApiResponse'
         '400':
-          $ref: '#/components/responses/CrdtRouteError'
+          $ref: '#/components/responses/ApiMutationFailure'
         '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /api/crdt/admin/documents/erase:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/crdt/admin/documents/erase/requests/{requestId}:
     post:
+      parameters:
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       tags: [CRDT]
       summary: Erase or redact a CRDT document
       description: Requires a CRDT admin auth session.
@@ -2180,10 +2163,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/RallarCrdtEraseApiResponse'
         '400':
-          $ref: '#/components/responses/CrdtRouteError'
+          $ref: '#/components/responses/ApiMutationFailure'
         '401':
-          $ref: '#/components/responses/Unauthorized'
-
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/admin/operations/overview:
     get:
       tags: [Admin Operations]
@@ -2203,7 +2185,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
   /api/admin/operations/queues:
     get:
       tags: [Admin Operations]
@@ -2223,7 +2204,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
   /api/admin/operations/realtime:
     get:
       tags: [Admin Operations]
@@ -2243,7 +2223,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
   /api/admin/operations/state:
     get:
       tags: [Admin Operations]
@@ -2263,7 +2242,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
   /api/admin/operations/state/apps/{applicationId}/workspaces/{workspaceId}:
     get:
       tags: [Admin Operations]
@@ -2286,7 +2264,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
   /api/admin/operations/crdt:
     get:
       tags: [Admin Operations]
@@ -2306,7 +2283,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
   /api/admin/operations/crdt/apps/{applicationId}/workspaces/{workspaceId}:
     get:
       tags: [Admin Operations]
@@ -2329,7 +2305,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
   /api/admin/operations/system:
     get:
       tags: [Admin Operations]
@@ -2349,7 +2324,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
   /api/admin/operations/metrics/reset:
     post:
       tags: [Admin Operations]
@@ -2375,9 +2349,10 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
-  /api/admin/operations/topology/recompute:
+  /api/admin/operations/topology/recompute/requests/{requestId}:
     post:
+      parameters:
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       tags: [Admin Operations]
       summary: Recompute topology for one group
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2398,12 +2373,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/AdminOperationResultResponse'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /api/admin/operations/maintenance/prune-expired:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/admin/operations/maintenance/prune-expired/requests/{requestId}:
     post:
+      parameters:
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       tags: [Admin Operations]
       summary: Prune expired runtime rows
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2424,10 +2400,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/AdminOperationResultResponse'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
-
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/admin/operations/crdt/integrity:
     post:
       tags: [Admin Operations]
@@ -2454,7 +2429,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
   /api/admin/operations/crdt/debug-export:
     post:
       tags: [Admin Operations]
@@ -2481,9 +2455,10 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
-  /api/admin/operations/crdt/compact:
+  /api/admin/operations/crdt/compact/requests/{requestId}:
     post:
+      parameters:
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       tags: [Admin Operations]
       summary: Compact a CRDT document through the admin operations namespace
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2505,12 +2480,13 @@ paths:
                 type: object
                 additionalProperties: true
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /api/admin/operations/crdt/lifecycle:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/admin/operations/crdt/lifecycle/requests/{requestId}:
     post:
+      parameters:
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       tags: [Admin Operations]
       summary: Update CRDT lifecycle through the admin operations namespace
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2532,12 +2508,13 @@ paths:
                 type: object
                 additionalProperties: true
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /api/admin/operations/crdt/erase:
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/admin/operations/crdt/erase/requests/{requestId}:
     post:
+      parameters:
+        - $ref: '#/components/parameters/ApiMutationRequestId'
       tags: [Admin Operations]
       summary: Erase or redact a CRDT document through the admin operations namespace
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2559,10 +2536,9 @@ paths:
                 type: object
                 additionalProperties: true
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/Forbidden'
-
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/admin/support/explain/client:
     post:
       tags: [Admin Support]
@@ -2590,7 +2566,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /api/admin/support/explain/group:
     post:
       tags: [Admin Support]
@@ -2618,7 +2593,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /api/admin/support/explain/request:
     post:
       tags: [Admin Support]
@@ -2644,7 +2618,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
   /api/admin/support/explain/crdt-document:
     post:
       tags: [Admin Support]
@@ -2672,7 +2645,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /api/admin/support/explain/queue-item:
     post:
       tags: [Admin Support]
@@ -2698,7 +2670,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
   /api/openapi.json:
     get:
       tags: [Docs]
@@ -2711,7 +2682,6 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-
   /openapi.json:
     get:
       tags: [Docs]
@@ -2724,7 +2694,6 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-
   /api/docs:
     get:
       tags: [Docs]
@@ -2736,7 +2705,6 @@ paths:
             text/html:
               schema:
                 type: string
-
   /swagger-ui:
     get:
       tags: [Docs]
@@ -2748,7 +2716,6 @@ paths:
             text/html:
               schema:
                 type: string
-
 components:
   securitySchemes:
     bearerAuth:
@@ -2845,14 +2812,6 @@ components:
         type: integer
         minimum: 0
         maximum: 9007199254740991
-    IdempotencyKey:
-      name: Idempotency-Key
-      in: header
-      required: true
-      description: Stable request identifier for replaying an immutable topology mutation result.
-      schema:
-        type: string
-        minLength: 1
     GraphIncludeMeasured:
       name: includeMeasured
       in: query
@@ -2943,6 +2902,23 @@ components:
         minimum: 0
 
   responses:
+    ApiMutationFailure:
+      description: Canonical terminal or retryable mutation failure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiMutationFailure'
+    RateLimitedApiMutationFailure:
+      description: Canonical rate-limited mutation failure.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying the rate-limited request.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiMutationFailure'
     BadRequest:
       description: Request is invalid.
       content:
@@ -2996,12 +2972,6 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
-    TopologyMutationFailure:
-      description: Topology mutation validation, denial, conflict, or retry failure.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/TopologyMutationFailureResponse'
     CrdtRouteError:
       description: CRDT route returned an application-level error.
       content:
@@ -3010,6 +2980,102 @@ components:
             $ref: '#/components/schemas/CrdtRouteErrorResponse'
 
   schemas:
+    ApiMutationFailure:
+      type: object
+      required: [type, version, code, status, message, issues, denial, retry]
+      properties:
+        type:
+          type: string
+          enum: [api-mutation-failure]
+        version:
+          type: string
+          enum: [canonical.v1]
+        code:
+          type: string
+          minLength: 1
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        message:
+          type: string
+          minLength: 1
+        issues:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/ApiMutationFailureIssue'
+        denial:
+          $ref: '#/components/schemas/ApiMutationFailureDenial'
+          nullable: true
+        retry:
+          $ref: '#/components/schemas/ApiMutationFailureRetry'
+          nullable: true
+
+    ApiMutationFailureIssue:
+      type: object
+      required: [code, path, message, details]
+      properties:
+        code:
+          type: string
+          minLength: 1
+        path:
+          type: array
+          nullable: true
+          items:
+            oneOf:
+              - type: string
+              - type: integer
+        message:
+          type: string
+          minLength: 1
+        details:
+          type: object
+          nullable: true
+          additionalProperties: true
+
+    ApiMutationFailureDenial:
+      type: object
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+          minLength: 1
+        message:
+          type: string
+          minLength: 1
+        details:
+          type: object
+          nullable: true
+          additionalProperties: true
+
+    ApiMutationFailureRetry:
+      type: object
+      required: [kind, retryAfterMs, attempts, lane, queueAgeMs, dueAgeMs]
+      properties:
+        kind:
+          type: string
+          enum: [rate-limited, unavailable, exhausted]
+        retryAfterMs:
+          type: number
+          nullable: true
+          minimum: 0
+        attempts:
+          type: integer
+          nullable: true
+          minimum: 0
+        lane:
+          type: string
+          nullable: true
+        queueAgeMs:
+          type: number
+          nullable: true
+          minimum: 0
+        dueAgeMs:
+          type: number
+          nullable: true
+          minimum: 0
+
     GroupPolicyReasonCode:
       type: string
       enum:
@@ -3483,8 +3549,6 @@ components:
       type: object
       required: [groupRef]
       properties:
-        requestId:
-          type: string
         groupRef:
           $ref: '#/components/schemas/GroupRef'
         publish:
@@ -3497,8 +3561,6 @@ components:
     AdminPruneExpiredRequest:
       type: object
       properties:
-        requestId:
-          type: string
         categories:
           type: array
           items:
@@ -4947,9 +5009,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     UpsertClientInstanceRequest:
       type: object
       properties:
@@ -4973,9 +5032,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     ConnectClientSessionRequest:
       type: object
       properties:
@@ -5003,9 +5059,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     HeartbeatClientSessionRequest:
       type: object
       properties:
@@ -5022,9 +5075,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     DisconnectClientSessionRequest:
       type: object
       properties:
@@ -5041,9 +5091,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     GroupLifecyclePolicyInput:
       type: object
       description: >-
@@ -5169,9 +5216,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     UpdateGroupRequest:
       type: object
       properties:
@@ -5212,9 +5256,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     AppointGroupDirectorRequest:
       type: object
       properties:
@@ -5227,9 +5268,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     GroupLifecycleTransitionRequest:
       type: object
       properties:
@@ -5237,9 +5275,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     JoinGroupRequest:
       type: object
       properties:
@@ -5252,9 +5287,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     CreateGroupInviteRequest:
       type: object
       properties:
@@ -5265,17 +5297,12 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     RevokeGroupInviteRequest:
       type: object
       properties:
         reason:
           type: string
         traceId:
-          type: string
-        requestId:
           type: string
 
     GrantGroupAdmissionRequest:
@@ -5285,8 +5312,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
 
     DeclineGroupAdmissionRequest:
       type: object
@@ -5295,9 +5320,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     AcceptGroupInviteRequest:
       type: object
       properties:
@@ -5305,9 +5327,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     RotateGroupJoinCodeRequest:
       type: object
       properties:
@@ -5320,9 +5339,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     GroupJoinCodeResponse:
       type: object
       required: [joinCode, expiresAtEpochMs, snapshot]
@@ -5342,9 +5358,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     BanGroupMemberRequest:
       type: object
       properties:
@@ -5352,9 +5365,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     UnbanGroupMemberRequest:
       type: object
       properties:
@@ -5362,9 +5372,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     SetGroupMemberRoleRequest:
       type: object
       required: [role]
@@ -5376,9 +5383,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     TransferGroupOwnershipRequest:
       type: object
       required: [newOwnerPrincipalId]
@@ -5389,9 +5393,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     SelfUpsertGroupMemberRequest:
       type: object
       required: [status]
@@ -5403,9 +5404,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     ConnectGroupPresenceSessionRequest:
       type: object
       required: [generationId]
@@ -5425,9 +5423,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     HeartbeatGroupPresenceSessionRequest:
       type: object
       required: [generationId]
@@ -5444,9 +5439,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     DisconnectGroupPresenceSessionRequest:
       type: object
       required: [generationId]
@@ -5466,9 +5458,6 @@ components:
           type: string
         traceId:
           type: string
-        requestId:
-          type: string
-
     GraphObject:
       type: object
       additionalProperties: true
@@ -5560,75 +5549,6 @@ components:
         meshParamK:
           $ref: '#/components/schemas/GroupTopologyPositiveInteger'
           nullable: true
-
-    TopologyMutationFailureResponse:
-      type: object
-      required: [error, code, message, issues, denial, retry]
-      properties:
-        error:
-          type: string
-        code:
-          type: string
-        message:
-          type: string
-        issues:
-          type: array
-          nullable: true
-          items:
-            type: object
-            required: [code, path, message, details]
-            properties:
-              code:
-                type: string
-              path:
-                type: array
-                nullable: true
-                items:
-                  oneOf:
-                    - type: string
-                    - type: integer
-              message:
-                type: string
-              details:
-                type: object
-                nullable: true
-                additionalProperties: true
-        denial:
-          type: object
-          nullable: true
-          required: [code, message, details]
-          properties:
-            code:
-              type: string
-            message:
-              type: string
-            details:
-              type: object
-              nullable: true
-              additionalProperties: true
-        retry:
-          type: object
-          nullable: true
-          required: [kind, attempts, lane, queueAgeMs, dueAgeMs]
-          properties:
-            kind:
-              type: string
-              enum: [unavailable, exhausted]
-            attempts:
-              type: integer
-              nullable: true
-              minimum: 0
-            lane:
-              type: string
-              nullable: true
-            queueAgeMs:
-              type: number
-              nullable: true
-              minimum: 0
-            dueAgeMs:
-              type: number
-              nullable: true
-              minimum: 0
 
     EffectiveGroupTopologyConfig:
       type: object
@@ -5756,21 +5676,15 @@ components:
 
     PutGroupTopologyConfigRequest:
       type: object
-      required: [requestId, config]
+      required: [config]
       properties:
-        requestId:
-          type: string
-          minLength: 1
         config:
           $ref: '#/components/schemas/GroupTopologyConfigPatch'
 
     PutGroupTopologyOverrideRequest:
       type: object
-      required: [requestId, config]
+      required: [config]
       properties:
-        requestId:
-          type: string
-          minLength: 1
         config:
           $ref: '#/components/schemas/GroupTopologyConfigPatch'
         ttlMs:
@@ -5968,11 +5882,8 @@ components:
 
     ReconfigureGroupTopologyRequest:
       type: object
-      required: [requestId]
+      required: []
       properties:
-        requestId:
-          type: string
-          minLength: 1
         options:
           $ref: '#/components/schemas/GroupTopologyConfigPatch'
         publish:

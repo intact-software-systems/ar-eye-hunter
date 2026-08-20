@@ -49,7 +49,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-register-founder-001-{runId}",
         "body": {
           "username": "joinadm-founder-{runId}",
           "password": "{clientPassword}",
@@ -69,7 +69,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-founder-002-{runId}",
         "body": {
           "username": "joinadm-founder-{runId}",
           "password": "{clientPassword}"
@@ -113,7 +113,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-register-probe-003-{runId}",
         "body": {
           "username": "joinadm-probe-{runId}",
           "password": "{clientPassword}",
@@ -133,7 +133,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-probe-004-{runId}",
         "body": {
           "username": "joinadm-probe-{runId}",
           "password": "{clientPassword}"
@@ -177,13 +177,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-joinadm-{runId}",
         "headers": {
           "Authorization": "{founderAuthHeader}",
           "x-client-id": "{founderClientId}"
         },
         "body": {
-          "requestId": "create-joinadm-{runId}",
           "groupId": "{groupId}",
           "displayName": "Join admission group {runId}",
           "kind": "room",
@@ -211,13 +210,12 @@
           "connection": "api",
           "request": {
             "method": "PUT",
-            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{probeClientId}",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{probeClientId}/requests/storm-join-{loop.iteration}-{runId}",
             "headers": {
               "Authorization": "{probeAuthHeader}",
               "x-client-id": "{probeClientId}"
             },
             "body": {
-              "requestId": "storm-join-{loop.iteration}-{runId}",
               "status": "active"
             }
           },
@@ -236,13 +234,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{probeClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{probeClientId}/requests/storm-join-over-limit-{runId}",
         "headers": {
           "Authorization": "{probeAuthHeader}",
           "x-client-id": "{probeClientId}"
         },
         "body": {
-          "requestId": "storm-join-over-limit-{runId}",
           "status": "active"
         }
       },
@@ -252,8 +249,10 @@
           "Retry-After": "60"
         },
         "body": {
-          "error": "string",
-          "code": "group-admission-rate-limited"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "rate-limited",
+          "status": 429
         }
       }
     },
@@ -263,13 +262,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{founderClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{founderClientId}/requests/control-join-founder-{runId}",
         "headers": {
           "Authorization": "{founderAuthHeader}",
           "x-client-id": "{founderClientId}"
         },
         "body": {
-          "requestId": "control-join-founder-{runId}",
           "status": "active"
         }
       },

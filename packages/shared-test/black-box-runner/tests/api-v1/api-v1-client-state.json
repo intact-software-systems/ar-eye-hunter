@@ -57,7 +57,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -103,13 +103,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal/requests/upsert-principal-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "upsert-principal-{aliceClientId}-{runId}",
           "username": "{aliceUsername}",
           "displayName": "Alice API-v1 black-box {runId}",
           "status": "active",
@@ -135,7 +134,7 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal/requests/upsert-principal-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -146,8 +145,7 @@
           ],
           "status": "active",
           "displayName": "Alice API-v1 black-box {runId}",
-          "username": "{aliceUsername}",
-          "requestId": "upsert-principal-{aliceClientId}-{runId}"
+          "username": "{aliceUsername}"
         }
       },
       "expect": {
@@ -166,13 +164,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal/requests/upsert-principal-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "upsert-principal-{aliceClientId}-{runId}",
           "username": "{aliceUsername}",
           "displayName": "Conflicting replay {runId}",
           "status": "active",
@@ -182,7 +179,13 @@
         }
       },
       "expect": {
-        "status": 409
+        "status": 409,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "client-mutation-idempotency-conflict",
+          "status": 409
+        }
       }
     },
     {
@@ -191,13 +194,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}/requests/upsert-instance-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "upsert-instance-{clientInstanceId}-{runId}",
           "status": "active",
           "platform": "server",
           "deviceLabel": "API-v1 black-box runner",
@@ -230,13 +232,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}/sessions/{aliceSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}/sessions/{aliceSessionId}/requests/connect-session-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "connect-session-{aliceSessionId}-{runId}",
           "generationId": "{clientGenerationId}",
           "presenceState": "online",
           "transport": "ws",
@@ -266,13 +267,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}/sessions/{aliceSessionId}/heartbeat",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}/sessions/{aliceSessionId}/heartbeat/requests/heartbeat-session-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "heartbeat-session-{aliceSessionId}-{runId}",
           "generationId": "{clientGenerationId}",
           "presenceState": "online"
         }
@@ -384,13 +384,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}/sessions/{aliceSessionId}/disconnect",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}/sessions/{aliceSessionId}/disconnect/requests/disconnect-session-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "disconnect-session-{aliceSessionId}-{runId}",
           "generationId": "{clientGenerationId}"
         }
       },
@@ -409,7 +408,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/logout",
+        "path": "/api/auth/logout/requests/bb-logout-alice-009-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"

@@ -106,7 +106,16 @@ describe('rallar-black-box manual workbench helpers', () => {
         expect(commands[1]).toMatchObject({
             kind: 'http.request',
             request: {
-                path: '/api/state/apps/app-1/workspaces/workspace-1/groups',
+                path: expect.stringMatching(
+                    /^\/api\/state\/apps\/app-1\/workspaces\/workspace-1\/groups\/requests\/[^/]+$/,
+                ),
+            },
+        });
+        expect(commands[1]).not.toMatchObject({
+            request: {
+                body: {
+                    requestId: expect.anything(),
+                },
             },
         });
         expect(commands[2]).toMatchObject({
@@ -203,7 +212,12 @@ describe('rallar-black-box manual workbench helpers', () => {
             commandId: 'manual-group-create-21',
             request: {
                 method: 'POST',
-                path: `/api/state/apps/${DEFAULT_MANUAL_WORKBENCH_VALUES.applicationId}/workspaces/default/groups`,
+                path: expect.stringMatching(
+                    new RegExp(
+                        `^/api/state/apps/${DEFAULT_MANUAL_WORKBENCH_VALUES.applicationId}` +
+                        '/workspaces/default/groups/requests/[^/]+$',
+                    ),
+                ),
                 body: {
                     groupId: 'room-from-manual',
                     kind: 'room',
@@ -215,6 +229,19 @@ describe('rallar-black-box manual workbench helpers', () => {
             commandId: 'manual-rtc-connect-22',
             roomId: 'room-from-manual',
         });
+        const repeatedAction = buildManualWorkbenchCommands(
+            'join',
+            {
+                ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+                providerMode: 'browser-rallar',
+                transport: 'realtime',
+                groupId: 'room-from-manual',
+            },
+            {},
+            20,
+        );
+        expect((repeatedAction[1] as { request?: { path?: string } }).request?.path)
+            .not.toBe((commands[1] as { request?: { path?: string } }).request?.path);
     });
 
     it('builds RTC delivery matrix commands for direct, multicast, and broadcast', () => {

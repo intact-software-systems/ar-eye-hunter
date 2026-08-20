@@ -38,7 +38,10 @@
       "expect": {
         "status": 401,
         "body": {
-          "error": "Unauthorized: Missing bearer token"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "authentication-required",
+          "status": 401
         }
       }
     },
@@ -48,7 +51,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/admin/operations/crdt/lifecycle",
+        "path": "/api/admin/operations/crdt/lifecycle/requests/bb-reject-missing-crdt-mutation-auth-001-0001",
         "body": {
           "document": {
             "applicationId": "app-1",
@@ -64,7 +67,10 @@
       "expect": {
         "status": 401,
         "body": {
-          "error": "Unauthorized: Missing bearer token"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "authentication-required",
+          "status": 401
         }
       }
     },
@@ -74,7 +80,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-demo-admin-002-0001",
         "body": {
           "username": "admin",
           "password": "admin"
@@ -142,7 +148,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/admin/operations/maintenance/prune-expired",
+        "path": "/api/admin/operations/maintenance/prune-expired/requests/bb-dry-run-prune-expired-003-0001",
         "headers": {
           "Authorization": "{adminAuthHeader}",
           "x-client-id": "{adminClientId}"
@@ -169,13 +175,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/admin/operations/maintenance/prune-expired",
+        "path": "/api/admin/operations/maintenance/prune-expired/requests/bb-request-prune-{executionToken}",
         "headers": {
           "Authorization": "{adminAuthHeader}",
           "x-client-id": "{adminClientId}"
         },
         "body": {
-          "requestId": "prune-{executionToken}",
           "dryRun": false,
           "categories": ["runtime-state", "resource-inbox-results"],
           "reason": "black-box-bounded-prune"
@@ -204,7 +209,7 @@
       "output": "stateWriteEvidence",
       "request": {
         "stateWriteEvidence": {
-          "match": "prune-{executionToken}",
+          "match": "bb-request-prune-{executionToken}",
           "commandTypes": ["ADMIN_PRUNE_EXPIRED"],
           "minimumMatchedRows": 1,
           "expectedEffectsByCommandType": {
@@ -244,7 +249,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/admin/operations/crdt/lifecycle",
+        "path": "/api/admin/operations/crdt/lifecycle/requests/bb-reject-invalid-crdt-lifecycle-005-0001",
         "headers": {
           "Authorization": "{adminAuthHeader}",
           "x-client-id": "{adminClientId}"
@@ -263,7 +268,10 @@
       "expect": {
         "status": 400,
         "body": {
-          "error": "CRDT lifecycle is invalid"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "api-mutation-request-invalid",
+          "status": 400
         }
       }
     },
@@ -273,7 +281,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/admin/operations/crdt/erase",
+        "path": "/api/admin/operations/crdt/erase/requests/bb-reject-invalid-crdt-erasure-mode-006-0001",
         "headers": {
           "Authorization": "{adminAuthHeader}",
           "x-client-id": "{adminClientId}"
@@ -292,7 +300,10 @@
       "expect": {
         "status": 400,
         "body": {
-          "error": "CRDT command document is invalid"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "api-mutation-request-invalid",
+          "status": 400
         }
       }
     },
@@ -323,7 +334,7 @@
                 }
               }
             },
-            "/api/admin/operations/maintenance/prune-expired": {
+            "/api/admin/operations/maintenance/prune-expired/requests/{requestId}": {
               "post": {
                 "security": [
                   {

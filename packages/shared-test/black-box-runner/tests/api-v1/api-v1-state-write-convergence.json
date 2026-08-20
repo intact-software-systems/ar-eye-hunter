@@ -82,7 +82,7 @@
       "connection": "apiPrimary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-owner-on-primary-001-{runId}",
         "body": {
           "username": "{ownerUsername}",
           "password": "{ownerPassword}"
@@ -126,7 +126,7 @@
       "connection": "apiSecondary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-owner-expiry-probe-on-secondary-002-{runId}",
         "body": {
           "username": "{ownerUsername}",
           "password": "{ownerPassword}"
@@ -169,7 +169,7 @@
       "connection": "apiPrimary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-register-primary-contender-003-{runId}",
         "body": {
           "username": "convergence-primary-{runId}",
           "password": "{contenderPassword}",
@@ -192,7 +192,7 @@
       "connection": "apiPrimary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-primary-contender-004-{runId}",
         "body": {
           "username": "convergence-primary-{runId}",
           "password": "{contenderPassword}"
@@ -234,7 +234,7 @@
       "connection": "apiSecondary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-register-secondary-contender-005-{runId}",
         "body": {
           "username": "convergence-secondary-{runId}",
           "password": "{contenderPassword}",
@@ -257,7 +257,7 @@
       "connection": "apiSecondary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-secondary-contender-006-{runId}",
         "body": {
           "username": "convergence-secondary-{runId}",
           "password": "{contenderPassword}"
@@ -299,13 +299,12 @@
       "connection": "apiPrimary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-bounded-scope-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
         },
         "body": {
-          "requestId": "create-bounded-{groupId}-{runId}",
           "groupId": "{groupId}",
           "displayName": "Bounded convergence {runId}",
           "kind": "room",
@@ -335,13 +334,12 @@
       "connection": "apiPrimary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{ownerClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{ownerClientId}/requests/activate-owner-scope-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
         },
         "body": {
-          "requestId": "activate-owner-{groupId}-{runId}",
           "status": "active"
         }
       },
@@ -373,13 +371,12 @@
       "connection": "apiPrimary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{reusedSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{reusedSessionId}/requests/connect-generation-1-scope-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
         },
         "body": {
-          "requestId": "connect-generation-1-{reusedSessionId}-{runId}",
           "generationId": "generation-1-{runId}",
           "principalId": "{ownerClientId}",
           "connectedAtEpochMs": "{expiredPresenceAtEpochMs}",
@@ -403,13 +400,12 @@
       "connection": "apiSecondary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{expiryProbeSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{expiryProbeSessionId}/requests/connect-expiry-probe-scope-{runId}",
         "headers": {
           "Authorization": "{expiryProbeAuthHeader}",
           "x-client-id": "{ownerClientId}"
         },
         "body": {
-          "requestId": "connect-expiry-probe-{expiryProbeSessionId}-{runId}",
           "generationId": "expiry-probe-generation-1-{runId}",
           "principalId": "{ownerClientId}",
           "connectedAtEpochMs": "{expiredPresenceAtEpochMs}",
@@ -442,13 +438,12 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "PUT",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{primaryContenderClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{primaryContenderClientId}/requests/activate-primary-contender-scope-{runId}",
                 "headers": {
                   "Authorization": "{primaryContenderAuthHeader}",
                   "x-client-id": "{primaryContenderClientId}"
                 },
                 "body": {
-                  "requestId": "activate-primary-contender-{groupId}-{runId}",
                   "status": "active"
                 }
               },
@@ -470,13 +465,12 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "PUT",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{secondaryContenderClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{secondaryContenderClientId}/requests/activate-secondary-contender-scope-{runId}",
                 "headers": {
                   "Authorization": "{secondaryContenderAuthHeader}",
                   "x-client-id": "{secondaryContenderClientId}"
                 },
                 "body": {
-                  "requestId": "activate-secondary-contender-{groupId}-{runId}",
                   "status": "active"
                 }
               },
@@ -498,13 +492,12 @@
               "connection": "apiTertiary",
               "request": {
                 "method": "PUT",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{reusedSessionId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{reusedSessionId}/requests/reconnect-generation-2-scope-{runId}",
                 "headers": {
                   "Authorization": "{ownerAuthHeader}",
                   "x-client-id": "{ownerClientId}"
                 },
                 "body": {
-                  "requestId": "reconnect-generation-2-{reusedSessionId}-{runId}",
                   "generationId": "generation-2-{runId}",
                   "principalId": "{ownerClientId}",
                   "expiresAtEpochMs": 9007199254740991
@@ -533,12 +526,12 @@
           "name": "topology-config-lane",
           "steps": [
             {
-              "name": "rejectTopologyConfigWithoutAuthoritativeIdentity",
+              "name": "rejectTopologyConfigBodyRequestIdentity",
               "type": "http",
               "connection": "apiSecondary",
               "request": {
                 "method": "PUT",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config/requests/body-only-config-scope-{runId}",
                 "headers": {
                   "Authorization": "{ownerAuthHeader}",
                   "x-client-id": "{ownerClientId}"
@@ -552,23 +545,28 @@
                 }
               },
               "expect": {
-                "status": 400
+                "status": 400,
+                "body": {
+                  "type": "api-mutation-failure",
+                  "version": "canonical.v1",
+                  "code": "api-mutation-request-invalid",
+                  "status": 400
+                }
               }
             },
             {
-              "name": "rejectTopologyConfigWithBlankAuthoritativeIdentity",
+              "name": "rejectTopologyConfigIdempotencyHeader",
               "type": "http",
               "connection": "apiSecondary",
               "request": {
                 "method": "PUT",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config/requests/blank-header-config-scope-{runId}",
                 "headers": {
                   "Authorization": "{ownerAuthHeader}",
                   "x-client-id": "{ownerClientId}",
                   "Idempotency-Key": ""
                 },
                 "body": {
-                  "requestId": "blank-header-config-{groupId}-{runId}",
                   "config": {
                     "topologyKind": "tree",
                     "degreeLimit": 2
@@ -576,16 +574,22 @@
                 }
               },
               "expect": {
-                "status": 400
+                "status": 400,
+                "body": {
+                  "type": "api-mutation-failure",
+                  "version": "canonical.v1",
+                  "code": "api-mutation-request-invalid",
+                  "status": 400
+                }
               }
             },
             {
-              "name": "rejectTopologyConfigIdentityMismatch",
+              "name": "rejectTopologyConfigMultipleRequestIdentitySources",
               "type": "http",
               "connection": "apiSecondary",
               "request": {
                 "method": "PUT",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config/requests/body-config-scope-{runId}",
                 "headers": {
                   "Authorization": "{ownerAuthHeader}",
                   "x-client-id": "{ownerClientId}",
@@ -600,7 +604,13 @@
                 }
               },
               "expect": {
-                "status": 400
+                "status": 400,
+                "body": {
+                  "type": "api-mutation-failure",
+                  "version": "canonical.v1",
+                  "code": "api-mutation-request-invalid",
+                  "status": 400
+                }
               }
             },
             {
@@ -609,14 +619,12 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "PUT",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config/requests/put-racing-config-scope-{runId}",
                 "headers": {
                   "Authorization": "{ownerAuthHeader}",
-                  "x-client-id": "{ownerClientId}",
-                  "Idempotency-Key": "put-racing-config-{groupId}-{runId}"
+                  "x-client-id": "{ownerClientId}"
                 },
                 "body": {
-                  "requestId": "put-racing-config-{groupId}-{runId}",
                   "config": {
                     "topologyKind": "tree",
                     "degreeLimit": 2
@@ -712,14 +720,12 @@
       "connection": "apiPrimary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config/requests/put-initial-config-scope-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}",
-          "Idempotency-Key": "put-initial-config-{groupId}-{runId}"
+          "x-client-id": "{ownerClientId}"
         },
         "body": {
-          "requestId": "put-initial-config-{groupId}-{runId}",
           "config": {
             "topologyKind": "tree",
             "degreeLimit": 2
@@ -751,11 +757,10 @@
       "connection": "apiSecondary",
       "request": {
         "method": "DELETE",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config/requests/delete-config-scope-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}",
-          "Idempotency-Key": "delete-config-{groupId}-{runId}"
+          "x-client-id": "{ownerClientId}"
         }
       },
       "expect": {
@@ -776,14 +781,12 @@
       "connection": "apiTertiary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config/requests/put-final-config-scope-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}",
-          "Idempotency-Key": "put-final-config-{groupId}-{runId}"
+          "x-client-id": "{ownerClientId}"
         },
         "body": {
-          "requestId": "put-final-config-{groupId}-{runId}",
           "config": {
             "topologyKind": "mesh",
             "degreeLimit": 4

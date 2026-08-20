@@ -606,22 +606,29 @@ describe('rallar-bb browser adapter auth', () => {
 
         expect(runResult.ok).toBe(true);
         expect(operations.slice(0, 3)).toEqual([
-            'POST /api/state/apps/rallar-server/workspaces/default/groups',
-            'PUT /api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/alice',
+            expect.stringMatching(
+                /^POST \/api\/state\/apps\/rallar-server\/workspaces\/default\/groups\/requests\/[^/]+-%7BrunId%7D$/,
+            ),
+            expect.stringMatching(
+                /^PUT \/api\/state\/apps\/rallar-server\/workspaces\/default\/groups\/hetzner-headless-room\/members\/alice\/requests\/[^/]+-%7BrunId%7D$/,
+            ),
             'RTC connect',
         ]);
         expect(fetchCalls.map(call => new URL(String(call.input)).pathname)).toEqual([
-            '/api/state/apps/rallar-server/workspaces/default/groups',
-            '/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/alice',
+            expect.stringMatching(
+                /^\/api\/state\/apps\/rallar-server\/workspaces\/default\/groups\/requests\/[^/]+-%7BrunId%7D$/,
+            ),
+            expect.stringMatching(
+                /^\/api\/state\/apps\/rallar-server\/workspaces\/default\/groups\/hetzner-headless-room\/members\/alice\/requests\/[^/]+-%7BrunId%7D$/,
+            ),
         ]);
-        expect(JSON.parse(String(fetchCalls[0].init?.body))).toMatchObject({
-            requestId: 'rtc-realtime:ensure-group:rallar-server:default:hetzner-headless-room:session-1',
+        expect(JSON.parse(String(fetchCalls[0].init?.body))).toEqual({
             groupId: 'hetzner-headless-room',
+            displayName: 'hetzner-headless-room',
+            kind: 'room',
             joinMode: 'open',
         });
-        expect(JSON.parse(String(fetchCalls[1].init?.body))).toMatchObject({
-            requestId:
-                'rtc-realtime:ensure-member:rallar-server:default:hetzner-headless-room:alice:session-1',
+        expect(JSON.parse(String(fetchCalls[1].init?.body))).toEqual({
             status: 'active',
         });
     });
@@ -726,7 +733,9 @@ describe('rallar-bb browser adapter auth', () => {
         });
 
         expect(result.ok).toBe(true);
-        expect(fetchCalls[0].input).toBe('https://api.example.test/api/auth/ws-ticket');
+        expect(fetchCalls[0].input).toMatch(
+            /^https:\/\/api\.example\.test\/api\/auth\/ws-ticket\/requests\/[^/]+$/,
+        );
         expect(new Headers(fetchCalls[0].init?.headers).get('authorization')).toBe('Bearer token-1');
         expect(openedSockets).toEqual([
             'wss://api.example.test/api/ws/session-1?ticket=ticket-1',

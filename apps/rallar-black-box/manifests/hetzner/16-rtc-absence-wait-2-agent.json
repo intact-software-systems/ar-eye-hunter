@@ -39,9 +39,8 @@
             },
             "request": {
               "method": "POST",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/d23699bb-0a36-4076-8fab-10c942115141-{runId}",
               "body": {
-                "requestId": "rtc-absence:ensure-group:rallar-server:default:hetzner-headless-room:{auth.sessionId}",
                 "groupId": "hetzner-headless-room",
                 "displayName": "hetzner-headless-room",
                 "kind": "room",
@@ -72,9 +71,8 @@
             },
             "request": {
               "method": "PUT",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}/requests/595968fc-482e-4ef5-8125-565007433507-{runId}",
               "body": {
-                "requestId": "rtc-absence:ensure-member:rallar-server:default:hetzner-headless-room:{auth.clientId}:{auth.sessionId}",
                 "status": "active"
               }
             },

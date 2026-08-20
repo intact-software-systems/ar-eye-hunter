@@ -108,7 +108,7 @@
       "connection": "apiPrimary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-crdt-history-writer-001-{runId}",
         "body": {
           "username": "admin",
           "password": "admin"
@@ -152,7 +152,7 @@
       "connection": "apiSecondary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-crdt-history-reader-002-{runId}",
         "body": {
           "username": "admin",
           "password": "admin"
@@ -196,7 +196,7 @@
       "connection": "apiPrimary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-issue-primary-crdt-history-ticket-003-{runId}",
         "headers": {
           "Authorization": "{crdtWriterAuthHeader}",
           "x-client-id": "{crdtWriterClientId}"
@@ -440,7 +440,7 @@
       "connection": "apiSecondary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-issue-tertiary-crdt-history-ticket-004-{runId}",
         "headers": {
           "Authorization": "{crdtReaderAuthHeader}",
           "x-client-id": "{crdtReaderClientId}"

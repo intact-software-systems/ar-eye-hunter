@@ -65,7 +65,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -111,13 +111,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-ws-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "create-ws-{groupId}-{runId}",
           "groupId": "{groupId}",
           "displayName": "{groupName}",
           "kind": "room",
@@ -150,13 +149,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{aliceClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{aliceClientId}/requests/join-ws-scope-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "join-ws-{groupId}-{aliceClientId}-{runId}",
           "status": "active"
         }
       },
@@ -181,13 +179,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/presence-ws-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "presence-ws-{aliceSessionId}-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -207,7 +204,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-create-web-socket-ticket-005-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -333,13 +330,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/disconnect",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/disconnect/requests/disconnect-ws-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "disconnect-ws-{aliceSessionId}-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -359,7 +355,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/logout",
+        "path": "/api/auth/logout/requests/bb-logout-alice-007-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"

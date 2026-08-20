@@ -21,6 +21,7 @@ import {
 import {
   assertLivePassiveConsumerState,
   assertPublisherHeadsAdvanced,
+  assertPublisherHeadsUnchanged,
   assertReplacementConsumerSeeded,
   assertSinglePublisherHeadAdvanced,
 } from './api-v1-rtc-topology-proof-postgres.mts';
@@ -98,8 +99,9 @@ export async function runApiV1RtcTopologyReplayProof(
           actor: sessions[0]!,
           phase: 'baseline-a',
         });
-        const durable = await waitForDurableState(input.databaseUrl, (state) =>
-          assertSinglePublisherHeadAdvanced({ state, priorHeads: preparedHeads }),
+        const durable = await waitForDurableState(
+          input.databaseUrl,
+          (state) => assertSinglePublisherHeadAdvanced({ state, priorHeads: preparedHeads }),
         );
         return assertSinglePublisherHeadAdvanced({ state: durable, priorHeads: preparedHeads });
       },
@@ -114,11 +116,13 @@ export async function runApiV1RtcTopologyReplayProof(
           actor: sessions[2]!,
           phase: 'baseline-b',
         });
-        const durable = await waitForDurableState(input.databaseUrl, (state) =>
-          assertSinglePublisherHeadAdvanced({
-            state,
-            priorHeads: baselineA.publisherHeads,
-          }),
+        const durable = await waitForDurableState(
+          input.databaseUrl,
+          (state) =>
+            assertSinglePublisherHeadAdvanced({
+              state,
+              priorHeads: baselineA.publisherHeads,
+            }),
         );
         return assertSinglePublisherHeadAdvanced({
           state: durable,
@@ -160,12 +164,14 @@ export async function runApiV1RtcTopologyReplayProof(
           exactPublicationExpectation(revision),
         );
         assertCompleteSessionTopology(observations, sessions);
-        const durable = await waitForDurableState(input.databaseUrl, (state) =>
-          assertSinglePublisherHeadAdvanced({
-            state,
-            consumerStreamId: baselineEvidence.passiveConsumerStreamId,
-            priorHeads: baselineEvidence.publisherHeads,
-          }),
+        const durable = await waitForDurableState(
+          input.databaseUrl,
+          (state) =>
+            assertSinglePublisherHeadAdvanced({
+              state,
+              consumerStreamId: baselineEvidence.passiveConsumerStreamId,
+              priorHeads: baselineEvidence.publisherHeads,
+            }),
         );
         const evidence = assertSinglePublisherHeadAdvanced({
           state: durable,
@@ -199,12 +205,14 @@ export async function runApiV1RtcTopologyReplayProof(
         assertCompleteSessionTopology(observations, sessions);
         attached[4]!.assertNoRegressionOrDuplicateLane();
         attached[5]!.assertNoRegressionOrDuplicateLane();
-        const durable = await waitForDurableState(input.databaseUrl, (state) =>
-          assertSinglePublisherHeadAdvanced({
-            state,
-            consumerStreamId: baselineEvidence.passiveConsumerStreamId,
-            priorHeads: liveAEvidence.publisherHeads,
-          }),
+        const durable = await waitForDurableState(
+          input.databaseUrl,
+          (state) =>
+            assertSinglePublisherHeadAdvanced({
+              state,
+              consumerStreamId: baselineEvidence.passiveConsumerStreamId,
+              priorHeads: liveAEvidence.publisherHeads,
+            }),
         );
         const evidence = assertSinglePublisherHeadAdvanced({
           state: durable,
@@ -242,11 +250,13 @@ export async function runApiV1RtcTopologyReplayProof(
           actor: sessions[0]!,
           phase: 'restart-a',
         });
-        const durable = await waitForDurableState(input.databaseUrl, (state) =>
-          assertSinglePublisherHeadAdvanced({
-            state,
-            priorHeads: liveBEvidence.publisherHeads,
-          }),
+        const durable = await waitForDurableState(
+          input.databaseUrl,
+          (state) =>
+            assertSinglePublisherHeadAdvanced({
+              state,
+              priorHeads: liveBEvidence.publisherHeads,
+            }),
         );
         const evidence = assertSinglePublisherHeadAdvanced({
           state: durable,
@@ -270,11 +280,13 @@ export async function runApiV1RtcTopologyReplayProof(
           actor: sessions[2]!,
           phase: 'restart-b',
         });
-        const durable = await waitForDurableState(input.databaseUrl, (state) =>
-          assertSinglePublisherHeadAdvanced({
-            state,
-            priorHeads: laterAEvidence.publisherHeads,
-          }),
+        const durable = await waitForDurableState(
+          input.databaseUrl,
+          (state) =>
+            assertSinglePublisherHeadAdvanced({
+              state,
+              priorHeads: laterAEvidence.publisherHeads,
+            }),
         );
         const evidence = assertSinglePublisherHeadAdvanced({
           state: durable,
@@ -311,24 +323,37 @@ export async function runApiV1RtcTopologyReplayProof(
     sockets.push(...replacementSockets);
     const replacementObservations = await Promise.all(
       replacementSockets.map((socket) =>
-        socket.waitForTopology(exactTopologyExpectation(topologyBeforeReplacement, 'hydration')),
+        socket.waitForTopology(exactTopologyExpectation(topologyBeforeReplacement, 'hydration'))
       ),
     );
     assertCompleteSessionTopology(replacementObservations, sessions);
     replacementSockets.forEach((socket) => socket.assertNoRegressionOrDuplicateLane());
 
     phase = 'verify-replacement-durable-cursors';
-    const replacementDurable = await waitForDurableState(input.databaseUrl, (state) =>
-      assertReplacementConsumerSeeded({
-        state,
-        priorStreamIds,
-        publisherHeads: advancedPublisherHeads,
-      }),
+    const replacementDurable = await waitForDurableState(
+      input.databaseUrl,
+      (state) =>
+        assertReplacementConsumerSeeded({
+          state,
+          priorStreamIds,
+          publisherHeads: advancedPublisherHeads,
+        }),
     );
     const replacementStreamId = assertReplacementConsumerSeeded({
       state: replacementDurable,
       priorStreamIds,
       publisherHeads: advancedPublisherHeads,
+    });
+
+    phase = 'replay-baseline-topology-after-restart';
+    await api.establishBaseline({ ...group, actor: replacementSessions[0]! });
+    await waitForDurableState(input.databaseUrl, (state) => {
+      assertPublisherHeadsUnchanged(state, advancedPublisherHeads);
+      assertReplacementConsumerSeeded({
+        state,
+        priorStreamIds,
+        publisherHeads: advancedPublisherHeads,
+      });
     });
 
     phase = 'write-success-proof-artifact';
@@ -368,11 +393,10 @@ export async function runApiV1RtcTopologyReplayProof(
         mutationsWhileCStopped: { A: laterARevision, B: laterBRevision },
         publisherHeadsAtRestart: advancedPublisherHeads,
         replacementConsumerStreamId: replacementStreamId,
-        hydrationMessageIds: replacementObservations.map((observation) =>
-          observation.messageId
-        ),
+        hydrationMessageIds: replacementObservations.map((observation) => observation.messageId),
         sameAuthenticatedSessionIdentities: true,
         mutationAfterReplacementStart: false,
+        topologyMutationReplayAfterReplacement: true,
       },
       serverLogs: [
         input.primaryPlan.logPath,

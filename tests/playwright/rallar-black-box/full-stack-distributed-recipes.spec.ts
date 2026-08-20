@@ -884,13 +884,12 @@ async function setupGroupMembership(
         request: {
             path: `/api/state/apps/${pathSegment(input.group.applicationId)}/workspaces/${
                 pathSegment(input.group.workspaceId)
-            }/groups`,
+            }/groups/requests/${createRallarBlackBoxEnsureGroupRequestId({
+                requestPrefix: 'rtc-realtime',
+                group: input.group,
+            })}`,
             method: 'POST',
             body: {
-                requestId: createRallarBlackBoxEnsureGroupRequestId({
-                    requestPrefix: 'rtc-realtime',
-                    group: input.group,
-                }),
                 groupId: input.group.groupId,
                 displayName: input.group.groupId,
                 description: 'Created by rallar-black-box distributed recipe QA',
@@ -917,7 +916,7 @@ async function setupGroupMembership(
             request: {
                 path: `/api/state/apps/${pathSegment(input.group.applicationId)}/workspaces/${
                     pathSegment(input.group.workspaceId)
-                }/groups/${groupSegment}/members/{auth.clientId}`,
+                }/groups/${groupSegment}/members/{auth.clientId}/requests/${crypto.randomUUID()}`,
                 method: 'PUT',
                 body: {
                     status: 'active',

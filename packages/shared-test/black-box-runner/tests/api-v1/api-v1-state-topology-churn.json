@@ -86,7 +86,7 @@
       "connection": "apiPrimary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-owner-001-{runId}",
         "body": {
           "username": "{ownerUsername}",
           "password": "{ownerPassword}"
@@ -130,13 +130,12 @@
       "connection": "apiPrimary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-scope-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
         },
         "body": {
-          "requestId": "create-{sharedGroupId}-{runId}",
           "groupId": "{sharedGroupId}",
           "displayName": "Shared churn {runId}",
           "kind": "room",
@@ -160,13 +159,12 @@
       "connection": "apiSecondary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-scope-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
         },
         "body": {
-          "requestId": "create-{churnGroupId}-{runId}",
           "groupId": "{churnGroupId}",
           "displayName": "Presence churn {runId}",
           "kind": "room",
@@ -190,13 +188,12 @@
       "connection": "apiPrimary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/members/{ownerClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/members/{ownerClientId}/requests/activate-owner-scope-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
         },
         "body": {
-          "requestId": "activate-owner-{sharedGroupId}-{runId}",
           "status": "active"
         }
       },
@@ -213,13 +210,12 @@
       "connection": "apiSecondary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/members/{ownerClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/members/{ownerClientId}/requests/activate-owner-scope-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
         },
         "body": {
-          "requestId": "activate-owner-{churnGroupId}-{runId}",
           "status": "active"
         }
       },
@@ -236,13 +232,12 @@
       "connection": "apiPrimary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/sessions/{ownerSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/sessions/{ownerSessionId}/requests/presence-owner-scope-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
         },
         "body": {
-          "requestId": "presence-owner-{sharedGroupId}-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{ownerClientId}"
         }
@@ -260,13 +255,12 @@
       "connection": "apiSecondary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{ownerSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{ownerSessionId}/requests/presence-owner-scope-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
         },
         "body": {
-          "requestId": "presence-owner-{churnGroupId}-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{ownerClientId}"
         }
@@ -298,7 +292,7 @@
                   "connection": "apiPrimary",
                   "request": {
                     "method": "POST",
-                    "path": "/api/auth/register",
+                    "path": "/api/auth/register/requests/bb-register-primary-client-token0-token-008-{runId}",
                     "body": {
                       "username": "churn-primary-{loop.iteration}-{runId}",
                       "password": "{clientPassword}",
@@ -318,7 +312,7 @@
                   "connection": "apiPrimary",
                   "request": {
                     "method": "POST",
-                    "path": "/api/auth/login",
+                    "path": "/api/auth/login/requests/bb-login-primary-client-token0-token-009-{runId}",
                     "body": {
                       "username": "churn-primary-{loop.iteration}-{runId}",
                       "password": "{clientPassword}"
@@ -361,13 +355,12 @@
                   "connection": "apiPrimary",
                   "request": {
                     "method": "PUT",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/members/{primaryClientId}",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/members/{primaryClientId}/requests/join-primary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{primaryAuthHeader}",
                       "x-client-id": "{primaryClientId}"
                     },
                     "body": {
-                      "requestId": "join-primary-{loop.iteration}-{sharedGroupId}-{runId}",
                       "status": "active"
                     }
                   },
@@ -384,13 +377,12 @@
                   "connection": "apiPrimary",
                   "request": {
                     "method": "PUT",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/members/{primaryClientId}",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/members/{primaryClientId}/requests/join-primary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{primaryAuthHeader}",
                       "x-client-id": "{primaryClientId}"
                     },
                     "body": {
-                      "requestId": "join-primary-{loop.iteration}-{churnGroupId}-{runId}",
                       "status": "active"
                     }
                   },
@@ -407,13 +399,12 @@
                   "connection": "apiPrimary",
                   "request": {
                     "method": "PUT",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/sessions/{primarySessionId}",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/sessions/{primarySessionId}/requests/presence-primary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{primaryAuthHeader}",
                       "x-client-id": "{primaryClientId}"
                     },
                     "body": {
-                      "requestId": "presence-primary-{loop.iteration}-{sharedGroupId}-{runId}",
                       "generationId": "generation-{runId}",
                       "principalId": "{primaryClientId}"
                     },
@@ -436,13 +427,12 @@
                   "connection": "apiPrimary",
                   "request": {
                     "method": "PUT",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{primarySessionId}",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{primarySessionId}/requests/presence-primary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{primaryAuthHeader}",
                       "x-client-id": "{primaryClientId}"
                     },
                     "body": {
-                      "requestId": "presence-primary-{loop.iteration}-{churnGroupId}-{runId}",
                       "generationId": "generation-{runId}",
                       "principalId": "{primaryClientId}"
                     }
@@ -460,13 +450,12 @@
                   "connection": "apiPrimary",
                   "request": {
                     "method": "POST",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{primarySessionId}/disconnect",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{primarySessionId}/disconnect/requests/disconnect-primary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{primaryAuthHeader}",
                       "x-client-id": "{primaryClientId}"
                     },
                     "body": {
-                      "requestId": "disconnect-primary-{loop.iteration}-{churnGroupId}-{runId}",
                       "generationId": "generation-{runId}",
                       "principalId": "{primaryClientId}"
                     }
@@ -484,13 +473,12 @@
                   "connection": "apiPrimary",
                   "request": {
                     "method": "PUT",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{primarySessionId}",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{primarySessionId}/requests/reconnect-primary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{primaryAuthHeader}",
                       "x-client-id": "{primaryClientId}"
                     },
                     "body": {
-                      "requestId": "reconnect-primary-{loop.iteration}-{churnGroupId}-{runId}",
                       "generationId": "reconnect-generation-{loop.iteration}-{runId}",
                       "principalId": "{primaryClientId}"
                     },
@@ -525,7 +513,7 @@
                   "connection": "apiSecondary",
                   "request": {
                     "method": "POST",
-                    "path": "/api/auth/register",
+                    "path": "/api/auth/register/requests/bb-register-secondary-client-token0-token-016-{runId}",
                     "body": {
                       "username": "churn-secondary-{loop.iteration}-{runId}",
                       "password": "{clientPassword}",
@@ -545,7 +533,7 @@
                   "connection": "apiSecondary",
                   "request": {
                     "method": "POST",
-                    "path": "/api/auth/login",
+                    "path": "/api/auth/login/requests/bb-login-secondary-client-token0-token-017-{runId}",
                     "body": {
                       "username": "churn-secondary-{loop.iteration}-{runId}",
                       "password": "{clientPassword}"
@@ -588,13 +576,12 @@
                   "connection": "apiSecondary",
                   "request": {
                     "method": "PUT",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/members/{secondaryClientId}",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/members/{secondaryClientId}/requests/join-secondary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{secondaryAuthHeader}",
                       "x-client-id": "{secondaryClientId}"
                     },
                     "body": {
-                      "requestId": "join-secondary-{loop.iteration}-{sharedGroupId}-{runId}",
                       "status": "active"
                     }
                   },
@@ -611,13 +598,12 @@
                   "connection": "apiSecondary",
                   "request": {
                     "method": "PUT",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/members/{secondaryClientId}",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/members/{secondaryClientId}/requests/join-secondary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{secondaryAuthHeader}",
                       "x-client-id": "{secondaryClientId}"
                     },
                     "body": {
-                      "requestId": "join-secondary-{loop.iteration}-{churnGroupId}-{runId}",
                       "status": "active"
                     }
                   },
@@ -634,13 +620,12 @@
                   "connection": "apiSecondary",
                   "request": {
                     "method": "PUT",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/sessions/{secondarySessionId}",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/sessions/{secondarySessionId}/requests/presence-secondary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{secondaryAuthHeader}",
                       "x-client-id": "{secondaryClientId}"
                     },
                     "body": {
-                      "requestId": "presence-secondary-{loop.iteration}-{sharedGroupId}-{runId}",
                       "generationId": "generation-{runId}",
                       "principalId": "{secondaryClientId}"
                     },
@@ -663,13 +648,12 @@
                   "connection": "apiSecondary",
                   "request": {
                     "method": "PUT",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{secondarySessionId}",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{secondarySessionId}/requests/presence-secondary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{secondaryAuthHeader}",
                       "x-client-id": "{secondaryClientId}"
                     },
                     "body": {
-                      "requestId": "presence-secondary-{loop.iteration}-{churnGroupId}-{runId}",
                       "generationId": "generation-{runId}",
                       "principalId": "{secondaryClientId}"
                     }
@@ -687,13 +671,12 @@
                   "connection": "apiSecondary",
                   "request": {
                     "method": "POST",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{secondarySessionId}/disconnect",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{secondarySessionId}/disconnect/requests/disconnect-secondary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{secondaryAuthHeader}",
                       "x-client-id": "{secondaryClientId}"
                     },
                     "body": {
-                      "requestId": "disconnect-secondary-{loop.iteration}-{churnGroupId}-{runId}",
                       "generationId": "generation-{runId}",
                       "principalId": "{secondaryClientId}"
                     }
@@ -711,13 +694,12 @@
                   "connection": "apiSecondary",
                   "request": {
                     "method": "PUT",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{secondarySessionId}",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{secondarySessionId}/requests/reconnect-secondary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{secondaryAuthHeader}",
                       "x-client-id": "{secondaryClientId}"
                     },
                     "body": {
-                      "requestId": "reconnect-secondary-{loop.iteration}-{churnGroupId}-{runId}",
                       "generationId": "reconnect-generation-{loop.iteration}-{runId}",
                       "principalId": "{secondaryClientId}"
                     },
@@ -752,7 +734,7 @@
                   "connection": "apiTertiary",
                   "request": {
                     "method": "POST",
-                    "path": "/api/auth/register",
+                    "path": "/api/auth/register/requests/bb-register-tertiary-client-token0-token-024-{runId}",
                     "body": {
                       "username": "churn-tertiary-{loop.iteration}-{runId}",
                       "password": "{clientPassword}",
@@ -772,7 +754,7 @@
                   "connection": "apiTertiary",
                   "request": {
                     "method": "POST",
-                    "path": "/api/auth/login",
+                    "path": "/api/auth/login/requests/bb-login-tertiary-client-token0-token-025-{runId}",
                     "body": {
                       "username": "churn-tertiary-{loop.iteration}-{runId}",
                       "password": "{clientPassword}"
@@ -815,13 +797,12 @@
                   "connection": "apiTertiary",
                   "request": {
                     "method": "PUT",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/members/{tertiaryClientId}",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/members/{tertiaryClientId}/requests/join-tertiary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{tertiaryAuthHeader}",
                       "x-client-id": "{tertiaryClientId}"
                     },
                     "body": {
-                      "requestId": "join-tertiary-{loop.iteration}-{sharedGroupId}-{runId}",
                       "status": "active"
                     }
                   },
@@ -838,13 +819,12 @@
                   "connection": "apiTertiary",
                   "request": {
                     "method": "PUT",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/members/{tertiaryClientId}",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/members/{tertiaryClientId}/requests/join-tertiary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{tertiaryAuthHeader}",
                       "x-client-id": "{tertiaryClientId}"
                     },
                     "body": {
-                      "requestId": "join-tertiary-{loop.iteration}-{churnGroupId}-{runId}",
                       "status": "active"
                     }
                   },
@@ -861,13 +841,12 @@
                   "connection": "apiTertiary",
                   "request": {
                     "method": "PUT",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/sessions/{tertiarySessionId}",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/sessions/{tertiarySessionId}/requests/presence-tertiary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{tertiaryAuthHeader}",
                       "x-client-id": "{tertiaryClientId}"
                     },
                     "body": {
-                      "requestId": "presence-tertiary-{loop.iteration}-{sharedGroupId}-{runId}",
                       "generationId": "generation-{runId}",
                       "principalId": "{tertiaryClientId}"
                     },
@@ -890,13 +869,12 @@
                   "connection": "apiTertiary",
                   "request": {
                     "method": "PUT",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{tertiarySessionId}",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{tertiarySessionId}/requests/presence-tertiary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{tertiaryAuthHeader}",
                       "x-client-id": "{tertiaryClientId}"
                     },
                     "body": {
-                      "requestId": "presence-tertiary-{loop.iteration}-{churnGroupId}-{runId}",
                       "generationId": "generation-{runId}",
                       "principalId": "{tertiaryClientId}"
                     }
@@ -914,13 +892,12 @@
                   "connection": "apiTertiary",
                   "request": {
                     "method": "POST",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{tertiarySessionId}/disconnect",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{tertiarySessionId}/disconnect/requests/disconnect-tertiary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{tertiaryAuthHeader}",
                       "x-client-id": "{tertiaryClientId}"
                     },
                     "body": {
-                      "requestId": "disconnect-tertiary-{loop.iteration}-{churnGroupId}-{runId}",
                       "generationId": "generation-{runId}",
                       "principalId": "{tertiaryClientId}"
                     }
@@ -938,13 +915,12 @@
                   "connection": "apiTertiary",
                   "request": {
                     "method": "PUT",
-                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{tertiarySessionId}",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{tertiarySessionId}/requests/reconnect-tertiary-{loop.iteration}-scope-{runId}",
                     "headers": {
                       "Authorization": "{tertiaryAuthHeader}",
                       "x-client-id": "{tertiaryClientId}"
                     },
                     "body": {
-                      "requestId": "reconnect-tertiary-{loop.iteration}-{churnGroupId}-{runId}",
                       "generationId": "reconnect-generation-{loop.iteration}-{runId}",
                       "principalId": "{tertiaryClientId}"
                     },
@@ -1199,14 +1175,12 @@
       "connection": "apiSecondary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/topology/reconfigure",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/topology/reconfigure/requests/reconcile-scope-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}",
-          "Idempotency-Key": "reconcile-{sharedGroupId}-{runId}"
+          "x-client-id": "{ownerClientId}"
         },
         "body": {
-          "requestId": "reconcile-{sharedGroupId}-{runId}",
           "publish": false
         }
       },
@@ -1230,14 +1204,12 @@
       "connection": "apiPrimary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/topology/reconfigure",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/topology/reconfigure/requests/reconcile-scope-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}",
-          "Idempotency-Key": "reconcile-{churnGroupId}-{runId}"
+          "x-client-id": "{ownerClientId}"
         },
         "body": {
-          "requestId": "reconcile-{churnGroupId}-{runId}",
           "publish": false
         }
       },

@@ -20,11 +20,17 @@ it('covers unauthenticated CRDT mutations through the public admin route', () =>
 
     expect(denial?.request).toMatchObject({
         method: 'POST',
-        path: '/api/admin/operations/crdt/lifecycle',
+        path: '/api/admin/operations/crdt/lifecycle/requests/' +
+            'bb-reject-missing-crdt-mutation-auth-001-0001',
     });
     expect(denial?.request?.headers?.Authorization).toBeUndefined();
     expect(denial?.expect).toMatchObject({
         status: 401,
-        body: { error: 'Unauthorized: Missing bearer token' },
+        body: {
+            type: 'api-mutation-failure',
+            version: 'canonical.v1',
+            code: 'authentication-required',
+            status: 401,
+        },
     });
 });

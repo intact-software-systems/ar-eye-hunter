@@ -28,6 +28,10 @@ convergence gates are recipes in `tests/api-v1/`, registered in
    gate is `api-v1-state-medium-scale-churn` (constants pinned by
    `packages/tests/shared-test/api-v1-medium-scale-recipe.test.ts` — never
    weakened).
+5. `tests/api-v1/api-v1-idempotency-contract.json` is the focused Tier 2
+   three-node contract for strict path identity, equal replay, changed-intent
+   conflict, caller/scope/document isolation, single-use races, and exact
+   AppInbox/receipt/outbox completion.
 
 ## Boundaries
 

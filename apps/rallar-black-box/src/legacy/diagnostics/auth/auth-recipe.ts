@@ -1,6 +1,9 @@
 import { json } from '../../shared/json-presentation.ts';
 
 export function authRecipeSnippet(username: string): string {
+    const loginRequestId = crypto.randomUUID();
+    const ticketRequestId = crypto.randomUUID();
+    const missingTokenRequestId = crypto.randomUUID();
     return json({
         recipeId: 'rallar-auth-command-center',
         name: 'Rallar auth command-center recipe',
@@ -10,7 +13,7 @@ export function authRecipeSnippet(username: string): string {
                 kind: 'http.request',
                 commandId: 'auth-login',
                 request: {
-                    path: '/api/auth/login',
+                    path: `/api/auth/login/requests/${loginRequestId}`,
                     method: 'POST',
                     body: {
                         username: username || '<username>',
@@ -25,7 +28,7 @@ export function authRecipeSnippet(username: string): string {
                 kind: 'http.request',
                 commandId: 'auth-ws-ticket',
                 request: {
-                    path: '/api/auth/ws-ticket',
+                    path: `/api/auth/ws-ticket/requests/${ticketRequestId}`,
                     method: 'POST',
                     body: {},
                 },
@@ -37,7 +40,7 @@ export function authRecipeSnippet(username: string): string {
                 kind: 'http.request',
                 commandId: 'auth-missing-token-negative',
                 request: {
-                    path: '/api/auth/ws-ticket',
+                    path: `/api/auth/ws-ticket/requests/${missingTokenRequestId}`,
                     method: 'POST',
                     body: {},
                 },
