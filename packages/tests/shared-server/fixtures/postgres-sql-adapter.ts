@@ -1,8 +1,32 @@
-import type postgres from 'postgres';
-
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 
-export function toPSqlSql(rawSql: postgres.Sql): PSqlSql {
+interface PostgresSqlAdapterSource {
+  (...arguments_: never[]): object;
+}
+
+interface PostgresRootSqlAdapterSource extends PostgresSqlAdapterSource {
+  begin<T>(
+    write: (
+      transaction: PostgresTransactionSqlAdapterSource,
+    ) => Promise<Readonly<{ value: T }>>,
+  ): Promise<Readonly<{ value: T }>>;
+}
+
+interface PostgresTransactionSqlAdapterSource extends PostgresSqlAdapterSource {
+  savepoint<T>(
+    write: (
+      transaction: PostgresTransactionSqlAdapterSource,
+    ) => Promise<Readonly<{ value: T }>>,
+  ): Promise<Readonly<{ value: T }>>;
+}
+
+type SavepointPSqlTransactionSql =
+  & PSqlTransactionSql
+  & Readonly<{
+    savepoint<T>(write: (transaction: PSqlTransactionSql) => Promise<T>): Promise<T>;
+  }>;
+
+export function toPSqlSql(rawSql: PostgresRootSqlAdapterSource): PSqlSql {
   function sql<T>(
     strings: TemplateStringsArray,
     ...values: Parameters<PSqlSql>[0]
@@ -25,7 +49,9 @@ export function toPSqlSql(rawSql: postgres.Sql): PSqlSql {
   return sql;
 }
 
-function toPSqlTransactionSql(rawSql: postgres.TransactionSql): PSqlTransactionSql {
+function toPSqlTransactionSql(
+  rawSql: PostgresTransactionSqlAdapterSource,
+): SavepointPSqlTransactionSql {
   function sql<T>(
     strings: TemplateStringsArray,
     ...values: Parameters<PSqlTransactionSql>[0]
@@ -39,7 +65,7 @@ function toPSqlTransactionSql(rawSql: postgres.TransactionSql): PSqlTransactionS
   ) {
     return Reflect.apply(rawSql, rawSql, [stringsOrValues, ...values]);
   }
-  sql.begin = async <T>(
+  const savepoint = async <T>(
     write: (transaction: PSqlTransactionSql) => Promise<T>,
   ): Promise<T> => {
     const result = await rawSql.savepoint(async (transaction) => ({
@@ -47,5 +73,7 @@ function toPSqlTransactionSql(rawSql: postgres.TransactionSql): PSqlTransactionS
     }));
     return result.value;
   };
+  sql.begin = savepoint;
+  sql.savepoint = savepoint;
   return sql;
 }

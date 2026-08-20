@@ -84,7 +84,9 @@ type TopologyAppInboxWorkerTrace = PostgresAppInboxWorkerTrace & {
 
 async function main(): Promise<void> {
   const databaseUrl = Deno.env.get('DATABASE_URL');
-  if (!databaseUrl) throw new Error('DATABASE_URL is required');
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL is required');
+  }
   const input = readInput();
   const postgresSql = postgres(databaseUrl, { max: 2, idle_timeout: 1 });
   const sql = toPSqlSql(postgresSql);
@@ -246,7 +248,9 @@ function toWorkerOutput(
 
 function readInput(): WorkerInput {
   const raw = Deno.env.get('RALLAR_TOPOLOGY_CONCURRENCY_WORKER_INPUT');
-  if (!raw) throw new Error('RALLAR_TOPOLOGY_CONCURRENCY_WORKER_INPUT is required');
+  if (!raw) {
+    throw new Error('RALLAR_TOPOLOGY_CONCURRENCY_WORKER_INPUT is required');
+  }
   const parsed: JsonWireValue = JSON.parse(raw);
   return decodeWorkerInput(parsed);
 }

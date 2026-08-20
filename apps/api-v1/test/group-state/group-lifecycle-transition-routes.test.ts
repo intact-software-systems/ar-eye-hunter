@@ -34,7 +34,9 @@ Deno.test('group lifecycle transition routes retain their AppInbox envelopes', a
       requestId: 'group-route-reopen-body',
     }),
   ];
-  for (const response of responses) assert.equal(response.status, 200);
+  for (const response of responses) {
+    assert.equal(response.status, 200);
+  }
   assert.deepEqual(
     enqueued.map((enqueue) => ({
       type: enqueue.type,
