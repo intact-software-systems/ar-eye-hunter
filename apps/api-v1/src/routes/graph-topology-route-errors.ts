@@ -3,6 +3,10 @@ import type {
   ApiMutationFailure,
   ApiMutationFailureIssue,
 } from '@shared/api/mutation/api-mutation-failure.ts';
+import type {
+  JsonWireObject,
+  JsonWireValue,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 
 import {
   createApiMutationFailure,
@@ -71,7 +75,7 @@ export function toGraphTopologyMutationErrorResponse<Failure>(
       denial: {
         code: error.denial.code,
         message: error.denial.message,
-        details: toApiMutationFailureJsonObject(error.denial.details),
+        details: toApiMutationFailureJsonObject(JSON.stringify(error.denial.details)),
       },
     });
     return context.json(failure, failure.status);
@@ -91,26 +95,26 @@ export function toGraphTopologyMutationErrorResponse<Failure>(
   );
 }
 
-function isStatusError(
-  error: unknown,
-): error is Error & {
+function isStatusError<Failure>(
+  error: Failure,
+): error is Failure & Error & {
   status: number;
   code?: string;
-  issues?: readonly unknown[];
+  issues?: readonly JsonWireValue[];
 } {
   return error instanceof Error &&
     'status' in error &&
     typeof error.status === 'number' &&
     (!('issues' in error) ||
       error.issues === undefined ||
-      Array.isArray(error.issues));
+      (Array.isArray(error.issues) && error.issues.every(isJsonWireValue)));
 }
 
 function toApiMutationFailureIssue(
-  value: unknown,
+  value: JsonWireValue,
   fallbackMessage: string,
 ): ApiMutationFailureIssue {
-  const issue = isUnknownRecord(value) ? value : {};
+  const issue: JsonWireObject = isJsonWireObject(value) ? value : {};
   return {
     code: typeof issue.code === 'string' && issue.code.length > 0
       ? issue.code
@@ -119,11 +123,15 @@ function toApiMutationFailureIssue(
     message: typeof issue.message === 'string' && issue.message.length > 0
       ? issue.message
       : fallbackMessage,
-    details: isUnknownRecord(issue.details) ? toApiMutationFailureJsonObject(issue.details) : null,
+    details: isJsonWireObject(issue.details)
+      ? toApiMutationFailureJsonObject(JSON.stringify(issue.details))
+      : null,
   };
 }
 
-function isApiMutationFailurePath(value: unknown): value is readonly (string | number)[] | null {
+function isApiMutationFailurePath(
+  value: JsonWireValue | undefined,
+): value is readonly (string | number)[] | null {
   return value === null ||
     (Array.isArray(value) &&
       value.every((part) =>
@@ -131,6 +139,25 @@ function isApiMutationFailurePath(value: unknown): value is readonly (string | n
       ));
 }
 
-function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+function isJsonWireObject(
+  value: JsonWireValue | undefined,
+): value is JsonWireObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isJsonWireValue<Value>(value: Value): value is Value & JsonWireValue {
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  ) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every(isJsonWireValue);
+  }
+  return typeof value === 'object' &&
+    value !== null &&
+    Object.values(value).every(isJsonWireValue);
 }
