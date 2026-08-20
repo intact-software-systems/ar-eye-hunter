@@ -1809,6 +1809,30 @@
         ]
       },
       "description": "No-browser API-v1 join-admission limiting: one probe principal fires 70 rapid upsert-self join attempts at a single open group so the per-principal window (60/min) actually engages, then a deterministic over-limit request must answer 429 with Retry-After: 60 while the founder still joins the same group successfully (per-principal isolation, no group-wide collateral)."
+    },
+    {
+      "id": "api-v1-group-ban-governance",
+      "recipe": "tests/api-v1/api-v1-group-ban-governance.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes",
+        "api-v1-black-box-ban-governance"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-ban-governance",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 ban governance: a banned member cannot shed the ban through the self-service member upsert. Self status 'left' and a self rejoin both answer 403 member-banned while the row stays banned, and only the founder's unban returns the principal to a rejoinable state."
     }
   ]
 }

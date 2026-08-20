@@ -1,0 +1,350 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_BANGOV_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-bangov"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_BANGOV_WORKSPACE_ID",
+      "default": "workspace-bangov-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_BANGOV_GROUP_ID",
+      "default": "bangov-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_BANGOV_PASSWORD",
+      "default": "api-v1-bangov-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerFounder",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "bangov-founder-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "founder client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginFounder",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "bangov-founder-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "founderClientId": "body.clientId",
+          "founderAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "founderSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveFounderAuthHeader",
+      "type": "set",
+      "output": "founderAuthHeader",
+      "secret": true,
+      "redactAs": "founderAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.founderAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerOffender",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "bangov-offender-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "offender client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginOffender",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "bangov-offender-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "offenderClientId": "body.clientId",
+          "offenderAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "offenderSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOffenderAuthHeader",
+      "type": "set",
+      "output": "offenderAuthHeader",
+      "secret": true,
+      "redactAs": "offenderAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.offenderAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {
+          "requestId": "create-bangov-{runId}",
+          "groupId": "{groupId}",
+          "displayName": "Ban governance group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{founderClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "offenderJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}",
+        "headers": {
+          "Authorization": "{offenderAuthHeader}",
+          "x-client-id": "{offenderClientId}"
+        },
+        "body": {
+          "requestId": "bangov-join-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "founderBansOffender",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}/ban",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {
+          "requestId": "bangov-ban-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "bannedSelfLeaveCannotShedTheBan",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}",
+        "headers": {
+          "Authorization": "{offenderAuthHeader}",
+          "x-client-id": "{offenderClientId}"
+        },
+        "body": {
+          "requestId": "bangov-self-left-{runId}",
+          "status": "left"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "error": "string",
+          "code": "member-banned"
+        }
+      }
+    },
+    {
+      "name": "bannedRejoinStaysDenied",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}",
+        "headers": {
+          "Authorization": "{offenderAuthHeader}",
+          "x-client-id": "{offenderClientId}"
+        },
+        "body": {
+          "requestId": "bangov-self-rejoin-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "error": "string",
+          "code": "member-banned"
+        }
+      }
+    },
+    {
+      "name": "founderUnbansOffender",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}/unban",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {
+          "requestId": "bangov-unban-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "unbannedMemberRejoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}",
+        "headers": {
+          "Authorization": "{offenderAuthHeader}",
+          "x-client-id": "{offenderClientId}"
+        },
+        "body": {
+          "requestId": "bangov-rejoin-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    }
+  ]
+}

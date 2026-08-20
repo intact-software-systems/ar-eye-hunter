@@ -1,6 +1,7 @@
 import type { GroupEventType, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
   canActivateGroupMember,
+  canChangeOwnGroupMembership,
   canJoinGroup,
   type GroupGovernanceAction,
   type GroupPolicyCapacityConfig,
@@ -100,6 +101,7 @@ export function assertUpsertAuthority({
     return;
   }
   assertPrincipalAuthority(command, command.targetPrincipalId);
+  assertAllowed(canChangeOwnGroupMembership(read.targetMember ?? undefined));
   if (command.input.status !== 'active' && command.input.status !== 'left') {
     throw new GroupMutationRejectedError('Self upsert may only join or leave the group.');
   }
