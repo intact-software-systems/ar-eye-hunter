@@ -56,6 +56,7 @@ export interface NewGroupEventInput {
   readonly causalRevision: GroupStateCausalRevision;
   readonly command: GroupMutationCommand;
   readonly facts: GroupMutationFacts;
+  readonly members: readonly GroupMember[];
 }
 
 export function materializedRotateJoinCode(
@@ -86,6 +87,7 @@ export function computeGroupMutationWriteResult(
     causalRevision,
     command,
     facts,
+    members: input.members,
   });
   const summaryOutboxEntries =
     input.presenceSummaryWork === 'none'
@@ -283,6 +285,27 @@ export function newGroupEvent(input: NewGroupEventInput): GroupEvent {
     reason: command.input.reason,
     traceId: command.input.traceId,
     requestId: command.requestId,
-    payload: {},
+    payload: toGroupEventPayload(eventType, input.members),
   };
+}
+
+// The actor is whoever issued the command, so a member event must name the
+// member it is about itself: a manager's grant emits member-joined with the
+// manager as actor and the admitted member only here.
+function toGroupEventPayload(
+  eventType: GroupEventType,
+  members: readonly GroupMember[],
+): GroupEvent['payload'] {
+  if (eventType === 'ownership-transferred') {
+    const nextOwner = members.find((member) => member.role === 'owner');
+    const previousOwner = members.find((member) => member.role !== 'owner');
+    return {
+      ...(previousOwner ? { fromPrincipalId: previousOwner.principalId } : {}),
+      ...(nextOwner ? { toPrincipalId: nextOwner.principalId } : {}),
+    };
+  }
+  if (eventType.startsWith('member-') && members.length === 1) {
+    return { principalId: members[0].principalId };
+  }
+  return {};
 }

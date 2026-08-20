@@ -235,8 +235,11 @@ aggregate has carried the lifecycle fields in every group response since slice 2
 `strict-confirmation` negative recipe.* The design document's ten named
 scenarios land as black-box recipes at the 6/20/50 tiers where scale matters.
 
-`strict-confirmation` becomes a negative test in v1: setting `strictConfirmation: true` returns the
-typed unsupported rejection.
+`strict-confirmation` becomes a negative test in v1: setting `strictConfirmation: true` is rejected
+at creation and nothing persists. *Amended during 6a (decision with the product owner, 2026-08-20):
+the rejection on the wire is the generic `400 app-inbox-malformed-command` — the typed issue code
+exists only at the validation layer. The recipes pin the generic contract; typing the HTTP surface
+is an explicit deferred item below.*
 
 #### Decisions taken during slice 6 planning (2026-08-20)
 
@@ -252,6 +255,10 @@ eight partial, one uncovered, with every missing pin named.
 
 ## Deferred, explicitly
 
+- **Typed policy-validity rejections over HTTP.** Every incoherent-policy create returns the
+  generic `400 app-inbox-malformed-command`; the issue codes (`strict-confirmation-unsupported`,
+  `manager-initiator-without-manager`, …) never reach the response. Deferred at 6a until an
+  application needs to distinguish them — the HTTP twin of the WS NACK opacity in decision 6.2.
 - **Per-edge confirm-or-fail batch machinery** — the whole activation design. Gated behind
   `strictConfirmation: true`, which v1 rejects. The posture decision (observed convergence as
   default) is recorded product-owner decision 2 and is supported by the Phase 0–4 evidence in
