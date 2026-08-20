@@ -5,13 +5,13 @@ import {
   validateAuthoritativeClientSnapshot,
   validateAuthoritativeGroupSnapshot,
 } from '@shared/api/authoritative-state-validation.ts';
+import type { GroupJoinCodeResponse, StateScope } from '@shared/api/state-types.ts';
 import type {
-  RevokeGroupInviteRequest,
-  RotateGroupJoinCodeRequest,
-  AppointGroupDirectorRequest,
-  GroupJoinCodeResponse,
-  StateScope,
-} from '@shared/api/state-types.ts';
+  AppointStateGroupDirectorBody,
+  RevokeStateGroupInviteBody,
+  RotateStateGroupJoinCodeBody,
+} from '@shared-web/browser/api/state-mutation-http-contracts.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import {
   CommandsOrchestrator,
@@ -110,13 +110,13 @@ export async function refreshStateSnapshots(
 
 export async function appointStateGroupDirector(
   groupId: string,
-  request: AppointGroupDirectorRequest,
+  request: AppointStateGroupDirectorBody,
   principalId: string,
   sessionId: string,
   scope: StateScope = defaultStateScope(),
   policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
 ): Promise<GroupStateSnapshot> {
-  const requestId = request.requestId ?? toApiMutationWorkflowRequestId();
+  const requestId = toApiMutationWorkflowRequestId();
   const commandOptions = (policies.command ?? {}) as CommandOptions<GroupStateSnapshot>;
 
   return await new Command<GroupStateSnapshot>(
@@ -138,13 +138,13 @@ export async function appointStateGroupDirector(
 export async function revokeStateGroupInvite(
   groupId: string,
   targetPrincipalId: string,
-  request: RevokeGroupInviteRequest,
+  request: RevokeStateGroupInviteBody,
   principalId: string,
   sessionId: string,
   scope: StateScope = defaultStateScope(),
   policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
 ): Promise<GroupStateSnapshot> {
-  const requestId = request.requestId ?? toApiMutationWorkflowRequestId();
+  const requestId = toApiMutationWorkflowRequestId();
   const commandOptions = (policies.command ?? {}) as CommandOptions<GroupStateSnapshot>;
 
   return await new Command<GroupStateSnapshot>(
@@ -166,13 +166,13 @@ export async function revokeStateGroupInvite(
 
 export async function rotateStateGroupJoinCode(
   groupId: string,
-  request: RotateGroupJoinCodeRequest,
+  request: RotateStateGroupJoinCodeBody,
   principalId: string,
   sessionId: string,
   scope: StateScope = defaultStateScope(),
   policies: CommandsOrchestratorPolicies<GroupJoinCodeResponse> = {},
 ): Promise<GroupJoinCodeResponse> {
-  const requestId = request.requestId ?? toApiMutationWorkflowRequestId();
+  const requestId = toApiMutationWorkflowRequestId();
   const commandOptions = (policies.command ?? {}) as CommandOptions<GroupJoinCodeResponse>;
 
   return await new Command<GroupJoinCodeResponse>(
@@ -352,20 +352,11 @@ function shouldRetryHeartbeatError<T>(
   attempt: number,
   commandPolicy: CommandsOrchestratorPolicies<T>['command'] | undefined,
 ): boolean {
-  if (readApiErrorStatus(error) === 401) {
+  if (error instanceof ApiHttpError && error.status === 401) {
     return false;
   }
 
   return commandPolicy?.shouldRetry?.(error, attempt) ?? true;
-}
-
-function readApiErrorStatus(error: unknown): number | undefined {
-  if (typeof error !== 'object' || error === null || !('status' in error)) {
-    return undefined;
-  }
-
-  const status = (error as { status?: unknown }).status;
-  return typeof status === 'number' && Number.isFinite(status) ? status : undefined;
 }
 
 function isDefined<T>(value: T | undefined | null): value is T {

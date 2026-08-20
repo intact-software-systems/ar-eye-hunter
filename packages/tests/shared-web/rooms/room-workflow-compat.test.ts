@@ -12,16 +12,16 @@ import type {
   StateGroupWorkflowValue,
 } from '@shared-web/browser/api-workflows.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import type {
-  BanGroupMemberRequest,
-  CreateGroupInviteRequest,
-  RemoveGroupMemberRequest,
-  SetGroupMemberRoleRequest,
-  StateScope,
-  TransferGroupOwnershipRequest,
-  UnbanGroupMemberRequest,
-  UpdateGroupRequest,
-} from '@shared/api/state-types.ts';
+  BanStateGroupMemberBody,
+  CreateStateGroupInviteBody,
+  RemoveStateGroupMemberBody,
+  SetStateGroupMemberRoleBody,
+  TransferStateGroupOwnershipBody,
+  UnbanStateGroupMemberBody,
+  UpdateStateGroupBody,
+} from '@shared-web/browser/api/state-mutation-http-contracts.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import * as mutationWorkflows from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
 import * as roomWorkflows from '@shared-web/browser/rooms/room-group-state-workflows.ts';
@@ -76,7 +76,7 @@ type UpdateMetadataWorkflow = (
 
 type UpdateDetailsWorkflow = (
   groupId: string,
-  request: UpdateGroupRequest,
+  request: UpdateStateGroupBody,
   principalId: string,
   sessionId: string,
   scope?: StateScope,
@@ -85,7 +85,7 @@ type UpdateDetailsWorkflow = (
 
 type LifecycleWorkflow = (
   groupId: string,
-  request: Omit<UpdateGroupRequest, 'status'>,
+  request: Omit<UpdateStateGroupBody, 'status'>,
   principalId: string,
   sessionId: string,
   scope?: StateScope,
@@ -95,7 +95,7 @@ type LifecycleWorkflow = (
 type InviteWorkflow = (
   groupId: string,
   targetPrincipalId: string,
-  request: CreateGroupInviteRequest,
+  request: CreateStateGroupInviteBody,
   principalId: string,
   sessionId: string,
   scope?: StateScope,
@@ -126,7 +126,7 @@ type GovernMemberWorkflow<TRequest> = (
 type SetRoleWorkflow = (
   groupId: string,
   targetPrincipalId: string,
-  request: SetGroupMemberRoleRequest,
+  request: SetStateGroupMemberRoleBody,
   actorPrincipalId: string,
   sessionId: string,
   scope?: StateScope,
@@ -135,14 +135,14 @@ type SetRoleWorkflow = (
 
 type TransferOwnershipWorkflow = (
   groupId: string,
-  request: TransferGroupOwnershipRequest,
+  request: TransferStateGroupOwnershipBody,
   actorPrincipalId: string,
   sessionId: string,
   scope?: StateScope,
   policies?: Policies,
 ) => Promise<GroupSnapshot>;
 
-describe('room workflow old-path compatibility', () => {
+describe('room workflow path compatibility', () => {
   it('type-checks old and owning signatures with TypeScript 7.0.2', () => {
     const result = runFocusedTypeCheck();
 
@@ -183,13 +183,13 @@ describe('room workflow old-path compatibility', () => {
     expectTypeOf(legacyWorkflows.createStateGroupInvite).toEqualTypeOf<InviteWorkflow>();
     expectTypeOf(legacyWorkflows.acceptStateGroupInvite).toEqualTypeOf<AcceptInviteWorkflow>();
     expectTypeOf(legacyWorkflows.removeStateGroupMember).toEqualTypeOf<
-      GovernMemberWorkflow<RemoveGroupMemberRequest>
+      GovernMemberWorkflow<RemoveStateGroupMemberBody>
     >();
     expectTypeOf(legacyWorkflows.banStateGroupMember).toEqualTypeOf<
-      GovernMemberWorkflow<BanGroupMemberRequest>
+      GovernMemberWorkflow<BanStateGroupMemberBody>
     >();
     expectTypeOf(legacyWorkflows.unbanStateGroupMember).toEqualTypeOf<
-      GovernMemberWorkflow<UnbanGroupMemberRequest>
+      GovernMemberWorkflow<UnbanStateGroupMemberBody>
     >();
     expectTypeOf(legacyWorkflows.setStateGroupMemberRole).toEqualTypeOf<SetRoleWorkflow>();
     expectTypeOf(

@@ -12,7 +12,7 @@ import {
     authErrorMessage,
     bootstrapPatchFromAuthSession,
 } from '../../../auth-flow.ts';
-import { executeRallarServerRestRequest } from '../../../rallar-server-workbench.ts';
+import { executeRallarServerMutationRequest } from '../../../rallar-server-workbench.ts';
 import {
     type RallarBlackBoxBootstrapConfig,
     rallarBlackBoxProviderModeFromConfig,
@@ -192,8 +192,9 @@ export function AuthCommandCenterPanel({
     };
 
     const createWsTicket = async (): Promise<void> => {
+        const requestId = crypto.randomUUID();
         await runWithBusy('Create WS ticket', async () => {
-            const response = await executeRallarServerRestRequest({
+            const response = await executeRallarServerMutationRequest({
                 apiBaseUrl,
                 method: 'POST',
                 path: '/api/auth/ws-ticket',
@@ -204,7 +205,7 @@ export function AuthCommandCenterPanel({
                 attachAuth: true,
                 authSession,
                 timeoutMs: 5_000,
-            });
+            }, requestId);
             appendAction(restLogEntry('Create WS ticket', response));
             const body = optionalRecord(response.bodyJson);
             if (
@@ -225,8 +226,9 @@ export function AuthCommandCenterPanel({
     };
 
     const negativeWsTicket = async (): Promise<void> => {
+        const requestId = crypto.randomUUID();
         await runWithBusy('Missing auth WS ticket', async () => {
-            const response = await executeRallarServerRestRequest({
+            const response = await executeRallarServerMutationRequest({
                 apiBaseUrl,
                 method: 'POST',
                 path: '/api/auth/ws-ticket',
@@ -236,12 +238,13 @@ export function AuthCommandCenterPanel({
                 responseBodyMode: 'json',
                 attachAuth: false,
                 timeoutMs: 5_000,
-            });
+            }, requestId);
             appendAction(restLogEntry('Missing auth WS ticket', response));
         });
     };
 
     const expiredWsTicket = async (): Promise<void> => {
+        const requestId = crypto.randomUUID();
         await runWithBusy('Expired auth WS ticket', async () => {
             const expiredSession = authSession
                 ? {
@@ -249,7 +252,7 @@ export function AuthCommandCenterPanel({
                       expiresAtEpochMs: Date.now() - 1_000,
                   }
                 : undefined;
-            const response = await executeRallarServerRestRequest({
+            const response = await executeRallarServerMutationRequest({
                 apiBaseUrl,
                 method: 'POST',
                 path: '/api/auth/ws-ticket',
@@ -260,14 +263,15 @@ export function AuthCommandCenterPanel({
                 attachAuth: true,
                 authSession: expiredSession,
                 timeoutMs: 5_000,
-            });
+            }, requestId);
             appendAction(restLogEntry('Expired auth WS ticket', response));
         });
     };
 
     const negativeLogin = async (): Promise<void> => {
+        const requestId = crypto.randomUUID();
         await runWithBusy('Bad credentials', async () => {
-            const response = await executeRallarServerRestRequest({
+            const response = await executeRallarServerMutationRequest({
                 apiBaseUrl,
                 method: 'POST',
                 path: '/api/auth/login',
@@ -280,7 +284,7 @@ export function AuthCommandCenterPanel({
                 responseBodyMode: 'json',
                 attachAuth: false,
                 timeoutMs: 5_000,
-            });
+            }, requestId);
             appendAction(restLogEntry('Bad credentials', response));
         });
     };

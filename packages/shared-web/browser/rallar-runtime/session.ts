@@ -4,6 +4,7 @@ import {
     type RallarApiClientConfig,
     readApiBaseUrl,
 } from '@shared-web/browser/api-client-config.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import * as authApi from '@shared-web/browser/auth/session-http-api.ts';
 import {
     type ApiMiddleware,
@@ -543,8 +544,7 @@ function waitForRallarOperation<T>(
 }
 
 function isUnauthorizedApiError(error: unknown): boolean {
-    return typeof error === 'object' && error !== null && 'status' in error &&
-        (error as { status?: unknown }).status === 401;
+    return error instanceof ApiHttpError && error.status === 401;
 }
 
 function shutdownApiMiddleware(

@@ -26,7 +26,7 @@ import type {
   GroupRef,
   GroupSnapshot,
   StateScope,
-  UpdateGroupRequest,
+  UpdateStateGroupBody,
 } from './room-group-state-translation.ts';
 import type { RallarRoomStateStorePort } from './room-state-store.ts';
 import { toRoomTarget } from './room-target.ts';
@@ -188,7 +188,7 @@ async function changeRoomLifecycle(
   });
 }
 
-function toUpdateRoomRequest(input: RallarUpdateRoomInput): UpdateGroupRequest {
+function toUpdateRoomRequest(input: RallarUpdateRoomInput): UpdateStateGroupBody {
   return {
     ...(input.slug === undefined ? {} : { slug: input.slug }),
     ...(input.displayName === undefined ? {} : { displayName: input.displayName }),

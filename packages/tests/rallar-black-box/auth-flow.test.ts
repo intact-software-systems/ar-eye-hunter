@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+
 import {
     authenticateRallarBlackBox,
     authErrorMessage,
@@ -92,8 +94,11 @@ describe('rallar-black-box auth flow', () => {
                 },
                 registerAndLogin: async (request) => {
                     calls.push(`register:${request.username}:${request.password}`);
-                    throw new Error(
-                        'API POST /api/auth/register failed: 409 {"error":"Auth user already exists: alice"}',
+                    throw apiMutationError(
+                        '/api/auth/register/requests/register-request-id',
+                        409,
+                        'auth-user-exists',
+                        'Auth user already exists: alice',
                     );
                 },
             },
@@ -168,9 +173,40 @@ describe('rallar-black-box auth flow', () => {
 
     it('classifies common login failures', () => {
         expect(authErrorMessage(new Error('Failed to fetch'))).toContain('CORS');
-        expect(authErrorMessage(new Error('API POST /api/auth/login failed: 401')))
-            .toBe('Invalid username or password.');
-        expect(authErrorMessage(new Error('API POST /api/auth/login failed: 403')))
-            .toBe('Login is forbidden for this user.');
+        expect(authErrorMessage(apiMutationError(
+            '/api/auth/login/requests/login-request-id',
+            401,
+            'authentication-required',
+            'Invalid username or password',
+        ))).toBe('Invalid username or password.');
+        expect(authErrorMessage(apiMutationError(
+            '/api/auth/login/requests/login-request-id',
+            403,
+            'authorization-denied',
+            'Login forbidden',
+        ))).toBe('Login is forbidden for this user.');
     });
 });
+
+function apiMutationError(
+    path: string,
+    status: number,
+    code: string,
+    message: string,
+): ApiHttpError {
+    return new ApiHttpError(
+        'POST',
+        path,
+        status,
+        JSON.stringify({
+            type: 'api-mutation-failure',
+            version: 'canonical.v1',
+            code,
+            status,
+            message,
+            issues: null,
+            denial: null,
+            retry: null,
+        }),
+    );
+}

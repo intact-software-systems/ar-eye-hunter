@@ -1,5 +1,8 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { RallarCrdtOperationBatch } from '@shared/crdt/crdt-types.ts';
+import type {
+    RallarCrdtDocumentRef,
+    RallarCrdtOperationBatch,
+} from '@shared/crdt/crdt-types.ts';
 import type { RallarCrdtDocument } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
 import type { CrdtEditorValue } from '../../../crdt-editor.ts';
@@ -14,7 +17,7 @@ export type CrdtPanelInput = Readonly<{
 }>;
 
 export type CrdtAdminDocumentStatus = Readonly<{
-    document: Readonly<Record<string, unknown>>;
+    document: RallarCrdtDocumentRef;
     documentKey: string;
     lifecycle: string;
     rollout?: string;

@@ -8,20 +8,20 @@ import {
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type {
-  AcceptGroupInviteRequest,
-  BanGroupMemberRequest,
-  ConnectGroupPresenceSessionRequest,
-  CreateGroupInviteRequest,
-  CreateGroupRequest,
-  DisconnectGroupPresenceSessionRequest,
-  JoinGroupRequest,
-  RemoveGroupMemberRequest,
-  SetGroupMemberRoleRequest,
-  TransferGroupOwnershipRequest,
-  UnbanGroupMemberRequest,
-  UpdateGroupRequest,
-  UpsertGroupMemberRequest,
-} from '@shared/api/state-types.ts';
+  AcceptStateGroupInviteBody,
+  BanStateGroupMemberBody,
+  ConnectStateGroupPresenceSessionBody,
+  CreateStateGroupBody,
+  CreateStateGroupInviteBody,
+  DisconnectStateGroupPresenceSessionBody,
+  JoinStateGroupBody,
+  RemoveStateGroupMemberBody,
+  SetStateGroupMemberRoleBody,
+  TransferStateGroupOwnershipBody,
+  UnbanStateGroupMemberBody,
+  UpdateStateGroupBody,
+  UpsertStateGroupMemberBody,
+} from '../api/state-mutation-http-contracts.ts';
 
 import type {
   RallarCreateRoomInput,
@@ -40,22 +40,17 @@ export type {
   GroupStatus,
 } from '@shared/api/group-types.ts';
 export type { StateEventCursor, StateEventPage } from '@shared/api/state-event-types.ts';
+export type { StateScope } from '@shared/api/state-types.ts';
 export type {
-  AcceptGroupInviteRequest,
-  BanGroupMemberRequest,
-  ConnectGroupPresenceSessionRequest,
-  CreateGroupInviteRequest,
-  CreateGroupRequest,
-  DisconnectGroupPresenceSessionRequest,
-  JoinGroupRequest,
-  RemoveGroupMemberRequest,
-  SetGroupMemberRoleRequest,
-  StateScope,
-  TransferGroupOwnershipRequest,
-  UnbanGroupMemberRequest,
-  UpdateGroupRequest,
-  UpsertGroupMemberRequest,
-} from '@shared/api/state-types.ts';
+  BanStateGroupMemberBody,
+  CreateStateGroupBody,
+  CreateStateGroupInviteBody,
+  RemoveStateGroupMemberBody,
+  SetStateGroupMemberRoleBody,
+  TransferStateGroupOwnershipBody,
+  UnbanStateGroupMemberBody,
+  UpdateStateGroupBody,
+} from '../api/state-mutation-http-contracts.ts';
 
 export type RoomCreateGroupStateFields = Pick<
   RallarCreateRoomInput,
@@ -77,7 +72,6 @@ export interface RoomJoinGroupStateFields {
 interface RoomGroupStateMutationActorInput {
   readonly actorPrincipalId: string;
   readonly actorSessionId: string;
-  readonly requestId: string;
 }
 interface RoomGroupStateRequestInput<TRequest> extends RoomGroupStateMutationActorInput {
   readonly request: TRequest;
@@ -87,13 +81,13 @@ export interface ToCreateGroupStateRequestInput extends RoomGroupStateMutationAc
   readonly room: RoomCreateGroupStateFields;
 }
 export interface ToUpdateGroupStateRequestInput extends RoomGroupStateMutationActorInput {
-  readonly request: UpdateGroupRequest;
+  readonly request: UpdateStateGroupBody;
 }
 export interface ToJoinGroupStateRequestInput extends RoomGroupStateMutationActorInput {
   readonly room: RoomJoinGroupStateFields;
 }
 export interface ToRoomLifecycleGroupStateRequestInput extends RoomGroupStateRequestInput<
-  Omit<UpdateGroupRequest, 'status'>
+  Omit<UpdateStateGroupBody, 'status'>
 > {
   readonly status: 'archived' | 'deleted';
 }
@@ -101,18 +95,22 @@ export interface ToRoomMetadataGroupStateRequestInput extends RoomGroupStateMuta
   readonly currentMetadata: Readonly<Record<string, unknown>>;
   readonly patch: Readonly<Record<string, unknown>>;
 }
+interface RoomGroupStateMutationAuditFields {
+  readonly reason?: string;
+  readonly traceId?: string;
+}
 export type ToCreateRoomInviteGroupStateRequestInput =
-  RoomGroupStateRequestInput<CreateGroupInviteRequest>;
+  RoomGroupStateRequestInput<CreateStateGroupInviteBody>;
 export type ToRemoveRoomMemberGroupStateRequestInput =
-  RoomGroupStateRequestInput<RemoveGroupMemberRequest>;
+  RoomGroupStateRequestInput<RemoveStateGroupMemberBody>;
 export type ToBanRoomMemberGroupStateRequestInput =
-  RoomGroupStateRequestInput<BanGroupMemberRequest>;
+  RoomGroupStateRequestInput<BanStateGroupMemberBody>;
 export type ToUnbanRoomMemberGroupStateRequestInput =
-  RoomGroupStateRequestInput<UnbanGroupMemberRequest>;
+  RoomGroupStateRequestInput<UnbanStateGroupMemberBody>;
 export type ToSetRoomMemberRoleGroupStateRequestInput =
-  RoomGroupStateRequestInput<SetGroupMemberRoleRequest>;
+  RoomGroupStateRequestInput<SetStateGroupMemberRoleBody>;
 export type ToTransferRoomOwnershipGroupStateRequestInput =
-  RoomGroupStateRequestInput<TransferGroupOwnershipRequest>;
+  RoomGroupStateRequestInput<TransferStateGroupOwnershipBody>;
 
 export interface ToConnectRoomPresenceGroupStateRequestInput extends RoomGroupStateMutationActorInput {
   readonly principalId: string;
@@ -140,13 +138,13 @@ export interface ToRallarRoomStateInput {
 
 export function toCreateGroupStateRequest(
   input: ToCreateGroupStateRequestInput,
-): CreateGroupRequest {
+): CreateStateGroupBody {
   const { room } = input;
   return {
     groupId: input.groupId,
     slug: toRoomGroupStateSlug(room.displayName),
     displayName: room.displayName,
-    kind: 'room' as const,
+    kind: 'room',
     ...(room.description === undefined ? {} : { description: room.description }),
     joinMode: room.joinMode ?? 'invite-only',
     ...(room.maxMembers === undefined ? {} : { maxMembers: room.maxMembers }),
@@ -156,7 +154,6 @@ export function toCreateGroupStateRequest(
     createdByPrincipalId: input.actorPrincipalId,
     actorPrincipalId: input.actorPrincipalId,
     actorSessionId: input.actorSessionId,
-    requestId: input.requestId,
     metadata: room.metadata ?? {},
     ...(room.expiresAtEpochMs === undefined ? {} : { expiresAtEpochMs: room.expiresAtEpochMs }),
     ...(room.purgeAfterEpochMs === undefined ? {} : { purgeAfterEpochMs: room.purgeAfterEpochMs }),
@@ -165,15 +162,14 @@ export function toCreateGroupStateRequest(
 
 export function toUpdateGroupStateRequest(
   input: ToUpdateGroupStateRequestInput,
-): UpdateGroupRequest {
-  return Object.fromEntries(
-    Object.entries({ ...input.request, ...toActorRequest(input) }).filter(
-      ([, value]) => value !== undefined,
-    ),
-  ) as UpdateGroupRequest;
+): UpdateStateGroupBody {
+  return {
+    ...toRoomUpdateFields(input.request),
+    ...toActorRequest(input),
+  };
 }
 
-export function toJoinGroupStateRequest(input: ToJoinGroupStateRequestInput): JoinGroupRequest {
+export function toJoinGroupStateRequest(input: ToJoinGroupStateRequestInput): JoinStateGroupBody {
   return {
     ...(input.room.inviteToken === undefined ? {} : { inviteToken: input.room.inviteToken }),
     ...(input.room.joinCode === undefined ? {} : { joinCode: input.room.joinCode }),
@@ -183,17 +179,17 @@ export function toJoinGroupStateRequest(input: ToJoinGroupStateRequestInput): Jo
 
 export function toRoomLifecycleGroupStateRequest(
   input: ToRoomLifecycleGroupStateRequestInput,
-): UpdateGroupRequest {
-  return Object.fromEntries(
-    Object.entries({ ...input.request, status: input.status, ...toActorRequest(input) }).filter(
-      ([, value]) => value !== undefined,
-    ),
-  ) as UpdateGroupRequest;
+): UpdateStateGroupBody {
+  return {
+    ...toRoomUpdateFields(input.request),
+    status: input.status,
+    ...toActorRequest(input),
+  };
 }
 
 export function toRoomMetadataGroupStateRequest(
   input: ToRoomMetadataGroupStateRequestInput,
-): UpdateGroupRequest {
+): UpdateStateGroupBody {
   return {
     metadata: { ...input.currentMetadata, ...input.patch },
     ...toActorRequest(input),
@@ -202,73 +198,72 @@ export function toRoomMetadataGroupStateRequest(
 
 export function toCreateRoomInviteGroupStateRequest(
   input: ToCreateRoomInviteGroupStateRequestInput,
-): CreateGroupInviteRequest {
-  return Object.fromEntries(
-    Object.entries({ ...input.request, ...toActorRequest(input) }).filter(
-      ([, value]) => value !== undefined,
-    ),
-  ) as CreateGroupInviteRequest;
+): CreateStateGroupInviteBody {
+  return {
+    ...(input.request.invitationExpiresAtEpochMs === undefined
+      ? {}
+      : { invitationExpiresAtEpochMs: input.request.invitationExpiresAtEpochMs }),
+    ...toMutationAuditFields(input.request),
+    ...toActorRequest(input),
+  };
 }
 
 export function toAcceptRoomInviteGroupStateRequest(
   input: RoomGroupStateMutationActorInput,
-): AcceptGroupInviteRequest {
+): AcceptStateGroupInviteBody {
   return toActorRequest(input);
 }
 
 export function toRemoveRoomMemberGroupStateRequest(
   input: ToRemoveRoomMemberGroupStateRequestInput,
-): RemoveGroupMemberRequest {
-  return Object.fromEntries(
-    Object.entries({ ...input.request, ...toActorRequest(input) }).filter(
-      ([, value]) => value !== undefined,
-    ),
-  ) as RemoveGroupMemberRequest;
+): RemoveStateGroupMemberBody {
+  return {
+    ...toMutationAuditFields(input.request),
+    ...toActorRequest(input),
+  };
 }
 
 export function toBanRoomMemberGroupStateRequest(
   input: ToBanRoomMemberGroupStateRequestInput,
-): BanGroupMemberRequest {
-  return Object.fromEntries(
-    Object.entries({ ...input.request, ...toActorRequest(input) }).filter(
-      ([, value]) => value !== undefined,
-    ),
-  ) as BanGroupMemberRequest;
+): BanStateGroupMemberBody {
+  return {
+    ...toMutationAuditFields(input.request),
+    ...toActorRequest(input),
+  };
 }
 
 export function toUnbanRoomMemberGroupStateRequest(
   input: ToUnbanRoomMemberGroupStateRequestInput,
-): UnbanGroupMemberRequest {
-  return Object.fromEntries(
-    Object.entries({ ...input.request, ...toActorRequest(input) }).filter(
-      ([, value]) => value !== undefined,
-    ),
-  ) as UnbanGroupMemberRequest;
+): UnbanStateGroupMemberBody {
+  return {
+    ...toMutationAuditFields(input.request),
+    ...toActorRequest(input),
+  };
 }
 
 export function toSetRoomMemberRoleGroupStateRequest(
   input: ToSetRoomMemberRoleGroupStateRequestInput,
-): SetGroupMemberRoleRequest {
-  return Object.fromEntries(
-    Object.entries({ ...input.request, ...toActorRequest(input) }).filter(
-      ([, value]) => value !== undefined,
-    ),
-  ) as SetGroupMemberRoleRequest;
+): SetStateGroupMemberRoleBody {
+  return {
+    role: input.request.role,
+    ...toMutationAuditFields(input.request),
+    ...toActorRequest(input),
+  };
 }
 
 export function toTransferRoomOwnershipGroupStateRequest(
   input: ToTransferRoomOwnershipGroupStateRequestInput,
-): TransferGroupOwnershipRequest {
-  return Object.fromEntries(
-    Object.entries({ ...input.request, ...toActorRequest(input) }).filter(
-      ([, value]) => value !== undefined,
-    ),
-  ) as TransferGroupOwnershipRequest;
+): TransferStateGroupOwnershipBody {
+  return {
+    newOwnerPrincipalId: input.request.newOwnerPrincipalId,
+    ...toMutationAuditFields(input.request),
+    ...toActorRequest(input),
+  };
 }
 
 export function toConnectRoomPresenceGroupStateRequest(
   input: ToConnectRoomPresenceGroupStateRequestInput,
-): ConnectGroupPresenceSessionRequest {
+): ConnectStateGroupPresenceSessionBody {
   return {
     principalId: input.principalId,
     generationId: input.generationId,
@@ -278,26 +273,24 @@ export function toConnectRoomPresenceGroupStateRequest(
 
 export function toDisconnectRoomPresenceGroupStateRequest(
   input: ToDisconnectRoomPresenceGroupStateRequestInput,
-): DisconnectGroupPresenceSessionRequest {
+): DisconnectStateGroupPresenceSessionBody {
   return {
     generationId: input.generationId,
     principalId: input.principalId,
     actorPrincipalId: input.actorPrincipalId,
     actorSessionId: input.actorSessionId,
     reason: 'left-group',
-    requestId: input.requestId,
   };
 }
 
 export function toLeaveRoomMemberGroupStateRequest(
   input: RoomGroupStateMutationActorInput,
-): UpsertGroupMemberRequest {
+): UpsertStateGroupMemberBody {
   return {
     status: 'left',
     actorPrincipalId: input.actorPrincipalId,
     actorSessionId: input.actorSessionId,
     reason: 'left-group',
-    requestId: input.requestId,
   };
 }
 
@@ -378,12 +371,45 @@ function toRallarRoomMembers(
 function toActorRequest({
   actorPrincipalId,
   actorSessionId,
-  requestId,
 }: RoomGroupStateMutationActorInput): RoomGroupStateMutationActorInput {
   return {
     actorPrincipalId,
     actorSessionId,
-    requestId,
+  };
+}
+
+function toRoomUpdateFields(request: UpdateStateGroupBody): UpdateStateGroupBody {
+  return {
+    ...(request.slug === undefined ? {} : { slug: request.slug }),
+    ...(request.displayName === undefined ? {} : { displayName: request.displayName }),
+    ...(request.description === undefined ? {} : { description: request.description }),
+    ...(request.kind === undefined ? {} : { kind: request.kind }),
+    ...(request.status === undefined ? {} : { status: request.status }),
+    ...(request.joinMode === undefined ? {} : { joinMode: request.joinMode }),
+    ...(request.maxMembers === undefined ? {} : { maxMembers: request.maxMembers }),
+    ...(request.maxSessionsPerMember === undefined
+      ? {}
+      : { maxSessionsPerMember: request.maxSessionsPerMember }),
+    ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
+    ...(request.expiresAtEpochMs === undefined
+      ? {}
+      : { expiresAtEpochMs: request.expiresAtEpochMs }),
+    ...(request.emptySinceEpochMs === undefined
+      ? {}
+      : { emptySinceEpochMs: request.emptySinceEpochMs }),
+    ...(request.purgeAfterEpochMs === undefined
+      ? {}
+      : { purgeAfterEpochMs: request.purgeAfterEpochMs }),
+    ...toMutationAuditFields(request),
+  };
+}
+
+function toMutationAuditFields(
+  request: RoomGroupStateMutationAuditFields,
+): RoomGroupStateMutationAuditFields {
+  return {
+    ...(request.reason === undefined ? {} : { reason: request.reason }),
+    ...(request.traceId === undefined ? {} : { traceId: request.traceId }),
   };
 }
 

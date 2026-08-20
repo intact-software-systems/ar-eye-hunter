@@ -9,7 +9,6 @@ import {
     assertRallarServerRestResponse,
     buildRallarServerCollectionStepRequestInput,
     buildRallarServerRestRequest,
-    createRallarServerRestCollectionTemplates,
     defaultRallarServerWorkbenchVariables,
     executeRallarServerRestRequest,
     extractRallarServerRestVariables,
@@ -28,6 +27,9 @@ import {
     type RallarServerRestRequestInput,
     type RallarServerRestResponse,
 } from '../../../rallar-server-workbench.ts';
+import {
+    createRallarServerRestCollectionTemplates,
+} from '../../../rallar-server-workbench/create-rallar-server-rest-collection-templates.ts';
 import {
     rallarBlackBoxProviderModeFromConfig,
     rallarBlackBoxRuntimeStore,

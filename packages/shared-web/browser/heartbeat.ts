@@ -11,6 +11,7 @@ import {
     refreshStateHeartbeat,
     type StateHeartbeatWorkflowValue,
 } from '@shared-web/browser/api-workflows.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
 
 const intervalMsecs = 20000;
@@ -160,9 +161,5 @@ function isGroupSnapshotInScope(
 }
 
 function isUnauthorizedApiError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('status' in error)) {
-        return false;
-    }
-
-    return (error as { status?: unknown }).status === 401;
+    return error instanceof ApiHttpError && error.status === 401;
 }

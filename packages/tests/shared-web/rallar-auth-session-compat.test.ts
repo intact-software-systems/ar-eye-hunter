@@ -7,6 +7,7 @@ import {
     createGroupSnapshotFixture,
 } from './authoritative-group-fixtures.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
@@ -358,7 +359,7 @@ describe('Rallar auth session compatibility', () => {
             '@shared-web/browser/rallar.ts'
         );
         mocks.loginToApi
-            .mockRejectedValueOnce(Object.assign(new Error('response lost'), { status: 503 }))
+            .mockRejectedValueOnce(apiHttpError(503, 'response lost'))
             .mockResolvedValueOnce(mocks.ctx.session);
 
         await createRallarFacade().auth.login(
@@ -474,9 +475,7 @@ describe('Rallar auth session compatibility', () => {
         const authListener = vi.fn();
         facade.auth.onChange(authListener, { emitCurrent: false });
         await facade.connect();
-        mocks.refreshStateSnapshots.mockRejectedValue(
-            Object.assign(new Error('Unauthorized'), { status: 401 }),
-        );
+        mocks.refreshStateSnapshots.mockRejectedValue(apiHttpError(401, 'Unauthorized'));
 
         await expect(facade.rooms.refresh()).rejects.toThrow('Unauthorized');
 
@@ -510,9 +509,7 @@ describe('Rallar auth session compatibility', () => {
 
         facade.auth.onChange(authListener, { emitCurrent: false });
         mocks.joinStateGroup.mockResolvedValueOnce(newRoom);
-        mocks.leaveStateGroup.mockRejectedValueOnce(
-            Object.assign(new Error('Unauthorized'), { status: 401 }),
-        );
+        mocks.leaveStateGroup.mockRejectedValueOnce(apiHttpError(401, 'Unauthorized'));
 
         await expect(facade.rooms.join('new-room')).rejects.toThrow('Unauthorized');
 
@@ -532,9 +529,7 @@ describe('Rallar auth session compatibility', () => {
         const facade = createRallarFacade();
         await facade.connect();
         mocks.webSocketQueueBox.close.mockClear();
-        mocks.refreshStateSnapshots.mockRejectedValue(
-            Object.assign(new Error('Forbidden'), { status: 403 }),
-        );
+        mocks.refreshStateSnapshots.mockRejectedValue(apiHttpError(403, 'Forbidden'));
 
         await expect(facade.rooms.refresh()).rejects.toThrow('Forbidden');
 
@@ -585,7 +580,7 @@ describe('Rallar auth session compatibility', () => {
             '@shared-web/browser/rallar.ts'
         );
         mocks.registerWithApi
-            .mockRejectedValueOnce(Object.assign(new Error('response lost'), { status: 503 }))
+            .mockRejectedValueOnce(apiHttpError(503, 'response lost'))
             .mockResolvedValueOnce({
                 clientId: 'client-new',
                 username: 'new-user',
@@ -648,7 +643,7 @@ describe('Rallar auth session compatibility', () => {
             '@shared-web/browser/rallar.ts'
         );
         mocks.logoutFromApi
-            .mockRejectedValueOnce(Object.assign(new Error('response lost'), { status: 503 }))
+            .mockRejectedValueOnce(apiHttpError(503, 'response lost'))
             .mockResolvedValueOnce({ loggedOut: true });
 
         await createRallarFacade().auth.logout({ maxAttempts: 2 });
@@ -1006,6 +1001,30 @@ function createDirectorGroupSnapshot(
         memberCount: members.length,
         onlineMemberCount: activeSessions.length,
     };
+}
+
+function apiHttpError(status: number, message: string): ApiHttpError {
+    return new ApiHttpError(
+        'POST',
+        '/api/auth/test/requests/test-request-id',
+        status,
+        JSON.stringify({
+            type: 'api-mutation-failure',
+            version: 'canonical.v1',
+            code: `test-${status}`,
+            status,
+            message,
+            issues: null,
+            denial: null,
+            retry: status === 503
+                ? {
+                    retryable: true,
+                    retryAfterMs: null,
+                    reason: 'test-retry',
+                }
+                : null,
+        }),
+    );
 }
 
 function createDeferred<T>(): {

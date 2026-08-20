@@ -4,6 +4,30 @@ import {
   type ApiRequestOptions,
   executeHttpRequest,
 } from './api/http-request.ts';
+import type {
+  AcceptStateGroupInviteBody,
+  AppointStateGroupDirectorBody,
+  BanStateGroupMemberBody,
+  ConnectStateClientSessionBody,
+  ConnectStateGroupPresenceSessionBody,
+  CreateStateGroupBody,
+  CreateStateGroupInviteBody,
+  DisconnectStateGroupPresenceSessionBody,
+  HeartbeatStateClientSessionBody,
+  HeartbeatStateGroupPresenceSessionBody,
+  JoinStateGroupBody,
+  PutStateGroupTopologyConfigBody,
+  PutStateGroupTopologyOverrideBody,
+  ReconfigureStateGroupTopologyBody,
+  RemoveStateGroupMemberBody,
+  RevokeStateGroupInviteBody,
+  RotateStateGroupJoinCodeBody,
+  SetStateGroupMemberRoleBody,
+  TransferStateGroupOwnershipBody,
+  UnbanStateGroupMemberBody,
+  UpdateStateGroupBody,
+  UpsertStateGroupMemberBody,
+} from './api/state-mutation-http-contracts.ts';
 import { readStateGroupSnapshot } from './state-read/point-read.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import {
@@ -34,37 +58,15 @@ import type {
   GroupTopologyConfigMutationReceipt,
   GroupTopologyConfigView,
   GroupTopologyManagementView,
-  PutGroupTopologyConfigRequest,
-  PutGroupTopologyOverrideRequest,
   QueuedGroupTopologyReconfigureResponse,
-  ReconfigureGroupTopologyRequest,
   StoredGroupTopologyConfig,
   StoredGroupTopologyOverride,
 } from '@shared/api/graph-topology-management-types.ts';
 import {
-  type AcceptGroupInviteRequest,
-  type AppointGroupDirectorRequest,
-  type BanGroupMemberRequest,
-  type ConnectClientSessionRequest,
-  type ConnectGroupPresenceSessionRequest,
-  type CreateGroupInviteRequest,
-  type CreateGroupRequest,
   DEFAULT_STATE_APPLICATION_ID,
   DEFAULT_STATE_WORKSPACE_ID,
-  type DisconnectGroupPresenceSessionRequest,
   type GroupJoinCodeResponse,
-  type HeartbeatClientSessionRequest,
-  type HeartbeatGroupPresenceSessionRequest,
-  type JoinGroupRequest,
-  type RemoveGroupMemberRequest,
-  type RevokeGroupInviteRequest,
-  type RotateGroupJoinCodeRequest,
-  type SetGroupMemberRoleRequest,
   type StateScope,
-  type TransferGroupOwnershipRequest,
-  type UnbanGroupMemberRequest,
-  type UpdateGroupRequest,
-  type UpsertGroupMemberRequest,
 } from '@shared/api/state-types.ts';
 import type { StateEventCursor, StateEventPage } from '@shared/api/state-event-types.ts';
 import type {
@@ -367,7 +369,7 @@ export async function readStateGroupTopologyConfig(
 
 export async function putStateGroupTopologyConfig(
   groupId: string,
-  request: Omit<PutGroupTopologyConfigRequest, 'requestId'>,
+  request: PutStateGroupTopologyConfigBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<PutStateGroupTopologyConfigResponse> {
@@ -376,7 +378,7 @@ export async function putStateGroupTopologyConfig(
     options.requestId,
   );
   return await executeHttpRequest<
-    Omit<PutGroupTopologyConfigRequest, 'requestId'>,
+    PutStateGroupTopologyConfigBody,
     PutStateGroupTopologyConfigResponse
   >(readApiBaseUrl(), path, 'PUT', request, options);
 }
@@ -415,7 +417,7 @@ export async function readStateGroupTopologyOverride(
 
 export async function putStateGroupTopologyOverride(
   groupId: string,
-  request: Omit<PutGroupTopologyOverrideRequest, 'requestId'>,
+  request: PutStateGroupTopologyOverrideBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<PutStateGroupTopologyOverrideResponse> {
@@ -424,7 +426,7 @@ export async function putStateGroupTopologyOverride(
     options.requestId,
   );
   return await executeHttpRequest<
-    Omit<PutGroupTopologyOverrideRequest, 'requestId'>,
+    PutStateGroupTopologyOverrideBody,
     PutStateGroupTopologyOverrideResponse
   >(readApiBaseUrl(), path, 'PUT', request, options);
 }
@@ -449,7 +451,7 @@ export async function deleteStateGroupTopologyOverride(
 
 export async function reconfigureStateGroupTopology(
   groupId: string,
-  request: Omit<ReconfigureGroupTopologyRequest, 'requestId'>,
+  request: ReconfigureStateGroupTopologyBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<QueuedGroupTopologyReconfigureResponse> {
@@ -458,18 +460,18 @@ export async function reconfigureStateGroupTopology(
     options.requestId,
   );
   return await executeHttpRequest<
-    Omit<ReconfigureGroupTopologyRequest, 'requestId'>,
+    ReconfigureStateGroupTopologyBody,
     QueuedGroupTopologyReconfigureResponse
   >(readApiBaseUrl(), path, 'POST', request, options);
 }
 
 export async function createStateGroup(
-  request: Omit<CreateGroupRequest, 'requestId'>,
+  request: CreateStateGroupBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupStateSnapshot> {
   const path = toApiMutationRequestPath(`${toStateScopePath(scope)}/groups`, options.requestId);
-  return await executeHttpRequest<Omit<CreateGroupRequest, 'requestId'>, GroupStateSnapshot>(
+  return await executeHttpRequest<CreateStateGroupBody, GroupStateSnapshot>(
     readApiBaseUrl(),
     path,
     'POST',
@@ -480,12 +482,12 @@ export async function createStateGroup(
 
 export async function updateStateGroup(
   groupId: string,
-  request: Omit<UpdateGroupRequest, 'requestId'>,
+  request: UpdateStateGroupBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupStateSnapshot> {
   const path = toApiMutationRequestPath(toStateGroupPath(scope, groupId), options.requestId);
-  return await executeHttpRequest<Omit<UpdateGroupRequest, 'requestId'>, GroupStateSnapshot>(
+  return await executeHttpRequest<UpdateStateGroupBody, GroupStateSnapshot>(
     readApiBaseUrl(),
     path,
     'PUT',
@@ -496,7 +498,7 @@ export async function updateStateGroup(
 
 export async function appointStateGroupDirector(
   groupId: string,
-  request: Omit<AppointGroupDirectorRequest, 'requestId'>,
+  request: AppointStateGroupDirectorBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupStateSnapshot> {
@@ -504,15 +506,18 @@ export async function appointStateGroupDirector(
     `${toStateGroupPath(scope, groupId)}/director/appoint`,
     options.requestId,
   );
-  return await executeHttpRequest<
-    Omit<AppointGroupDirectorRequest, 'requestId'>,
-    GroupStateSnapshot
-  >(readApiBaseUrl(), path, 'POST', request, options);
+  return await executeHttpRequest<AppointStateGroupDirectorBody, GroupStateSnapshot>(
+    readApiBaseUrl(),
+    path,
+    'POST',
+    request,
+    options,
+  );
 }
 
 export async function joinStateGroup(
   groupId: string,
-  request: Omit<JoinGroupRequest, 'requestId'>,
+  request: JoinStateGroupBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupStateSnapshot> {
@@ -520,7 +525,7 @@ export async function joinStateGroup(
     `${toStateGroupPath(scope, groupId)}/join`,
     options.requestId,
   );
-  return await executeHttpRequest<Omit<JoinGroupRequest, 'requestId'>, GroupStateSnapshot>(
+  return await executeHttpRequest<JoinStateGroupBody, GroupStateSnapshot>(
     readApiBaseUrl(),
     path,
     'POST',
@@ -532,7 +537,7 @@ export async function joinStateGroup(
 export async function createStateGroupInvite(
   groupId: string,
   principalId: string,
-  request: Omit<CreateGroupInviteRequest, 'requestId'>,
+  request: CreateStateGroupInviteBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupStateSnapshot> {
@@ -540,7 +545,7 @@ export async function createStateGroupInvite(
     `${toStateGroupPath(scope, groupId)}/invites/${encodeURIComponent(principalId)}`,
     options.requestId,
   );
-  return await executeHttpRequest<Omit<CreateGroupInviteRequest, 'requestId'>, GroupStateSnapshot>(
+  return await executeHttpRequest<CreateStateGroupInviteBody, GroupStateSnapshot>(
     readApiBaseUrl(),
     path,
     'POST',
@@ -552,7 +557,7 @@ export async function createStateGroupInvite(
 export async function revokeStateGroupInvite(
   groupId: string,
   principalId: string,
-  request: Omit<RevokeGroupInviteRequest, 'requestId'>,
+  request: RevokeStateGroupInviteBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupStateSnapshot> {
@@ -560,7 +565,7 @@ export async function revokeStateGroupInvite(
     `${toStateGroupPath(scope, groupId)}/invites/${encodeURIComponent(principalId)}/revoke`,
     options.requestId,
   );
-  return await executeHttpRequest<Omit<RevokeGroupInviteRequest, 'requestId'>, GroupStateSnapshot>(
+  return await executeHttpRequest<RevokeStateGroupInviteBody, GroupStateSnapshot>(
     readApiBaseUrl(),
     path,
     'POST',
@@ -571,7 +576,7 @@ export async function revokeStateGroupInvite(
 
 export async function acceptStateGroupInvite(
   groupId: string,
-  request: Omit<AcceptGroupInviteRequest, 'requestId'>,
+  request: AcceptStateGroupInviteBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupStateSnapshot> {
@@ -579,7 +584,7 @@ export async function acceptStateGroupInvite(
     `${toStateGroupPath(scope, groupId)}/invites/accept`,
     options.requestId,
   );
-  return await executeHttpRequest<Omit<AcceptGroupInviteRequest, 'requestId'>, GroupStateSnapshot>(
+  return await executeHttpRequest<AcceptStateGroupInviteBody, GroupStateSnapshot>(
     readApiBaseUrl(),
     path,
     'POST',
@@ -590,7 +595,7 @@ export async function acceptStateGroupInvite(
 
 export async function rotateStateGroupJoinCode(
   groupId: string,
-  request: Omit<RotateGroupJoinCodeRequest, 'requestId'>,
+  request: RotateStateGroupJoinCodeBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupJoinCodeResponse> {
@@ -598,16 +603,19 @@ export async function rotateStateGroupJoinCode(
     `${toStateGroupPath(scope, groupId)}/join-code/rotate`,
     options.requestId,
   );
-  return await executeHttpRequest<
-    Omit<RotateGroupJoinCodeRequest, 'requestId'>,
-    GroupJoinCodeResponse
-  >(readApiBaseUrl(), path, 'POST', request, options);
+  return await executeHttpRequest<RotateStateGroupJoinCodeBody, GroupJoinCodeResponse>(
+    readApiBaseUrl(),
+    path,
+    'POST',
+    request,
+    options,
+  );
 }
 
 export async function removeStateGroupMember(
   groupId: string,
   principalId: string,
-  request: Omit<RemoveGroupMemberRequest, 'requestId'>,
+  request: RemoveStateGroupMemberBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupStateSnapshot> {
@@ -615,7 +623,7 @@ export async function removeStateGroupMember(
     `${toStateGroupPath(scope, groupId)}/members/${encodeURIComponent(principalId)}/remove`,
     options.requestId,
   );
-  return await executeHttpRequest<Omit<RemoveGroupMemberRequest, 'requestId'>, GroupStateSnapshot>(
+  return await executeHttpRequest<RemoveStateGroupMemberBody, GroupStateSnapshot>(
     readApiBaseUrl(),
     path,
     'POST',
@@ -627,7 +635,7 @@ export async function removeStateGroupMember(
 export async function banStateGroupMember(
   groupId: string,
   principalId: string,
-  request: Omit<BanGroupMemberRequest, 'requestId'>,
+  request: BanStateGroupMemberBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupStateSnapshot> {
@@ -635,7 +643,7 @@ export async function banStateGroupMember(
     `${toStateGroupPath(scope, groupId)}/members/${encodeURIComponent(principalId)}/ban`,
     options.requestId,
   );
-  return await executeHttpRequest<Omit<BanGroupMemberRequest, 'requestId'>, GroupStateSnapshot>(
+  return await executeHttpRequest<BanStateGroupMemberBody, GroupStateSnapshot>(
     readApiBaseUrl(),
     path,
     'POST',
@@ -647,7 +655,7 @@ export async function banStateGroupMember(
 export async function unbanStateGroupMember(
   groupId: string,
   principalId: string,
-  request: Omit<UnbanGroupMemberRequest, 'requestId'>,
+  request: UnbanStateGroupMemberBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupStateSnapshot> {
@@ -655,7 +663,7 @@ export async function unbanStateGroupMember(
     `${toStateGroupPath(scope, groupId)}/members/${encodeURIComponent(principalId)}/unban`,
     options.requestId,
   );
-  return await executeHttpRequest<Omit<UnbanGroupMemberRequest, 'requestId'>, GroupStateSnapshot>(
+  return await executeHttpRequest<UnbanStateGroupMemberBody, GroupStateSnapshot>(
     readApiBaseUrl(),
     path,
     'POST',
@@ -667,7 +675,7 @@ export async function unbanStateGroupMember(
 export async function setStateGroupMemberRole(
   groupId: string,
   principalId: string,
-  request: Omit<SetGroupMemberRoleRequest, 'requestId'>,
+  request: SetStateGroupMemberRoleBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupStateSnapshot> {
@@ -675,7 +683,7 @@ export async function setStateGroupMemberRole(
     `${toStateGroupPath(scope, groupId)}/members/${encodeURIComponent(principalId)}/role`,
     options.requestId,
   );
-  return await executeHttpRequest<Omit<SetGroupMemberRoleRequest, 'requestId'>, GroupStateSnapshot>(
+  return await executeHttpRequest<SetStateGroupMemberRoleBody, GroupStateSnapshot>(
     readApiBaseUrl(),
     path,
     'PUT',
@@ -686,7 +694,7 @@ export async function setStateGroupMemberRole(
 
 export async function transferStateGroupOwnership(
   groupId: string,
-  request: Omit<TransferGroupOwnershipRequest, 'requestId'>,
+  request: TransferStateGroupOwnershipBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupStateSnapshot> {
@@ -694,16 +702,19 @@ export async function transferStateGroupOwnership(
     `${toStateGroupPath(scope, groupId)}/owner/transfer`,
     options.requestId,
   );
-  return await executeHttpRequest<
-    Omit<TransferGroupOwnershipRequest, 'requestId'>,
-    GroupStateSnapshot
-  >(readApiBaseUrl(), path, 'POST', request, options);
+  return await executeHttpRequest<TransferStateGroupOwnershipBody, GroupStateSnapshot>(
+    readApiBaseUrl(),
+    path,
+    'POST',
+    request,
+    options,
+  );
 }
 
 export async function upsertStateGroupMember(
   groupId: string,
   principalId: string,
-  request: Omit<UpsertGroupMemberRequest, 'requestId'>,
+  request: UpsertStateGroupMemberBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupStateSnapshot> {
@@ -711,7 +722,7 @@ export async function upsertStateGroupMember(
     `${toStateGroupPath(scope, groupId)}/members/${encodeURIComponent(principalId)}`,
     options.requestId,
   );
-  return await executeHttpRequest<Omit<UpsertGroupMemberRequest, 'requestId'>, GroupStateSnapshot>(
+  return await executeHttpRequest<UpsertStateGroupMemberBody, GroupStateSnapshot>(
     readApiBaseUrl(),
     path,
     'PUT',
@@ -723,7 +734,7 @@ export async function upsertStateGroupMember(
 export async function connectStateGroupPresenceSession(
   groupId: string,
   sessionId: string,
-  request: Omit<ConnectGroupPresenceSessionRequest, 'requestId'>,
+  request: ConnectStateGroupPresenceSessionBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupStateSnapshot> {
@@ -731,17 +742,20 @@ export async function connectStateGroupPresenceSession(
     `${toStateGroupPath(scope, groupId)}/sessions/${encodeURIComponent(sessionId)}`,
     options.requestId,
   );
-  return await executeHttpRequest<
-    Omit<ConnectGroupPresenceSessionRequest, 'requestId'>,
-    GroupStateSnapshot
-  >(readApiBaseUrl(), path, 'PUT', request, options);
+  return await executeHttpRequest<ConnectStateGroupPresenceSessionBody, GroupStateSnapshot>(
+    readApiBaseUrl(),
+    path,
+    'PUT',
+    request,
+    options,
+  );
 }
 
 export async function connectStateClientSession(
   principalId: string,
   clientInstanceId: string,
   sessionId: string,
-  request: Omit<ConnectClientSessionRequest, 'requestId'>,
+  request: ConnectStateClientSessionBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<ClientStateSnapshot> {
@@ -751,17 +765,20 @@ export async function connectStateClientSession(
     `${instancePath}/sessions/${encodeURIComponent(sessionId)}`,
     options.requestId,
   );
-  return await executeHttpRequest<
-    Omit<ConnectClientSessionRequest, 'requestId'>,
-    ClientStateSnapshot
-  >(readApiBaseUrl(), path, 'PUT', request, options);
+  return await executeHttpRequest<ConnectStateClientSessionBody, ClientStateSnapshot>(
+    readApiBaseUrl(),
+    path,
+    'PUT',
+    request,
+    options,
+  );
 }
 
 export async function heartbeatStateClientSession(
   principalId: string,
   clientInstanceId: string,
   sessionId: string,
-  request: Omit<HeartbeatClientSessionRequest, 'requestId'>,
+  request: HeartbeatStateClientSessionBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<ClientStateSnapshot> {
@@ -771,16 +788,19 @@ export async function heartbeatStateClientSession(
     `${instancePath}/sessions/${encodeURIComponent(sessionId)}/heartbeat`,
     options.requestId,
   );
-  return await executeHttpRequest<
-    Omit<HeartbeatClientSessionRequest, 'requestId'>,
-    ClientStateSnapshot
-  >(readApiBaseUrl(), path, 'POST', request, options);
+  return await executeHttpRequest<HeartbeatStateClientSessionBody, ClientStateSnapshot>(
+    readApiBaseUrl(),
+    path,
+    'POST',
+    request,
+    options,
+  );
 }
 
 export async function heartbeatStateGroupPresenceSession(
   groupId: string,
   sessionId: string,
-  request: Omit<HeartbeatGroupPresenceSessionRequest, 'requestId'>,
+  request: HeartbeatStateGroupPresenceSessionBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupStateSnapshot> {
@@ -788,16 +808,19 @@ export async function heartbeatStateGroupPresenceSession(
     `${toStateGroupPath(scope, groupId)}/sessions/${encodeURIComponent(sessionId)}/heartbeat`,
     options.requestId,
   );
-  return await executeHttpRequest<
-    Omit<HeartbeatGroupPresenceSessionRequest, 'requestId'>,
-    GroupStateSnapshot
-  >(readApiBaseUrl(), path, 'POST', request, options);
+  return await executeHttpRequest<HeartbeatStateGroupPresenceSessionBody, GroupStateSnapshot>(
+    readApiBaseUrl(),
+    path,
+    'POST',
+    request,
+    options,
+  );
 }
 
 export async function disconnectStateGroupPresenceSession(
   groupId: string,
   sessionId: string,
-  request: Omit<DisconnectGroupPresenceSessionRequest, 'requestId'>,
+  request: DisconnectStateGroupPresenceSessionBody,
   options: ApiMutationRequestOptions,
   scope: StateScope = defaultStateScope(),
 ): Promise<GroupStateSnapshot> {
@@ -805,10 +828,13 @@ export async function disconnectStateGroupPresenceSession(
     `${toStateGroupPath(scope, groupId)}/sessions/${encodeURIComponent(sessionId)}/disconnect`,
     options.requestId,
   );
-  return await executeHttpRequest<
-    Omit<DisconnectGroupPresenceSessionRequest, 'requestId'>,
-    GroupStateSnapshot
-  >(readApiBaseUrl(), path, 'POST', request, options);
+  return await executeHttpRequest<DisconnectStateGroupPresenceSessionBody, GroupStateSnapshot>(
+    readApiBaseUrl(),
+    path,
+    'POST',
+    request,
+    options,
+  );
 }
 
 function toStateScopePath(scope: StateScope): string {

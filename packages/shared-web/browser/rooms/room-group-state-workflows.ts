@@ -95,17 +95,13 @@ async function createAndJoinStateGroupWithInput(
     room: { displayName: input.displayName, ...input.options },
     actorPrincipalId: input.principalId,
     actorSessionId: input.sessionId,
-    requestId: createRequestId,
   });
   const presenceRequest = toConnectRoomPresenceGroupStateRequest({
     principalId: input.principalId,
     generationId: input.generationId,
     actorPrincipalId: input.principalId,
     actorSessionId: input.sessionId,
-    requestId: presenceRequestId,
   });
-  const { requestId: _createRequestId, ...createBody } = createRequest;
-  const { requestId: _presenceRequestId, ...presenceBody } = presenceRequest;
   const flow = CommandsOrchestrator.withPolicies<GroupWorkflowKey, StateGroupWorkflowValue>(
     input.policies,
   );
@@ -113,13 +109,13 @@ async function createAndJoinStateGroupWithInput(
   const results = await flow
     .sequential(
       flow.commandStep('created', (signal) =>
-        createStateGroup(createBody, { requestId: createRequestId, signal }, input.scope),
+        createStateGroup(createRequest, { requestId: createRequestId, signal }, input.scope),
       ),
       flow.commandStep('joined', (signal) =>
         connectStateGroupPresenceSession(
           groupId,
           input.sessionId,
-          presenceBody,
+          presenceRequest,
           { requestId: presenceRequestId, signal },
           input.scope,
         ),
@@ -157,17 +153,13 @@ async function joinStateGroupWithInput(input: JoinStateGroupInput): Promise<Grou
     room: input.intent,
     actorPrincipalId: input.principalId,
     actorSessionId: input.sessionId,
-    requestId: joinRequestId,
   });
   const presenceRequest = toConnectRoomPresenceGroupStateRequest({
     principalId: input.principalId,
     generationId: input.generationId,
     actorPrincipalId: input.principalId,
     actorSessionId: input.sessionId,
-    requestId: presenceRequestId,
   });
-  const { requestId: _joinRequestId, ...joinBody } = joinRequest;
-  const { requestId: _presenceRequestId, ...presenceBody } = presenceRequest;
   const flow = CommandsOrchestrator.withPolicies<GroupWorkflowKey, StateGroupWorkflowValue>(
     input.policies,
   );
@@ -177,7 +169,7 @@ async function joinStateGroupWithInput(input: JoinStateGroupInput): Promise<Grou
       flow.commandStep('member', (signal) =>
         joinStateGroupApi(
           input.groupId,
-          joinBody,
+          joinRequest,
           { requestId: joinRequestId, signal },
           input.scope,
         ),
@@ -186,7 +178,7 @@ async function joinStateGroupWithInput(input: JoinStateGroupInput): Promise<Grou
         connectStateGroupPresenceSession(
           input.groupId,
           input.sessionId,
-          presenceBody,
+          presenceRequest,
           { requestId: presenceRequestId, signal },
           input.scope,
         ),
@@ -223,15 +215,11 @@ async function leaveStateGroupWithInput(input: LeaveStateGroupInput): Promise<Gr
     principalId: input.principalId,
     actorPrincipalId: input.principalId,
     actorSessionId: input.sessionId,
-    requestId: disconnectRequestId,
   });
   const memberRequest = toLeaveRoomMemberGroupStateRequest({
     actorPrincipalId: input.principalId,
     actorSessionId: input.sessionId,
-    requestId: memberRequestId,
   });
-  const { requestId: _disconnectRequestId, ...disconnectBody } = disconnectRequest;
-  const { requestId: _memberRequestId, ...memberBody } = memberRequest;
   const flow = CommandsOrchestrator.withPolicies<GroupWorkflowKey, StateGroupWorkflowValue>(
     input.policies,
   );
@@ -244,7 +232,7 @@ async function leaveStateGroupWithInput(input: LeaveStateGroupInput): Promise<Gr
           disconnectStateGroupPresenceSession(
             input.groupId,
             input.sessionId,
-            disconnectBody,
+            disconnectRequest,
             { requestId: disconnectRequestId, signal },
             input.scope,
           ),
@@ -257,7 +245,7 @@ async function leaveStateGroupWithInput(input: LeaveStateGroupInput): Promise<Gr
         upsertStateGroupMember(
           input.groupId,
           input.principalId,
-          memberBody,
+          memberRequest,
           { requestId: memberRequestId, signal },
           input.scope,
         ),

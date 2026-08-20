@@ -13,13 +13,13 @@ import {
   toUpdateGroupStateRequest,
   type GroupSnapshot,
   type StateScope,
-  type UpdateGroupRequest,
+  type UpdateStateGroupBody,
 } from './room-group-state-translation.ts';
 import type { StateGroupWorkflowValue } from './room-group-state-workflows.ts';
 
 interface UpdateStateGroupLifecycleInput {
   readonly groupId: string;
-  readonly request: Omit<UpdateGroupRequest, 'status'>;
+  readonly request: Omit<UpdateStateGroupBody, 'status'>;
   readonly status: 'archived' | 'deleted';
   readonly principalId: string;
   readonly sessionId: string;
@@ -38,7 +38,7 @@ interface UpdateStateGroupMetadataInput {
 
 interface UpdateStateGroupDetailsInput {
   readonly groupId: string;
-  readonly request: UpdateGroupRequest;
+  readonly request: UpdateStateGroupBody;
   readonly principalId: string;
   readonly sessionId: string;
   readonly scope: StateScope;
@@ -77,20 +77,17 @@ async function updateStateGroupMetadataWithInput(
     patch: input.patch,
     actorPrincipalId: input.principalId,
     actorSessionId: input.sessionId,
-    requestId,
   });
-  const { requestId: _requestId, ...semanticRequest } = request;
 
   return await new Command<GroupSnapshot>(
-    (signal) =>
-      updateStateGroup(input.groupId, semanticRequest, { requestId, signal }, input.scope),
+    (signal) => updateStateGroup(input.groupId, request, { requestId, signal }, input.scope),
     commandOptions,
   ).run();
 }
 
 export async function updateStateGroupDetails(
   groupId: string,
-  request: UpdateGroupRequest,
+  request: UpdateStateGroupBody,
   principalId: string,
   sessionId: string,
   scope: StateScope = defaultStateScope(),
@@ -109,26 +106,23 @@ export async function updateStateGroupDetails(
 async function updateStateGroupDetailsWithInput(
   input: UpdateStateGroupDetailsInput,
 ): Promise<GroupSnapshot> {
-  const requestId = input.request.requestId ?? toApiMutationWorkflowRequestId();
+  const requestId = toApiMutationWorkflowRequestId();
   const commandOptions = (input.policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const updateRequest = toUpdateGroupStateRequest({
     request: input.request,
     actorPrincipalId: input.principalId,
     actorSessionId: input.sessionId,
-    requestId,
   });
-  const { requestId: _requestId, ...semanticRequest } = updateRequest;
 
   return await new Command<GroupSnapshot>(
-    (signal) =>
-      updateStateGroup(input.groupId, semanticRequest, { requestId, signal }, input.scope),
+    (signal) => updateStateGroup(input.groupId, updateRequest, { requestId, signal }, input.scope),
     commandOptions,
   ).run();
 }
 
 export async function archiveStateGroup(
   groupId: string,
-  request: Omit<UpdateGroupRequest, 'status'>,
+  request: Omit<UpdateStateGroupBody, 'status'>,
   principalId: string,
   sessionId: string,
   scope: StateScope = defaultStateScope(),
@@ -147,7 +141,7 @@ export async function archiveStateGroup(
 
 export async function deleteStateGroup(
   groupId: string,
-  request: Omit<UpdateGroupRequest, 'status'>,
+  request: Omit<UpdateStateGroupBody, 'status'>,
   principalId: string,
   sessionId: string,
   scope: StateScope = defaultStateScope(),
@@ -167,20 +161,18 @@ export async function deleteStateGroup(
 async function updateStateGroupLifecycle(
   input: UpdateStateGroupLifecycleInput,
 ): Promise<GroupSnapshot> {
-  const requestId = input.request.requestId ?? toApiMutationWorkflowRequestId();
+  const requestId = toApiMutationWorkflowRequestId();
   const commandOptions = (input.policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const lifecycleRequest = toRoomLifecycleGroupStateRequest({
     request: input.request,
     status: input.status,
     actorPrincipalId: input.principalId,
     actorSessionId: input.sessionId,
-    requestId,
   });
-  const { requestId: _requestId, ...semanticRequest } = lifecycleRequest;
 
   return await new Command<GroupSnapshot>(
     (signal) =>
-      updateStateGroup(input.groupId, semanticRequest, { requestId, signal }, input.scope),
+      updateStateGroup(input.groupId, lifecycleRequest, { requestId, signal }, input.scope),
     commandOptions,
   ).run();
 }
