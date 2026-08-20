@@ -2,17 +2,14 @@ import { isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-pol
 import type {
   ApiMutationFailure,
   ApiMutationFailureIssue,
+  ApiMutationFailureJsonValue,
 } from '@shared/api/mutation/api-mutation-failure.ts';
-import type {
-  JsonWireObject,
-  JsonWireValue,
-} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 
 import {
   createApiMutationFailure,
-  toApiMutationFailureJsonObject,
   toApiMutationFailureResponse,
 } from './api-mutation-route-failure.ts';
+import { toApiMutationFailureJsonObject } from './to-api-mutation-failure-json-object.ts';
 
 export function toGraphTopologyErrorResponse(
   c: { json(value: unknown, status?: number): Response },
@@ -75,7 +72,7 @@ export function toGraphTopologyMutationErrorResponse<Failure>(
       denial: {
         code: error.denial.code,
         message: error.denial.message,
-        details: toApiMutationFailureJsonObject(JSON.stringify(error.denial.details)),
+        details: toApiMutationFailureJsonObject(error.denial.details),
       },
     });
     return context.json(failure, failure.status);
@@ -100,21 +97,22 @@ function isStatusError<Failure>(
 ): error is Failure & Error & {
   status: number;
   code?: string;
-  issues?: readonly JsonWireValue[];
+  issues?: readonly object[];
 } {
   return error instanceof Error &&
     'status' in error &&
     typeof error.status === 'number' &&
     (!('issues' in error) ||
       error.issues === undefined ||
-      (Array.isArray(error.issues) && error.issues.every(isJsonWireValue)));
+      (Array.isArray(error.issues) &&
+        error.issues.every((issue) => typeof issue === 'object' && issue !== null)));
 }
 
 function toApiMutationFailureIssue(
-  value: JsonWireValue,
+  value: object,
   fallbackMessage: string,
 ): ApiMutationFailureIssue {
-  const issue: JsonWireObject = isJsonWireObject(value) ? value : {};
+  const issue = toApiMutationFailureJsonObject(value) ?? {};
   return {
     code: typeof issue.code === 'string' && issue.code.length > 0
       ? issue.code
@@ -123,41 +121,16 @@ function toApiMutationFailureIssue(
     message: typeof issue.message === 'string' && issue.message.length > 0
       ? issue.message
       : fallbackMessage,
-    details: isJsonWireObject(issue.details)
-      ? toApiMutationFailureJsonObject(JSON.stringify(issue.details))
-      : null,
+    details: toApiMutationFailureJsonObject(issue.details),
   };
 }
 
 function isApiMutationFailurePath(
-  value: JsonWireValue | undefined,
+  value: ApiMutationFailureJsonValue | undefined,
 ): value is readonly (string | number)[] | null {
   return value === null ||
     (Array.isArray(value) &&
       value.every((part) =>
         typeof part === 'string' || (typeof part === 'number' && Number.isFinite(part))
       ));
-}
-
-function isJsonWireObject(
-  value: JsonWireValue | undefined,
-): value is JsonWireObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isJsonWireValue<Value>(value: Value): value is Value & JsonWireValue {
-  if (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'boolean' ||
-    (typeof value === 'number' && Number.isFinite(value))
-  ) {
-    return true;
-  }
-  if (Array.isArray(value)) {
-    return value.every(isJsonWireValue);
-  }
-  return typeof value === 'object' &&
-    value !== null &&
-    Object.values(value).every(isJsonWireValue);
 }
