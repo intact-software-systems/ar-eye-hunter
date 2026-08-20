@@ -546,3 +546,64 @@ worker-time ownership findings were not touched. No task-specific follow-up rema
   worker-time materialization, exact replay, credential digests, and AppInbox atomicity.
 - Shared-server/API checks plus changed-style, structure, and diff checks showed that the new owner
   is internal, navigable, and introduces no package-surface or repository-shape regression.
+
+## Fix round 4
+
+Fix base: `a4bdcf8b3ebdaa3fa099ed24ccfb5ba9043ea927`.
+
+### Finding verified and corrected
+
+`recordingCredentialIssuer` returned an unannotated object, so strict test compilation could not
+contextually type the parameters of its three asynchronous issuer callbacks. The test now imports
+the canonical `AuthCredentialIssuer` type alongside `createHmacAuthCredentialIssuer` and declares
+that type as the helper's return contract. This supplies the canonical `string` parameter types to
+all three callbacks without changing their implementation, call recording, credential derivation,
+or the approved replay-integrity assertions.
+
+### RED typecheck evidence
+
+- `npm run typecheck:tests` exited 1 and reported
+  `packages/tests/shared-server/auth/auth-public-result.test.ts (6)` among the enforced-file
+  regressions.
+- `npx tsc -p packages/tests/tsconfig.json --noEmit --pretty false` exited 1 and reported exactly
+  six target-file TS7006 diagnostics: `sessionId` at line 305; `requestId` and `sessionId` at line
+  309; and `requestId`, `agentId`, and `sessionId` at line 313. This matched the missing contextual
+  return type rather than a replay-behavior failure.
+
+### GREEN behavior and typecheck evidence
+
+- A target-filtered strict test-project compilation ran the complete
+  `packages/tests/tsconfig.json` compiler and reported
+  `PASS: packages/tests/shared-server/auth/auth-public-result.test.ts has 0 TypeScript diagnostics`
+  with exit 0.
+- `npm run typecheck:tests` reran the full test-project gate. It still exited 1 for unrelated
+  branch baseline errors in five files only: admin AppInbox (4), durable enqueue (3), the AppInbox
+  transaction test runtime (1), auth legacy replay (1), and the topology AppInbox handler (6).
+  `auth-public-result.test.ts` was absent from the full failure list.
+- `npx vitest run packages/tests/shared-server/auth/auth-public-result.test.ts` passed 1 file and
+  6/6 tests. The substituted session and tampered receipt cases still reject before plaintext
+  credential reconstruction, while deterministic valid identities still reconstruct successfully.
+- `npm run typecheck --workspace=packages/shared-server` passed with no diagnostics.
+
+### GREEN style, diff, and review evidence
+
+- `npx prettier --check packages/tests/shared-server/auth/auth-public-result.test.ts` passed.
+- `node scripts/check-changed-repo-style.mjs
+  a4bdcf8b3ebdaa3fa099ed24ccfb5ba9043ea927 WORKTREE` passed with no new repository style
+  findings.
+- `git diff --check` passed with no whitespace errors.
+
+The complete changed test file was reviewed after the edit. Its six semantic tests, fixture data,
+tamper matrix, call recording, and credential derivation are unchanged; the only source change is
+compile-time contextual typing. This report is the only support file changed by the fix and was
+reviewed in full after appending this section. No further support file entered closure, independent
+untouched code remained outside closure, and no task-specific follow-up is needed.
+
+### Commands executed and what they taught us (Fix round 4)
+
+- The full and target-filtered strict test typechecks isolated the regression to six implicit-any
+  parameters and proved the target returned to zero diagnostics despite unrelated branch failures.
+- The focused auth public-result suite proved the type-only correction retained the replay identity
+  and no-plaintext-before-validation behavior established in Fix round 3.
+- The shared-server package typecheck, Prettier check, changed-style gate, and diff check proved the
+  canonical annotation remains compatible with the production surface and repository standards.

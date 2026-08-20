@@ -1,6 +1,9 @@
 import { expect, it } from 'vitest';
 
-import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import {
+  type AuthCredentialIssuer,
+  createHmacAuthCredentialIssuer,
+} from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import { toAuthMutationPublicResult } from '@shared-server/rallar-system/auth/mutation/to-auth-mutation-public-result.ts';
 
@@ -300,7 +303,7 @@ async function agentTicketReceipt(requestId: string, agentId: string, sessionId:
   };
 }
 
-function recordingCredentialIssuer(calls: string[]) {
+function recordingCredentialIssuer(calls: string[]): AuthCredentialIssuer {
   return {
     issueAccessToken: async (sessionId) => {
       calls.push(`access:${sessionId}`);
