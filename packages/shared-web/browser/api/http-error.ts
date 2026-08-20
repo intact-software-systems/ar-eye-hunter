@@ -4,7 +4,7 @@ import {
   type ApiMutationFailure,
   type ApiMutationFailureJsonObject,
   type ApiMutationFailureJsonValue,
-} from '@shared/api/mutation/api-mutation.ts';
+} from '@shared/api/mutation/api-mutation-failure.ts';
 
 export type ApiHttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 

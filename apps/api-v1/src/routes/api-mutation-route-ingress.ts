@@ -1,7 +1,5 @@
-import {
-  type ApiMutationFailureJsonValue,
-  assertApiMutationRequestId,
-} from '@shared/api/mutation/api-mutation.ts';
+import type { ApiMutationFailureJsonValue } from '@shared/api/mutation/api-mutation-failure.ts';
+import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 
 export interface ApiMutationRouteRequestIdInputDto {
   readonly requestId: string | undefined;

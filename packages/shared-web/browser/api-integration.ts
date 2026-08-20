@@ -1,7 +1,7 @@
 import { readApiBaseUrl } from './api-client-config.ts';
 import { type ApiRequestOptions, executeHttpRequest } from './api/http-request.ts';
 import { readStateGroupSnapshot } from './state-read/point-read.ts';
-import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation.ts';
+import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import {
     validateAuthoritativeClientEventList,
     validateAuthoritativeClientEventPage,
