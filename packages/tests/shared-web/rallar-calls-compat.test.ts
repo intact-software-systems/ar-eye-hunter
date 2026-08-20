@@ -6,10 +6,7 @@ import {
     createActiveGroupPresenceSessionFixture,
     createGroupSnapshotFixture,
 } from './authoritative-group-fixtures.ts';
-import {
-    newALRoute,
-    newALUnicastMessage,
-} from '@shared/al-contracts/al-contract.ts';
+import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
@@ -18,23 +15,19 @@ import {
     type QRtcPeerDto,
     type WebRtcPeerConnectionLeft,
 } from '@shared/services/WebRtcConnectionService.ts';
-import type {
-    QRtcDataChannel,
-    RtcDataChannelHealth,
-} from '@shared/webrtc/QRtcDataChannel.ts';
+import type { QRtcDataChannel, RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
 import type { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
 
 type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
+type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
-type ClientStateSnapshotsRepositoryModule = typeof import(
-    '@shared/repository/client-state-snapshots-repository.ts'
-);
+type ClientStateSnapshotsRepositoryModule =
+    typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
-type GroupStateSnapshotsRepositoryModule = typeof import(
-    '@shared/repository/group-state-snapshots-repository.ts'
-);
+type GroupStateSnapshotsRepositoryModule =
+    typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
@@ -50,16 +43,12 @@ const mocks = await vi.hoisted(async () => {
         webSocketQueueBox: vi.mocked(ctx.middleware.webSocketQueueBox),
         webSocket: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
         clearMiddleware: vi.fn<AppContextModule['clearMiddleware']>(),
-        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() =>
-            Promise.resolve(ctx)
-        ),
+        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn<AppContextModule['isMiddlewareReady']>(() => false),
         clearSession: vi.fn<AuthModule['clearSession']>(),
         readSession: vi.fn<AuthModule['readSession']>(() => session),
         writeSession: vi.fn<AuthModule['writeSession']>(),
-        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() =>
-            Promise.resolve()
-        ),
+        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
         onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(() => vi.fn()),
         createAndJoinStateGroup: vi.fn<ApiWorkflowsModule['createAndJoinStateGroup']>(
             () => Promise.reject(new Error('create not mocked')),
@@ -76,13 +65,11 @@ const mocks = await vi.hoisted(async () => {
         refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() =>
             Promise.resolve({ clients: [], groups: [] })
         ),
-        loginToApi: vi.fn<ApiIntegrationModule['loginToApi']>(() =>
-            Promise.resolve(session)
-        ),
-        logoutFromApi: vi.fn<ApiIntegrationModule['logoutFromApi']>(() =>
+        loginToApi: vi.fn<AuthApiModule['loginToApi']>(() => Promise.resolve(session)),
+        logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() =>
             Promise.resolve({ loggedOut: true })
         ),
-        registerWithApi: vi.fn<ApiIntegrationModule['registerWithApi']>(() =>
+        registerWithApi: vi.fn<AuthApiModule['registerWithApi']>(() =>
             Promise.resolve({
                 clientId: 'client-new',
                 username: 'new-user',
@@ -138,11 +125,14 @@ vi.mock(
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
         listStateGroupEvents: mocks.listStateGroupEvents,
-        loginToApi: mocks.loginToApi,
-        logoutFromApi: mocks.logoutFromApi,
-        registerWithApi: mocks.registerWithApi,
     }),
 );
+
+vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<AuthApiModule> => ({
+    loginToApi: mocks.loginToApi,
+    logoutFromApi: mocks.logoutFromApi,
+    registerWithApi: mocks.registerWithApi,
+}));
 
 vi.mock(
     import('@shared-web/browser/api-workflows.ts'),
@@ -302,7 +292,7 @@ describe('Rallar calls compatibility', () => {
     it('starts a targeted data call and reports per-participant readiness', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const reliableHealth = createChannelHealth({
             peerId: 'peer-1',
             label: 'rtc-data-channel',
@@ -392,7 +382,7 @@ describe('Rallar calls compatibility', () => {
     it('sends call invitations as WS unicast signals to target peers', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const facade = createRallarFacade();
 
         const result = await facade.calls.invite({
@@ -415,8 +405,7 @@ describe('Rallar calls compatibility', () => {
         expect(mocks.webSocketQueueBox.enqueueOutboxIfAbsent)
             .toHaveBeenCalledTimes(2);
 
-        const firstMessage =
-            mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0][0];
+        const firstMessage = mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0][0];
         expect(firstMessage).toMatchObject({
             route: {
                 topicId: 'app.rallar.calls',
@@ -449,7 +438,7 @@ describe('Rallar calls compatibility', () => {
     it('accepts and declines incoming call invites through call signal helpers', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValue({
             status: 'open',
             peerId: 'peer-caller',
@@ -547,14 +536,11 @@ describe('Rallar calls compatibility', () => {
             toPeerIds: ['peer-caller'],
         });
     });
-
 });
-
 
 function toRtcTestDouble<TValue>(members: Partial<TValue>): TValue {
     return members as TValue;
 }
-
 function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
     return mocks.webSocketQueueBox
         .onAnyInboxMessageDo.mock.calls
@@ -796,11 +782,7 @@ function createMediaStream(
         id,
         active: tracks.some((track) => track.readyState !== 'ended'),
         getTracks: vi.fn(() => [...tracks]),
-        getAudioTracks: vi.fn(() =>
-            tracks.filter((track) => track.kind === 'audio')
-        ),
-        getVideoTracks: vi.fn(() =>
-            tracks.filter((track) => track.kind === 'video')
-        ),
+        getAudioTracks: vi.fn(() => tracks.filter((track) => track.kind === 'audio')),
+        getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video')),
     } as unknown as MediaStream;
 }

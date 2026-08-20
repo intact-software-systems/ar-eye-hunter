@@ -149,7 +149,10 @@ describe('client mutation AppInbox retry and rollback', () => {
     const harness = await createRollbackHarness();
     const result = await processRollbackMutation(harness);
 
-    expect(result.left).toContain('resource-inbox-invariant-corruption');
+    expect(result.left).toMatchObject({
+      code: 'resource-inbox-invariant-corruption',
+      status: 409,
+    });
     expect(harness.rollbackAssertions()).toBe(1);
     expect((await harness.queue.getItem(harness.key))?.status).toBe(EntityStatus.FAILED);
     expect(await harness.results.findByKey(harness.key)).toMatchObject({

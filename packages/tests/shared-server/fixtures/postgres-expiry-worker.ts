@@ -296,7 +296,7 @@ async function runClientMutation(
   );
   const written = result.fold(
     (error) => {
-      throw new Error(error);
+      throw new Error(error.message);
     },
     (value) => value,
   );

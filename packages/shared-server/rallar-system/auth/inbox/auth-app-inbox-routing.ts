@@ -25,20 +25,40 @@ export function toAuthAppInboxType(command: AuthMutationCommand): AppInboxType {
 export function toAuthCommandContextId(command: AuthMutationCommand): string {
   switch (command.kind) {
     case 'register-user':
-      return command.user.normalizedUsername;
+      return toContextId([
+        ['operation', command.kind],
+        ['username', command.user.normalizedUsername],
+      ]);
     case 'issue-session':
-      return command.session.sessionId;
+      return toContextId([
+        ['operation', command.kind],
+        ['username', command.authority.normalizedUsername],
+      ]);
     case 'logout-session':
-      return command.expected.sessionId;
+      return toSessionContextId(command.expected.clientId, command.expected.sessionId);
     case 'issue-ws-ticket':
-      return command.ticketRecord.sessionId;
+      return toSessionContextId(
+        command.ticketRecord.clientId,
+        command.ticketRecord.sessionId,
+      );
     case 'consume-ws-ticket':
-      return command.expectedSessionId;
+      return toContextId([['credential', command.ticketDigest]]);
     case 'issue-agent-tickets':
-      return command.tickets.map((ticket) => ticket.sessionId).join(',');
+      return toSessionContextId(command.authority.clientId, command.authority.sessionId);
     case 'consume-agent-ticket':
-      return command.ticketDigest;
+      return toContextId([['credential', command.ticketDigest]]);
   }
+}
+
+function toSessionContextId(clientId: string, sessionId: string): string {
+  return toContextId([
+    ['client', clientId],
+    ['session', sessionId],
+  ]);
+}
+
+function toContextId(parts: readonly (readonly [string, string])[]): string {
+  return parts.map(([name, value]) => `${name}=${encodeURIComponent(value)}`).join(':');
 }
 
 export function toAuthCommandSenderId(command: AuthMutationCommand): string {

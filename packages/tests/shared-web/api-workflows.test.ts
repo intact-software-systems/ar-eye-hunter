@@ -16,9 +16,11 @@ import type {
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import {
     consumeAgentSessionTicketAt,
+    issueAgentSessionTicketsAt,
+} from '@shared-web/browser/auth/agent-session-ticket-http-api.ts';
+import {
     deleteStateGroupTopologyConfig,
     deleteStateGroupTopologyOverride,
-    issueAgentSessionTicketsAt,
     listStateClientEventPage,
     listStateClientEvents,
     listStateGroupEventPage,
@@ -93,17 +95,22 @@ describe('state API workflows', () => {
             expiresAtEpochMs: 10_000,
         };
         stubFetch(({ url, method }) => {
-            if (method === 'POST' && url.endsWith('/api/auth/agent-session-tickets')) {
+            if (method === 'POST' && url.includes('/api/auth/agent-session-tickets/requests/')) {
                 return jsonResponse({
-                    tickets: [{
-                    agentId: 'agent-1',
-                    ticket: 'ticket-1',
-                    sessionId: 'agent-session-1',
-                    expiresAtEpochMs: 9_000,
-                    }],
+                    tickets: [
+                        {
+                            agentId: 'agent-1',
+                            ticket: 'ticket-1',
+                            sessionId: 'agent-session-1',
+                            expiresAtEpochMs: 9_000,
+                        },
+                    ],
                 });
             }
-            if (method === 'POST' && url.endsWith('/api/auth/agent-session-tickets/consume')) {
+            if (
+                method === 'POST' &&
+                url.includes('/api/auth/agent-session-tickets/consume/requests/')
+            ) {
                 return jsonResponse(authSession);
             }
             if (method === 'GET' && url.endsWith('/stats/me/realtime')) {
@@ -117,13 +124,10 @@ describe('state API workflows', () => {
             { agentIds: ['agent-1'] },
             { authSession },
         );
-        await consumeAgentSessionTicketAt(
-            'https://agent-api.example.test',
-            { ticket: 'ticket-1' },
-        );
+        await consumeAgentSessionTicketAt('https://agent-api.example.test', { ticket: 'ticket-1' });
         await readStateMyRealtimeStatus();
 
-        expect(fetchCalls.map((call) => call.url)).toEqual([
+        expect(fetchCalls.map((call) => withoutMutationRequestPath(call.url))).toEqual([
             'https://agent-api.example.test/api/auth/agent-session-tickets',
             'https://agent-api.example.test/api/auth/agent-session-tickets/consume',
             '/api/state/apps/rallar-server/workspaces/default/stats/me/realtime',
@@ -184,23 +188,24 @@ describe('state API workflows', () => {
             applicationId: 'app 1',
             workspaceId: 'workspace/1',
         };
-        const groupEvents = [groupEvent('group-event-1', 'member-joined', {
-            ...scope,
-            groupId: 'room /1',
-        })];
-        const clientEvents = [clientEvent('client-event-1', 'session-connected', {
-            ...scope,
-            principalId: 'alice@example.test',
-        })];
+        const groupEvents = [
+            groupEvent('group-event-1', 'member-joined', {
+                ...scope,
+                groupId: 'room /1',
+            }),
+        ];
+        const clientEvents = [
+            clientEvent('client-event-1', 'session-connected', {
+                ...scope,
+                principalId: 'alice@example.test',
+            }),
+        ];
         stubFetch(({ url, method }) => {
             if (method === 'GET' && url.includes('/groups/room%20%2F1/events')) {
                 return jsonResponse(groupEvents);
             }
 
-            if (
-                method === 'GET' &&
-                url.includes('/clients/alice%40example.test/events')
-            ) {
+            if (method === 'GET' && url.includes('/clients/alice%40example.test/events')) {
                 return jsonResponse(clientEvents);
             }
 
@@ -231,14 +236,18 @@ describe('state API workflows', () => {
             applicationId: 'app 1',
             workspaceId: 'workspace/1',
         };
-        const groupEvents = [groupEvent('group-event-2', 'member-left', {
-            ...scope,
-            groupId: 'room /1',
-        })];
-        const clientEvents = [clientEvent('client-event-2', 'session-disconnected', {
-            ...scope,
-            principalId: 'alice@example.test',
-        })];
+        const groupEvents = [
+            groupEvent('group-event-2', 'member-left', {
+                ...scope,
+                groupId: 'room /1',
+            }),
+        ];
+        const clientEvents = [
+            clientEvent('client-event-2', 'session-disconnected', {
+                ...scope,
+                principalId: 'alice@example.test',
+            }),
+        ];
         const groupPage = {
             events: groupEvents,
             nextCursor: {
@@ -262,10 +271,7 @@ describe('state API workflows', () => {
                 return jsonResponse(groupPage);
             }
 
-            if (
-                method === 'GET' &&
-                url.includes('/clients/alice%40example.test/events/page')
-            ) {
+            if (method === 'GET' && url.includes('/clients/alice%40example.test/events/page')) {
                 return jsonResponse(clientPage);
             }
 
@@ -308,22 +314,26 @@ describe('state API workflows', () => {
         };
         stubFetch(({ url }) => {
             if (url.includes('/groups/room-1/events')) {
-                return jsonResponse([{
-                    ...groupEvent('group-event-1', 'member-joined', {
-                        ...scope,
-                        groupId: 'room-1',
-                    }),
-                    actor: { kind: 'service', serviceId: '' },
-                }]);
+                return jsonResponse([
+                    {
+                        ...groupEvent('group-event-1', 'member-joined', {
+                            ...scope,
+                            groupId: 'room-1',
+                        }),
+                        actor: { kind: 'service', serviceId: '' },
+                    },
+                ]);
             }
             return jsonResponse({
-                events: [{
-                    ...clientEvent('client-event-1', 'session-connected', {
-                        ...scope,
-                        principalId: 'alice',
-                    }),
-                    snapshotVersion: 1.5,
-                }],
+                events: [
+                    {
+                        ...clientEvent('client-event-1', 'session-connected', {
+                            ...scope,
+                            principalId: 'alice',
+                        }),
+                        snapshotVersion: 1.5,
+                    },
+                ],
                 nextCursor: {
                     snapshotVersion: 1,
                     occurredAtEpochMs: 1,
@@ -333,12 +343,8 @@ describe('state API workflows', () => {
             });
         });
 
-        await expect(listStateGroupEvents('room-1', scope)).rejects.toThrow(
-            /actor|serviceId/,
-        );
-        await expect(listStateClientEventPage('alice', scope)).rejects.toThrow(
-            /snapshotVersion/,
-        );
+        await expect(listStateGroupEvents('room-1', scope)).rejects.toThrow(/actor|serviceId/);
+        await expect(listStateClientEventPage('alice', scope)).rejects.toThrow(/snapshotVersion/);
     });
 
     it('reads scoped graph diagnostics and topology views with encoded query paths', async () => {
@@ -392,24 +398,26 @@ describe('state API workflows', () => {
             'GET /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/stats',
             'GET /api/state/apps/app%201/workspaces/workspace%2F1/stats/me/realtime',
         ]);
-        expect(fetchCalls.every((call) => call.headers.authorization === 'Bearer token-1'))
-            .toBe(true);
-        expect(fetchCalls.every((call) => call.headers['x-client-id'] === 'alice'))
-            .toBe(true);
+        expect(fetchCalls.every((call) => call.headers.authorization === 'Bearer token-1')).toBe(
+            true,
+        );
+        expect(fetchCalls.every((call) => call.headers['x-client-id'] === 'alice')).toBe(true);
     });
 
     it('mutates topology config and overrides with auth-capable methods', async () => {
-        expectTypeOf<PutGroupTopologyConfigRequest>()
-            .toMatchTypeOf<Readonly<{ requestId: string }>>();
-        expectTypeOf<PutGroupTopologyOverrideRequest>()
-            .toMatchTypeOf<Readonly<{ requestId: string }>>();
-        expectTypeOf<ReconfigureGroupTopologyRequest>()
-            .toMatchTypeOf<Readonly<{ requestId: string }>>();
-        type ConfigReceipt = Awaited<
-            ReturnType<typeof putStateGroupTopologyConfig>
-        >['receipt'];
-        expectTypeOf<ConfigReceipt['acceptedCausalRevision']>()
-            .toEqualTypeOf<GroupTopologyConfigAcceptedCausalRevision | null>();
+        expectTypeOf<PutGroupTopologyConfigRequest>().toMatchTypeOf<
+            Readonly<{ requestId: string }>
+        >();
+        expectTypeOf<PutGroupTopologyOverrideRequest>().toMatchTypeOf<
+            Readonly<{ requestId: string }>
+        >();
+        expectTypeOf<ReconfigureGroupTopologyRequest>().toMatchTypeOf<
+            Readonly<{ requestId: string }>
+        >();
+        type ConfigReceipt = Awaited<ReturnType<typeof putStateGroupTopologyConfig>>['receipt'];
+        expectTypeOf<
+            ConfigReceipt['acceptedCausalRevision']
+        >().toEqualTypeOf<GroupTopologyConfigAcceptedCausalRevision | null>();
         const scope = {
             applicationId: 'app 1',
             workspaceId: 'workspace/1',
@@ -468,8 +476,9 @@ describe('state API workflows', () => {
             'DELETE /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/config',
             'DELETE /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/override',
         ]);
-        expect(fetchCalls.every((call) => call.headers.authorization === 'Bearer token-1'))
-            .toBe(true);
+        expect(fetchCalls.every((call) => call.headers.authorization === 'Bearer token-1')).toBe(
+            true,
+        );
         expect(fetchCalls.map((call) => call.headers['idempotency-key'])).toEqual([
             'config-1',
             'override-1',
@@ -528,10 +537,7 @@ describe('state API workflows', () => {
                 return jsonResponse(groupSnapshot(request.groupId));
             }
 
-            if (
-                method === 'PUT' &&
-                url.endsWith('/groups/group-created/sessions/session-1')
-            ) {
+            if (method === 'PUT' && url.endsWith('/groups/group-created/sessions/session-1')) {
                 return jsonResponse(groupSnapshot('group-created'));
             }
 
@@ -565,10 +571,7 @@ describe('state API workflows', () => {
                 return jsonResponse(groupSnapshot(request.groupId));
             }
 
-            if (
-                method === 'PUT' &&
-                url.endsWith('/groups/rallar/sessions/session-1')
-            ) {
+            if (method === 'PUT' && url.endsWith('/groups/rallar/sessions/session-1')) {
                 return jsonResponse(groupSnapshot('rallar'));
             }
 
@@ -602,10 +605,7 @@ describe('state API workflows', () => {
                 return jsonResponse(groupSnapshot(request.groupId));
             }
 
-            if (
-                method === 'PUT' &&
-                url.endsWith('/groups/rallar/sessions/session-1')
-            ) {
+            if (method === 'PUT' && url.endsWith('/groups/rallar/sessions/session-1')) {
                 return jsonResponse(groupSnapshot('rallar'));
             }
 
@@ -693,10 +693,7 @@ describe('state API workflows', () => {
 
     it('updates archives and deletes state groups through low-level workflows', async () => {
         stubFetch(({ url, method }) => {
-            if (
-                method === 'PUT' &&
-                url.endsWith('/groups/group-1')
-            ) {
+            if (method === 'PUT' && url.endsWith('/groups/group-1')) {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
@@ -764,10 +761,7 @@ describe('state API workflows', () => {
                 return jsonResponse(groupSnapshot((body as { groupId: string }).groupId));
             }
 
-            if (
-                method === 'PUT' &&
-                url.endsWith('/groups/group-retry/sessions/session-1')
-            ) {
+            if (method === 'PUT' && url.endsWith('/groups/group-retry/sessions/session-1')) {
                 presenceAttempts += 1;
                 if (presenceAttempts === 1) {
                     return textResponse('transient presence failure', 503);
@@ -792,9 +786,10 @@ describe('state API workflows', () => {
             .filter((call) => call.method === 'POST' && call.url.endsWith('/groups'))
             .map((call) => (call.body as { requestId?: string }).requestId);
         const presenceRequestIds = fetchCalls
-            .filter((call) =>
-                call.method === 'PUT' &&
-                call.url.endsWith('/groups/group-retry/sessions/session-1')
+            .filter(
+                (call) =>
+                    call.method === 'PUT' &&
+                    call.url.endsWith('/groups/group-retry/sessions/session-1'),
             )
             .map((call) => (call.body as { requestId?: string }).requestId);
 
@@ -809,17 +804,11 @@ describe('state API workflows', () => {
 
     it('joins a state group with explicit join intent before connecting presence', async () => {
         stubFetch(({ url, method }) => {
-            if (
-                method === 'POST' &&
-                url.endsWith('/groups/group-1/join')
-            ) {
+            if (method === 'POST' && url.endsWith('/groups/group-1/join')) {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
-            if (
-                method === 'PUT' &&
-                url.endsWith('/groups/group-1/sessions/session-1')
-            ) {
+            if (method === 'PUT' && url.endsWith('/groups/group-1/sessions/session-1')) {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
@@ -895,10 +884,7 @@ describe('state API workflows', () => {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
-            if (
-                method === 'PUT' &&
-                url.endsWith('/groups/group-1/sessions/session-1')
-            ) {
+            if (method === 'PUT' && url.endsWith('/groups/group-1/sessions/session-1')) {
                 return jsonResponse(
                     {
                         error: 'Forbidden: Group member session capacity has been reached.',
@@ -930,17 +916,11 @@ describe('state API workflows', () => {
 
     it('creates and revokes state group invites through low-level workflows', async () => {
         stubFetch(({ url, method }) => {
-            if (
-                method === 'POST' &&
-                url.endsWith('/groups/group-1/invites/member-1')
-            ) {
+            if (method === 'POST' && url.endsWith('/groups/group-1/invites/member-1')) {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
-            if (
-                method === 'POST' &&
-                url.endsWith('/groups/group-1/invites/member-1/revoke')
-            ) {
+            if (method === 'POST' && url.endsWith('/groups/group-1/invites/member-1/revoke')) {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
@@ -954,13 +934,7 @@ describe('state API workflows', () => {
             'owner-1',
             'owner-session',
         );
-        await revokeStateGroupInvite(
-            'group-1',
-            'member-1',
-            {},
-            'owner-1',
-            'owner-session',
-        );
+        await revokeStateGroupInvite('group-1', 'member-1', {}, 'owner-1', 'owner-session');
 
         expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
             'POST /api/state/apps/rallar-server/workspaces/default/groups/group-1/invites/member-1',
@@ -979,17 +953,11 @@ describe('state API workflows', () => {
 
     it('accepts a state group invite before connecting presence', async () => {
         stubFetch(({ url, method }) => {
-            if (
-                method === 'POST' &&
-                url.endsWith('/groups/group-1/invites/accept')
-            ) {
+            if (method === 'POST' && url.endsWith('/groups/group-1/invites/accept')) {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
-            if (
-                method === 'PUT' &&
-                url.endsWith('/groups/group-1/sessions/member-session')
-            ) {
+            if (method === 'PUT' && url.endsWith('/groups/group-1/sessions/member-session')) {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
@@ -997,12 +965,7 @@ describe('state API workflows', () => {
         });
 
         await expect(
-            acceptStateGroupInvite(
-                'group-1',
-                'member-1',
-                'member-session',
-                'generation-1',
-            ),
+            acceptStateGroupInvite('group-1', 'member-1', 'member-session', 'generation-1'),
         ).resolves.toMatchObject({
             group: { groupId: 'group-1' },
         });
@@ -1030,10 +993,7 @@ describe('state API workflows', () => {
             snapshot: groupSnapshot('group-1'),
         };
         stubFetch(({ url, method }) => {
-            if (
-                method === 'POST' &&
-                url.endsWith('/groups/group-1/join-code/rotate')
-            ) {
+            if (method === 'POST' && url.endsWith('/groups/group-1/join-code/rotate')) {
                 return jsonResponse(response);
             }
 
@@ -1065,65 +1025,32 @@ describe('state API workflows', () => {
 
     it('runs membership governance through low-level workflows', async () => {
         stubFetch(({ url, method }) => {
-            if (
-                method === 'POST' &&
-                url.endsWith('/groups/group-1/members/member-1/remove')
-            ) {
+            if (method === 'POST' && url.endsWith('/groups/group-1/members/member-1/remove')) {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
-            if (
-                method === 'POST' &&
-                url.endsWith('/groups/group-1/members/member-1/ban')
-            ) {
+            if (method === 'POST' && url.endsWith('/groups/group-1/members/member-1/ban')) {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
-            if (
-                method === 'POST' &&
-                url.endsWith('/groups/group-1/members/member-1/unban')
-            ) {
+            if (method === 'POST' && url.endsWith('/groups/group-1/members/member-1/unban')) {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
-            if (
-                method === 'PUT' &&
-                url.endsWith('/groups/group-1/members/member-1/role')
-            ) {
+            if (method === 'PUT' && url.endsWith('/groups/group-1/members/member-1/role')) {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
-            if (
-                method === 'POST' &&
-                url.endsWith('/groups/group-1/owner/transfer')
-            ) {
+            if (method === 'POST' && url.endsWith('/groups/group-1/owner/transfer')) {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
             return notFoundResponse();
         });
 
-        await removeStateGroupMember(
-            'group-1',
-            'member-1',
-            {},
-            'owner-1',
-            'owner-session',
-        );
-        await banStateGroupMember(
-            'group-1',
-            'member-1',
-            {},
-            'owner-1',
-            'owner-session',
-        );
-        await unbanStateGroupMember(
-            'group-1',
-            'member-1',
-            {},
-            'owner-1',
-            'owner-session',
-        );
+        await removeStateGroupMember('group-1', 'member-1', {}, 'owner-1', 'owner-session');
+        await banStateGroupMember('group-1', 'member-1', {}, 'owner-1', 'owner-session');
+        await unbanStateGroupMember('group-1', 'member-1', {}, 'owner-1', 'owner-session');
         await setStateGroupMemberRole(
             'group-1',
             'member-1',
@@ -1165,10 +1092,7 @@ describe('state API workflows', () => {
         let joinAttempts = 0;
         let presenceAttempts = 0;
         stubFetch(({ url, method }) => {
-            if (
-                method === 'POST' &&
-                url.endsWith('/groups/group-1/join')
-            ) {
+            if (method === 'POST' && url.endsWith('/groups/group-1/join')) {
                 joinAttempts += 1;
                 if (joinAttempts === 1) {
                     return textResponse('transient join failure', 503);
@@ -1177,10 +1101,7 @@ describe('state API workflows', () => {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
-            if (
-                method === 'PUT' &&
-                url.endsWith('/groups/group-1/sessions/session-1')
-            ) {
+            if (method === 'PUT' && url.endsWith('/groups/group-1/sessions/session-1')) {
                 presenceAttempts += 1;
                 if (presenceAttempts === 1) {
                     return textResponse('transient presence failure', 503);
@@ -1192,25 +1113,18 @@ describe('state API workflows', () => {
             return notFoundResponse();
         });
 
-        await joinStateGroup(
-            'group-1',
-            'principal-1',
-            'session-1',
-            'generation-1',
-            undefined,
-            { command: { maxAttempts: 2 } },
-        );
+        await joinStateGroup('group-1', 'principal-1', 'session-1', 'generation-1', undefined, {
+            command: { maxAttempts: 2 },
+        });
 
         const joinRequestIds = fetchCalls
-            .filter((call) =>
-                call.method === 'POST' &&
-                call.url.endsWith('/groups/group-1/join')
-            )
+            .filter((call) => call.method === 'POST' && call.url.endsWith('/groups/group-1/join'))
             .map((call) => (call.body as { requestId?: string }).requestId);
         const presenceRequestIds = fetchCalls
-            .filter((call) =>
-                call.method === 'PUT' &&
-                call.url.endsWith('/groups/group-1/sessions/session-1')
+            .filter(
+                (call) =>
+                    call.method === 'PUT' &&
+                    call.url.endsWith('/groups/group-1/sessions/session-1'),
             )
             .map((call) => (call.body as { requestId?: string }).requestId);
 
@@ -1229,22 +1143,14 @@ describe('state API workflows', () => {
                 return textResponse('missing', 404);
             }
 
-            if (
-                method === 'PUT' &&
-                url.endsWith('/groups/group-1/members/principal-1')
-            ) {
+            if (method === 'PUT' && url.endsWith('/groups/group-1/members/principal-1')) {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
             return notFoundResponse();
         });
 
-        const result = await leaveStateGroup(
-            'group-1',
-            'principal-1',
-            'session-1',
-            'generation-1',
-        );
+        const result = await leaveStateGroup('group-1', 'principal-1', 'session-1', 'generation-1');
 
         expect(result.group.groupId).toBe('group-1');
         expect(fetchCalls.map((call) => call.method)).toEqual(['POST', 'PUT']);
@@ -1276,10 +1182,7 @@ describe('state API workflows', () => {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
-            if (
-                method === 'PUT' &&
-                url.endsWith('/groups/group-1/members/principal-1')
-            ) {
+            if (method === 'PUT' && url.endsWith('/groups/group-1/members/principal-1')) {
                 memberAttempts += 1;
                 if (memberAttempts === 1) {
                     return textResponse('transient member failure', 503);
@@ -1291,22 +1194,18 @@ describe('state API workflows', () => {
             return notFoundResponse();
         });
 
-        await leaveStateGroup(
-            'group-1',
-            'principal-1',
-            'session-1',
-            'generation-1',
-            undefined,
-            { command: { maxAttempts: 2 } },
-        );
+        await leaveStateGroup('group-1', 'principal-1', 'session-1', 'generation-1', undefined, {
+            command: { maxAttempts: 2 },
+        });
 
         const disconnectRequestIds = fetchCalls
             .filter((call) => call.method === 'POST' && call.url.endsWith('/disconnect'))
             .map((call) => (call.body as { requestId?: string }).requestId);
         const memberRequestIds = fetchCalls
-            .filter((call) =>
-                call.method === 'PUT' &&
-                call.url.endsWith('/groups/group-1/members/principal-1')
+            .filter(
+                (call) =>
+                    call.method === 'PUT' &&
+                    call.url.endsWith('/groups/group-1/members/principal-1'),
             )
             .map((call) => (call.body as { requestId?: string }).requestId);
 
@@ -1327,7 +1226,7 @@ describe('state API workflows', () => {
         };
         vi.spyOn(Date, 'now').mockReturnValue(1000);
         stubFetch(({ url, method }) => {
-            if (method === 'POST' && url.endsWith('/sessions/session-1/heartbeat')) {
+            if (method === 'POST' && url.includes('/sessions/session-1/heartbeat')) {
                 if (url.includes('/clients/principal-1/')) {
                     return jsonResponse(clientSnapshot('principal-1'));
                 }
@@ -1344,34 +1243,28 @@ describe('state API workflows', () => {
             return notFoundResponse();
         });
 
-        const result = await refreshStateHeartbeat(clientData, [
-            groupSnapshotWithActiveSession(
-                'group-1',
-                'accepted-group-generation',
-            ),
-            groupSnapshot('group-2'),
-        ], {
-            generationId: 'generation-1',
-            policies: { command: { maxAttempts: 3 } },
-        });
+        const result = await refreshStateHeartbeat(
+            clientData,
+            [
+                groupSnapshotWithActiveSession('group-1', 'accepted-group-generation'),
+                groupSnapshot('group-2'),
+            ],
+            {
+                generationId: 'generation-1',
+                policies: { command: { maxAttempts: 3 } },
+            },
+        );
 
         expect(result.client.principal.principalId).toBe('principal-1');
-        expect(result.groups.map((group) => group.group.groupId)).toEqual([
-            'group-1',
-        ]);
-        expect(result.missingGroups.map((group) => group.group.groupId)).toEqual([
-            'group-2',
-        ]);
+        expect(result.groups.map((group) => group.group.groupId)).toEqual(['group-1']);
+        expect(result.missingGroups.map((group) => group.group.groupId)).toEqual(['group-2']);
         expect(result.heartbeatAtEpochMs).toBe(1000);
         expect(result.expiresAtEpochMs).toBe(121000);
-        expect(
-            fetchCalls.filter((call) => call.url.includes('/groups/group-2/')),
-        ).toHaveLength(1);
-        expect(
-            fetchCalls.find((call) => call.url.includes('/groups/group-1/'))?.body,
-        ).toMatchObject({
-            generationId: 'accepted-group-generation',
-        });
+        expect(fetchCalls.filter((call) => call.url.includes('/groups/group-2/'))).toHaveLength(1);
+        expect(fetchCalls.find((call) => call.url.includes('/groups/group-1/'))?.body)
+            .toMatchObject({
+                generationId: 'accepted-group-generation',
+            });
     });
 
     it('repairs missing client presence once after a scoped heartbeat 404', async () => {
@@ -1384,16 +1277,18 @@ describe('state API workflows', () => {
         stubFetch(({ url, method }) => {
             if (
                 method === 'POST' &&
-                url ===
-                    '/api/state/apps/ar-eye-hunter/workspaces/default/clients/principal-1/instances/principal-1/sessions/session-1/heartbeat'
+                url.startsWith(
+                    '/api/state/apps/ar-eye-hunter/workspaces/default/clients/principal-1/instances/principal-1/sessions/session-1/heartbeat/requests/',
+                )
             ) {
                 return textResponse('Client principal not found: principal-1', 404);
             }
 
             if (
                 method === 'PUT' &&
-                url ===
-                    '/api/state/apps/ar-eye-hunter/workspaces/default/clients/principal-1/instances/principal-1/sessions/session-1'
+                url.startsWith(
+                    '/api/state/apps/ar-eye-hunter/workspaces/default/clients/principal-1/instances/principal-1/sessions/session-1/requests/',
+                )
             ) {
                 return jsonResponse(clientSnapshot('principal-1', 'ar-eye-hunter'));
             }
@@ -1423,10 +1318,10 @@ describe('state API workflows', () => {
         );
 
         expect(result.client.principal.principalId).toBe('principal-1');
-        expect(result.groups.map((group) => group.group.groupId)).toEqual([
-            'group-1',
-        ]);
-        expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
+        expect(result.groups.map((group) => group.group.groupId)).toEqual(['group-1']);
+        expect(
+            fetchCalls.map((call) => `${call.method} ${withoutMutationRequestPath(call.url)}`),
+        ).toEqual([
             'POST /api/state/apps/ar-eye-hunter/workspaces/default/clients/principal-1/instances/principal-1/sessions/session-1/heartbeat',
             'PUT /api/state/apps/ar-eye-hunter/workspaces/default/clients/principal-1/instances/principal-1/sessions/session-1',
             'POST /api/state/apps/ar-eye-hunter/workspaces/default/groups/group-1/sessions/session-1/heartbeat',
@@ -1455,10 +1350,7 @@ describe('state API workflows', () => {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
-            if (
-                method === 'PUT' &&
-                url.endsWith('/groups/group-1/sessions/session-1')
-            ) {
+            if (method === 'PUT' && url.endsWith('/groups/group-1/sessions/session-1')) {
                 connectUrls.push(url);
                 if (connectUrls.length === 1) {
                     return textResponse(
@@ -1498,10 +1390,7 @@ describe('state API workflows', () => {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
-            if (
-                method === 'PUT' &&
-                url.endsWith('/groups/group-1/sessions/session-1')
-            ) {
+            if (method === 'PUT' && url.endsWith('/groups/group-1/sessions/session-1')) {
                 connectUrls.push(url);
                 if (connectUrls.length === 1) {
                     return textResponse(
@@ -1537,10 +1426,7 @@ describe('state API workflows', () => {
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
-            if (
-                method === 'PUT' &&
-                url.endsWith('/groups/group-1/sessions/session-1')
-            ) {
+            if (method === 'PUT' && url.endsWith('/groups/group-1/sessions/session-1')) {
                 connectUrls.push(url);
                 return textResponse(
                     'Forbidden: group member not found for presence session: principal-1',
@@ -1583,7 +1469,7 @@ describe('state API workflows', () => {
             if (
                 method === 'POST' &&
                 url.includes('/clients/principal-1/') &&
-                url.endsWith('/sessions/session-1/heartbeat')
+                url.includes('/sessions/session-1/heartbeat')
             ) {
                 clientAttempts += 1;
                 if (clientAttempts === 1) {
@@ -1596,7 +1482,7 @@ describe('state API workflows', () => {
             if (
                 method === 'POST' &&
                 url.includes('/groups/group-1/') &&
-                url.endsWith('/sessions/session-1/heartbeat')
+                url.includes('/sessions/session-1/heartbeat')
             ) {
                 groupAttempts += 1;
                 if (groupAttempts === 1) {
@@ -1615,17 +1501,19 @@ describe('state API workflows', () => {
         });
 
         const clientRequestIds = fetchCalls
-            .filter((call) =>
-                call.method === 'POST' &&
-                call.url.includes('/clients/principal-1/') &&
-                call.url.endsWith('/sessions/session-1/heartbeat')
+            .filter(
+                (call) =>
+                    call.method === 'POST' &&
+                    call.url.includes('/clients/principal-1/') &&
+                    call.url.includes('/sessions/session-1/heartbeat'),
             )
-            .map((call) => (call.body as { requestId?: string }).requestId);
+            .map((call) => call.url.match(/\/requests\/([A-Za-z0-9_-]+)$/u)?.[1]);
         const groupRequestIds = fetchCalls
-            .filter((call) =>
-                call.method === 'POST' &&
-                call.url.includes('/groups/group-1/') &&
-                call.url.endsWith('/sessions/session-1/heartbeat')
+            .filter(
+                (call) =>
+                    call.method === 'POST' &&
+                    call.url.includes('/groups/group-1/') &&
+                    call.url.includes('/sessions/session-1/heartbeat'),
             )
             .map((call) => (call.body as { requestId?: string }).requestId);
 
@@ -1648,7 +1536,7 @@ describe('state API workflows', () => {
             if (
                 method === 'POST' &&
                 url.includes('/clients/principal-1/') &&
-                url.endsWith('/sessions/session-1/heartbeat')
+                url.includes('/sessions/session-1/heartbeat')
             ) {
                 return jsonResponse(clientSnapshot('principal-1'));
             }
@@ -1680,8 +1568,7 @@ describe('state API workflows', () => {
                 signals.push(signal);
             }
 
-            return new Promise<Response>(() => {
-            });
+            return new Promise<Response>(() => {});
         });
 
         const run = refreshStateSnapshots(undefined, {
@@ -1690,9 +1577,7 @@ describe('state API workflows', () => {
                 shouldRetry: () => false,
             },
         });
-        const expectation = expect(run).rejects.toThrow(
-            'Command timed out after 10 ms',
-        );
+        const expectation = expect(run).rejects.toThrow('Command timed out after 10 ms');
 
         await vi.advanceTimersByTimeAsync(10);
 
@@ -1712,9 +1597,7 @@ describe('state API workflows', () => {
     });
 
     it('preserves HTTP error details while exposing parsed policy error codes', async () => {
-        const { readApiPolicyError } = await import(
-            '@shared-web/browser/api-integration.ts'
-        );
+        const { readApiPolicyError } = await import('@shared-web/browser/api/http-error.ts');
         stubFetch(() =>
             jsonResponse(
                 {
@@ -1754,9 +1637,7 @@ describe('state API workflows', () => {
         }
     });
 
-    function stubFetch(
-        handler: (call: FetchCall) => Response | Promise<Response>,
-    ): void {
+    function stubFetch(handler: (call: FetchCall) => Response | Promise<Response>): void {
         vi.stubGlobal(
             'fetch',
             vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -1861,10 +1742,7 @@ function groupEvent(
     };
 }
 
-function clientSnapshot(
-    principalId: string,
-    applicationId = 'rallar-server',
-): ClientSnapshot {
+function clientSnapshot(principalId: string, applicationId = 'rallar-server'): ClientSnapshot {
     const snapshot = createClientSnapshotFixture({
         applicationId,
         workspaceId: 'default',
@@ -1878,10 +1756,7 @@ function clientSnapshot(
     };
 }
 
-function groupSnapshot(
-    groupId: string,
-    applicationId = 'rallar-server',
-): GroupSnapshot {
+function groupSnapshot(groupId: string, applicationId = 'rallar-server'): GroupSnapshot {
     const snapshot = createGroupSnapshotFixture({
         applicationId,
         workspaceId: 'default',
@@ -1906,10 +1781,7 @@ function groupSnapshot(
     };
 }
 
-function groupSnapshotWithActiveSession(
-    groupId: string,
-    generationId: string,
-): GroupSnapshot {
+function groupSnapshotWithActiveSession(groupId: string, generationId: string): GroupSnapshot {
     const snapshot = groupSnapshot(groupId);
     return {
         ...snapshot,
@@ -1922,17 +1794,23 @@ function groupSnapshotWithActiveSession(
             ...snapshot.group,
             presenceVersion: snapshot.group.presenceVersion + 1,
         },
-        activeSessions: [{
-            ...createActiveGroupPresenceSessionFixture({
-                applicationId: snapshot.group.applicationId,
-                workspaceId: snapshot.group.workspaceId,
-                groupId,
-                principalId: 'principal-1',
-                sessionId: 'session-1',
-            }),
-            generationId,
-            expiresAtEpochMs: 121_000,
-        }],
+        activeSessions: [
+            {
+                ...createActiveGroupPresenceSessionFixture({
+                    applicationId: snapshot.group.applicationId,
+                    workspaceId: snapshot.group.workspaceId,
+                    groupId,
+                    principalId: 'principal-1',
+                    sessionId: 'session-1',
+                }),
+                generationId,
+                expiresAtEpochMs: 121_000,
+            },
+        ],
         onlineMemberCount: 1,
     };
+}
+
+function withoutMutationRequestPath(url: string): string {
+    return url.replace(/\/requests\/[A-Za-z0-9_-]+$/u, '');
 }

@@ -6,10 +6,7 @@ import {
     createActiveGroupPresenceSessionFixture,
     createGroupSnapshotFixture,
 } from './authoritative-group-fixtures.ts';
-import {
-    newALRoute,
-    newALUnicastMessage,
-} from '@shared/al-contracts/al-contract.ts';
+import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import {
@@ -19,19 +16,17 @@ import {
 } from '@shared/services/WebRtcConnectionService.ts';
 
 type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
+type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
-type ClientStateSnapshotsRepositoryModule = typeof import(
-    '@shared/repository/client-state-snapshots-repository.ts'
-);
+type ClientStateSnapshotsRepositoryModule =
+    typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
-type GroupStateSnapshotsRepositoryModule = typeof import(
-    '@shared/repository/group-state-snapshots-repository.ts'
-);
-type RoomGroupStateWorkflowsModule = typeof import(
-    '@shared-web/browser/rooms/room-group-state-workflows.ts'
-);
+type GroupStateSnapshotsRepositoryModule =
+    typeof import('@shared/repository/group-state-snapshots-repository.ts');
+type RoomGroupStateWorkflowsModule =
+    typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
 
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
@@ -49,16 +44,12 @@ const mocks = await vi.hoisted(async () => {
         webSocketQueueBox: vi.mocked(ctx.middleware.webSocketQueueBox),
         webSocket: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
         clearMiddleware: vi.fn<AppContextModule['clearMiddleware']>(),
-        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() =>
-            Promise.resolve(ctx)
-        ),
+        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn<AppContextModule['isMiddlewareReady']>(() => false),
         clearSession: vi.fn<AuthModule['clearSession']>(),
         readSession: vi.fn<AuthModule['readSession']>(() => session),
         writeSession: vi.fn<AuthModule['writeSession']>(),
-        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() =>
-            Promise.resolve()
-        ),
+        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
         onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(() => vi.fn()),
         appointStateGroupDirector: vi.fn<
             ApiWorkflowsModule['appointStateGroupDirector']
@@ -78,13 +69,11 @@ const mocks = await vi.hoisted(async () => {
         refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() =>
             Promise.resolve({ clients: [], groups: [] })
         ),
-        loginToApi: vi.fn<ApiIntegrationModule['loginToApi']>(() =>
-            Promise.resolve(session)
-        ),
-        logoutFromApi: vi.fn<ApiIntegrationModule['logoutFromApi']>(() =>
+        loginToApi: vi.fn<AuthApiModule['loginToApi']>(() => Promise.resolve(session)),
+        logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() =>
             Promise.resolve({ loggedOut: true })
         ),
-        registerWithApi: vi.fn<ApiIntegrationModule['registerWithApi']>(() =>
+        registerWithApi: vi.fn<AuthApiModule['registerWithApi']>(() =>
             Promise.resolve({
                 clientId: 'client-new',
                 username: 'new-user',
@@ -140,11 +129,14 @@ vi.mock(
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
         listStateGroupEvents: mocks.listStateGroupEvents,
-        loginToApi: mocks.loginToApi,
-        logoutFromApi: mocks.logoutFromApi,
-        registerWithApi: mocks.registerWithApi,
     }),
 );
+
+vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<AuthApiModule> => ({
+    loginToApi: mocks.loginToApi,
+    logoutFromApi: mocks.logoutFromApi,
+    registerWithApi: mocks.registerWithApi,
+}));
 
 vi.mock(
     import('@shared-web/browser/api-workflows.ts'),
@@ -316,7 +308,7 @@ describe('Rallar director relay compatibility', () => {
     it('appoints the current SPA session as room director', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const snapshot = createDirectorGroupSnapshot();
         mockGroupSnapshot(snapshot);
         mocks.appointStateGroupDirector.mockImplementation(
@@ -470,7 +462,7 @@ describe('Rallar director relay compatibility', () => {
     it('sends director intents with WS unicast fallback when RTC is not ready', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(createDirectorGroupSnapshot({
             sessionId: 'director-session',
             principalId: 'director-principal',
@@ -521,7 +513,7 @@ describe('Rallar director relay compatibility', () => {
         vi.setSystemTime(10_000);
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(createDirectorGroupSnapshot({
             sessionId: 'director-session',
             principalId: 'director-principal',
@@ -551,7 +543,7 @@ describe('Rallar director relay compatibility', () => {
         vi.setSystemTime(1_000);
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(createDirectorGroupSnapshot({
             sessionId: 'session-1',
             principalId: 'principal-1',
@@ -669,17 +661,23 @@ describe('Rallar director relay compatibility', () => {
             heartbeatTtlMs: 60_000,
         }));
         const facade = createRallarFacade();
-        const relay = facade.director.createRelay<{ move: string }, { ok: true }, { revision: number }>({
-            roomId: 'room-1',
-            laneId: 'director',
-            topicId: 'app.game.director',
-            intentTypeId: 'game.intent',
-            outputTypeId: 'game.output',
-            heartbeatIntervalMs: 60_000,
-            snapshotTypeId: 'game.snapshot',
-            snapshotIntervalMs: false,
-            readSnapshot: () => ({ revision: 1 }),
-        });
+        const relay = facade.director.createRelay<
+            { move: string },
+            { ok: true },
+            { revision: number }
+        >(
+            {
+                roomId: 'room-1',
+                laneId: 'director',
+                topicId: 'app.game.director',
+                intentTypeId: 'game.intent',
+                outputTypeId: 'game.output',
+                heartbeatIntervalMs: 60_000,
+                snapshotTypeId: 'game.snapshot',
+                snapshotIntervalMs: false,
+                readSnapshot: () => ({ revision: 1 }),
+            },
+        );
 
         await facade.auth.logout();
         mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockClear();
@@ -702,9 +700,7 @@ describe('Rallar director relay compatibility', () => {
             .not.toHaveBeenCalled();
         expect(mocks.initMiddleware).not.toHaveBeenCalled();
     });
-
 });
-
 
 function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
     return mocks.webSocketQueueBox
@@ -712,7 +708,6 @@ function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
         .filter(([callbackId]) => callbackId === 'rallar:ws:any-message')
         .at(-1)?.[1];
 }
-
 function enqueuedWsTypeIds(): readonly string[] {
     return mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls
         .map(([message]) => {
@@ -956,11 +951,7 @@ function createMediaStream(
         id,
         active: tracks.some((track) => track.readyState !== 'ended'),
         getTracks: vi.fn(() => [...tracks]),
-        getAudioTracks: vi.fn(() =>
-            tracks.filter((track) => track.kind === 'audio')
-        ),
-        getVideoTracks: vi.fn(() =>
-            tracks.filter((track) => track.kind === 'video')
-        ),
+        getAudioTracks: vi.fn(() => tracks.filter((track) => track.kind === 'audio')),
+        getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video')),
     } as unknown as MediaStream;
 }

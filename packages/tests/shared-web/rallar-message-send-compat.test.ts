@@ -7,12 +7,10 @@ import {
     createGroupSnapshotFixture,
 } from './authoritative-group-fixtures.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
-import {
-    newALRoute,
-    newALUnicastMessage,
-} from '@shared/al-contracts/al-contract.ts';
+import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import type * as ApiIntegrationModule from '@shared-web/browser/api-integration.ts';
+import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
 import type * as ApiWorkflowsModule from '@shared-web/browser/api-workflows.ts';
 import type * as AppContextModule from '@shared-web/browser/app-context.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
@@ -68,9 +66,7 @@ const mocks = await vi.hoisted(async () => {
         hydrateStateCaches: vi.fn<typeof DataCachesModule.hydrateStateCaches>(
             () => Promise.resolve(),
         ),
-        initMiddleware: vi.fn<typeof AppContextModule.initMiddleware>(() =>
-            Promise.resolve(ctx)
-        ),
+        initMiddleware: vi.fn<typeof AppContextModule.initMiddleware>(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn<typeof AppContextModule.isMiddlewareReady>(
             () => false,
         ),
@@ -92,10 +88,8 @@ const mocks = await vi.hoisted(async () => {
         listStateGroupEvents: vi.fn<
             typeof ApiIntegrationModule.listStateGroupEvents
         >(() => Promise.reject(new Error('group events not mocked'))),
-        loginToApi: vi.fn<typeof ApiIntegrationModule.loginToApi>(() =>
-            Promise.resolve(session)
-        ),
-        logoutFromApi: vi.fn<typeof ApiIntegrationModule.logoutFromApi>(() =>
+        loginToApi: vi.fn<typeof AuthApiModule.loginToApi>(() => Promise.resolve(session)),
+        logoutFromApi: vi.fn<typeof AuthApiModule.logoutFromApi>(() =>
             Promise.resolve({ loggedOut: true })
         ),
         onStateCacheChange: vi.fn<typeof DataCachesModule.onStateCacheChange>(
@@ -105,7 +99,7 @@ const mocks = await vi.hoisted(async () => {
         refreshStateSnapshots: vi.fn<
             typeof ApiWorkflowsModule.refreshStateSnapshots
         >(() => Promise.resolve({ clients: [], groups: [] })),
-        registerWithApi: vi.fn<typeof ApiIntegrationModule.registerWithApi>(
+        registerWithApi: vi.fn<typeof AuthApiModule.registerWithApi>(
             () =>
                 Promise.resolve({
                     clientId: 'client-new',
@@ -151,6 +145,12 @@ vi.mock(
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
         listStateGroupEvents: mocks.listStateGroupEvents,
+    }),
+);
+
+vi.mock(
+    import('@shared-web/browser/auth/session-http-api.ts'),
+    (): Partial<typeof AuthApiModule> => ({
         loginToApi: mocks.loginToApi,
         logoutFromApi: mocks.logoutFromApi,
         registerWithApi: mocks.registerWithApi,
@@ -189,8 +189,7 @@ vi.mock(
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<typeof ClientStateSnapshotsRepositoryModule> => ({
-        findClientStateSnapshotByPrincipalId:
-            mocks.findClientStateSnapshotByPrincipalId,
+        findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
         getAllClientStateSnapshots: mocks.getAllClientStateSnapshots,
     }),
 );
@@ -316,12 +315,14 @@ describe('Rallar message send compatibility', () => {
             '@shared-web/browser/rallar.ts'
         );
 
-        await expect(createRallarFacade().messages.ws.send({
-            scope: 'all',
-            topicId: 'manual.chat',
-            typeId: 'chat.message.v1',
-            payload: { text: 'invalid topic' },
-        })).rejects.toSatisfy(isRallarValidationError);
+        await expect(
+            createRallarFacade().messages.ws.send({
+                scope: 'all',
+                topicId: 'manual.chat',
+                typeId: 'chat.message.v1',
+                payload: { text: 'invalid topic' },
+            }),
+        ).rejects.toSatisfy(isRallarValidationError);
 
         expect(webSocketQueueBox.enqueueOutboxIfAbsent)
             .not.toHaveBeenCalled();
@@ -332,12 +333,14 @@ describe('Rallar message send compatibility', () => {
             '@shared-web/browser/rallar.ts'
         );
 
-        await expect(createRallarFacade().messages.ws.send({
-            scope: 'room',
-            topicId: 'room.chat',
-            typeId: 'chat.message.v1',
-            payload: { text: 'missing room' },
-        })).rejects.toSatisfy(isRallarValidationError);
+        await expect(
+            createRallarFacade().messages.ws.send({
+                scope: 'room',
+                topicId: 'room.chat',
+                typeId: 'chat.message.v1',
+                payload: { text: 'missing room' },
+            }),
+        ).rejects.toSatisfy(isRallarValidationError);
 
         expect(webSocketQueueBox.enqueueOutboxIfAbsent)
             .not.toHaveBeenCalled();
@@ -348,11 +351,13 @@ describe('Rallar message send compatibility', () => {
             '@shared-web/browser/rallar.ts'
         );
 
-        await expect(createRallarFacade().messages.rtc.send({
-            roomId: 'bad room',
-            typeId: 'chat.message.v1',
-            payload: { text: 'invalid room' },
-        })).rejects.toSatisfy(isRallarValidationError);
+        await expect(
+            createRallarFacade().messages.rtc.send({
+                roomId: 'bad room',
+                typeId: 'chat.message.v1',
+                payload: { text: 'invalid room' },
+            }),
+        ).rejects.toSatisfy(isRallarValidationError);
 
         expect(mocks.initMiddleware).not.toHaveBeenCalled();
         expect(rtcRxStreamer.enqueueOutboxIfAbsent)
@@ -391,14 +396,13 @@ describe('Rallar message send compatibility', () => {
     it('returns RTC send status with the message when multicast enqueue reports no entries', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementationOnce(
             async (message) => ({
                 status: 'no-route',
                 message,
                 entries: [],
-                reason:
-                    'Skipping RTC outbound dispatch without planned transport messages',
+                reason: 'Skipping RTC outbound dispatch without planned transport messages',
             }),
         );
         const room = createGroupSnapshot('room-1', ['session-1', 'peer-1']);
@@ -447,7 +451,7 @@ describe('Rallar message send compatibility', () => {
     it('wakes the queue-box engine when RTC send queues durable outbox work', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementationOnce(
             async (message) => ({
                 status: 'enqueued',
@@ -472,7 +476,7 @@ describe('Rallar message send compatibility', () => {
     it('adds cached room snapshotVersion as minSnapshotVersion on RTC room sends', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(withSnapshotVersion(
             createGroupSnapshot('room-1', ['session-1', 'peer-1']),
             7,
@@ -502,7 +506,7 @@ describe('Rallar message send compatibility', () => {
     it('uses roomRef scope for cached snapshotVersion on RTC room sends', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const workspaceA = withSnapshotVersion(
             createGroupSnapshot(
                 'shared-room',
@@ -550,7 +554,7 @@ describe('Rallar message send compatibility', () => {
     it('returns WS send status with the message when WS enqueue completes', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementationOnce(
             async (message) => ({
                 status: 'sent-immediate',
@@ -596,7 +600,7 @@ describe('Rallar message send compatibility', () => {
     it('wakes the queue-box engine when WS send queues durable outbox work', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementationOnce(
             async (message) => ({
                 status: 'enqueued',
@@ -621,7 +625,7 @@ describe('Rallar message send compatibility', () => {
     it('adds cached room snapshotVersion as minSnapshotVersion on WS room sends', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(withSnapshotVersion(
             createGroupSnapshot('room-1', ['session-1', 'peer-1']),
             11,
@@ -652,7 +656,7 @@ describe('Rallar message send compatibility', () => {
     it('uses roomRef scope for cached snapshotVersion and target groupRef on WS room sends', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const workspaceA = withSnapshotVersion(
             createGroupSnapshot(
                 'shared-room',
@@ -697,9 +701,7 @@ describe('Rallar message send compatibility', () => {
             minSnapshotVersion: 13,
         });
     });
-
 });
-
 
 function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
     return webSocketQueueBox
@@ -707,7 +709,6 @@ function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
         .filter(([callbackId]) => callbackId === 'rallar:ws:any-message')
         .at(-1)?.[1];
 }
-
 function createChannelHealth(
     input: Readonly<{
         peerId: string;
@@ -929,11 +930,7 @@ function createMediaStream(
         id,
         active: tracks.some((track) => track.readyState !== 'ended'),
         getTracks: vi.fn(() => [...tracks]),
-        getAudioTracks: vi.fn(() =>
-            tracks.filter((track) => track.kind === 'audio')
-        ),
-        getVideoTracks: vi.fn(() =>
-            tracks.filter((track) => track.kind === 'video')
-        ),
+        getAudioTracks: vi.fn(() => tracks.filter((track) => track.kind === 'audio')),
+        getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video')),
     } as unknown as MediaStream;
 }

@@ -7,10 +7,7 @@ import {
     createGroupSnapshotFixture,
 } from './authoritative-group-fixtures.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import {
-    newALRoute,
-    newALUnicastMessage,
-} from '@shared/al-contracts/al-contract.ts';
+import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import {
@@ -20,22 +17,19 @@ import {
 } from '@shared/services/WebRtcConnectionService.ts';
 
 type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
+type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
-type BrowserALRuntimeStoresModule = typeof import(
-    '@shared-web/browser/browser-al-runtime-stores.ts'
-);
-type ClientStateSnapshotsRepositoryModule = typeof import(
-    '@shared/repository/client-state-snapshots-repository.ts'
-);
+type BrowserALRuntimeStoresModule =
+    typeof import('@shared-web/browser/browser-al-runtime-stores.ts');
+type ClientStateSnapshotsRepositoryModule =
+    typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
-type GroupStateSnapshotsRepositoryModule = typeof import(
-    '@shared/repository/group-state-snapshots-repository.ts'
-);
-type RoomGroupStateWorkflowsModule = typeof import(
-    '@shared-web/browser/rooms/room-group-state-workflows.ts'
-);
+type GroupStateSnapshotsRepositoryModule =
+    typeof import('@shared/repository/group-state-snapshots-repository.ts');
+type RoomGroupStateWorkflowsModule =
+    typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
 
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
@@ -53,16 +47,12 @@ const mocks = await vi.hoisted(async () => {
         webSocketQueueBox: vi.mocked(ctx.middleware.webSocketQueueBox),
         webSocket: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
         clearMiddleware: vi.fn<AppContextModule['clearMiddleware']>(),
-        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() =>
-            Promise.resolve(ctx)
-        ),
+        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn<AppContextModule['isMiddlewareReady']>(() => false),
         clearSession: vi.fn<AuthModule['clearSession']>(),
         readSession: vi.fn<AuthModule['readSession']>(() => session),
         writeSession: vi.fn<AuthModule['writeSession']>(),
-        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() =>
-            Promise.resolve()
-        ),
+        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
         onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(() => vi.fn()),
         deleteBrowserALRuntimeEntriesForSession: vi.fn<
             BrowserALRuntimeStoresModule['deleteBrowserALRuntimeEntriesForSession']
@@ -90,13 +80,11 @@ const mocks = await vi.hoisted(async () => {
         refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() =>
             Promise.resolve({ clients: [], groups: [] })
         ),
-        loginToApi: vi.fn<ApiIntegrationModule['loginToApi']>(() =>
-            Promise.resolve(session)
-        ),
-        logoutFromApi: vi.fn<ApiIntegrationModule['logoutFromApi']>(() =>
+        loginToApi: vi.fn<AuthApiModule['loginToApi']>(() => Promise.resolve(session)),
+        logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() =>
             Promise.resolve({ loggedOut: true })
         ),
-        registerWithApi: vi.fn<ApiIntegrationModule['registerWithApi']>(() =>
+        registerWithApi: vi.fn<AuthApiModule['registerWithApi']>(() =>
             Promise.resolve({
                 clientId: 'client-new',
                 username: 'new-user',
@@ -152,11 +140,14 @@ vi.mock(
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
         listStateGroupEvents: mocks.listStateGroupEvents,
-        loginToApi: mocks.loginToApi,
-        logoutFromApi: mocks.logoutFromApi,
-        registerWithApi: mocks.registerWithApi,
     }),
 );
+
+vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<AuthApiModule> => ({
+    loginToApi: mocks.loginToApi,
+    logoutFromApi: mocks.logoutFromApi,
+    registerWithApi: mocks.registerWithApi,
+}));
 
 vi.mock(
     import('@shared-web/browser/api-workflows.ts'),
@@ -180,8 +171,7 @@ vi.mock(
 vi.mock(
     import('@shared-web/browser/browser-al-runtime-stores.ts'),
     (): Partial<BrowserALRuntimeStoresModule> => ({
-        deleteBrowserALRuntimeEntriesForSession:
-            mocks.deleteBrowserALRuntimeEntriesForSession,
+        deleteBrowserALRuntimeEntriesForSession: mocks.deleteBrowserALRuntimeEntriesForSession,
     }),
 );
 
@@ -339,7 +329,7 @@ describe('Rallar auth session compatibility', () => {
     it('passes signal and timeout options into auth login', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const signal = new AbortController().signal;
 
         await createRallarFacade().auth.login(
@@ -395,9 +385,7 @@ describe('Rallar auth session compatibility', () => {
             session: expiringSession,
         });
         mocks.readSession.mockImplementation(() =>
-            Date.now() >= expiringSession.expiresAtEpochMs
-                ? undefined
-                : expiringSession
+            Date.now() >= expiringSession.expiresAtEpochMs ? undefined : expiringSession
         );
         const facade = createRallarFacade();
         const authListener = vi.fn();
@@ -537,7 +525,7 @@ describe('Rallar auth session compatibility', () => {
     it('passes an explicit admin session into auth registration', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const signal = new AbortController().signal;
         const adminSession = {
             ...mocks.ctx.session,
@@ -574,7 +562,7 @@ describe('Rallar auth session compatibility', () => {
     it('can register and then log in with the new user', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
 
         await createRallarFacade().auth.registerAndLogin({
             username: 'new-user',
@@ -595,7 +583,7 @@ describe('Rallar auth session compatibility', () => {
     it('revokes the backend session when logging out', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const signal = new AbortController().signal;
 
         await createRallarFacade().auth.logout({ signal, timeoutMs: 123 });
@@ -710,7 +698,7 @@ describe('Rallar auth session compatibility', () => {
     it('closes WS through the queue-box service when logging out after connect', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const facade = createRallarFacade();
 
         await facade.connect();
@@ -728,7 +716,7 @@ describe('Rallar auth session compatibility', () => {
     it('disconnects every known RTC peer, including stale lane peers', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue([
             'peer-ready',
             'peer-stale',
@@ -778,9 +766,7 @@ describe('Rallar auth session compatibility', () => {
             },
         });
     });
-
 });
-
 
 function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
     return mocks.webSocketQueueBox
@@ -788,7 +774,6 @@ function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
         .filter(([callbackId]) => callbackId === 'rallar:ws:any-message')
         .at(-1)?.[1];
 }
-
 function createChannelHealth(
     input: Readonly<{
         peerId: string;
@@ -1023,11 +1008,7 @@ function createMediaStream(
         id,
         active: tracks.some((track) => track.readyState !== 'ended'),
         getTracks: vi.fn(() => [...tracks]),
-        getAudioTracks: vi.fn(() =>
-            tracks.filter((track) => track.kind === 'audio')
-        ),
-        getVideoTracks: vi.fn(() =>
-            tracks.filter((track) => track.kind === 'video')
-        ),
+        getAudioTracks: vi.fn(() => tracks.filter((track) => track.kind === 'audio')),
+        getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video')),
     } as unknown as MediaStream;
 }

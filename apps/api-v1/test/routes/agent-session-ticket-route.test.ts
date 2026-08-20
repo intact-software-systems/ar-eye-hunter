@@ -9,35 +9,47 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 
 const NOW_EPOCH_MS = Date.now();
+const ISSUE_REQUEST_ID = 'AgentIssueRequest_01234567';
+const CONSUME_REQUEST_ID = 'AgentConsumeRequest_012345';
 
 Deno.test('agent session ticket route rejects unauthenticated issue requests', async () => {
   const app = createApp({
     requireApiAuthSession: () => Promise.reject(new Error('Unauthorized: Missing bearer token')),
   });
 
-  const response = await app.request('/api/auth/agent-session-tickets', {
-    method: 'POST',
-    body: JSON.stringify({ agentIds: ['controller-01'] }),
-  });
+  const response = await app.request(
+    `/api/auth/agent-session-tickets/requests/${ISSUE_REQUEST_ID}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ agentIds: ['controller-01'] }),
+    },
+  );
 
   assert.equal(response.status, 401);
-  assert.deepEqual(await response.json(), {
-    error: 'Unauthorized: Missing bearer token',
-  });
+  assert.deepEqual(
+    await response.json(),
+    mutationFailure(
+      'authentication-required',
+      401,
+      'Unauthorized: Missing bearer token',
+    ),
+  );
 });
 
 Deno.test('agent session ticket route mints distinct same-user sessions and consumes a ticket once', async () => {
   const sessions = new Map<string, ConsumeAgentSessionTicketResponse>();
+  const consumedByRequest = new Map<string, ConsumeAgentSessionTicketResponse>();
   const app = createApp({
     requireApiAuthSession: () => Promise.resolve(createAuthSession()),
     appAuthInbox: ({
       issueAgentSessionTickets: (input: {
-        agents: readonly { agentId: string; sessionId: string }[];
+        agents: readonly { agentId: string; sessionId?: string }[];
         ticketExpiresAtEpochMs: number;
         sessionExpiresAtEpochMs: number;
       }) =>
         Promise.resolve(Either.ofRight({
-          tickets: input.agents.map(({ agentId, sessionId }) => {
+          tickets: input.agents.map(({ agentId, sessionId: candidateSessionId }) => {
+            const sessionId = candidateSessionId ?? `${agentId}-session`;
             const ticket = `ticket-for-${sessionId}-long-enough`;
             sessions.set(ticket, {
               clientId: 'alice-client',
@@ -54,29 +66,43 @@ Deno.test('agent session ticket route mints distinct same-user sessions and cons
             };
           }),
         })),
-      consumeAgentSessionTicket: (input: { ticket: string }) => {
+      consumeAgentSessionTicket: (input: { requestId: string; ticket: string }) => {
+        const replay = consumedByRequest.get(input.requestId);
+        if (replay) {
+          return Promise.resolve(Either.ofRight(replay));
+        }
         const session = sessions.get(input.ticket);
         if (!session) {
           return Promise.resolve(Either.ofLeft({
+            type: 'app-inbox-failure',
+            version: 'canonical.v2',
+            code: 'agent-session-ticket-invalid',
             message: 'Agent session ticket is invalid or expired.',
             status: 404,
+            issues: null,
+            denial: null,
+            retry: null,
           }));
         }
         sessions.delete(input.ticket);
+        consumedByRequest.set(input.requestId, session);
         return Promise.resolve(Either.ofRight(session));
       },
     }) as never,
     now: () => NOW_EPOCH_MS,
   });
 
-  const issueResponse = await app.request('/api/auth/agent-session-tickets', {
-    method: 'POST',
-    headers: {
-      authorization: 'Bearer operator-token',
-      'x-client-id': 'alice-client',
+  const issueResponse = await app.request(
+    `/api/auth/agent-session-tickets/requests/${ISSUE_REQUEST_ID}`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer operator-token',
+        'x-client-id': 'alice-client',
+      },
+      body: JSON.stringify({ agentIds: ['controller-01', 'controller-02'] }),
     },
-    body: JSON.stringify({ agentIds: ['controller-01', 'controller-02'] }),
-  });
+  );
   const issued = await issueResponse.json() as AgentSessionTicketResponse;
 
   assert.equal(issueResponse.status, 200);
@@ -89,10 +115,13 @@ Deno.test('agent session ticket route mints distinct same-user sessions and cons
   assert.notEqual(issued.tickets[0].sessionId, issued.tickets[1].sessionId);
   assert.ok(issued.tickets[0].ticket.length > 20);
 
-  const consumeResponse = await app.request('/api/auth/agent-session-tickets/consume', {
-    method: 'POST',
-    body: JSON.stringify({ ticket: issued.tickets[0].ticket }),
-  });
+  const consumeResponse = await app.request(
+    `/api/auth/agent-session-tickets/consume/requests/${CONSUME_REQUEST_ID}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ ticket: issued.tickets[0].ticket }),
+    },
+  );
   const consumed = await consumeResponse.json() as ConsumeAgentSessionTicketResponse;
 
   assert.equal(consumeResponse.status, 200);
@@ -103,15 +132,33 @@ Deno.test('agent session ticket route mints distinct same-user sessions and cons
   assert.equal(issued.tickets[0].expiresAtEpochMs, NOW_EPOCH_MS + 60_000);
   assert.equal(consumed.expiresAtEpochMs, NOW_EPOCH_MS + 86_400_000);
 
-  const repeatConsumeResponse = await app.request('/api/auth/agent-session-tickets/consume', {
-    method: 'POST',
-    body: JSON.stringify({ ticket: issued.tickets[0].ticket }),
-  });
+  const repeatConsumeResponse = await app.request(
+    `/api/auth/agent-session-tickets/consume/requests/${CONSUME_REQUEST_ID}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ ticket: issued.tickets[0].ticket }),
+    },
+  );
 
-  assert.equal(repeatConsumeResponse.status, 404);
-  assert.deepEqual(await repeatConsumeResponse.json(), {
-    error: 'Agent session ticket is invalid or expired.',
-  });
+  assert.equal(repeatConsumeResponse.status, 200);
+  assert.deepEqual(await repeatConsumeResponse.json(), consumed);
+
+  const differentRequestResponse = await app.request(
+    '/api/auth/agent-session-tickets/consume/requests/AgentConsumeDifferent_0123',
+    {
+      method: 'POST',
+      body: JSON.stringify({ ticket: issued.tickets[0].ticket }),
+    },
+  );
+  assert.equal(differentRequestResponse.status, 404);
+  assert.deepEqual(
+    await differentRequestResponse.json(),
+    mutationFailure(
+      'agent-session-ticket-invalid',
+      404,
+      'Agent session ticket is invalid or expired.',
+    ),
+  );
 });
 
 function createApp(
@@ -131,6 +178,19 @@ function createApp(
     ...dependencies,
   });
   return app;
+}
+
+function mutationFailure(code: string, status: number, message: string) {
+  return {
+    type: 'api-mutation-failure',
+    version: 'canonical.v1',
+    code,
+    status,
+    message,
+    issues: null,
+    denial: status === 401 ? { code, message, details: null } : null,
+    retry: null,
+  };
 }
 
 function createAuthSession(): IssuedAuthSession {

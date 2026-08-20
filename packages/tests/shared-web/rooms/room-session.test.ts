@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
-import { ApiHttpError } from '@shared-web/browser/api-integration.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 
 import {
   createRoomSnapshot,
@@ -71,16 +71,18 @@ it('refreshes a bound room with one tokenless durable point read', async () => {
   const fetchMock = vi.fn(async (
     _input: RequestInfo | URL,
     _init?: RequestInit,
-  ) => new Response(JSON.stringify(current), {
-    status: 200,
-    headers: {
-      'cache-control': 'no-store',
-      'content-type': 'application/json',
-      'rallar-state-source': 'durable',
-      'rallar-group-revision': String(current.causalRevision.groupRevision),
-      'rallar-presence-revision': String(current.causalRevision.presenceRevision),
-    },
-  }));
+  ) =>
+    new Response(JSON.stringify(current), {
+      status: 200,
+      headers: {
+        'cache-control': 'no-store',
+        'content-type': 'application/json',
+        'rallar-state-source': 'durable',
+        'rallar-group-revision': String(current.causalRevision.groupRevision),
+        'rallar-presence-revision': String(current.causalRevision.presenceRevision),
+      },
+    })
+  );
   vi.stubGlobal('fetch', fetchMock);
 
   const refreshed = await createRallarFacade().rooms.session(observed.group).refresh();
@@ -129,10 +131,13 @@ it('preserves a newer publication that races targeted 404 cleanup', async () => 
     },
   };
   seedRoomSnapshots([observed]);
-  vi.stubGlobal('fetch', vi.fn(async () => {
-    seedRoomSnapshots([newer]);
-    return new Response('missing', { status: 404 });
-  }));
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => {
+      seedRoomSnapshots([newer]);
+      return new Response('missing', { status: 404 });
+    }),
+  );
 
   const session = createRallarFacade().rooms.session(observed.group);
   await expect(session.refresh()).rejects.toBeInstanceOf(ApiHttpError);

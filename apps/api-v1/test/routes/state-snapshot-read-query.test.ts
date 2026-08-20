@@ -4,7 +4,7 @@ import {
   readClientSnapshotPointQuery,
   readGroupSnapshotPointQuery,
   StateSnapshotReadQueryError,
-} from '../../src/routes/state-snapshot-read-query.ts';
+} from '../../src/routes/state-snapshot-read/state-snapshot-read-query.ts';
 
 const INVALID_VALUES = [
   '',

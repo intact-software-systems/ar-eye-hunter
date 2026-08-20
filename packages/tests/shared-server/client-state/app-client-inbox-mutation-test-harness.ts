@@ -20,6 +20,10 @@ import {
   AppClientInboxService,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
+import {
+  toAuthenticatedClientMutationContextId,
+} from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import {
   type ClientMutationWritten,
   type ClientStateService,
@@ -44,19 +48,21 @@ export const CLIENT_STATE_TEST_SCOPE: StateScope = {
 };
 const TEST_AUTHORITIES = new WeakMap<AppClientInboxService, Map<string, IssuedAuthSession>>();
 
-export function requireRightSnapshot(result: Either<string, ClientStateWritten>): ClientSnapshot {
+export function requireRightSnapshot(
+  result: Either<AppInboxFailure, ClientStateWritten>,
+): ClientSnapshot {
   if (!result.right) {
-    throw new Error(result.left ?? 'Expected client app-inbox right result');
+    throw new Error(result.left?.message ?? 'Expected client app-inbox right result');
   }
 
   return requireClientStateWrittenSnapshot(result.right);
 }
 
 export function requireRightWritten(
-  result: Either<string, ClientStateWritten>,
+  result: Either<AppInboxFailure, ClientStateWritten>,
 ): ClientMutationWritten {
   if (!result.right) {
-    throw new Error(result.left ?? 'Expected client app-inbox right result');
+    throw new Error(result.left?.message ?? 'Expected client app-inbox right result');
   }
 
   return requireClientMutationWritten(result.right);
@@ -70,9 +76,9 @@ function requireClientMutationWritten(written: ClientStateWritten): ClientMutati
   const result = written.result as
     | ClientStateWritten['result']
     | {
-        left?: string;
-        right?: ClientMutationWritten;
-      };
+      left?: string;
+      right?: ClientMutationWritten;
+    };
 
   if ('fold' in result && typeof result.fold === 'function') {
     return result.fold(
@@ -101,10 +107,11 @@ export async function processAppInbox<V>(
     senderId?: string;
     data: V;
   },
-): Promise<Either<string, ClientStateWritten>> {
+): Promise<Either<AppInboxFailure, ClientStateWritten>> {
+  const authority = toTestIssuedAuthority(service, input);
   const resultPromise = service.processAuthenticatedEntryUntilCompletion(
-    input,
-    toTestIssuedAuthority(service, input),
+    toAuthenticatedClientTestEnqueue(input, authority),
+    authority,
   );
   await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
@@ -118,22 +125,20 @@ function toTestIssuedAuthority<V>(
     data: V;
   }>,
 ): IssuedAuthSession {
-  const data =
-    typeof input.data === 'object' && input.data !== null
-      ? Object.fromEntries(Object.entries(input.data))
-      : {};
-  const request =
-    typeof data.request === 'object' && data.request !== null
-      ? Object.fromEntries(Object.entries(data.request))
-      : {};
-  const principalId =
-    typeof data.principalId === 'string' ? data.principalId : (input.senderId ?? 'alice');
-  const sessionId =
-    typeof data.sessionId === 'string'
-      ? data.sessionId
-      : typeof request.actorSessionId === 'string'
-        ? request.actorSessionId
-        : `${principalId}-test-authority-session`;
+  const data = typeof input.data === 'object' && input.data !== null
+    ? Object.fromEntries(Object.entries(input.data))
+    : {};
+  const request = typeof data.request === 'object' && data.request !== null
+    ? Object.fromEntries(Object.entries(data.request))
+    : {};
+  const principalId = typeof data.principalId === 'string'
+    ? data.principalId
+    : (input.senderId ?? 'alice');
+  const sessionId = typeof data.sessionId === 'string'
+    ? data.sessionId
+    : typeof request.actorSessionId === 'string'
+    ? request.actorSessionId
+    : `${principalId}-test-authority-session`;
   let authorities = TEST_AUTHORITIES.get(service);
   if (!authorities) {
     authorities = new Map();
@@ -158,8 +163,42 @@ export async function processAuthenticatedClientMutation<V>(
     data: V;
   },
   authority: IssuedAuthSession,
-): Promise<Either<string, ClientStateWritten>> {
-  return await service.processAuthenticatedEntryUntilCompletion(input, authority);
+): Promise<Either<AppInboxFailure, ClientStateWritten>> {
+  return await service.processAuthenticatedEntryUntilCompletion(
+    toAuthenticatedClientTestEnqueue(input, authority),
+    authority,
+  );
+}
+
+function toAuthenticatedClientTestEnqueue<V>(
+  input: Readonly<{
+    type: AppInboxType;
+    topicId?: string;
+    resourceId?: string;
+    contextId?: string;
+    senderId?: string;
+    data: V;
+  }>,
+  authority: IssuedAuthSession,
+) {
+  const data = input.data as
+    & V
+    & Readonly<{
+      scope: StateScope;
+      principalId: string;
+      request: Readonly<{ requestId: string }>;
+    }>;
+  return {
+    ...input,
+    topicId: input.type,
+    resourceId: data.request.requestId,
+    contextId: toAuthenticatedClientMutationContextId({
+      scope: data.scope,
+      principalId: data.principalId,
+      callerClientId: authority.clientId,
+      callerSessionId: authority.sessionId,
+    }),
+  };
 }
 
 export function issuedSession(clientId: string, sessionId: string): IssuedAuthSession {

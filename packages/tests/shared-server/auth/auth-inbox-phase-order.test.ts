@@ -1,13 +1,13 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { describe, expect, it } from 'vitest';
 
 import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type { AuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { AuthInboxHandler } from '@shared-server/rallar-system/auth/inbox/auth-inbox-handler.ts';
 import {
-  AUTH_STATE_APP_INBOX_TOPIC,
   toAuthAppInboxType,
   toAuthCommandContextId,
 } from '@shared-server/rallar-system/auth/inbox/auth-app-inbox-routing.ts';
@@ -215,17 +215,17 @@ function createContext(
 ): AppInboxMessageContext {
   const enqueue = {
     type: toAuthAppInboxType(command),
-    topicId: AUTH_STATE_APP_INBOX_TOPIC,
+    topicId: toAuthAppInboxType(command),
     resourceId: command.requestId,
     contextId,
     data: command,
   };
   const entry: ResourceEntry = {
-    key: {
+    key: toAppQueueKey({
       topicId: enqueue.topicId,
       resourceId: enqueue.resourceId,
       contextId: enqueue.contextId,
-    },
+    }),
     resource: JSON.stringify(enqueue),
     typeId: EnqueuedType.APP_INBOX,
     audit: {

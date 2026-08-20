@@ -5,7 +5,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toRallarRoomSummary } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import type { ArenaConnection } from '../../../apps/ar-eye-hunter-v1/src/game/useRallarArena.ts';
+import type {
+    ArenaConnection,
+} from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts';
 import App from '../../../apps/ar-eye-hunter-v1/src/App.tsx';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
@@ -20,7 +22,7 @@ vi.mock('../../../apps/ar-eye-hunter-v1/src/game/BabylonArena.tsx', () => ({
     BabylonArena: () => createElement('div', { 'data-testid': 'arena-scene' }),
 }));
 
-vi.mock('../../../apps/ar-eye-hunter-v1/src/game/useRallarArena.ts', () => ({
+vi.mock('../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts', () => ({
     useRallarArena: () => mockArena.current,
 }));
 

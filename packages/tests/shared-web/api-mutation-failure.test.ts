@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ApiHttpError } from '@shared-web/browser/api-integration.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 
 describe('API mutation failure HTTP decoding', () => {
   it('exposes an exact canonical mutation failure from an HTTP error response', () => {

@@ -20,6 +20,9 @@ import {
   AppClientInboxService,
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import {
+  toAuthenticatedClientMutationContextId,
+} from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
+import {
   type ClientExpiredSessionsAppInboxPayload,
   type ClientSessionConnectAppInboxPayload,
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
@@ -64,21 +67,22 @@ it(
       serviceId: 'server-12345678',
     });
     const service = new AppClientInboxService(
-                      {
-                        inboxQueueReader: reader,
-                        resourceInboxRepository: queue,
-                        resourceInboxResultsRepository: results,
-                        database: database,
-                        clientStateService: clientStateService,
-                      },
-                      {
-                        serviceId: 'server-12345678',
-                      },
-                    );
+      {
+        inboxQueueReader: reader,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
+        database: database,
+        clientStateService: clientStateService,
+      },
+      {
+        serviceId: 'server-12345678',
+      },
+    );
     await seedClientExpirySession(service, reader, { expiresAtEpochMs, runtimeRepository });
 
-    const expired = await processClientInbox(reader, () =>
-      service.processExpiredSessions(expiresAtEpochMs + 1),
+    const expired = await processClientInbox(
+      reader,
+      () => service.processExpiredSessions(expiresAtEpochMs + 1),
     );
 
     expect(expired.right).toHaveLength(1);
@@ -304,8 +308,14 @@ async function seedClientExpirySession(
   const seeded = service.processAuthenticatedEntryUntilCompletion(
     {
       type: AppInboxType.CLIENT_SESSION_CONNECT,
+      topicId: AppInboxType.CLIENT_SESSION_CONNECT,
       resourceId: 'seed-client-expiry-session',
-      contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
+      contextId: toAuthenticatedClientMutationContextId({
+        scope: SCOPE,
+        principalId: 'alice',
+        callerClientId: authority.clientId,
+        callerSessionId: authority.sessionId,
+      }),
       senderId: 'alice',
       data: {
         scope: SCOPE,

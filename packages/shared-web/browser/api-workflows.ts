@@ -34,6 +34,7 @@ import {
   isStateWorkflowNotFoundError,
   requireStateWorkflowResult,
   tolerateStateWorkflowNotFound,
+  toApiMutationWorkflowRequestId,
   toStateWorkflowRequestId,
 } from '@shared-web/browser/state-workflow-support.ts';
 import type { StateGroupWorkflowValue } from '@shared-web/browser/rooms/room-group-state-workflows.ts';
@@ -203,11 +204,7 @@ export async function refreshStateHeartbeat(
   const heartbeatAtEpochMs = options.heartbeatAtEpochMs ?? Date.now();
   const expiresAtEpochMs =
     heartbeatAtEpochMs + (options.ttlMs ?? DEFAULT_STATE_HEARTBEAT_TTL_MSECS);
-  const clientHeartbeatRequestId = toStateWorkflowRequestId(
-    'client-session-heartbeat',
-    clientData.clientId,
-    clientData.sessionId,
-  );
+  const clientHeartbeatRequestId = toApiMutationWorkflowRequestId();
   const flow = CommandsOrchestrator.withPolicies<StateHeartbeatKey, StateHeartbeatWorkflowValue>(
     options.policies ?? {},
   );
@@ -343,11 +340,7 @@ async function heartbeatStateClientSessionWithPresenceRepair(
       connectedAtEpochMs: request.lastHeartbeatAtEpochMs,
       lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs,
       expiresAtEpochMs: request.expiresAtEpochMs,
-      requestId: toStateWorkflowRequestId(
-        'client-session-connect-repair',
-        clientData.clientId,
-        clientData.sessionId,
-      ),
+      requestId: toApiMutationWorkflowRequestId(),
     },
     scope,
     options,

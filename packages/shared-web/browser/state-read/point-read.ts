@@ -18,7 +18,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
 import { ApiHttpError } from '../api/http-error.ts';
-import type { ApiRequestOptions } from '../api-integration.ts';
+import type { ApiRequestOptions } from '../api/http-request.ts';
 import { emitBrowserStateReadDiagnostic } from './diagnostics.ts';
 
 export type ReadStateClientSnapshotOptions =
@@ -88,7 +88,9 @@ export async function readStateClientSnapshot(
       }
       const stateRevision = readRevisionHeader(headers, 'rallar-state-revision');
       if (stateRevision !== readClientStateRevision(snapshot)) {
-        throw new Error('Client snapshot response header revision does not match the body.');
+        throw new Error(
+          'Client snapshot response header revision does not match the body.',
+        );
       }
       return { snapshot, source, stateRevision };
     },

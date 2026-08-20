@@ -21,6 +21,9 @@ import {
   toClientMutationIssuedSessionAuthority,
   toUpsertPrincipalCommandInput,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
+import {
+  toAuthenticatedClientMutationContextId,
+} from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
@@ -57,8 +60,14 @@ describe('AppClientInbox authentication', () => {
     const pending = service.processAuthenticatedEntryUntilCompletion(
       {
         type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+        topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
         resourceId: 'malformed-client-result',
-        contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
+        contextId: toAuthenticatedClientMutationContextId({
+          scope: SCOPE,
+          principalId: 'alice',
+          callerClientId: authority.clientId,
+          callerSessionId: authority.sessionId,
+        }),
         senderId: authority.clientId,
         data: {
           scope: SCOPE,
@@ -89,7 +98,7 @@ describe('AppClientInbox authentication', () => {
 
     const result = await pending;
     expect(result.right).toBeUndefined();
-    expect(JSON.parse(result.left ?? '{}')).toEqual({
+    expect(result.left).toEqual({
       type: 'app-inbox-failure',
       version: 'canonical.v2',
       code: 'TypeError',
@@ -99,6 +108,43 @@ describe('AppClientInbox authentication', () => {
       denial: null,
       retry: null,
     });
+  });
+
+  it('rejects forged operation topics and contexts before enqueue', async () => {
+    const queue = new TestResourceInbox();
+    const authority = issuedSession('alice', 'alice-session');
+    const service = new AppClientInboxService(
+      {
+        inboxQueueReader: new InboxQueueReader(queue),
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: new TestResourceInboxResults(),
+        database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
+        clientStateService: createClientStateServiceStub(),
+      },
+      { serviceId: 'server-12345678' },
+    );
+    const enqueue = {
+      type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+      topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
+      resourceId: 'forged-client-context-request',
+      contextId:
+        'application=wrong:workspace=wrong:principal=alice:caller=alice:session=alice-session',
+      senderId: 'alice',
+      data: {
+        scope: SCOPE,
+        principalId: 'alice',
+        request: {
+          username: 'alice',
+          actorPrincipalId: 'alice',
+          actorSessionId: 'alice-session',
+          requestId: 'forged-client-context-request',
+        },
+      },
+    };
+
+    await expect(service.processAuthenticatedEntryUntilCompletion(enqueue, authority))
+      .rejects.toThrow(/operation|context|identity/i);
+    expect(await readEntries(queue)).toEqual([]);
   });
 
   it('does not trust a persisted Mallory actor claim for Alice authority', async () => {
@@ -212,7 +258,7 @@ describe('AppClientInbox authentication', () => {
     await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
     const result = await pending;
-    expect(result.left).toMatch(/expired|missing|revoked|authority|authenticated/i);
+    expect(result.left?.message).toMatch(/expired|missing|revoked|authority|authenticated/i);
     expect(harness.wasRevoked()).toBe(true);
     expect(
       await new ClientStateRepository(harness.runtimeRepository).readSnapshot({
@@ -278,7 +324,15 @@ async function createRevokedAuthorityRetryHarness() {
       serviceId: 'server-12345678',
     },
   );
-  return { alice, database, queue, reader, runtimeRepository, service, wasRevoked: () => revoked };
+  return {
+    alice,
+    database,
+    queue,
+    reader,
+    runtimeRepository,
+    service,
+    wasRevoked: () => revoked,
+  };
 }
 
 type RevokedAuthorityRetryHarness = Awaited<ReturnType<typeof createRevokedAuthorityRetryHarness>>;

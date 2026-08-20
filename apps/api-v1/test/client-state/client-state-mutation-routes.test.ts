@@ -4,7 +4,6 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import type { ClientStateWritten } from '@shared-server/rallar-system/services/client-state-service.ts';
 
 import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
 
@@ -16,6 +15,8 @@ import {
   TEST_SCOPE,
   toClientStateWritten,
 } from './client-state-route-test-runtime.ts';
+
+const REQUEST_ID = 'ClientMutationRequest_012345';
 
 Deno.test('malformed client REST mutations return terminal 400 before inbox enqueue', async () => {
   const processCalls: unknown[] = [];
@@ -85,7 +86,7 @@ Deno.test('malformed client REST mutations return terminal 400 before inbox enqu
   ] as const;
 
   for (const testCase of cases) {
-    const response = await app.request(testCase.path, {
+    const response = await app.request(`${testCase.path}/requests/${REQUEST_ID}`, {
       method: testCase.method,
       headers: {
         authorization: 'Bearer token',
@@ -94,7 +95,7 @@ Deno.test('malformed client REST mutations return terminal 400 before inbox enqu
       body: JSON.stringify(testCase.body),
     });
     assert.equal(response.status, 400, testCase.path);
-    assert.match((await response.json()).error, /Client|client/);
+    assert.match((await response.json()).message, /Client|client/);
   }
   assert.equal(processCalls.length, 0);
 });
@@ -146,7 +147,7 @@ Deno.test('client REST lifecycle accepts equal causal timestamp boundaries', asy
   ] as const;
 
   for (const testCase of cases) {
-    const response = await app.request(testCase.path, {
+    const response = await app.request(`${testCase.path}/requests/${REQUEST_ID}`, {
       method: testCase.method,
       headers: {
         authorization: 'Bearer token',
@@ -177,7 +178,7 @@ Deno.test('client REST mutation preserves explicit terminal idempotency 409', as
     },
   });
   const response = await createClientRouteApp(deps).request(
-    '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/principal',
+    `/api/state/apps/app-1/workspaces/workspace-1/clients/alice/principal/requests/${REQUEST_ID}`,
     {
       method: 'PUT',
       headers: {
@@ -185,7 +186,6 @@ Deno.test('client REST mutation preserves explicit terminal idempotency 409', as
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        requestId: 'same-request',
         username: 'alice',
         metadata: { beta: 2, alpha: 1 },
       }),
@@ -194,52 +194,16 @@ Deno.test('client REST mutation preserves explicit terminal idempotency 409', as
 
   assert.equal(response.status, 409);
   assert.deepEqual(await response.json(), {
-    error: 'Client mutation command differs for request same-request',
+    type: 'api-mutation-failure',
+    version: 'canonical.v1',
+    code: 'client-mutation-idempotency-conflict',
+    status: 409,
+    message: 'Client mutation command differs for request same-request',
+    issues: null,
+    denial: null,
+    retry: null,
   });
   assert.equal(processCount, 1);
-});
-
-Deno.test('client route adapter preserves a base-era AppInbox status code and message', async () => {
-  const toClientError = (
-    clientStateRoutes as
-      & typeof clientStateRoutes
-      & Readonly<{
-        toClientAppInboxError?: (failure: string) => Error;
-      }>
-  ).toClientAppInboxError;
-  assert.ok(toClientError);
-  const failure = JSON.stringify({
-    error: 'Client mutation rejected',
-    code: 'client-mutation-rejected',
-    message: 'Client mutation rejected',
-    status: 422,
-  });
-  const deps = createClientRouteDeps({
-    session: createAuthSession('alice'),
-    clientService: {},
-    processClientAppInbox: () => Promise.reject(toClientError(failure)),
-  });
-
-  const response = await createClientRouteApp(deps).request(
-    '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/principal',
-    {
-      method: 'PUT',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        requestId: 'legacy-client-failure',
-        username: 'alice',
-      }),
-    },
-  );
-
-  assert.equal(response.status, 422);
-  assert.deepEqual(await response.json(), {
-    error: 'Client mutation rejected',
-    code: 'client-mutation-rejected',
-  });
 });
 
 Deno.test('client mutation routes hydrate the receiving node cache from remotely processed results', async () => {
@@ -286,13 +250,11 @@ Deno.test('client mutation routes hydrate the receiving node cache from remotely
       listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
     },
     requireApiAuthSession: () => Promise.resolve(createAuthSession('alice')),
-    processClientAppInbox: <V>(
-      _input: AppInboxEnqueueInput<V>,
-    ): Promise<ClientStateWritten> =>
-      Promise.resolve({
+    processClientAppInbox: <V>(_input: AppInboxEnqueueInput<V>) =>
+      Promise.resolve(Either.ofRight({
         status: 'ok',
         result: Either.ofRight({ snapshot, event: null }),
-      }),
+      })),
     hydrateStateSyncSnapshotCaches: (input) => {
       hydrationInputs.push(input);
       cachedSnapshot = input.clients?.[0] ?? cachedSnapshot;
@@ -303,7 +265,8 @@ Deno.test('client mutation routes hydrate the receiving node cache from remotely
   });
 
   const response = await app.request(
-    '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/instances/instance-1/sessions/alice-session',
+    '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/instances/' +
+      `instance-1/sessions/alice-session/requests/${REQUEST_ID}`,
     {
       method: 'PUT',
       headers: {
@@ -311,7 +274,6 @@ Deno.test('client mutation routes hydrate the receiving node cache from remotely
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        requestId: 'connect-alice-session',
         generationId: 'generation-1',
         authenticatedAtEpochMs: 1,
         connectedAtEpochMs: 1,
@@ -354,7 +316,7 @@ Deno.test('client mutation routes preserve committed success when cache hydratio
     const app = createClientRouteApp(deps);
 
     const response = await app.request(
-      '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/principal',
+      `/api/state/apps/app-1/workspaces/workspace-1/clients/alice/principal/requests/${REQUEST_ID}`,
       {
         method: 'PUT',
         headers: {
@@ -362,7 +324,6 @@ Deno.test('client mutation routes preserve committed success when cache hydratio
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          requestId: 'upsert-alice-principal',
           username: 'alice',
         }),
       },

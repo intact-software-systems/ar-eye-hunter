@@ -39,3 +39,7 @@ export function isStateWorkflowNotFoundError(error: unknown): boolean {
 export function toStateWorkflowRequestId(operation: string, ...parts: readonly string[]): string {
   return [operation, ...parts, crypto.randomUUID()].join(':');
 }
+
+export function toApiMutationWorkflowRequestId(): string {
+  return crypto.randomUUID();
+}

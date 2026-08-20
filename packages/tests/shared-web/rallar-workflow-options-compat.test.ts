@@ -7,24 +7,20 @@ import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnect
 
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
+type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
-type RoomGroupStateWorkflowsModule = typeof import(
-    '@shared-web/browser/rooms/room-group-state-workflows.ts'
-);
-type RoomGroupStateMutationWorkflowsModule = typeof import(
-    '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts'
-);
-type RoomMembershipGroupStateWorkflowsModule = typeof import(
-    '@shared-web/browser/rooms/room-membership-group-state-workflows.ts'
-);
+type RoomGroupStateWorkflowsModule =
+    typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
+type RoomGroupStateMutationWorkflowsModule =
+    typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
+type RoomMembershipGroupStateWorkflowsModule =
+    typeof import('@shared-web/browser/rooms/room-membership-group-state-workflows.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
-type ClientStateSnapshotsRepositoryModule = typeof import(
-    '@shared/repository/client-state-snapshots-repository.ts'
-);
-type GroupStateSnapshotsRepositoryModule = typeof import(
-    '@shared/repository/group-state-snapshots-repository.ts'
-);
+type ClientStateSnapshotsRepositoryModule =
+    typeof import('@shared/repository/client-state-snapshots-repository.ts');
+type GroupStateSnapshotsRepositoryModule =
+    typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
 const CLIENT_REPOSITORY_MISSING_MESSAGE =
     'Repository not found: shared.repository.client-state-snapshots';
@@ -51,12 +47,8 @@ const mocks = await vi.hoisted(async () => {
         webSocketClient: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
         clearSession: vi.fn<AuthModule['clearSession']>(),
         clearMiddleware: vi.fn<AppContextModule['clearMiddleware']>(),
-        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() =>
-            Promise.resolve()
-        ),
-        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() =>
-            Promise.resolve(ctx)
-        ),
+        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
+        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn<AppContextModule['isMiddlewareReady']>(() => false),
         createAndJoinStateGroup: vi.fn<
             RoomGroupStateWorkflowsModule['createAndJoinStateGroup']
@@ -100,9 +92,7 @@ const mocks = await vi.hoisted(async () => {
         transferStateGroupOwnership: vi.fn<
             RoomMembershipGroupStateWorkflowsModule['transferStateGroupOwnership']
         >(() => Promise.reject(new Error('room owner transfer not mocked'))),
-        loginToApi: vi.fn<ApiIntegrationModule['loginToApi']>(() =>
-            Promise.resolve(ctx.session)
-        ),
+        loginToApi: vi.fn<AuthApiModule['loginToApi']>(() => Promise.resolve(ctx.session)),
         listStateClientEvents: vi.fn<ApiIntegrationModule['listStateClientEvents']>(() =>
             Promise.reject(new Error('client events not mocked'))
         ),
@@ -115,10 +105,10 @@ const mocks = await vi.hoisted(async () => {
         listStateGroupEventPage: vi.fn<ApiIntegrationModule['listStateGroupEventPage']>(
             () => Promise.reject(new Error('group event page not mocked')),
         ),
-        logoutFromApi: vi.fn<ApiIntegrationModule['logoutFromApi']>(() =>
+        logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() =>
             Promise.resolve({ loggedOut: true })
         ),
-        registerWithApi: vi.fn<ApiIntegrationModule['registerWithApi']>(() =>
+        registerWithApi: vi.fn<AuthApiModule['registerWithApi']>(() =>
             Promise.resolve({
                 clientId: 'client-new',
                 username: 'new-user',
@@ -169,11 +159,14 @@ vi.mock(
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
         listStateGroupEvents: mocks.listStateGroupEvents,
-        loginToApi: mocks.loginToApi,
-        logoutFromApi: mocks.logoutFromApi,
-        registerWithApi: mocks.registerWithApi,
     }),
 );
+
+vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<AuthApiModule> => ({
+    loginToApi: mocks.loginToApi,
+    logoutFromApi: mocks.logoutFromApi,
+    registerWithApi: mocks.registerWithApi,
+}));
 
 vi.mock(
     import('@shared-web/browser/api-workflows.ts'),
@@ -382,7 +375,7 @@ describe('Rallar workflow options compatibility', () => {
     it('passes signal and timeout options into connect and room refresh workflows', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const signal = new AbortController().signal;
         const scope = {
             applicationId: 'app-1',
@@ -412,7 +405,7 @@ describe('Rallar workflow options compatibility', () => {
     it('passes retry options and retry classification into room workflows', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const snapshot = createGroupSnapshot('room-1', ['session-1']);
         mocks.joinStateGroup.mockResolvedValue(snapshot);
 
@@ -515,7 +508,7 @@ describe('Rallar workflow options compatibility', () => {
     it('uses default retry attempts for room workflows', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const snapshot = createGroupSnapshot('room-1', ['session-1']);
         const facade = createRallarFacade();
         facade.setDefaults({
@@ -675,14 +668,16 @@ describe('Rallar workflow options compatibility', () => {
             '@shared-web/browser/rallar.ts'
         );
 
-        await expect(createRallarFacade().rooms.join({
-            roomId: 'room-a',
-            roomRef: {
-                applicationId: 'app-1',
-                workspaceId: 'workspace-1',
-                groupId: 'room-b',
-            },
-        })).rejects.toThrow('roomId must match roomRef.groupId');
+        await expect(
+            createRallarFacade().rooms.join({
+                roomId: 'room-a',
+                roomRef: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: 'room-b',
+                },
+            }),
+        ).rejects.toThrow('roomId must match roomRef.groupId');
 
         expect(mocks.joinStateGroup).not.toHaveBeenCalled();
     });
@@ -810,9 +805,11 @@ describe('Rallar workflow options compatibility', () => {
         mockGroupSnapshot(oldRoom);
         mocks.createAndJoinStateGroup.mockRejectedValueOnce(new Error('create failed'));
 
-        await expect(createRallarFacade().rooms.createAndSwitch({
-            displayName: 'New Room',
-        })).rejects.toThrow('create failed');
+        await expect(
+            createRallarFacade().rooms.createAndSwitch({
+                displayName: 'New Room',
+            }),
+        ).rejects.toThrow('create failed');
 
         expect(mocks.leaveStateGroup).not.toHaveBeenCalled();
     });
@@ -897,18 +894,20 @@ describe('Rallar workflow options compatibility', () => {
         };
         const snapshot = createGroupSnapshot('room-1', ['session-1']);
         const nextSnapshot = withSnapshotVersion(snapshot, 2);
-        for (const workflow of [
-            mocks.updateStateGroupDetails,
-            mocks.archiveStateGroup,
-            mocks.deleteStateGroup,
-            mocks.createStateGroupInvite,
-            mocks.acceptStateGroupInvite,
-            mocks.removeStateGroupMember,
-            mocks.banStateGroupMember,
-            mocks.unbanStateGroupMember,
-            mocks.setStateGroupMemberRole,
-            mocks.transferStateGroupOwnership,
-        ]) {
+        for (
+            const workflow of [
+                mocks.updateStateGroupDetails,
+                mocks.archiveStateGroup,
+                mocks.deleteStateGroup,
+                mocks.createStateGroupInvite,
+                mocks.acceptStateGroupInvite,
+                mocks.removeStateGroupMember,
+                mocks.banStateGroupMember,
+                mocks.unbanStateGroupMember,
+                mocks.setStateGroupMemberRole,
+                mocks.transferStateGroupOwnership,
+            ]
+        ) {
             workflow.mockResolvedValue(nextSnapshot);
         }
         const signal = new AbortController().signal;
@@ -1063,14 +1062,16 @@ describe('Rallar workflow options compatibility', () => {
             '@shared-web/browser/rallar.ts'
         );
 
-        await expect(createRallarFacade().rooms.removeMember({
-            roomId: 'room-a',
-            roomRef: {
-                applicationId: 'app-1',
-                workspaceId: 'workspace-1',
-                groupId: 'room-b',
-            },
-        }, 'member-1')).rejects.toThrow('roomId must match roomRef.groupId');
+        await expect(
+            createRallarFacade().rooms.removeMember({
+                roomId: 'room-a',
+                roomRef: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: 'room-b',
+                },
+            }, 'member-1'),
+        ).rejects.toThrow('roomId must match roomRef.groupId');
 
         expect(mocks.removeStateGroupMember).not.toHaveBeenCalled();
     });
@@ -1078,7 +1079,7 @@ describe('Rallar workflow options compatibility', () => {
     it('passes custom data-channel lanes into middleware connect', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const lanes = [
             {
                 id: 'realtime',
@@ -1137,7 +1138,7 @@ describe('Rallar workflow options compatibility', () => {
     it('keeps the legacy scope shorthand for refresh operations', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const scope = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -1151,7 +1152,7 @@ describe('Rallar workflow options compatibility', () => {
     it('ignores primitive refresh input for state scope parsing', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
 
         await createRallarFacade().rooms.refresh(123 as unknown as never);
 
@@ -1162,7 +1163,7 @@ describe('Rallar workflow options compatibility', () => {
         vi.useFakeTimers();
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const deferred = createDeferred<ApiMiddleware>();
         mocks.initMiddleware.mockReturnValueOnce(deferred.promise);
         const facade = createRallarFacade();
@@ -1183,7 +1184,7 @@ describe('Rallar workflow options compatibility', () => {
     it('does not leave the current room when joining the next room fails', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(
             (sessionId) => {
                 if (sessionId === 'session-1') {
@@ -1205,9 +1206,7 @@ describe('Rallar workflow options compatibility', () => {
 
         expect(mocks.leaveStateGroup).not.toHaveBeenCalled();
     });
-
 });
-
 
 function mockClientRepositoryMissing(): void {
     const throwMissing = (): never => {
@@ -1216,7 +1215,6 @@ function mockClientRepositoryMissing(): void {
     mocks.findClientStateSnapshotByPrincipalId.mockImplementation(throwMissing);
     mocks.getAllClientStateSnapshots.mockImplementation(throwMissing);
 }
-
 function mockGroupRepositoryMissing(): void {
     const throwMissing = (): never => {
         throw new Error(GROUP_REPOSITORY_MISSING_MESSAGE);

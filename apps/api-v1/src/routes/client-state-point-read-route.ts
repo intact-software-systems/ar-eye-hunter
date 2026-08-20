@@ -9,8 +9,8 @@ import type {
 import {
   readClientSnapshotPointQuery,
   StateSnapshotReadQueryError,
-} from './state-snapshot-read-query.ts';
-import { writeClientSnapshotHeaders } from './state-snapshot-read-response.ts';
+} from './state-snapshot-read/state-snapshot-read-query.ts';
+import { writeClientSnapshotHeaders } from './state-snapshot-read/state-snapshot-read-response.ts';
 
 export type ClientStatePointRead = (
   ref: ClientPrincipalRef,

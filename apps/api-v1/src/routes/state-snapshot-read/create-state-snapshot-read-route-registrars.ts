@@ -1,6 +1,7 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 import type {
   AppInboxEnqueueInput,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
@@ -10,6 +11,7 @@ import type {
 import type {
   ClientStateWritten,
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 import type {
   GroupStateInboxDurableResult,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
@@ -20,11 +22,11 @@ import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
-import type { ApiV1Runtime } from '../composition/api-v1-runtime.ts';
-import { toGroupAppInboxError } from '../group-state/group-state-route-errors.ts';
-import type { GroupStateRouteAuthSession } from '../group-state/group-state-route-contracts.ts';
-import * as groupStateRoutes from '../group-state/register-group-state-routes.ts';
-import * as clientStateRoutes from './client-state-routes.ts';
+import type { ApiV1Runtime } from '../../composition/api-v1-runtime.ts';
+import { toGroupAppInboxError } from '../../group-state/group-state-route-errors.ts';
+import type { GroupStateRouteAuthSession } from '../../group-state/group-state-route-contracts.ts';
+import * as groupStateRoutes from '../../group-state/register-group-state-routes.ts';
+import * as clientStateRoutes from '../client-state-routes.ts';
 
 export interface ApiV1StateSnapshotRouteRuntime {
   readonly authSessionRepository: object;
@@ -95,16 +97,9 @@ export function createStateSnapshotReadRouteRegistrars<
         processClientAppInbox: async <V>(
           enqueue: AppInboxEnqueueInput<V>,
           authority: IssuedAuthSession,
-        ): Promise<ClientStateWritten> => {
-          const result = await runtime.appClientInboxService
-            .processAuthenticatedEntryUntilCompletion(enqueue, authority);
-          return result.fold(
-            (error) => {
-              throw clientStateRoutes.toClientAppInboxError(error);
-            },
-            (value) => value,
-          );
-        },
+        ): Promise<Either<AppInboxFailure, ClientStateWritten>> =>
+          await runtime.appClientInboxService
+            .processAuthenticatedEntryUntilCompletion(enqueue, authority),
         readClientSnapshot: (ref, options) =>
           runtime.clientRestSnapshotReadSelector.read(ref, options),
       }),

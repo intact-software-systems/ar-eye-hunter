@@ -67,11 +67,8 @@ Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async ()
       }),
     readClientSnapshot: () => Promise.resolve({ status: 'not-found', source: 'durable' }),
     processClientAppInbox: async (input) => {
-      const result = await service.processEntryUntilCompletion(input);
-      return result.fold(
-        (failure) => {
-          throw clientStateRoutes.toClientAppInboxError(failure);
-        },
+      return await service.processEntryUntilCompletionResult(
+        input,
         () => {
           directMutationFallbacks += 1;
           throw new Error('Unexpected direct mutation fallback');
@@ -81,16 +78,21 @@ Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async ()
   });
 
   const response = await app.request(
-    '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/principal',
+    '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/principal/requests/' +
+      'TimeoutMutationRequest_0123',
     {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ requestId: 'timeout-command', username: 'alice' }),
+      body: JSON.stringify({ username: 'alice' }),
     },
   );
 
   assert.equal(response.status, 503);
-  assert.equal((await response.json()).code, 'app-inbox-unavailable');
+  const failure = await response.json();
+  assert.equal(failure.code, 'app-inbox-unavailable');
+  assert.equal(failure.type, 'api-mutation-failure');
+  assert.equal(failure.version, 'canonical.v1');
+  assert.equal(failure.retry.kind, 'unavailable');
   assert.equal(directMutationFallbacks, 0);
   const [key] = await queue.getAllKeys();
   if (key === undefined) {

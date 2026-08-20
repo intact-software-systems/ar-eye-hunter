@@ -8,10 +8,13 @@ import type {
 } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type { AuthMutationService } from '../auth-mutation-service.ts';
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
+import { constantTimeAuthDigestEqual } from '../credentials/constant-time-auth-digest-equal.ts';
 import { hashAuthSecret } from '../credentials/hash-auth-secret.ts';
 import type {
   AuthMutationCommand,
@@ -45,6 +48,14 @@ import {
   toAuthCommandSenderId,
 } from './auth-app-inbox-routing.ts';
 import { AuthInboxHandler } from './auth-inbox-handler.ts';
+import { validateAppInboxCommandIdentity } from '../../services/app-inbox-command-identity.ts';
+
+interface AuthReplayInboxReader {
+  findAllByTopicAndResourceId(
+    topicId: string,
+    resourceId: string,
+  ): Promise<readonly ResourceEntry[]>;
+}
 
 export { AUTH_STATE_APP_INBOX_TOPIC, toAuthAppInboxType } from './auth-app-inbox-routing.ts';
 
@@ -61,7 +72,7 @@ const AUTH_TYPES = [
 export namespace AppAuthInboxService {
   export interface Dependencies {
     readonly inboxQueueReader: InboxQueueReader;
-    readonly resourceInboxRepository: AppInboxService.InboxRepository;
+    readonly resourceInboxRepository: AppInboxService.InboxRepository & AuthReplayInboxReader;
     readonly resourceInboxResultsRepository: AppInboxService.ResultRepository;
     readonly database: PSqlSql;
     readonly authMutationService: AuthMutationService;
@@ -83,11 +94,15 @@ export namespace AppAuthInboxService {
 
 export class AppAuthInboxService extends AppInboxService {
   private readonly authInboxHandler: AuthInboxHandler;
+  private readonly replayInboxReader: AuthReplayInboxReader;
 
   public readonly authMutationService: AuthMutationService;
   public readonly credentialIssuer: AuthCredentialIssuer;
 
-  constructor(dependencies: AppAuthInboxService.Dependencies, config: AppAuthInboxService.Config) {
+  constructor(
+    dependencies: AppAuthInboxService.Dependencies,
+    config: AppAuthInboxService.Config,
+  ) {
     super(
       {
         inboxQueueReader: dependencies.inboxQueueReader,
@@ -105,6 +120,7 @@ export class AppAuthInboxService extends AppInboxService {
     );
     this.authMutationService = dependencies.authMutationService;
     this.credentialIssuer = dependencies.credentialIssuer;
+    this.replayInboxReader = dependencies.resourceInboxRepository;
     this.authInboxHandler = new AuthInboxHandler({
       mutationService: dependencies.authMutationService,
       credentialIssuer: dependencies.credentialIssuer,
@@ -155,7 +171,7 @@ export class AppAuthInboxService extends AppInboxService {
       >(
         {
           type: toAuthAppInboxType(decoded),
-          topicId: AUTH_STATE_APP_INBOX_TOPIC,
+          topicId: toAuthAppInboxType(decoded),
           resourceId: decoded.requestId,
           contextId: toAuthCommandContextId(decoded),
           senderId: toAuthCommandSenderId(decoded),
@@ -184,16 +200,23 @@ export class AppAuthInboxService extends AppInboxService {
   }
 
   async issueSession(
-    input: AppAuthInboxService.RequestFacts &
-      Readonly<{
+    input:
+      & AppAuthInboxService.RequestFacts
+      & Readonly<{
         clientId: string;
         username: string;
-        sessionId: string;
+        sessionId?: string;
         expiresAtEpochMs: number;
         authority: IssueAuthSessionCommand['authority'];
       }>,
   ): Promise<Either<AppInboxFailure, LoginResponse>> {
-    const accessToken = await this.credentialIssuer.issueAccessToken(input.sessionId);
+    const sessionId = input.sessionId ?? await toAuthServiceDeterministicId(
+      'session',
+      input.requestId,
+      input.authority.normalizedUsername,
+      input.clientId,
+    );
+    const accessToken = await this.credentialIssuer.issueAccessToken(sessionId);
     return await this.processAuthCommandUntilCompletion({
       version: 1,
       kind: 'issue-session',
@@ -203,7 +226,7 @@ export class AppAuthInboxService extends AppInboxService {
       session: {
         clientId: input.clientId,
         username: input.username,
-        sessionId: input.sessionId,
+        sessionId,
         accessTokenDigest: await hashAuthSecret(accessToken),
         issuedAtEpochMs: input.capturedAtEpochMs,
         expiresAtEpochMs: input.expiresAtEpochMs,
@@ -230,9 +253,47 @@ export class AppAuthInboxService extends AppInboxService {
     });
   }
 
+  async replayLogoutSessionWithCredentialProof(
+    input: Readonly<{
+      requestId: string;
+      clientId: string;
+      accessToken: string;
+    }>,
+  ): Promise<Either<AppInboxFailure, LogoutResponse> | null> {
+    const presentedDigest = await hashAuthSecret(input.accessToken);
+    const entries = await this.replayInboxReader.findAllByTopicAndResourceId(
+      AppInboxType.AUTH_SESSION_LOGOUT,
+      input.requestId,
+    );
+    const matchingCommands: LogoutAuthSessionCommand[] = [];
+    for (const entry of entries) {
+      const command = readAuthReplayCommand(entry, AppInboxType.AUTH_SESSION_LOGOUT);
+      if (command === null) {
+        constantTimeAuthDigestEqual(presentedDigest, '0'.repeat(43));
+        continue;
+      }
+      const proofMatches = constantTimeAuthDigestEqual(
+        presentedDigest,
+        command?.kind === 'logout-session' ? command.expected.accessTokenDigest : '0'.repeat(43),
+      );
+      if (
+        proofMatches &&
+        command?.kind === 'logout-session' &&
+        command.expected.clientId === input.clientId
+      ) {
+        matchingCommands.push(command);
+      }
+    }
+    if (matchingCommands.length !== 1) {
+      return null;
+    }
+    return await this.processAuthCommandUntilCompletion(matchingCommands[0]);
+  }
+
   async issueWebSocketTicket(
-    input: AppAuthInboxService.RequestFacts &
-      Readonly<{
+    input:
+      & AppAuthInboxService.RequestFacts
+      & Readonly<{
         session: IssuedAuthSession;
         expiresAtEpochMs: number;
       }>,
@@ -258,8 +319,9 @@ export class AppAuthInboxService extends AppInboxService {
   }
 
   async consumeWebSocketTicket(
-    input: AppAuthInboxService.RequestFacts &
-      Readonly<{
+    input:
+      & AppAuthInboxService.RequestFacts
+      & Readonly<{
         ticket: string;
         expectedSessionId: string;
       }>,
@@ -275,25 +337,32 @@ export class AppAuthInboxService extends AppInboxService {
   }
 
   async issueAgentSessionTickets(
-    input: AppAuthInboxService.RequestFacts &
-      Readonly<{
+    input:
+      & AppAuthInboxService.RequestFacts
+      & Readonly<{
         session: IssuedAuthSession;
         sessionExpiresAtEpochMs: number;
         ticketExpiresAtEpochMs: number;
-        agents: readonly Readonly<{ agentId: string; sessionId: string }>[];
+        agents: readonly Readonly<{ agentId: string; sessionId?: string }>[];
       }>,
   ): Promise<Either<AppInboxFailure, AgentSessionTicketResponse>> {
     const tickets = await Promise.all(
       input.agents.map(async (agent) => {
-        const accessToken = await this.credentialIssuer.issueAccessToken(agent.sessionId);
+        const sessionId = agent.sessionId ?? await toAuthServiceDeterministicId(
+          'agent-session',
+          input.requestId,
+          input.session.clientId,
+          agent.agentId,
+        );
+        const accessToken = await this.credentialIssuer.issueAccessToken(sessionId);
         const ticket = await this.credentialIssuer.issueAgentTicket(
           input.requestId,
           agent.agentId,
-          agent.sessionId,
+          sessionId,
         );
         return {
           agentId: agent.agentId,
-          sessionId: agent.sessionId,
+          sessionId,
           accessTokenDigest: await hashAuthSecret(accessToken),
           ticketDigest: await hashAuthSecret(ticket),
           clientId: input.session.clientId,
@@ -324,12 +393,69 @@ export class AppAuthInboxService extends AppInboxService {
   async consumeAgentSessionTicket(
     input: AppAuthInboxService.RequestFacts & Readonly<{ ticket: string }>,
   ): Promise<Either<AppInboxFailure, ConsumeAgentSessionTicketResponse>> {
+    const ticketDigest = await hashAuthSecret(input.ticket);
+    const entries = await this.replayInboxReader.findAllByTopicAndResourceId(
+      AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME,
+      input.requestId,
+    );
+    const matchingCommands: ConsumeAuthAgentTicketCommand[] = [];
+    for (const entry of entries) {
+      const command = readAuthReplayCommand(
+        entry,
+        AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME,
+      );
+      const expectedDigest = command?.kind === 'consume-agent-ticket'
+        ? command.ticketDigest
+        : '0'.repeat(43);
+      if (
+        constantTimeAuthDigestEqual(ticketDigest, expectedDigest) &&
+        command?.kind === 'consume-agent-ticket'
+      ) {
+        matchingCommands.push(command);
+      }
+    }
+    if (matchingCommands.length === 1) {
+      return await this.processAuthCommandUntilCompletion(matchingCommands[0]);
+    }
     return await this.processAuthCommandUntilCompletion({
       version: 1,
       kind: 'consume-agent-ticket',
       requestId: input.requestId,
       capturedAtEpochMs: input.capturedAtEpochMs,
-      ticketDigest: await hashAuthSecret(input.ticket),
+      ticketDigest,
     });
   }
+}
+
+function readAuthReplayCommand(
+  entry: ResourceEntry,
+  operation: AppInboxType,
+): AuthMutationCommand | null {
+  const validation = validateAppInboxCommandIdentity(entry);
+  if (!validation.valid || validation.identity.operation !== operation) {
+    return null;
+  }
+  try {
+    const command = decodeAuthMutationCommand(validation.command.data);
+    const expectedKey = toAppQueueKey({
+      topicId: toAuthAppInboxType(command),
+      resourceId: command.requestId,
+      contextId: toAuthCommandContextId(command),
+    });
+    return expectedKey.topicId === entry.key.topicId &&
+        expectedKey.resourceId === entry.key.resourceId &&
+        expectedKey.contextId === entry.key.contextId
+      ? command
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function toAuthServiceDeterministicId(
+  kind: 'session' | 'agent-session',
+  ...identity: readonly string[]
+): Promise<string> {
+  const digest = await hashAuthSecret(JSON.stringify([kind, ...identity]));
+  return `${kind}-${digest.slice(0, 24)}`;
 }

@@ -4,7 +4,7 @@ import {
     type RallarApiClientConfig,
     readApiBaseUrl,
 } from '@shared-web/browser/api-client-config.ts';
-import * as api from '@shared-web/browser/api-integration.ts';
+import * as authApi from '@shared-web/browser/auth/session-http-api.ts';
 import {
     type ApiMiddleware,
     initMiddleware,
@@ -52,12 +52,7 @@ import type {
     RegisterRequest,
     RegisterResponse,
 } from '@shared/api/api-config.ts';
-import {
-    clearSession,
-    isLoggedIn,
-    readSession,
-    writeSession,
-} from '@shared/api/auth.ts';
+import { clearSession, isLoggedIn, readSession, writeSession } from '@shared/api/auth.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
@@ -324,10 +319,11 @@ export function createRallarSessionController(
             if (endOptions.revoke && session) {
                 try {
                     await runRallarCommand(
-                        (signal) => api.logoutFromApi({
-                            signal,
-                            authSession: session,
-                        }),
+                        (signal) =>
+                            authApi.logoutFromApi({
+                                signal,
+                                authSession: session,
+                            }),
                         endOptions.operationOptions ?? {},
                     );
                 } catch (error) {
@@ -397,7 +393,7 @@ export function createRallarSessionController(
         ): Promise<LoginResponse> => {
             const operationOptions = resolveOperationOptions(authOptions);
             const response = await runRallarCommand(
-                (signal) => api.loginToApi(request, { signal }),
+                (signal) => authApi.loginToApi(request, { signal }),
                 operationOptions,
             );
             if (options.connectionRuntime.readMiddleware() || isMiddlewareReady()) {
@@ -421,12 +417,13 @@ export function createRallarSessionController(
         ): Promise<RegisterResponse> => {
             const operationOptions = resolveOperationOptions(registerOptions);
             return await runRallarCommand(
-                (signal) => api.registerWithApi(request, {
-                    signal,
-                    authSession: hasOwn(operationOptions, 'adminSession')
-                        ? operationOptions.adminSession
-                        : undefined,
-                }),
+                (signal) =>
+                    authApi.registerWithApi(request, {
+                        signal,
+                        authSession: hasOwn(operationOptions, 'adminSession')
+                            ? operationOptions.adminSession
+                            : undefined,
+                    }),
                 operationOptions,
             );
         },
@@ -479,12 +476,10 @@ export function createRallarSessionController(
             }
             configureApiClient({ apiBaseUrl: nextApiBaseUrl });
         },
-        setDefaults: (defaults?: RallarDefaults) =>
-            options.connectionRuntime.setDefaults(defaults),
+        setDefaults: (defaults?: RallarDefaults) => options.connectionRuntime.setDefaults(defaults),
         defaults: () => options.connectionRuntime.defaults(),
         connect,
-        start: async (startOptions: RallarStartOptions = {}) =>
-            await options.start(startOptions),
+        start: async (startOptions: RallarStartOptions = {}) => await options.start(startOptions),
         disconnect,
         status: () => options.connectionRuntime.readConnectState(),
         isConnected: () =>
@@ -562,13 +557,9 @@ function shutdownApiMiddleware(
         }
     });
     runShutdownStep(() => ctx.middleware.rtcRxStreamer.stopLocalMedia('all'));
-    runShutdownStep(() =>
-        ctx.middleware.webRtcOverlayMulticastManager?.dispose?.()
-    );
+    runShutdownStep(() => ctx.middleware.webRtcOverlayMulticastManager?.dispose?.());
     runShutdownStep(() => ctx.middleware.qboxEngine.stop());
-    runShutdownStep(() =>
-        ctx.middleware.webSocketQueueBox.close(1000, reason)
-    );
+    runShutdownStep(() => ctx.middleware.webSocketQueueBox.close(1000, reason));
 }
 
 function runShutdownStep(step: () => void): void {

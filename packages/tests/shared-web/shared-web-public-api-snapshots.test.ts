@@ -644,6 +644,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'updateStateGroupMetadata',
             ],
             types: [
+                'ApiRequestOptions',
                 'RefreshStateHeartbeatOptions',
                 'RefreshStateHeartbeatResult',
                 'StateGroupWorkflowValue',
@@ -654,7 +655,11 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
             starExports: [
                 './browser/api-client-config.ts',
                 './browser/api-integration.ts',
+                './browser/api/http-error.ts',
                 './browser/app-context.ts',
+                './browser/auth/agent-session-ticket-http-api.ts',
+                './browser/auth/session-http-api.ts',
+                './browser/auth/websocket-ticket-http-api.ts',
                 './browser/browser-al-runtime-stores.ts',
                 './browser/browser-cache-repositories.ts',
                 './browser/browser-queuebox.ts',

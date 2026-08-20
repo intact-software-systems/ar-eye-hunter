@@ -5,12 +5,13 @@ import type {
   AppAuthInboxService,
 } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import {
+  readApiAuthCredentialProof,
   requireApiAuthSession as requireSharedApiAuthSession,
   requireWsAuthSession as requireSharedWsAuthSession,
   toAuthErrorResponse,
   toAuthSession,
 } from '@shared-server/http/request-auth-service.ts';
-export { toAuthErrorResponse, toAuthSession };
+export { readApiAuthCredentialProof, toAuthErrorResponse, toAuthSession };
 
 export async function requireApiAuthSession(
   req: {
