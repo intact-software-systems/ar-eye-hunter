@@ -4,17 +4,11 @@ import type {
 } from './mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from './mutation/orchestration/compute-group-mutation.ts';
 import { validateGroupMutation } from './mutation/state-validation/validate-group-mutation.ts';
-// prettier-ignore
-import {
-  validateGroupMutationCommand,
-} from './mutation/command-validation/validate-group-mutation-command.ts';
+import { validateGroupMutationCommand } from './mutation/command-validation/validate-group-mutation-command.ts';
 import { GroupStateRepository } from './persistence/group-state-repository.ts';
 import { readGroupMutation } from './mutation/read/read-group-mutation.ts';
 import { writeGroupMutation } from './mutation/write/write-group-mutation.ts';
-// prettier-ignore
-import {
-  createWsSessionGenerationLifecycleService,
-} from '../services/ws-session-generation-lifecycle.ts';
+import { createWsSessionGenerationLifecycleService } from '../services/ws-session-generation-lifecycle.ts';
 import { readGroupSessionCleanupCandidates } from './presence/group-session-cleanup.ts';
 import { hashMutationCommand, type JsonWireValue } from '../services/mutation-command-identity.ts';
 import { sha256CanonicalJson } from './mutation/group-state-crypto.ts';
@@ -42,11 +36,7 @@ export class GroupMutationIdempotencyConflictError extends Error {
   readonly existingCommandHash: string;
   readonly receivedCommandHash: string;
 
-  constructor(
-    commandId: string,
-    existingCommandHash: string,
-    receivedCommandHash: string,
-  ) {
+  constructor(commandId: string, existingCommandHash: string, receivedCommandHash: string) {
     super(`Group mutation command differs for request ${commandId}`);
     this.commandId = commandId;
     this.existingCommandHash = existingCommandHash;

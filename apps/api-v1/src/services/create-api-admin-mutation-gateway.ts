@@ -2,10 +2,8 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
   AdminOperationsMutationGateway,
 } from '@shared-server/rallar-system/admin-operations/admin-operations-mutation-gateway.ts';
-// prettier-ignore
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/\
 auth-session-repository.ts';
-// prettier-ignore
 import type { AppAdminInboxService } from '@shared-server/rallar-system/services/\
 AppAdminInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';

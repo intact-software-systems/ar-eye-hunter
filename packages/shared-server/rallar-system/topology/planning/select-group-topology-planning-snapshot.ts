@@ -3,21 +3,12 @@ import {
   readGroupCausalRevision,
 } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-// prettier-ignore
-import {
-  GroupStateSnapshotIncomparableError,
-} from '@shared/repository/group-state-snapshots-repository.ts';
-// prettier-ignore
-import {
-  isTuplePreservingGroupLivenessReduction,
-} from '@shared/repository/group-state-snapshot-revision.ts';
+import { GroupStateSnapshotIncomparableError } from '@shared/repository/group-state-snapshots-repository.ts';
+import { isTuplePreservingGroupLivenessReduction } from '@shared/repository/group-state-snapshot-revision.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 
 import { rtcTopologySemanticEqual } from '../../rtc-topology-semantic-equality.ts';
-// prettier-ignore
-import type {
-  GroupTopologyPlanningSnapshotSelection,
-} from './group-topology-planning-authority.ts';
+import type { GroupTopologyPlanningSnapshotSelection } from './group-topology-planning-authority.ts';
 
 export function isGroupTopologyActiveAt(
   snapshot: GroupSnapshot,

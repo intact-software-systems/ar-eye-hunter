@@ -6,10 +6,7 @@ import type {
   GroupMutationFacts,
   GroupMutationRead,
 } from '../group-mutation-contracts.ts';
-// prettier-ignore
-import {
-  validateGroupMutationCommand,
-} from '../command-validation/validate-group-mutation-command.ts';
+import { validateGroupMutationCommand } from '../command-validation/validate-group-mutation-command.ts';
 import { validateGroupMutationRead } from './validate-group-mutation-read.ts';
 import {
   computeGroupMutation,

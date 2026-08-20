@@ -34,11 +34,7 @@ import {
   type RallarCrdtServerTrustedMetadata,
   type RallarCrdtServerWsTopicInstaller,
 } from './rallar-crdt-server-contracts.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  validateRallarCrdtServerLiveEnvelope,
-} from './validate-rallar-crdt-server-live-envelope.ts';
+import { validateRallarCrdtServerLiveEnvelope } from './validate-rallar-crdt-server-live-envelope.ts';
 
 interface RallarCrdtEnvelopeByKind {
   readonly update: RallarCrdtUpdateEnvelope;

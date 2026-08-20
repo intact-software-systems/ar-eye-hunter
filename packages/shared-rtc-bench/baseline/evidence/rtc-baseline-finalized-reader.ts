@@ -1,7 +1,4 @@
-// prettier-ignore
-import {
-  createRtcBaselineExternalAttemptReader,
-} from '../catalog/rtc-baseline-workload-manifest.ts';
+import { createRtcBaselineExternalAttemptReader } from '../catalog/rtc-baseline-workload-manifest.ts';
 import type {
   RtcBaselineAttemptLocatorDto,
   RtcBaselineResult,
@@ -20,17 +17,10 @@ import {
   createRtcBaselineFinalizedArtifactVerifier,
   type RtcBaselineFinalizedArtifactVerifier,
 } from './rtc-baseline-finalized-verification.ts';
-// prettier-ignore
 import { createRtcBaselineFinalizedComparisonReader } from './rtc-baseline-finalized-comparison.ts';
-// prettier-ignore
-import type {
-  RtcBaselineFinalizedReaderDependencies,
-} from './rtc-baseline-finalized-artifact-reader.ts';
+import type { RtcBaselineFinalizedReaderDependencies } from './rtc-baseline-finalized-artifact-reader.ts';
 
-// prettier-ignore
-export type {
-  RtcBaselineFinalizedReaderDependencies,
-} from './rtc-baseline-finalized-artifact-reader.ts';
+export type { RtcBaselineFinalizedReaderDependencies } from './rtc-baseline-finalized-artifact-reader.ts';
 export type { RtcBaselineFinalizedArtifactValidation } from './rtc-baseline-evidence-layout.ts';
 export type {
   RtcBaselinePairedComparison,

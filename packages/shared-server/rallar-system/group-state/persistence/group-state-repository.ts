@@ -10,14 +10,8 @@ import type {
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
-// prettier-ignore
-import {
-  PSqlRuntimeStateRepository,
-} from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-// prettier-ignore
-import {
-  PSqlGroupStateEventRepository,
-} from '../../../postgres/rallar-system/PSqlStateEventRepository.ts';
+import { PSqlRuntimeStateRepository } from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { PSqlGroupStateEventRepository } from '../../../postgres/rallar-system/PSqlStateEventRepository.ts';
 import type {
   RuntimeStateConditionalDeleteResult,
   RuntimeStateConditionalWriteResult,
@@ -43,7 +37,6 @@ export function createTransactionBoundGroupStateRepository(
   });
 }
 
-// prettier-ignore
 import {
   GroupLifecyclePolicyRepository,
   type GroupLifecyclePolicyRead,

@@ -15,10 +15,7 @@ import type {
   WsSessionGenerationLifecycleService,
   WsSessionHighWaterIdentity,
 } from '../../services/ws-session-generation-lifecycle.ts';
-// prettier-ignore
-import type {
-  GroupPresenceSessionCleanupAppInboxPayload,
-} from './group-presence-session-cleanup-app-inbox-payload.ts';
+import type { GroupPresenceSessionCleanupAppInboxPayload } from './group-presence-session-cleanup-app-inbox-payload.ts';
 
 type WriteMutation = <Result>(
   write: (transaction: PSqlTransactionSql) => Promise<Result>,

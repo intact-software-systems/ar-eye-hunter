@@ -8,10 +8,7 @@ import {
   requireTopologyConfigRequestId,
   validateTopologyConfigIdempotencyInput,
 } from './validate-topology-config-mutation-input.ts';
-// prettier-ignore
-import {
-  validateGroupTopologyConfigMutationRecord,
-} from './validate-topology-config-records.ts';
+import { validateGroupTopologyConfigMutationRecord } from './validate-topology-config-records.ts';
 
 export interface ValidateTopologyConfigMutationIdempotencyInput {
   readonly command: GroupTopologyConfigMutationCommand;

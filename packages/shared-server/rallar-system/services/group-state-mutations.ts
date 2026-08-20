@@ -44,10 +44,7 @@ export {
   validatePersistedGroupPresenceSession,
   validatePersistedGroupPresenceSummary,
 } from '../group-state/persistence/validate-persisted-group-presence.ts';
-// prettier-ignore
-export {
-  validateGroupMutationIdempotencyRecord,
-} from '../group-state/mutation/result-validation/validate-group-mutation-result.ts';
+export { validateGroupMutationIdempotencyRecord } from '../group-state/mutation/result-validation/validate-group-mutation-result.ts';
 export {
   compareGroupCausalRevision,
   computeGroupPresenceSummary,

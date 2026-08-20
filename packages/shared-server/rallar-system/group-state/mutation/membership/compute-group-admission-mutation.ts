@@ -1,16 +1,7 @@
 import type { GroupMember } from '@shared/api/group-types.ts';
-// prettier-ignore
-import type {
-  GroupLifecyclePolicy,
-} from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-// prettier-ignore
-import {
-  computeGroupAdmissionDecision,
-} from '@shared/api/group-lifecycle/compute-group-admission-decision.ts';
-// prettier-ignore
-import {
-  createDefaultGroupLifecyclePolicy,
-} from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import { computeGroupAdmissionDecision } from '@shared/api/group-lifecycle/compute-group-admission-decision.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import {
   canActivateGroupMember,
   canDecideGroupAdmission,

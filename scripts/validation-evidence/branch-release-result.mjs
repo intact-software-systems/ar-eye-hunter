@@ -5,6 +5,23 @@ export function validateBranchReleaseConclusion({
   releaseResult,
   publicationResult,
 }) {
+  // A cancelled upstream job leaves its result and every output it feeds empty, so the checks
+  // below would report a chain of derived failures instead of the one fact that matters.
+  // A superseding run decides the branch; this one has nothing to conclude.
+  const cancelledJobs = [
+    ['Governance Gate', governanceResult],
+    ['validation-evidence selection', selectionResult],
+    ['broad Release Gate', releaseResult],
+    ['validation-evidence publication', publicationResult],
+  ].filter(([, result]) => result === 'cancelled');
+  if (cancelledJobs.length > 0) {
+    return [
+      `run cancelled before it could conclude (${cancelledJobs
+        .map(([name]) => name)
+        .join(', ')}); a superseding run decides this branch`,
+    ];
+  }
+
   const issues = [];
   if (governanceResult !== 'success') {
     issues.push('Governance Gate did not succeed');

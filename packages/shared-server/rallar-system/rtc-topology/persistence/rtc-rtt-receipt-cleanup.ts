@@ -1,13 +1,7 @@
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
-// prettier-ignore
-import type { RuntimeStateOptimisticTransactionalRepositoryLike }
-    from '../../../runtime-state/RuntimeStateRepository.ts';
-// prettier-ignore
-import { isRuntimeStateOptimisticTransactionalRepositoryLike }
-    from '../../../runtime-state/RuntimeStateRepository.ts';
-// prettier-ignore
-import { RuntimeStateWriteConflictError }
-    from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
+import { isRuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
+import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../../rtc-topology-errors.ts';
 import { compareRtcTopologyIdentifiers } from '../../rtc-topology-identifiers.ts';
 import type { RtcRttMutationReceipt } from './rtc-rtt-persistence-contracts.ts';

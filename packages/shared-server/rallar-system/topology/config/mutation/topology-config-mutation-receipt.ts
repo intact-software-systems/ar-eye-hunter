@@ -3,10 +3,7 @@ import type {
   GroupTopologyConfigMutationReceipt,
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-// prettier-ignore
-import {
-  toCanonicalGroupTopologyConfigPatch,
-} from '@shared/api/group-topology-config-canonical.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/RuntimeStateJsonStore.ts';
 import { toRtcTopologyEntryResourceId } from '../../../services/rtc-topology-outbox-entry.ts';
 import type {

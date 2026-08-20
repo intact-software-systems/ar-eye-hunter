@@ -7,12 +7,10 @@ import type {
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-// prettier-ignore
 import {
   computeGroupFormationReadiness,
 } from '@shared/api/group-lifecycle/compute-group-formation-readiness.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
-// prettier-ignore
 import type {
   GroupLifecyclePolicyRead,
 } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';

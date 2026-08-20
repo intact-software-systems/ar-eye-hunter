@@ -5,10 +5,7 @@ import type {
   TopologyConfigMutationInput,
 } from './group-topology-config-mutation-contracts.ts';
 import { requireTopologyConfigRequestId } from './validate-topology-config-mutation-input.ts';
-// prettier-ignore
-import {
-  validateGroupTopologyConfigMutationRecord,
-} from './validate-topology-config-records.ts';
+import { validateGroupTopologyConfigMutationRecord } from './validate-topology-config-records.ts';
 
 export interface ValidateTopologyConfigMutationInput extends TopologyConfigMutationInput {
   readonly computed: GroupTopologyConfigMutationComputed;

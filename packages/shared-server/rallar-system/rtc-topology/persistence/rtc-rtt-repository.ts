@@ -8,9 +8,7 @@ import type {
   RuntimeStateEntryPageOptions,
   RuntimeStateRepositoryLike,
 } from '../../../runtime-state/RuntimeStateRepository.ts';
-// prettier-ignore
-import { RuntimeStateWriteConflictError }
-    from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RtcRttMutationLifecycleFacts } from '../mutation/rtc-rtt-mutation-contracts.ts';
 import type {
   RtcRttEndpointAdmission,

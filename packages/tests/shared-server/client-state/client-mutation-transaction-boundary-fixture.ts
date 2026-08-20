@@ -3,47 +3,23 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import {
-  EntityStatus,
-  NEVER_EXPIRE_TS,
-  type ResourceEntry,
-  toKeyAsString,
-} from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-// prettier-ignore
-import type {
-  AppInboxMessageContext,
-} from '@shared-server/rallar-system/services/AppInboxService.ts';
+import type { AppInboxMessageContext } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-// prettier-ignore
-import {
-  AppInboxTransactionWriter,
-} from '@shared-server/rallar-system/services/app-inbox-transaction-writer.ts';
-// prettier-ignore
-import {
-  ClientStateInboxHandler,
-} from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts';
-// prettier-ignore
-import {
-  toClientMutationIssuedSessionAuthority,
-} from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
-// prettier-ignore
-import {
-  toUpsertPrincipalCommandInput,
-} from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { AppInboxTransactionWriter } from '@shared-server/rallar-system/services/app-inbox-transaction-writer.ts';
+import { ClientStateInboxHandler } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts';
+import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
+import { toUpsertPrincipalCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 
-// prettier-ignore
-import type {
-  ClientMutationComputed,
-} from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import type { ClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' } as const;
 const EXPECTED_DURABLE_JSON =
-  '{"status":"ok","result":{"right":{"snapshot":{"snapshotVersion":4,"stateRevision":3},' +
-  '"event":{"eventId":"event-4"}}}}';
+  '{"status":"ok","result":{"right":{"snapshot":{"snapshotVersion":4,"stateRevision":3},' + '"event":{"eventId":"event-4"}}}}';
 
 interface HandlerHarness {
   readonly actions: string[];
@@ -54,9 +30,7 @@ interface HandlerHarness {
   readonly results: TestResourceInboxResults;
 }
 
-export async function createHandlerHarness(
-  options: Readonly<{ failTransaction?: boolean }> = {},
-): Promise<HandlerHarness> {
+export async function createHandlerHarness(options: Readonly<{ failTransaction?: boolean }> = {}): Promise<HandlerHarness> {
   const actions: string[] = [];
   const observedSnapshots: object[] = [];
   const committedSnapshot = { snapshotVersion: 4, stateRevision: 3 };

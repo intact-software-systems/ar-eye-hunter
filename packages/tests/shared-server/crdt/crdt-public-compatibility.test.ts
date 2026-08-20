@@ -1,24 +1,12 @@
-// prettier-ignore
-import {
-  expect,
-  expectTypeOf,
-  it,
-} from 'vitest';
+import { expect, expectTypeOf, it } from 'vitest';
 
-import type {
-  RallarCrdtAdminReadRepository,
-  RallarCrdtValidationResult,
-} from '@shared/crdt/mod.ts';
+import type { RallarCrdtAdminReadRepository, RallarCrdtValidationResult } from '@shared/crdt/mod.ts';
 import * as sharedServer from '@shared-server/mod.ts';
 import {
   InMemoryRallarCrdtLogRepository,
   type InMemoryRallarCrdtLogRepositoryOptions,
 } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  installRallarCrdtWsTopics,
-} from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
+import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 import {
   RALLAR_CRDT_SERVER_DEFAULT_MAX_SYNC_BYTES,
   RALLAR_CRDT_SERVER_DEFAULT_MAX_UPDATE_BYTES,
@@ -50,15 +38,9 @@ it('keeps the package CRDT log repository on its canonical owner', () => {
 it('keeps public CRDT runtime values on their canonical owners', () => {
   expect(sharedServer.InMemoryRallarCrdtLogRepository).toBe(InMemoryRallarCrdtLogRepository);
   expect(sharedServer.installRallarCrdtWsTopics).toBe(installRallarCrdtWsTopics);
-  expect(sharedServer.validateRallarCrdtServerLiveEnvelope).toBe(
-    validateRallarCrdtServerLiveEnvelope,
-  );
-  expect(sharedServer.RALLAR_CRDT_SERVER_DEFAULT_MAX_UPDATE_BYTES).toBe(
-    RALLAR_CRDT_SERVER_DEFAULT_MAX_UPDATE_BYTES,
-  );
-  expect(sharedServer.RALLAR_CRDT_SERVER_DEFAULT_MAX_SYNC_BYTES).toBe(
-    RALLAR_CRDT_SERVER_DEFAULT_MAX_SYNC_BYTES,
-  );
+  expect(sharedServer.validateRallarCrdtServerLiveEnvelope).toBe(validateRallarCrdtServerLiveEnvelope);
+  expect(sharedServer.RALLAR_CRDT_SERVER_DEFAULT_MAX_UPDATE_BYTES).toBe(RALLAR_CRDT_SERVER_DEFAULT_MAX_UPDATE_BYTES);
+  expect(sharedServer.RALLAR_CRDT_SERVER_DEFAULT_MAX_SYNC_BYTES).toBe(RALLAR_CRDT_SERVER_DEFAULT_MAX_SYNC_BYTES);
 });
 
 it('keeps the public live-envelope validator on its named-input package contract', () => {
@@ -77,87 +59,31 @@ it('keeps the public live-envelope validator on its named-input package contract
 });
 
 // Prettier's 120-column output exceeds the repository's 100-character review limit.
-// prettier-ignore
 it('keeps every public CRDT server and in-memory repository type on the package root', () => {
-  expectTypeOf<
-    sharedServer.RallarCrdtServerEnvelopeKind
-  >().toEqualTypeOf<
-    RallarCrdtServerEnvelopeKind
-  >();
-  expectTypeOf<
-    sharedServer.RallarCrdtServerTopicScope
-  >().toEqualTypeOf<
-    RallarCrdtServerTopicScope
-  >();
-  expectTypeOf<
-    sharedServer.RallarCrdtServerTrustedMetadata
-  >().toEqualTypeOf<
-    RallarCrdtServerTrustedMetadata
-  >();
-  expectTypeOf<
-    sharedServer.RallarCrdtServerAcceptedEnvelope
-  >().toEqualTypeOf<
-    RallarCrdtServerAcceptedEnvelope
-  >();
-  expectTypeOf<
-    sharedServer.RallarCrdtServerMutationIngress
-  >().toEqualTypeOf<
-    RallarCrdtServerMutationIngress
-  >();
-  expectTypeOf<
-    sharedServer.RallarCrdtServerDocumentAuthorizationInput
-  >().toEqualTypeOf<
-    RallarCrdtServerDocumentAuthorizationInput
-  >();
-  expectTypeOf<
-    sharedServer.RallarCrdtServerTopicBridgeOptions
-  >().toEqualTypeOf<
-    RallarCrdtServerTopicBridgeOptions
-  >();
-  expectTypeOf<
-    sharedServer.RallarCrdtServerPrincipalFanoutInput
-  >().toEqualTypeOf<
-    RallarCrdtServerPrincipalFanoutInput
-  >();
-  expectTypeOf<
-    sharedServer.RallarCrdtServerTopicBridge
-  >().toEqualTypeOf<
-    RallarCrdtServerTopicBridge
-  >();
-  expectTypeOf<
-    sharedServer.RallarCrdtServerWsTopicInstaller
-  >().toEqualTypeOf<
-    RallarCrdtServerWsTopicInstaller
-  >();
-  expectTypeOf<
-    sharedServer.RallarCrdtServerLiveValidationContext
-  >().toEqualTypeOf<
-    RallarCrdtServerLiveValidationContext
-  >();
-  expectTypeOf<
-    sharedServer.ValidateRallarCrdtServerLiveEnvelopeInput
-  >().toEqualTypeOf<
-    ValidateRallarCrdtServerLiveEnvelopeInput
-  >();
-  expectTypeOf<
-    sharedServer.InMemoryRallarCrdtLogRepositoryOptions
-  >().toEqualTypeOf<
-    InMemoryRallarCrdtLogRepositoryOptions
-  >();
+  expectTypeOf<sharedServer.RallarCrdtServerEnvelopeKind>().toEqualTypeOf<RallarCrdtServerEnvelopeKind>();
+  expectTypeOf<sharedServer.RallarCrdtServerTopicScope>().toEqualTypeOf<RallarCrdtServerTopicScope>();
+  expectTypeOf<sharedServer.RallarCrdtServerTrustedMetadata>().toEqualTypeOf<RallarCrdtServerTrustedMetadata>();
+  expectTypeOf<sharedServer.RallarCrdtServerAcceptedEnvelope>().toEqualTypeOf<RallarCrdtServerAcceptedEnvelope>();
+  expectTypeOf<sharedServer.RallarCrdtServerMutationIngress>().toEqualTypeOf<RallarCrdtServerMutationIngress>();
+  expectTypeOf<sharedServer.RallarCrdtServerDocumentAuthorizationInput>().toEqualTypeOf<RallarCrdtServerDocumentAuthorizationInput>();
+  expectTypeOf<sharedServer.RallarCrdtServerTopicBridgeOptions>().toEqualTypeOf<RallarCrdtServerTopicBridgeOptions>();
+  expectTypeOf<sharedServer.RallarCrdtServerPrincipalFanoutInput>().toEqualTypeOf<RallarCrdtServerPrincipalFanoutInput>();
+  expectTypeOf<sharedServer.RallarCrdtServerTopicBridge>().toEqualTypeOf<RallarCrdtServerTopicBridge>();
+  expectTypeOf<sharedServer.RallarCrdtServerWsTopicInstaller>().toEqualTypeOf<RallarCrdtServerWsTopicInstaller>();
+  expectTypeOf<sharedServer.RallarCrdtServerLiveValidationContext>().toEqualTypeOf<RallarCrdtServerLiveValidationContext>();
+  expectTypeOf<sharedServer.ValidateRallarCrdtServerLiveEnvelopeInput>().toEqualTypeOf<ValidateRallarCrdtServerLiveEnvelopeInput>();
+  expectTypeOf<sharedServer.InMemoryRallarCrdtLogRepositoryOptions>().toEqualTypeOf<InMemoryRallarCrdtLogRepositoryOptions>();
 });
 
-it(
-  'limits the concrete PostgreSQL repository to supported read and ' + 'administration operations',
-  () => {
-    expectTypeOf<PSqlCrdtLogRepository>().toExtend<RallarCrdtAdminReadRepository>();
-    expectTypeOf<PSqlCrdtLogRepository>().not.toHaveProperty('append');
-    expectTypeOf<PSqlCrdtLogRepository>().not.toHaveProperty('appendBatch');
-    expectTypeOf<PSqlCrdtLogRepository>().not.toHaveProperty('writeSnapshot');
-    expectTypeOf<PSqlCrdtLogRepository>().not.toHaveProperty('updateDocumentLifecycle');
-    expectTypeOf<PSqlCrdtLogRepository>().not.toHaveProperty('restoreBackupBundle');
-    expectTypeOf<PSqlCrdtLogRepository>().not.toHaveProperty('rebuildProjection');
-  },
-);
+it('limits the concrete PostgreSQL repository to supported read and ' + 'administration operations', () => {
+  expectTypeOf<PSqlCrdtLogRepository>().toExtend<RallarCrdtAdminReadRepository>();
+  expectTypeOf<PSqlCrdtLogRepository>().not.toHaveProperty('append');
+  expectTypeOf<PSqlCrdtLogRepository>().not.toHaveProperty('appendBatch');
+  expectTypeOf<PSqlCrdtLogRepository>().not.toHaveProperty('writeSnapshot');
+  expectTypeOf<PSqlCrdtLogRepository>().not.toHaveProperty('updateDocumentLifecycle');
+  expectTypeOf<PSqlCrdtLogRepository>().not.toHaveProperty('restoreBackupBundle');
+  expectTypeOf<PSqlCrdtLogRepository>().not.toHaveProperty('rebuildProjection');
+});
 
 it('limits concrete PostgreSQL repository options to the values the owner reads', () => {
   expectTypeOf<keyof PSqlCrdtLogRepositoryOptions>().toEqualTypeOf<'now' | 'policies' | 'audit'>();

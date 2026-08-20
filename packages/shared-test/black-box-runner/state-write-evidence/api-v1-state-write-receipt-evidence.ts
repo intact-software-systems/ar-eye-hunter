@@ -7,12 +7,8 @@ import * as GroupState from '@shared-server/rallar-system/repositories/GroupStat
 import { GroupTopologyConfigRepository } from '@shared-server/mod.ts';
 import * as ClientMutations from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import * as GroupMutations from '@shared-server/rallar-system/services/group-state-mutations.ts';
-// prettier-ignore
-import * as TopologyMutation
-  from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
-// prettier-ignore
-import * as AppInboxCommandIdentity
-  from '@shared-server/rallar-system/services/app-inbox-command-identity.ts';
+import * as TopologyMutation from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
+import * as AppInboxCommandIdentity from '@shared-server/rallar-system/services/app-inbox-command-identity.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 
 import type { ApiV1StateWriteEvidenceQuery } from './api-v1-state-write-evidence-contracts.ts';

@@ -1,12 +1,6 @@
 import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-// prettier-ignore
-import {
-  PSqlRuntimeStateRepository,
-} from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-// prettier-ignore
-import {
-  requireConditionalWrite,
-} from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { AuthSessionRepository } from '../../persistence/auth-session-repository.ts';
 import { AuthUserRepository } from '../../persistence/auth-user-repository.ts';
 import type { AuthMutationComputed, AuthMutationResult } from '../auth-mutation-contracts.ts';

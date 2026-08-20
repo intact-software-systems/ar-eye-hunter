@@ -7,10 +7,7 @@ import {
   type ResourceEntry,
   toKeyAsString,
 } from '@shared/queuebox/ResourceEntry.ts';
-// prettier-ignore
-import {
-  AuthSessionRepository,
-} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
@@ -45,16 +42,12 @@ export class ClientExpiryTestResourceInboxResults {
   }
 }
 
-export async function readClientExpiryTestEntries(
-  queue: ClientExpiryTestResourceInbox,
-): Promise<ResourceEntry[]> {
+export async function readClientExpiryTestEntries(queue: ClientExpiryTestResourceInbox): Promise<ResourceEntry[]> {
   const entries = await Promise.all((await queue.getAllKeys()).map((key) => queue.getItem(key)));
   return entries.filter((entry): entry is ResourceEntry => entry !== undefined);
 }
 
-export function listActiveClientExpiryTestEntries(
-  entries: readonly ResourceEntry[],
-): ResourceEntry[] {
+export function listActiveClientExpiryTestEntries(entries: readonly ResourceEntry[]): ResourceEntry[] {
   return entries.filter((entry) => NOT_COMPLETED_RETRYABLE_STATUSES.has(entry.status));
 }
 

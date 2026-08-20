@@ -9,21 +9,13 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
-// prettier-ignore
-import type {
-  GroupTopologyConfigRepository,
-} from './config/persistence/group-topology-config-repository.ts';
+import type { GroupTopologyConfigRepository } from './config/persistence/group-topology-config-repository.ts';
 import type { RtcRttRepository } from '../rtc-topology/persistence/rtc-rtt-repository.ts';
-// prettier-ignore
-import type {
-  RtcTopologySnapshotRepository,
-} from '../repositories/RtcTopologySnapshotRepository.ts';
+import type { RtcTopologySnapshotRepository } from '../repositories/RtcTopologySnapshotRepository.ts';
 import type { RallarRtcTopologyService } from '../services/rallar-rtc-topology-service.ts';
 import type { RallarTimingSink } from '../services/timing.ts';
 import type { GroupTopologyServerOptions } from './config/group-topology-config.ts';
-// prettier-ignore
-import type * as mutationContracts
-  from './config/mutation/group-topology-config-mutation-contracts.ts';
+import type * as mutationContracts from './config/mutation/group-topology-config-mutation-contracts.ts';
 
 export type GroupTopologyPublisher = (
   message: ALMessage,

@@ -10,16 +10,10 @@ import {
 } from '@shared/mod.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-// prettier-ignore
-import * as clientStateSnapshotsRepository from
-  '@shared/repository/client-state-snapshots-repository.ts';
+import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
-// prettier-ignore
-import { RallarRtcTopologyService } from
-  '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-// prettier-ignore
-import { configureRtcRttTrafficCacheRepositories } from
-  './configure-rtc-rtt-traffic-cache-repositories.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { configureRtcRttTrafficCacheRepositories } from './configure-rtc-rtt-traffic-cache-repositories.ts';
 
 type Args = Readonly<{
   sessions: number;
@@ -211,7 +205,7 @@ function createGroupSnapshot(groupId: string, memberSessionIds: readonly string[
       formationAttemptCount: 0,
       lastFormationOutcome: null,
       establishmentStartedAtEpochMs: null,
-        formationElectorate: [],
+      formationElectorate: [],
     },
     members: memberSessionIds.map((sessionId) => ({
       applicationId,

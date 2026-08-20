@@ -51,15 +51,9 @@ export interface RtcTopologyKindHysteresisWidths {
   readonly treeExitWidth: number;
 }
 
-// prettier-ignore
-export {
-  planRallarRtcTopologySnapshot,
-} from '../topology/planning/plan-rallar-rtc-topology-snapshot.ts';
+export { planRallarRtcTopologySnapshot } from '../topology/planning/plan-rallar-rtc-topology-snapshot.ts';
 
-// prettier-ignore
-export type {
-  RallarRtcTopologyRttQueueResult,
-} from '../topology/runtime/rtc-topology-rtt-rebuild-scheduler.ts';
+export type { RallarRtcTopologyRttQueueResult } from '../topology/runtime/rtc-topology-rtt-rebuild-scheduler.ts';
 
 const DEFAULT_RTT_REBUILD_DEBOUNCE_MS = 250;
 

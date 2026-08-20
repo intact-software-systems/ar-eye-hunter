@@ -1,8 +1,6 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-// prettier-ignore
-import * as snapshotValidation
-    from '../../group-state/snapshot/validate-persisted-group-snapshot.ts';
+import * as snapshotValidation from '../../group-state/snapshot/validate-persisted-group-snapshot.ts';
 import {
   compareRtcTopologyIdentifiers,
   toCanonicalRtcTopologyGroupIdentity,

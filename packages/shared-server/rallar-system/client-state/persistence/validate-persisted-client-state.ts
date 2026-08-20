@@ -14,10 +14,7 @@ import {
   validateClientPrincipal,
   validateClientSession,
 } from '../client-state-contract-validation.ts';
-// prettier-ignore
-import {
-  validateClientMutationIdempotencyRecordValue,
-} from '../client-mutation-receipt-validation.ts';
+import { validateClientMutationIdempotencyRecordValue } from '../client-mutation-receipt-validation.ts';
 import { rejectClientMutation } from '../client-state-validation-primitives.ts';
 import { sameClientPrincipalRef } from '../client-state-semantic-equality.ts';
 import type { ClientMutationIdempotencyRecord } from './client-state-persistence-contracts.ts';

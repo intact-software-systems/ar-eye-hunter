@@ -1,9 +1,4 @@
-// prettier-ignore
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   createRallarCrdtDebugBundle,
@@ -18,16 +13,9 @@ import {
   createCrdtMutationCommand,
   decodeCrdtMutationCommand,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-// prettier-ignore
-import { decodeCrdtMutationResult }
-  from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
-// prettier-ignore
-import { decodeExactDebugBundle }
-  from '@shared-server/rallar-system/crdt/mutation/decode-exact-debug-bundle.ts';
-import {
-  decodeCrdtAuditEvent,
-  decodeExactSnapshotEnvelope,
-} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
+import { decodeExactDebugBundle } from '@shared-server/rallar-system/crdt/mutation/decode-exact-debug-bundle.ts';
+import { decodeCrdtAuditEvent, decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
@@ -39,26 +27,20 @@ const DOCUMENT: RallarCrdtDocumentRef = {
 };
 
 describe('CRDT mutation exact nested codecs', () => {
-  it(
-    'decodes scalar audit metadata and rejects nested metadata ' +
-      'without rewriting base input errors',
-    () => {
-      const event = {
-        kind: 'erase',
-        atEpochMs: 2_000,
-        documentKey: toRallarCrdtDocumentKey(DOCUMENT),
-        principalId: 'principal-1',
-        reason: 'privacy',
-        metadata: { mode: 'destroy-document', attempts: 2, verified: true },
-      } as const;
+  it('decodes scalar audit metadata and rejects nested metadata ' + 'without rewriting base input errors', () => {
+    const event = {
+      kind: 'erase',
+      atEpochMs: 2_000,
+      documentKey: toRallarCrdtDocumentKey(DOCUMENT),
+      principalId: 'principal-1',
+      reason: 'privacy',
+      metadata: { mode: 'destroy-document', attempts: 2, verified: true },
+    } as const;
 
-      expect(decodeCrdtAuditEvent(event)).toEqual(event);
-      expect(() =>
-        decodeCrdtAuditEvent({ ...event, metadata: { mode: { nested: true } } }),
-      ).toThrow('CRDT audit outbox event is invalid');
-      expect(() => decodeCrdtAuditEvent(null)).toThrow('CRDT admin request must be an object');
-    },
-  );
+    expect(decodeCrdtAuditEvent(event)).toEqual(event);
+    expect(() => decodeCrdtAuditEvent({ ...event, metadata: { mode: { nested: true } } })).toThrow('CRDT audit outbox event is invalid');
+    expect(() => decodeCrdtAuditEvent(null)).toThrow('CRDT admin request must be an object');
+  });
 
   it('rejects extra fields in authoritative update payload batches', async () => {
     const payload = {
@@ -93,39 +75,36 @@ describe('CRDT mutation exact nested codecs', () => {
     ).rejects.toThrow(/payload|batch|fields|exact/i);
   });
 
-  it(
-    'checks compact fields before the canonical command hash ' + 'without rewriting raw snapshots',
-    () => {
-      const command = compactCommand();
-      const mismatchedReason = {
-        ...command,
-        snapshot: {
-          ...command.snapshot,
-          metadata: { ...command.snapshot.metadata, reason: 'other' },
-        },
-      };
-      expect(() => decodeCrdtMutationCommand(withCommandHash(mismatchedReason))).toThrow(
-        'CRDT compact snapshot reason differs from command reason',
-      );
+  it('checks compact fields before the canonical command hash ' + 'without rewriting raw snapshots', () => {
+    const command = compactCommand();
+    const mismatchedReason = {
+      ...command,
+      snapshot: {
+        ...command.snapshot,
+        metadata: { ...command.snapshot.metadata, reason: 'other' },
+      },
+    };
+    expect(() => decodeCrdtMutationCommand(withCommandHash(mismatchedReason))).toThrow(
+      'CRDT compact snapshot reason differs from command reason',
+    );
 
-      expect(() =>
-        decodeCrdtMutationCommand({ ...command, snapshotId: '', commandHash: 'bad-hash' }),
-      ).toThrow('snapshotId must be a non-empty string');
+    expect(() => decodeCrdtMutationCommand({ ...command, snapshotId: '', commandHash: 'bad-hash' })).toThrow(
+      'snapshotId must be a non-empty string',
+    );
 
-      expect(() =>
-        decodeCrdtMutationCommand(
-          withCommandHash({
-            ...command,
-            reason: '',
-            snapshot: {
-              ...command.snapshot,
-              metadata: { ...command.snapshot.metadata, updateCount: -1 },
-            },
-          }),
-        ),
-      ).toThrow('metadata updateCount must be a non-negative safe integer');
-    },
-  );
+    expect(() =>
+      decodeCrdtMutationCommand(
+        withCommandHash({
+          ...command,
+          reason: '',
+          snapshot: {
+            ...command.snapshot,
+            metadata: { ...command.snapshot.metadata, updateCount: -1 },
+          },
+        }),
+      ),
+    ).toThrow('metadata updateCount must be a non-negative safe integer');
+  });
 
   it('rejects extra fields in authoritative erase debug bundles', () => {
     const bundle = JSON.parse(

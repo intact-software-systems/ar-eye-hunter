@@ -21,7 +21,6 @@ import {
   type InitRallarSystemWsTopicsOptions,
 } from '@shared-server/rallar-system/ws-system-topics.ts';
 
-// prettier-ignore
 import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/\
 create-crdt-ws-mutation-ingress.ts';
 

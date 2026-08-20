@@ -10,9 +10,7 @@ import {
   parseRtcBaselineOneTokenOptions,
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-validation.ts';
-// prettier-ignore
-import { runRtcBaselineAcceptedWorkerSamples } from
-  '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
+import { runRtcBaselineAcceptedWorkerSamples } from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 
 export type RtcDataChannelDrainDepth = 32 | 1000 | 5000;
 const frozenDepthByValue: Readonly<Record<string, RtcDataChannelDrainDepth>> = {

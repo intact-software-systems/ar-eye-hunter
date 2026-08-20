@@ -20,10 +20,7 @@ import type {
   ClientMutationCommandInput,
   ClientMutationFacts,
 } from './client-mutation-contracts.ts';
-// prettier-ignore
-import {
-  validateClientMutationCommand,
-} from './command-validation/validate-client-mutation-command.ts';
+import { validateClientMutationCommand } from './command-validation/validate-client-mutation-command.ts';
 
 export type ClientMutationPersistedFacts = Omit<ClientMutationFacts, 'commandHash'>;
 

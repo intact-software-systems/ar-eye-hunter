@@ -2,25 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
-// prettier-ignore
-import {
-  createTimedClientStateService,
-} from '@shared-server/rallar-system/client-state/client-state-service-timing.ts';
+import { createTimedClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-timing.ts';
 
-// prettier-ignore
-import type {
-  ClientMutationCommand,
-} from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
-// prettier-ignore
-import type {
-  ClientStateService,
-} from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import type { ClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
-import {
-  CLIENT_MUTATION_SERVICE_SCOPE,
-  createPublisher as createServicePublisher,
-} from './client-state-service-test-fixtures.ts';
+import { CLIENT_MUTATION_SERVICE_SCOPE, createPublisher as createServicePublisher } from './client-state-service-test-fixtures.ts';
 import { createLegacyClientStateTestDriver as createClientStateService } from './client-state-test-runtime.ts';
 
 describe('client-state service timing', () => {
@@ -37,9 +25,7 @@ describe('client-state service timing', () => {
 
     await expect(timed.read(TIMED_COMMAND)).resolves.toBe(fixture.readResult);
     expect(timed.compute(TIMED_COMMAND, fixture.readResult as never)).toBe(fixture.computedResult);
-    expect(() =>
-      timed.validate(TIMED_COMMAND, fixture.readResult as never, fixture.computedResult as never),
-    ).not.toThrow();
+    expect(() => timed.validate(TIMED_COMMAND, fixture.readResult as never, fixture.computedResult as never)).not.toThrow();
     await expect(timed.write(TIMED_TRANSACTION, TIMED_COMPUTED)).rejects.toBe(fixture.writeFailure);
 
     expect(fixture.calls).toEqual([
@@ -52,14 +38,12 @@ describe('client-state service timing', () => {
       'write',
       'event:mutation.write:error',
     ]);
-    expect(fixture.events.map((event) => [event.operation, event.serviceId, event.status])).toEqual(
-      [
-        ['mutation.read', 'client-timing-service', 'ok'],
-        ['mutation.compute', 'client-timing-service', 'ok'],
-        ['mutation.validate', 'client-timing-service', 'ok'],
-        ['mutation.write', 'client-timing-service', 'error'],
-      ],
-    );
+    expect(fixture.events.map((event) => [event.operation, event.serviceId, event.status])).toEqual([
+      ['mutation.read', 'client-timing-service', 'ok'],
+      ['mutation.compute', 'client-timing-service', 'ok'],
+      ['mutation.validate', 'client-timing-service', 'ok'],
+      ['mutation.write', 'client-timing-service', 'error'],
+    ]);
     expect(fixture.events.at(-1)?.error?.message).toBe(fixture.writeFailure.message);
   });
 });

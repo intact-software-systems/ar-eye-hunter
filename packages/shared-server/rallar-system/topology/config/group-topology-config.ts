@@ -7,10 +7,7 @@ import type {
   StoredGroupTopologyConfig,
   StoredGroupTopologyOverride,
 } from '@shared/api/graph-topology-management-types.ts';
-// prettier-ignore
-import type {
-  RallarRtcTopologyServiceOptions,
-} from '../../services/rallar-rtc-topology-service.ts';
+import type { RallarRtcTopologyServiceOptions } from '../../services/rallar-rtc-topology-service.ts';
 
 export const DEFAULT_GROUP_TOPOLOGY_OVERRIDE_TTL_MS = 15 * 60 * 1000;
 export const MAX_GROUP_TOPOLOGY_OVERRIDE_TTL_MS = 24 * 60 * 60 * 1000;

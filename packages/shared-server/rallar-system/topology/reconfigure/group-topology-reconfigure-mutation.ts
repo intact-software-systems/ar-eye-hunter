@@ -1,19 +1,10 @@
 import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import { readGroupCausalRevision } from '@shared/api/group-client-views.ts';
-// prettier-ignore
-import {
-  toCanonicalGroupTopologyConfigPatch,
-} from '@shared/api/group-topology-config-canonical.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
-// prettier-ignore
-import {
-  PSqlRuntimeStateRepository,
-} from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-// prettier-ignore
-import {
-  RuntimeStateWriteConflictError,
-} from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { PSqlRuntimeStateRepository } from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import {
   canMutateActiveGroup,
   canUpdateGroupSnapshot,
@@ -21,7 +12,6 @@ import {
 } from '../../group-policy.ts';
 import { GroupStateRepository } from '../../group-state/persistence/group-state-repository.ts';
 import { writeRtcTopologyOutbox } from '../../services/rtc-topology-outbox-entry.ts';
-// prettier-ignore
 import type {
   GroupTopologyPlanningAuthority,
   ReadGroupTopologyPlanningAuthorityInput,

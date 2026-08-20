@@ -1,11 +1,5 @@
-// prettier-ignore
-import type {
-  RuntimeStateEntryValue,
-} from '../../../../runtime-state/RuntimeStateJsonStore.ts';
-// prettier-ignore
-import {
-  validateRuntimeStateExpiredAuthority,
-} from '../../../../runtime-state/RuntimeStateExpiredEntry.ts';
+import type { RuntimeStateEntryValue } from '../../../../runtime-state/RuntimeStateJsonStore.ts';
+import { validateRuntimeStateExpiredAuthority } from '../../../../runtime-state/RuntimeStateExpiredEntry.ts';
 import type { PersistedAuthSession } from '../../persistence/auth-persistence-contracts.ts';
 import { authSessionKey, authTokenDigestKey } from '../../persistence/auth-storage-keys.ts';
 import type {

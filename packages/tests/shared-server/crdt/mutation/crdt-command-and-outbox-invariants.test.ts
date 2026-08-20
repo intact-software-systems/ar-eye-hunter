@@ -1,9 +1,4 @@
-// prettier-ignore
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   RALLAR_CRDT_OPERATION_VERSION,
@@ -21,16 +16,8 @@ import {
   type CrdtMutationRead,
   type CrdtMutationRepository,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  createCrdtMutationCommand,
-} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  createCrdtMutationService,
-} from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
@@ -88,9 +75,7 @@ describe('CRDT command and outbox invariants', () => {
     await expect(appendCommand(invalidUpdate)).rejects.toThrow(/update|field/i);
     const accepted = compute(await appendCommand(update('wire')), read());
     const wire = outboxMessage(accepted, 'reply');
-    expect(Object.keys(wire).sort()).toEqual(
-      ['audit', 'constraints', 'id', 'payload', 'route', 'targets'].sort(),
-    );
+    expect(Object.keys(wire).sort()).toEqual(['audit', 'constraints', 'id', 'payload', 'route', 'targets'].sort());
     expect(Object.keys(wire.payload).sort()).toEqual(['contentType', 'resource', 'typeId'].sort());
   });
 
@@ -298,11 +283,7 @@ function update(updateId: string): RallarCrdtUpdateEnvelope {
   };
 }
 
-function snapshotFor(
-  document: RallarCrdtDocumentRef,
-  snapshotId: string,
-  value: unknown,
-): RallarCrdtSnapshotEnvelope {
+function snapshotFor(document: RallarCrdtDocumentRef, snapshotId: string, value: unknown): RallarCrdtSnapshotEnvelope {
   return {
     protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
     document,
@@ -338,9 +319,7 @@ function metadata(overrides: Partial<RallarCrdtDocumentMetadata> = {}): RallarCr
 }
 
 function outboxMessage(computed: CrdtMutationComputed, effect: string) {
-  const entry = computed.outboxEntries.find((candidate) =>
-    candidate.key.resourceId.endsWith(`:${effect}`),
-  );
+  const entry = computed.outboxEntries.find((candidate) => candidate.key.resourceId.endsWith(`:${effect}`));
   if (!entry) {
     throw new Error(`Missing ${effect} outbox entry`);
   }

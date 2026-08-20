@@ -3,18 +3,9 @@
 import { appendFileSync } from 'node:fs';
 import path from 'node:path';
 
-// prettier-ignore
-import {
-  classifyDistributedValidationRisk,
-} from './distributed-validation-risk/distributed-validation-risk.mjs';
-// prettier-ignore
-import {
-  validateDistributedValidationResult,
-} from './distributed-validation-risk/distributed-validation-result.mjs';
-// prettier-ignore
-import {
-  readChangedPathRecords,
-} from './distributed-validation-risk/read-distributed-validation-input.mjs';
+import { classifyDistributedValidationRisk } from './distributed-validation-risk/distributed-validation-risk.mjs';
+import { validateDistributedValidationResult } from './distributed-validation-risk/distributed-validation-result.mjs';
+import { readChangedPathRecords } from './distributed-validation-risk/read-distributed-validation-input.mjs';
 
 await runDistributedValidationRiskCommand(process.argv.slice(2));
 

@@ -1,7 +1,4 @@
-// prettier-ignore
-import {
-  toNormalizedGroupLifecyclePolicy,
-} from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
+import { toNormalizedGroupLifecyclePolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import {
   DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS,
   normalizeRallarGroupDirectorHeartbeatTtlMs,

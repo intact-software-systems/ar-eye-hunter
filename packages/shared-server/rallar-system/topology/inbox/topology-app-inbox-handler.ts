@@ -1,36 +1,18 @@
-// prettier-ignore
-import {
-  fromCanonicalGroupTopologyConfigPatch,
-} from '@shared/api/group-topology-config-canonical.ts';
+import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
-// prettier-ignore
-import type {
-  AppInboxMutationTransactionWriter,
-} from '../../services/app-inbox-transaction-writer.ts';
+import type { AppInboxMutationTransactionWriter } from '../../services/app-inbox-transaction-writer.ts';
 import type {
   AppInboxEnqueueInput,
   AppInboxMessageContext,
 } from '../../services/AppInboxService.ts';
-// prettier-ignore
-import type {
-  GroupTopologyConfigMutationService,
-} from '../config/group-topology-config-mutation-service.ts';
-// prettier-ignore
-import {
-  toTopologyConfigMutationResult,
-} from '../config/mutation/to-topology-config-mutation-result.ts';
+import type { GroupTopologyConfigMutationService } from '../config/group-topology-config-mutation-service.ts';
+import { toTopologyConfigMutationResult } from '../config/mutation/to-topology-config-mutation-result.ts';
 import { writeTopologyConfigMutation } from '../config/mutation/write-topology-config-mutation.ts';
 import { GroupTopologyConfigIdempotencyConflictError } from '../group-topology-errors.ts';
-// prettier-ignore
-import type {
-  GroupTopologyReconfigureCommand,
-} from '../reconfigure/group-topology-reconfigure-contracts.ts';
-// prettier-ignore
-import type {
-  GroupTopologyReconfigureMutation,
-} from '../reconfigure/group-topology-reconfigure-mutation.ts';
+import type { GroupTopologyReconfigureCommand } from '../reconfigure/group-topology-reconfigure-contracts.ts';
+import type { GroupTopologyReconfigureMutation } from '../reconfigure/group-topology-reconfigure-mutation.ts';
 import {
   createAuthenticatedTopologyEnqueue,
   readTopologyAppInboxAuthority,

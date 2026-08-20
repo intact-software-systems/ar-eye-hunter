@@ -4,7 +4,6 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
-// prettier-ignore
 import { toUnavailableAppInboxFailure } from '@shared-server/rallar-system/services/\
 app-inbox-failure.ts';
 

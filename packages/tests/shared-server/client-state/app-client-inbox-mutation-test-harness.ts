@@ -5,35 +5,20 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import {
-  EntityStatus,
-  isExpiredResourceEntry,
-  type Key,
-  type ResourceEntry,
-  toKeyAsString,
-} from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, isExpiredResourceEntry, type Key, type ResourceEntry, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import {
-  AuthSessionRepository,
-  type IssuedAuthSession,
-} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { AuthSessionRepository, type IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
-import {
-  AppClientInboxService,
-  AppInboxType,
-} from '@shared-server/rallar-system/services/AppClientInboxService.ts';
+import { AppClientInboxService, AppInboxType } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import {
   type ClientMutationWritten,
   type ClientStateService,
   type ClientStateWritten,
   createClientStateService,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
-// prettier-ignore
-import {
-  createWsSessionGenerationLifecycleService,
-} from '@shared-server/rallar-system/services/ws-session-generation-lifecycle.ts';
+import { createWsSessionGenerationLifecycleService } from '@shared-server/rallar-system/services/ws-session-generation-lifecycle.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
@@ -58,9 +43,7 @@ export function requireRightSnapshot(result: Either<string, ClientStateWritten>)
   return requireClientStateWrittenSnapshot(result.right);
 }
 
-export function requireRightWritten(
-  result: Either<string, ClientStateWritten>,
-): ClientMutationWritten {
+export function requireRightWritten(result: Either<string, ClientStateWritten>): ClientMutationWritten {
   if (!result.right) {
     throw new Error(result.left ?? 'Expected client app-inbox right result');
   }
@@ -133,10 +116,7 @@ export async function processAppInbox<V, R>(
     data: V;
   },
 ): Promise<Either<string, R>> {
-  const resultPromise = service.processAuthenticatedEntryUntilCompletion<V, R>(
-    input,
-    toTestIssuedAuthority(service, input),
-  );
+  const resultPromise = service.processAuthenticatedEntryUntilCompletion<V, R>(input, toTestIssuedAuthority(service, input));
   await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
   return await resultPromise;
@@ -149,16 +129,9 @@ function toTestIssuedAuthority<V>(
     data: V;
   }>,
 ): IssuedAuthSession {
-  const data =
-    typeof input.data === 'object' && input.data !== null
-      ? Object.fromEntries(Object.entries(input.data))
-      : {};
-  const request =
-    typeof data.request === 'object' && data.request !== null
-      ? Object.fromEntries(Object.entries(data.request))
-      : {};
-  const principalId =
-    typeof data.principalId === 'string' ? data.principalId : (input.senderId ?? 'alice');
+  const data = typeof input.data === 'object' && input.data !== null ? Object.fromEntries(Object.entries(input.data)) : {};
+  const request = typeof data.request === 'object' && data.request !== null ? Object.fromEntries(Object.entries(data.request)) : {};
+  const principalId = typeof data.principalId === 'string' ? data.principalId : (input.senderId ?? 'alice');
   const sessionId =
     typeof data.sessionId === 'string'
       ? data.sessionId
@@ -191,10 +164,7 @@ export async function processAuthenticatedClientMutation<V, R = ClientStateWritt
   authority: IssuedAuthSession,
 ): Promise<Either<string, R>> {
   const authenticated = service as unknown as Readonly<{
-    processAuthenticatedEntryUntilCompletion<V, R = V>(
-      enqueue: typeof input,
-      authority: IssuedAuthSession,
-    ): Promise<Either<string, R>>;
+    processAuthenticatedEntryUntilCompletion<V, R = V>(enqueue: typeof input, authority: IssuedAuthSession): Promise<Either<string, R>>;
   }>;
   return await authenticated.processAuthenticatedEntryUntilCompletion<V, R>(input, authority);
 }
@@ -211,10 +181,7 @@ export function issuedSession(clientId: string, sessionId: string): IssuedAuthSe
   };
 }
 
-async function waitForQueueEntryStatus(
-  queue: InMemoryQueueBox,
-  status: EntityStatus,
-): Promise<void> {
+async function waitForQueueEntryStatus(queue: InMemoryQueueBox, status: EntityStatus): Promise<void> {
   for (let i = 0; i < 20; i += 1) {
     if ((await readEntries(queue)).some((entry) => entry.status === status)) {
       return;
@@ -232,13 +199,9 @@ export async function readEntries(queue: InMemoryQueueBox): Promise<ResourceEntr
   return entries.filter((entry): entry is ResourceEntry => entry !== undefined);
 }
 
-export function createClientStateServiceStub(
-  overrides: Partial<ClientStateService>,
-): ClientStateService {
+export function createClientStateServiceStub(overrides: Partial<ClientStateService>): ClientStateService {
   return {
-    sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(
-      new FakeRuntimeStateRepository(),
-    ),
+    sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(new FakeRuntimeStateRepository()),
     formationDamping: 'damped',
     listSnapshots: vi.fn(),
     readSnapshot: vi.fn(),
@@ -301,11 +264,5 @@ export function createPublisher() {
 
 export function createResilience(): ResilienceDto {
   const duration = Temporal.Duration.from({ seconds: 10 });
-  return ResilienceDto.toResilienceDto(
-    new CircuitBreakerPolicy(10, duration, duration, duration),
-    1,
-    10,
-    1,
-    1,
-  );
+  return ResilienceDto.toResilienceDto(new CircuitBreakerPolicy(10, duration, duration, duration), 1, 10, 1, 1);
 }

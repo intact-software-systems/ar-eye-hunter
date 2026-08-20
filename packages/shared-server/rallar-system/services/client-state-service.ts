@@ -1,5 +1,4 @@
 export { createClientStateService } from '../client-state/client-state-service.ts';
-// prettier-ignore
 export { ClientMutationIdempotencyConflictError } from '../client-state/mutation/result-validation/validate-client-mutation.ts';
 export { ClientMutationRejectedError } from '../client-state/client-state-validation-primitives.ts';
 export {
@@ -20,10 +19,7 @@ export {
   toClientMutationReceipt,
   toClientStateWritten,
 } from '../client-state/client-state-service-contracts.ts';
-// prettier-ignore
-export type {
-  ClientMutationPersistedFacts,
-} from '../client-state/mutation/client-mutation-command.ts';
+export type { ClientMutationPersistedFacts } from '../client-state/mutation/client-mutation-command.ts';
 export type { ClientMutationReceipt } from '../client-state/mutation/client-mutation-contracts.ts';
 export type {
   ClientMutationWritten,

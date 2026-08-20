@@ -1,7 +1,4 @@
-// prettier-ignore
-import type {
-  EvolvePlannedTopologyFullRebuildReason,
-} from '../planning/evolve-planned-topology.ts';
+import type { EvolvePlannedTopologyFullRebuildReason } from '../planning/evolve-planned-topology.ts';
 
 export interface RallarRtcTopologyMetrics {
   readonly topologyUpdateCount: number;

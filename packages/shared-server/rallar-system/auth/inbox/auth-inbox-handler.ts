@@ -1,7 +1,4 @@
-// prettier-ignore
-import type {
-  AppInboxMutationTransactionWriter,
-} from '@shared-server/rallar-system/services/app-inbox-transaction-writer.ts';
+import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/services/app-inbox-transaction-writer.ts';
 
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
 import type { AuthMutationService } from '../auth-mutation-service.ts';

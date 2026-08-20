@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-// prettier-ignore
-import {
-  RtcTopologyMetrics,
-} from '@shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts';
+import { RtcTopologyMetrics } from '@shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts';
 
 describe('RtcTopologyMetrics', () => {
   it('records every metric category and resets recorded values', () => {

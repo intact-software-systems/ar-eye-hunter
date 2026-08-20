@@ -2,9 +2,7 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
-// prettier-ignore
-import { validateRuntimeStateExpiredAuthority }
-    from '../../../runtime-state/RuntimeStateExpiredEntry.ts';
+import { validateRuntimeStateExpiredAuthority } from '../../../runtime-state/RuntimeStateExpiredEntry.ts';
 import {
   compareRtcTopologyIdentifiers,
   toCanonicalRtcTopologyGroupIdentity,
@@ -13,9 +11,7 @@ import {
   toRtcRttEndpointAdmissionStorageKey,
   toRtcRttMeasurementStorageKey,
 } from '../persistence/rtc-rtt-storage-keys.ts';
-// prettier-ignore
-import type { RtcRttEndpointAdmission }
-    from '../persistence/rtc-rtt-persistence-contracts.ts';
+import type { RtcRttEndpointAdmission } from '../persistence/rtc-rtt-persistence-contracts.ts';
 
 export interface RtcRttExpiredAuthority {
   readonly admissionByEndpoint: ReadonlyMap<

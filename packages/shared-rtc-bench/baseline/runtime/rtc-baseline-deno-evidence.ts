@@ -12,9 +12,7 @@ import {
   type RtcBaselineResult,
 } from '../contracts/rtc-baseline-contracts.ts';
 import { requireRtcBaselineDecodedType } from '../contracts/rtc-baseline-decoding.ts';
-// prettier-ignore
-import { validateRtcBaselineReconciliation } from
-  '../contracts/rtc-baseline-artifact-validation.ts';
+import { validateRtcBaselineReconciliation } from '../contracts/rtc-baseline-artifact-validation.ts';
 import {
   createRtcBaselineFileStore,
   type RtcBaselineFileStore,

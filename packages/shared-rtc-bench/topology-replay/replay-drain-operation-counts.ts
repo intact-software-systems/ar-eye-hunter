@@ -1,8 +1,6 @@
 import { dirname } from 'node:path';
 
-// prettier-ignore
-import type { RtcTopologyDeliveryLogEntry } from
-  '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-contracts.ts';
+import type { RtcTopologyDeliveryLogEntry } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-contracts.ts';
 import type {
   RtcTopologyReplayConsumerInput,
   RtcTopologyReplayCursorCasInput,
@@ -48,9 +46,7 @@ export interface RtcTopologyReplayDrainOperationArtifact {
   readonly workloads: Readonly<Record<WorkloadName, RtcTopologyReplayDrainOperationCounts>>;
 }
 
-// prettier-ignore
-export async function runRtcTopologyReplayDrainOperationWorkloads(
-): Promise<RtcTopologyReplayDrainOperationArtifact> {
+export async function runRtcTopologyReplayDrainOperationWorkloads(): Promise<RtcTopologyReplayDrainOperationArtifact> {
   const workloads = {
     caughtUp: await runWorkload({ entryCount: 0, outcome: 'delivered' }),
     entries100: await runWorkload({ entryCount: 100, outcome: 'delivered' }),

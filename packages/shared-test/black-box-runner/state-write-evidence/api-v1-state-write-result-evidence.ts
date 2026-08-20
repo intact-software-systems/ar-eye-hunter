@@ -1,18 +1,12 @@
 import { decodeAuthMutationResult } from '@shared-server/mod.ts';
-// prettier-ignore
-import * as CrdtResult
-  from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
-// prettier-ignore
-import { readPersistedAppInboxFailure }
-  from '@shared-server/rallar-system/services/app-inbox-failure.ts';
+import * as CrdtResult from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
+import { readPersistedAppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 
 import {
   type PublicResultReceiptIdentity,
   publicResultIdentityMatches,
 } from './api-v1-state-write-group-causal-evidence.ts';
-// prettier-ignore
-import { validateTopologyMutationResultPayload }
-  from './validate-topology-mutation-result-payload.ts';
+import { validateTopologyMutationResultPayload } from './validate-topology-mutation-result-payload.ts';
 
 interface ResultEvidence {
   readonly valid: boolean;

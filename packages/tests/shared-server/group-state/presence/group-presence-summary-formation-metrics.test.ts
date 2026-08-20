@@ -2,25 +2,13 @@ import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, vi } from 'vitest';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import {
-  computeGroupPresenceSummaryEntry,
-  type GroupPresenceSummaryWorkData,
-} from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import { computeGroupPresenceSummaryEntry, type GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-// prettier-ignore
-import {
-  GroupPresenceSummaryWork,
-} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
-// prettier-ignore
-import {
-  APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
-} from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
+import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
 import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
-import {
-  TestResourceInbox,
-  TestResourceInboxResults,
-} from '../inbox/group-state-inbox-resource-fixtures.ts';
+import { TestResourceInbox, TestResourceInboxResults } from '../inbox/group-state-inbox-resource-fixtures.ts';
 
 const BASE_EPOCH_MS = Date.now();
 
@@ -73,10 +61,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
 
   it('records no summary expansion metric when the transaction fails', async () => {
     const { message, entry } = createCanonicalReservation();
-    const database = createAppInboxTestDatabase(
-      new TestResourceInbox(),
-      new TestResourceInboxResults(),
-    );
+    const database = createAppInboxTestDatabase(new TestResourceInbox(), new TestResourceInboxResults());
     const formationMetrics = vi.fn();
     const worker = new GroupPresenceSummaryWork({
       topologyIntent: { damping: 'legacy' },
@@ -88,15 +73,11 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
       formationMetrics,
     });
     vi.spyOn(worker, 'read').mockResolvedValue({} as never);
-    vi.spyOn(worker, 'compute').mockReturnValue(
-      createComputedWorkWithDownstreamTopics([AppTopics.groupStateEvent]),
-    );
+    vi.spyOn(worker, 'compute').mockReturnValue(createComputedWorkWithDownstreamTopics([AppTopics.groupStateEvent]));
     vi.spyOn(worker, 'validate').mockReturnValue(undefined);
     vi.spyOn(worker, 'write').mockResolvedValue(undefined);
 
-    await expect(worker.processReservedEntry(message, entry)).rejects.toThrow(
-      'Presence-summary reservation changed before commit',
-    );
+    await expect(worker.processReservedEntry(message, entry)).rejects.toThrow('Presence-summary reservation changed before commit');
     expect(formationMetrics).not.toHaveBeenCalled();
   });
 });

@@ -6,10 +6,7 @@ import {
   emptyGroupFormationMetrics,
   toGroupFormationOperationKind,
 } from '@shared-server/rallar-system/formation-metrics.ts';
-// prettier-ignore
-import {
-  APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
-} from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
+import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
 
 describe('group formation metrics recorder', () => {
   it('maps group mutation operations onto formation operation kinds', () => {

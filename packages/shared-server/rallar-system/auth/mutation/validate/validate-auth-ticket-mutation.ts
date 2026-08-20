@@ -1,7 +1,4 @@
-// prettier-ignore
-import {
-  validateRuntimeStateExpiredAuthority,
-} from '../../../../runtime-state/RuntimeStateExpiredEntry.ts';
+import { validateRuntimeStateExpiredAuthority } from '../../../../runtime-state/RuntimeStateExpiredEntry.ts';
 import { authTicketDigestKey } from '../../persistence/auth-storage-keys.ts';
 import type {
   AuthMutationCommand,

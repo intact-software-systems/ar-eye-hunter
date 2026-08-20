@@ -1,14 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AuditStamp, Group } from '@shared/api/group-types.ts';
-// prettier-ignore
-import {
-  resolveGroupLifecyclePolicyPreset,
-} from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
-// prettier-ignore
-import {
-  computeGroupMutation,
-} from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import type {
   GroupMutationCommand,
   GroupMutationFacts,
@@ -17,12 +11,7 @@ import type {
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
 
-import {
-  groupMemberStorageKey,
-  groupRef,
-  groupStorageKey,
-  storedEntry,
-} from './group-mutation-test-runtime.ts';
+import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from './group-mutation-test-runtime.ts';
 
 describe('group lifecycle transition computation', () => {
   it('starts establishment from forming and advances the formation epoch', () => {
@@ -116,10 +105,7 @@ describe('group lifecycle transition computation', () => {
   it('rejects on a corrupt stored policy instead of failing open', () => {
     const computed = computeGroupMutation({
       command: transitionCommand('startGroupEstablishment'),
-      read: transitionRead(
-        { lifecycleState: 'forming', formationEpoch: 0 },
-        { policyStatus: 'corrupt' },
-      ),
+      read: transitionRead({ lifecycleState: 'forming', formationEpoch: 0 }, { policyStatus: 'corrupt' }),
       facts: transitionFacts(),
     });
     expect(computed.outcome).toBe('rejected');
@@ -194,10 +180,7 @@ describe('group lifecycle transition computation', () => {
     // optimistic is any-member initiated, so a plain member may command.
     const computed = computeGroupMutation({
       command: transitionCommand('startGroupEstablishment'),
-      read: transitionRead(
-        { lifecycleState: 'forming', formationEpoch: 0 },
-        { policyStatus: 'absent' },
-      ),
+      read: transitionRead({ lifecycleState: 'forming', formationEpoch: 0 }, { policyStatus: 'absent' }),
       facts: transitionFacts(),
     });
     expect(computed.outcome).toBe('write');
@@ -223,9 +206,7 @@ function transitionCommand(
   } as GroupMutationCommand;
 }
 
-function criterionRead(
-  groupOverrides: Partial<Group>,
-): GroupMutationRead {
+function criterionRead(groupOverrides: Partial<Group>): GroupMutationRead {
   return {
     ...transitionRead(groupOverrides),
     actorMember: null,
@@ -266,10 +247,7 @@ interface TransitionReadOptions {
   readonly actorPrincipalId?: string;
 }
 
-function transitionRead(
-  groupOverrides: Partial<Group>,
-  options: TransitionReadOptions = {},
-): GroupMutationRead {
+function transitionRead(groupOverrides: Partial<Group>, options: TransitionReadOptions = {}): GroupMutationRead {
   const actorPrincipalId = options.actorPrincipalId ?? 'alice';
   const audit = lifecycleAuditStamp(1_000, actorPrincipalId);
   const group = createTestGroup({ ...groupRef('pure-room'), ...groupOverrides });
@@ -287,16 +265,15 @@ function transitionRead(
     updated: audit,
   };
   const policyStatus = options.policyStatus ?? 'absent';
-  const lifecyclePolicy = policyStatus === 'corrupt'
-    ? { status: 'corrupt' as const, reason: 'stored policy is not an object' }
-    : policyStatus === 'absent'
-      ? { status: 'absent' as const }
-      : {
-        status: 'present' as const,
-        policy: resolveGroupLifecyclePolicyPreset(
-          policyStatus === 'managed' ? 'managed' : 'optimistic',
-        ),
-      };
+  const lifecyclePolicy =
+    policyStatus === 'corrupt'
+      ? { status: 'corrupt' as const, reason: 'stored policy is not an object' }
+      : policyStatus === 'absent'
+        ? { status: 'absent' as const }
+        : {
+            status: 'present' as const,
+            policy: resolveGroupLifecyclePolicyPreset(policyStatus === 'managed' ? 'managed' : 'optimistic'),
+          };
   return {
     idempotency: null,
     group: storedEntry(groupStorageKey(), group),

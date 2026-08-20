@@ -1,6 +1,4 @@
-// prettier-ignore
-import type { GroupTopologyConfigGenerationTarget }
-  from '../mutation/group-topology-config-mutation-contracts.ts';
+import type { GroupTopologyConfigGenerationTarget } from '../mutation/group-topology-config-mutation-contracts.ts';
 
 export const GROUP_TOPOLOGY_CONFIG_NAMESPACE = 'group-topology:config';
 export const GROUP_TOPOLOGY_OVERRIDE_NAMESPACE = 'group-topology:override';

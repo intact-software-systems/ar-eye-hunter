@@ -1,10 +1,7 @@
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
 import type { AppInboxMessageContext } from '../../services/app-inbox-contracts.ts';
-// prettier-ignore
-import type {
-  AppInboxMutationTransactionWriter,
-} from '../../services/app-inbox-transaction-writer.ts';
+import type { AppInboxMutationTransactionWriter } from '../../services/app-inbox-transaction-writer.ts';
 import {
   type WsSessionGenerationFacts,
   type WsSessionGenerationLifecycleComputed,
@@ -22,10 +19,7 @@ import type {
   ClientMutationCommandInput,
   ClientMutationComputed,
 } from '../mutation/client-mutation-contracts.ts';
-// prettier-ignore
-import {
-  validateClientMutationAuthorityPolicy,
-} from '../mutation/result-validation/validate-client-mutation-authority-policy.ts';
+import { validateClientMutationAuthorityPolicy } from '../mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import {
   type ClientStateMutationService,
   type ClientStateService,

@@ -1,8 +1,5 @@
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-// prettier-ignore
-import {
-  validateGroupLifecyclePolicy,
-} from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
+import { validateGroupLifecyclePolicy } from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 import { RuntimeStateJsonStore } from '../../../runtime-state/RuntimeStateJsonStore.ts';
@@ -57,19 +54,18 @@ export class GroupLifecyclePolicyRepository extends RuntimeStateJsonStore {
     return validateGroupLifecyclePolicy(stored.policy).fold<GroupLifecyclePolicyRead>(
       (issues) => ({
         status: 'corrupt',
-        reason: 'stored policy is no longer coherent: ' +
-          issues.map((issue) => issue.code).join(', '),
+        reason:
+          'stored policy is no longer coherent: ' + issues.map((issue) => issue.code).join(', '),
       }),
       (policy) => ({ status: 'present', policy }),
     );
   }
 
   async writePolicy(ref: GroupRef, policy: GroupLifecyclePolicy): Promise<void> {
-    await this.putValue(
-      GROUP_LIFECYCLE_POLICIES_NAMESPACE,
-      groupStateGroupStorageKey(ref),
-      { groupRef: ref, policy } satisfies StoredGroupLifecyclePolicy,
-    );
+    await this.putValue(GROUP_LIFECYCLE_POLICIES_NAMESPACE, groupStateGroupStorageKey(ref), {
+      groupRef: ref,
+      policy,
+    } satisfies StoredGroupLifecyclePolicy);
   }
 }
 

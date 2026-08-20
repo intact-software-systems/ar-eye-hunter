@@ -1,18 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-// prettier-ignore
-import type { AppInboxEnqueueInput } from
-  '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-// prettier-ignore
-import { AppInboxType } from
-  '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-// prettier-ignore
-import { toGroupMutationDescriptor } from
-  '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
+import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { toGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-// prettier-ignore
-import type { GroupMutationDescriptor } from
-  '@shared-server/rallar-system/services/group-state-service.ts';
+import type { GroupMutationDescriptor } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { SCOPE } from './group-state-inbox-test-runtime.ts';
 
 const groupId = 'descriptor-room';
@@ -21,10 +13,7 @@ const actor = { actorPrincipalId: 'owner', actorSessionId: 'owner-session' };
 describe('AppGroupInboxService authenticated mutation descriptors', () => {
   it('maps every authenticated GROUP_* AppInbox variant to one exact descriptor', () => {
     for (const testCase of descriptorCases) {
-      expect(
-        toGroupMutationDescriptor(testCase.enqueue as AuthenticatedGroupMutationEnqueue),
-        testCase.name,
-      ).toEqual(testCase.descriptor);
+      expect(toGroupMutationDescriptor(testCase.enqueue as AuthenticatedGroupMutationEnqueue), testCase.name).toEqual(testCase.descriptor);
     }
   });
 
@@ -117,13 +106,10 @@ const descriptorCases: readonly DescriptorCase[] = [
     'appointDirector',
     { ...actor, requestId: 'appoint-director' },
   ),
-  descriptorCase(
-    'join',
-    AppInboxType.GROUP_JOIN,
-    { scope: SCOPE, groupId, request: { ...actor, requestId: 'join' } },
-    'joinGroup',
-    { ...actor, requestId: 'join' },
-  ),
+  descriptorCase('join', AppInboxType.GROUP_JOIN, { scope: SCOPE, groupId, request: { ...actor, requestId: 'join' } }, 'joinGroup', {
+    ...actor,
+    requestId: 'join',
+  }),
   descriptorCase(
     'invite-create',
     AppInboxType.GROUP_INVITE_CREATE,

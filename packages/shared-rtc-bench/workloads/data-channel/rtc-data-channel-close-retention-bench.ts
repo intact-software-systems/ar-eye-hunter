@@ -11,9 +11,7 @@ import {
   parseRtcBaselineOneTokenOptions,
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-validation.ts';
-// prettier-ignore
-import { runRtcBaselineAcceptedWorkerSamples } from
-  '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
+import { runRtcBaselineAcceptedWorkerSamples } from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 
 interface RtcDataChannelCloseRetentionInput {
   readonly queueDepth: number;

@@ -1,33 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type {
-  AuditStamp,
-  ClientInstance,
-  ClientPrincipal,
-  ClientSession,
-  ClientSnapshot,
-} from '@shared/api/client-types.ts';
+import type { AuditStamp, ClientInstance, ClientPrincipal, ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
 import {
   findClientStateSnapshotByRef,
   findClientStateSnapshotByPrincipalId,
   toClientStateSnapshotRepositoryKey as toSharedClientStateSnapshotRepositoryKey,
 } from '@shared/repository/client-state-snapshots-repository.ts';
-// prettier-ignore
-import {
-  toClientStateSnapshotRepositoryKey as toPackageClientStateSnapshotRepositoryKey,
-} from '@shared-server/mod.ts';
-// prettier-ignore
-import { ClientStateRepository } from
-  '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-// prettier-ignore
+import { toClientStateSnapshotRepositoryKey as toPackageClientStateSnapshotRepositoryKey } from '@shared-server/mod.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import {
   createClientStateSnapshotReadThroughCache,
   toClientStateSnapshotRepositoryKey,
-} from
-  '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
-// prettier-ignore
-import {
-  toClientStateSnapshotRepositoryKey as toLegacyClientStateSnapshotRepositoryKey,
-} from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';
+} from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
+import { toClientStateSnapshotRepositoryKey as toLegacyClientStateSnapshotRepositoryKey } from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';
 import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
@@ -54,8 +38,7 @@ describe('ClientStateSnapshotReadThroughCache', () => {
     expect(toPackageClientStateSnapshotRepositoryKey).toBe(toClientStateSnapshotRepositoryKey);
     expect(toLegacyClientStateSnapshotRepositoryKey).toBe(toClientStateSnapshotRepositoryKey);
     expect(toClientStateSnapshotRepositoryKey).not.toBe(toSharedClientStateSnapshotRepositoryKey);
-    const expectedKey =
-      '["client-state-snapshot","app-1",["present","workspace-a"],"alice"]';
+    const expectedKey = '["client-state-snapshot","app-1",["present","workspace-a"],"alice"]';
     expect(toClientStateSnapshotRepositoryKey(ref)).toBe(expectedKey);
     expect(toSharedClientStateSnapshotRepositoryKey(ref)).toBe(expectedKey);
   });
@@ -245,13 +228,9 @@ describe('ClientStateSnapshotReadThroughCache', () => {
     ).toThrow('Client snapshot revision conflict');
     expect(readThroughCache.peek(base.principal)).toEqual(revisionTwo);
   });
-
 });
 
-async function putClientSnapshot(
-  repository: ClientStateRepository,
-  snapshot: ClientSnapshot,
-): Promise<void> {
+async function putClientSnapshot(repository: ClientStateRepository, snapshot: ClientSnapshot): Promise<void> {
   const principalEntry = await repository.findPrincipalEntry(snapshot.principal);
   const principalResult = principalEntry
     ? await repository.updatePrincipal(snapshot.principal, principalEntry.entry.revision)
@@ -260,17 +239,13 @@ async function putClientSnapshot(
   const instances = await Promise.all(
     snapshot.instances.map(async (instance) => {
       const entry = await repository.findInstanceEntry(instance);
-      return entry
-        ? await repository.updateInstance(instance, entry.entry.revision)
-        : await repository.insertInstance(instance);
+      return entry ? await repository.updateInstance(instance, entry.entry.revision) : await repository.insertInstance(instance);
     }),
   );
   const sessions = await Promise.all(
     snapshot.activeSessions.map(async (session) => {
       const entry = await repository.findSessionEntry(session);
-      return entry
-        ? await repository.updateSession(session, entry.entry.revision)
-        : await repository.insertSession(session);
+      return entry ? await repository.updateSession(session, entry.entry.revision) : await repository.insertSession(session);
     }),
   );
   expect(instances.every((result) => result.status === 'applied')).toBe(true);
@@ -339,10 +314,7 @@ function createClientInstance(input: CreateClientSnapshotFixtureInput): ClientIn
   };
 }
 
-function createClientSession(
-  input: CreateClientSnapshotFixtureInput,
-  clientInstanceId: string,
-): ClientSession {
+function createClientSession(input: CreateClientSnapshotFixtureInput, clientInstanceId: string): ClientSession {
   const { applicationId, workspaceId, principalId, snapshotVersion } = input;
 
   return {

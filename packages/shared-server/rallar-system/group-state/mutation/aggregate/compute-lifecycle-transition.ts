@@ -1,7 +1,4 @@
-// prettier-ignore
-import {
-  createDefaultGroupLifecyclePolicy,
-} from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import {
   computeGroupLifecycleTransition,
   type GroupLifecycleTransition,
@@ -13,10 +10,7 @@ import {
   GroupPolicyDeniedError,
 } from '../../../group-policy.ts';
 import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
-// prettier-ignore
-import {
-  computeFormationTimerEntries,
-} from '../../formation-timer-outbox-entry.ts';
+import { computeFormationTimerEntries } from '../../formation-timer-outbox-entry.ts';
 import type {
   GroupLifecycleTransitionOperation,
   GroupMutationCommand,

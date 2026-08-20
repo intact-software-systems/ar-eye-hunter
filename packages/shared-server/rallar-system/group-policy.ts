@@ -10,19 +10,12 @@ import type {
   GroupPolicyResult,
 } from '@shared/api/group-policy-types.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-// prettier-ignore
 import {
   resolveGroupLifecycleManagers,
   toGroupLifecycleElectionKey,
 } from '@shared/api/group-lifecycle/resolve-group-lifecycle-managers.ts';
-// prettier-ignore
-import type {
-    GroupLifecycleTransition,
-} from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
-// prettier-ignore
-import {
-    computeGroupLifecycleTransition,
-} from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
+import type { GroupLifecycleTransition } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
+import { computeGroupLifecycleTransition } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 
 export type GroupPolicyActor = Readonly<{
   principalId?: string;

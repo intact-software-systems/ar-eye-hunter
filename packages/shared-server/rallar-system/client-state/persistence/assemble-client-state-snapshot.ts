@@ -13,10 +13,7 @@ import {
   compareClientStateSessionStorageKeys,
   clientStatePrincipalStorageKey,
 } from './client-state-storage-keys.ts';
-// prettier-ignore
-import {
-  ClientStateRepositoryInvariantCorruptionError,
-} from './client-state-persistence-contracts.ts';
+import { ClientStateRepositoryInvariantCorruptionError } from './client-state-persistence-contracts.ts';
 
 export type ClientStateSnapshotAssemblyInput = Readonly<{
   principal: ClientPrincipal;

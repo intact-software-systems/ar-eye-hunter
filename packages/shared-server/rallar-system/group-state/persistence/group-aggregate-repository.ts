@@ -10,15 +10,9 @@ import {
   RuntimeStateJsonStore,
   type RuntimeStateEntryValue,
 } from '../../../runtime-state/RuntimeStateJsonStore.ts';
-// prettier-ignore
-import type {
-  RuntimeStateGuardedBatchUpdate,
-} from '../../../runtime-state/RuntimeStateGuardedBatch.ts';
+import type { RuntimeStateGuardedBatchUpdate } from '../../../runtime-state/RuntimeStateGuardedBatch.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
-// prettier-ignore
-import {
-  validateGroupMutationIdempotencyRecord,
-} from '../mutation/result-validation/validate-group-mutation-result.ts';
+import { validateGroupMutationIdempotencyRecord } from '../mutation/result-validation/validate-group-mutation-result.ts';
 import { validatePersistedGroupEvent } from '../../persisted-group-event.ts';
 import type { GroupStateEventStore } from '../../repositories/StateEventStore.ts';
 import { filterStateEventsForList, type StateEventListQuery } from '../../state-event-listing.ts';
@@ -43,10 +37,7 @@ import { validatePersistedGroup } from './validate-persisted-group.ts';
 export class GroupAggregateRepository extends RuntimeStateJsonStore {
   private readonly events: GroupStateEventStore;
 
-  constructor(
-    repository: RuntimeStateRepositoryLike,
-    events: GroupStateEventStore,
-  ) {
+  constructor(repository: RuntimeStateRepositoryLike, events: GroupStateEventStore) {
     super(repository);
     this.events = events;
   }

@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-// prettier-ignore
-import {
-  RtcTopologyMetrics,
-} from '@shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts';
-// prettier-ignore
-import {
-  RtcTopologyRttRebuildScheduler,
-} from '@shared-server/rallar-system/topology/runtime/rtc-topology-rtt-rebuild-scheduler.ts';
+import { RtcTopologyMetrics } from '@shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts';
+import { RtcTopologyRttRebuildScheduler } from '@shared-server/rallar-system/topology/runtime/rtc-topology-rtt-rebuild-scheduler.ts';
 
 describe('RtcTopologyRttRebuildScheduler', () => {
   it('makes work without a snapshot immediately due', () => {
@@ -118,9 +112,7 @@ describe('RtcTopologyRttRebuildScheduler', () => {
       debounceMs: 50,
       metrics,
     });
-    expect(() =>
-      unavailableClockScheduler.queue({ overlayId: 'overlay-3', hasSnapshot: false }),
-    ).toThrow('clock unavailable');
+    expect(() => unavailableClockScheduler.queue({ overlayId: 'overlay-3', hasSnapshot: false })).toThrow('clock unavailable');
     expect(metrics.read(0, scheduler.size)).toMatchObject({
       rttQueueRequestCount: 0,
       rttFlushAttemptCount: 0,
@@ -136,10 +128,7 @@ function createMutableClock(now: number): MutableClock {
   return { now };
 }
 
-function createScheduler(
-  clock: MutableClock,
-  metrics: RtcTopologyMetrics,
-): RtcTopologyRttRebuildScheduler {
+function createScheduler(clock: MutableClock, metrics: RtcTopologyMetrics): RtcTopologyRttRebuildScheduler {
   return new RtcTopologyRttRebuildScheduler({
     nowEpochMs: () => clock.now,
     debounceMs: 50,

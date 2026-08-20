@@ -1,10 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-// prettier-ignore
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS,
@@ -16,21 +11,12 @@ import {
   type AdminPruneExpiredRepository,
   type AdminPrunePageRead,
 } from '@shared-server/rallar-system/admin-operations/AdminPruneExpiredWork.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import type {
-  ReservedAdminPrunePageWork,
-} from '@shared-server/rallar-system/admin-operations/admin-prune-work-codec.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  createAdminPruneAggregate,
-} from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
+import type { ReservedAdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/admin-prune-work-codec.ts';
+import { createAdminPruneAggregate } from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 
 const NOW = 1_700_000_000_000;
-const RETRY_LIFETIME =
-  DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS + RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS;
+const RETRY_LIFETIME = DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS + RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS;
 
 describe('admin prune retry lifetime', () => {
   it('gives every successor and pending result a complete 20-attempt retry horizon', () => {
@@ -65,9 +51,7 @@ describe('admin prune retry lifetime', () => {
     const computed = service.compute(command, read);
 
     expect(computed.next?.expireAtEpochMs).toBe(NOW + RETRY_LIFETIME);
-    expect(Number(computed.aggregateSuccessor.audit.expiryTs.epochMilliseconds)).toBe(
-      NOW + RETRY_LIFETIME,
-    );
+    expect(Number(computed.aggregateSuccessor.audit.expiryTs.epochMilliseconds)).toBe(NOW + RETRY_LIFETIME);
   });
 });
 
@@ -106,10 +90,7 @@ function createReservation(): ResourceEntry {
 
 function createDatabase(): PSqlSql {
   const database: PSqlSql = Object.assign(
-    <T>(
-      _stringsOrValues: TemplateStringsArray | readonly unknown[],
-      ..._values: unknown[]
-    ): Promise<T> =>
+    <T>(_stringsOrValues: TemplateStringsArray | readonly unknown[], ..._values: unknown[]): Promise<T> =>
       Promise.reject(new Error('Unexpected SQL execution in admin prune compute test')),
     {
       begin: <T>(_run: (sql: PSqlTransactionSql) => Promise<T>): Promise<T> =>

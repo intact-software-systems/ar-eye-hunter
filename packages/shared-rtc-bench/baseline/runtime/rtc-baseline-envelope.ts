@@ -10,9 +10,7 @@ import type {
   RtcBaselineWorkloadId,
 } from '../contracts/rtc-baseline-contracts.ts';
 import { decodeRtcBaselineCaptureRequest } from '../contracts/rtc-baseline-decoding.ts';
-// prettier-ignore
-import type { RtcBaselineEvidenceAcceptance } from
-  '../acceptance/rtc-baseline-evidence-acceptance.ts';
+import type { RtcBaselineEvidenceAcceptance } from '../acceptance/rtc-baseline-evidence-acceptance.ts';
 import type { RtcBaselineFinalizedEvidence } from '../evidence/rtc-baseline-finalized-evidence.ts';
 import type { RtcBaselineFinalizedReader } from '../evidence/rtc-baseline-finalized-reader.ts';
 import { validateRtcBaselineCaptureRequest } from '../contracts/rtc-baseline-validation.ts';

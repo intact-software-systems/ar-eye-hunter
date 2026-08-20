@@ -39,18 +39,9 @@ import {
 } from './rtc-topology/topic/init-rtc-rtt-topic.ts';
 import type { RtcRttRefinementGate } from './rtc-topology/topic/rtc-rtt-refinement-gate.ts';
 import type { RtcRttRefinementService } from './rtc-topology/topic/rtc-rtt-refinement-service.ts';
-// prettier-ignore
-import type {
-  GroupLifecyclePolicyRead,
-} from './group-state/persistence/group-lifecycle-policy-repository.ts';
-// prettier-ignore
-import type {
-  GroupMutationCommand,
-} from './group-state/mutation/group-mutation-contracts.ts';
-// prettier-ignore
-import {
-  createFormationTimerWorkHandler,
-} from './topology/replay/create-formation-timer-work-handler.ts';
+import type { GroupLifecyclePolicyRead } from './group-state/persistence/group-lifecycle-policy-repository.ts';
+import type { GroupMutationCommand } from './group-state/mutation/group-mutation-contracts.ts';
+import { createFormationTimerWorkHandler } from './topology/replay/create-formation-timer-work-handler.ts';
 import { AppOutboxType } from './services/AppOutboxService.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
@@ -120,8 +111,8 @@ export function initRallarSystemWsTopics(
   const rtcTopologyRuntimeState = rtcTopologyPersistence.repositories;
   const rtcTopologyFlushTimers = new Map<string, RtcTopologyFlushTimer>();
   let globalGraphRttRecomputeTimer: ReturnType<typeof setTimeout> | undefined;
-  const globalGraphRecomputeLimit = options.globalGraphRecomputeLimit ??
-    DEFAULT_GLOBAL_GRAPH_RECOMPUTE_LIMIT;
+  const globalGraphRecomputeLimit =
+    options.globalGraphRecomputeLimit ?? DEFAULT_GLOBAL_GRAPH_RECOMPUTE_LIMIT;
   const globalGraphRecomputeLimiter = toRateLimiter(
     globalGraphRecomputeLimit.windowMs,
     globalGraphRecomputeLimit.maxPerWindow,

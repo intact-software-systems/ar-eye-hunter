@@ -3,22 +3,13 @@ import { expect, it, vi } from 'vitest';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-// prettier-ignore
-import {
-  ClientStateRepository,
-} from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import {
   type ClientStateService,
   type ClientStateWritten,
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-// prettier-ignore
-import {
-  createClientStateService,
-} from '@shared-server/rallar-system/client-state/client-state-service.ts';
-// prettier-ignore
-import {
-  AppClientInboxService,
-} from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import {
   type ClientExpiredSessionsAppInboxPayload,
   type ClientSessionConnectAppInboxPayload,
@@ -45,48 +36,35 @@ interface SeedClientExpirySessionInput {
   readonly runtimeRepository: FakeRuntimeStateRepository;
 }
 
-// prettier-ignore
-it(
-  'processes expired client sessions through the inbox and publishes written mutations',
-  async () => {
-    const queue = new ClientExpiryTestResourceInbox();
-    const reader = new InboxQueueReader(queue);
-    const results = new ClientExpiryTestResourceInboxResults();
-    const runtimeRepository = new FakeRuntimeStateRepository();
-    const publisher = createPublisher();
-    const expiresAtEpochMs = Date.now() - 1_000;
-    const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
-    const clientStateService = createClientStateService({
-      runtimeRepository,
-      formationDamping: 'damped',
-      createClientStateEventStore: () => database.clientEventStore,
-      serviceId: 'server-12345678',
-    });
-    const service = new AppClientInboxService(
-      reader,
-      queue as never,
-      results as never,
-      database,
-      clientStateService,
-      'server-12345678',
-    );
-    await seedClientExpirySession(service, reader, { expiresAtEpochMs, runtimeRepository });
+it('processes expired client sessions through the inbox and publishes written mutations', async () => {
+  const queue = new ClientExpiryTestResourceInbox();
+  const reader = new InboxQueueReader(queue);
+  const results = new ClientExpiryTestResourceInboxResults();
+  const runtimeRepository = new FakeRuntimeStateRepository();
+  const publisher = createPublisher();
+  const expiresAtEpochMs = Date.now() - 1_000;
+  const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
+  const clientStateService = createClientStateService({
+    runtimeRepository,
+    formationDamping: 'damped',
+    createClientStateEventStore: () => database.clientEventStore,
+    serviceId: 'server-12345678',
+  });
+  const service = new AppClientInboxService(reader, queue as never, results as never, database, clientStateService, 'server-12345678');
+  await seedClientExpirySession(service, reader, { expiresAtEpochMs, runtimeRepository });
 
-    const expired = await processClientInbox(reader, () =>
-      service.processExpiredSessions(expiresAtEpochMs + 1),
-    );
+  const expired = await processClientInbox(reader, () => service.processExpiredSessions(expiresAtEpochMs + 1));
 
-    expect(expired.right).toHaveLength(1);
-    expect(expired.right?.[0].result.right?.event).toMatchObject({
-      eventType: 'session-expired',
-      reason: 'expired',
-      sessionId: 'alice-session',
-    });
-    expect(expired.right?.[0].result.right?.snapshot.activeSessions).toEqual([]);
-    expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
-    expect(publisher.publishClientEvent).not.toHaveBeenCalled();
-  },
-);
+  expect(expired.right).toHaveLength(1);
+  expect(expired.right?.[0].result.right?.event).toMatchObject({
+    eventType: 'session-expired',
+    reason: 'expired',
+    sessionId: 'alice-session',
+  });
+  expect(expired.right?.[0].result.right?.snapshot.activeSessions).toEqual([]);
+  expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
+  expect(publisher.publishClientEvent).not.toHaveBeenCalled();
+});
 
 it('keeps at most one active waiting client expiry entry across timestamps', async () => {
   const queue = new ClientExpiryTestResourceInbox();
@@ -110,9 +88,7 @@ it('keeps at most one active waiting client expiry entry across timestamps', asy
 
   expect(listActiveClientExpiryTestEntries(entries)).toHaveLength(1);
   expect(entries[0].key.resourceId).toBe('expire-client-sessions');
-  expect(
-    readClientExpiryTestEnqueueData<ClientExpiredSessionsAppInboxPayload>(entries[0]).atEpochMs,
-  ).toBe(60_000);
+  expect(readClientExpiryTestEnqueueData<ClientExpiredSessionsAppInboxPayload>(entries[0]).atEpochMs).toBe(60_000);
 
   await dequeueClientInbox(reader);
 
@@ -182,10 +158,7 @@ it('expires stale sessions once and leaves publication to the app inbox', async 
     disconnectReason: 'expired',
     disconnectedAtEpochMs: expiresAtEpochMs,
   });
-  expect((await repository.listEvents(principalRef)).map((event) => event.eventType)).toEqual([
-    'session-connected',
-    'session-expired',
-  ]);
+  expect((await repository.listEvents(principalRef)).map((event) => event.eventType)).toEqual(['session-connected', 'session-expired']);
   expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
   expect(publisher.publishClientEvent).not.toHaveBeenCalled();
 });
@@ -201,19 +174,13 @@ it('does not rewrite an expired session when a late disconnect cleanup arrives',
   const principalRef = toClientPrincipalRef('alice');
 
   await service.expireExpiredSessions(now);
-  const lateDisconnect = await service.disconnectSession(
-    SCOPE,
-    principalRef.principalId,
-    'alice-browser',
-    'session-1',
-    {
-      generationId: 'generation-session-1',
-      reason: 'socket-closed',
-      actorPrincipalId: 'alice',
-      actorSessionId: 'session-1',
-      requestId: 'late-disconnect-after-expiry',
-    },
-  );
+  const lateDisconnect = await service.disconnectSession(SCOPE, principalRef.principalId, 'alice-browser', 'session-1', {
+    generationId: 'generation-session-1',
+    reason: 'socket-closed',
+    actorPrincipalId: 'alice',
+    actorSessionId: 'session-1',
+    requestId: 'late-disconnect-after-expiry',
+  });
 
   expect(lateDisconnect.result.right?.event).toBeNull();
   const repository = new ClientStateRepository(runtimeRepository);
@@ -228,10 +195,7 @@ it('does not rewrite an expired session when a late disconnect cleanup arrives',
     disconnectReason: 'expired',
     disconnectedAtEpochMs: expiresAtEpochMs,
   });
-  expect((await repository.listEvents(principalRef)).map((event) => event.eventType)).toEqual([
-    'session-connected',
-    'session-expired',
-  ]);
+  expect((await repository.listEvents(principalRef)).map((event) => event.eventType)).toEqual(['session-connected', 'session-expired']);
   expect(runtimeRepository.locks).toEqual([]);
 });
 
@@ -245,21 +209,15 @@ it('ignores a late heartbeat from an expired connection generation', async () =>
   const principalRef = toClientPrincipalRef('alice');
 
   await service.expireExpiredSessions(now);
-  const lateHeartbeat = await service.heartbeatSession(
-    SCOPE,
-    principalRef.principalId,
-    'alice-browser',
-    'session-1',
-    {
-      generationId: 'generation-session-1',
-      presenceState: 'online',
-      actorPrincipalId: 'alice',
-      actorSessionId: 'session-1',
-      lastHeartbeatAtEpochMs: now + 1,
-      expiresAtEpochMs: now + 60_000,
-      requestId: 'late-heartbeat-after-expiry',
-    },
-  );
+  const lateHeartbeat = await service.heartbeatSession(SCOPE, principalRef.principalId, 'alice-browser', 'session-1', {
+    generationId: 'generation-session-1',
+    presenceState: 'online',
+    actorPrincipalId: 'alice',
+    actorSessionId: 'session-1',
+    lastHeartbeatAtEpochMs: now + 1,
+    expiresAtEpochMs: now + 60_000,
+    requestId: 'late-heartbeat-after-expiry',
+  });
 
   expect(lateHeartbeat.result.right?.event).toBeNull();
   expect(lateHeartbeat.result.right?.snapshot.activeSessions).toHaveLength(0);
@@ -272,10 +230,7 @@ it('ignores a late heartbeat from an expired connection generation', async () =>
       sessionId: 'session-1',
     }),
   ).toMatchObject({ status: 'expired', disconnectReason: 'expired' });
-  expect((await repository.listEvents(principalRef)).map((event) => event.eventType)).toEqual([
-    'session-connected',
-    'session-expired',
-  ]);
+  expect((await repository.listEvents(principalRef)).map((event) => event.eventType)).toEqual(['session-connected', 'session-expired']);
 });
 
 async function seedClientExpirySession(
@@ -283,15 +238,8 @@ async function seedClientExpirySession(
   reader: InboxQueueReader,
   input: SeedClientExpirySessionInput,
 ): Promise<void> {
-  const authority = await createClientExpiryTestIssuedAuthority(
-    input.runtimeRepository,
-    'alice',
-    'alice-session',
-  );
-  const seeded = service.processAuthenticatedEntryUntilCompletion<
-    ClientSessionConnectAppInboxPayload,
-    ClientStateWritten
-  >(
+  const authority = await createClientExpiryTestIssuedAuthority(input.runtimeRepository, 'alice', 'alice-session');
+  const seeded = service.processAuthenticatedEntryUntilCompletion<ClientSessionConnectAppInboxPayload, ClientStateWritten>(
     {
       type: AppInboxType.CLIENT_SESSION_CONNECT,
       resourceId: 'seed-client-expiry-session',
@@ -331,10 +279,7 @@ async function dequeueClientInbox(reader: InboxQueueReader): Promise<void> {
   await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 }
 
-async function waitForQueueEntryCount(
-  queue: ClientExpiryTestResourceInbox,
-  count: number,
-): Promise<void> {
+async function waitForQueueEntryCount(queue: ClientExpiryTestResourceInbox, count: number): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     if ((await readClientExpiryTestEntries(queue)).length >= count) {
       return;
@@ -365,27 +310,18 @@ function createClientStateServiceStub(overrides: Partial<ClientStateService>): C
   };
 }
 
-async function seedConnectedSession(
-  runtimeRepository: FakeRuntimeStateRepository,
-  expiresAtEpochMs: number,
-): Promise<void> {
+async function seedConnectedSession(runtimeRepository: FakeRuntimeStateRepository, expiresAtEpochMs: number): Promise<void> {
   const now = Math.max(2_000, expiresAtEpochMs - 1_000);
-  await createClientStatePhaseTestDriver(runtimeRepository, () => now).connectSession(
-    SCOPE,
-    'alice',
-    'alice-browser',
-    'session-1',
-    {
-      generationId: 'generation-session-1',
-      presenceState: 'online',
-      actorPrincipalId: 'alice',
-      actorSessionId: 'session-1',
-      connectedAtEpochMs: 2_000,
-      lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
-      expiresAtEpochMs,
-      requestId: 'seed-session-1',
-    },
-  );
+  await createClientStatePhaseTestDriver(runtimeRepository, () => now).connectSession(SCOPE, 'alice', 'alice-browser', 'session-1', {
+    generationId: 'generation-session-1',
+    presenceState: 'online',
+    actorPrincipalId: 'alice',
+    actorSessionId: 'session-1',
+    connectedAtEpochMs: 2_000,
+    lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
+    expiresAtEpochMs,
+    requestId: 'seed-session-1',
+  });
 }
 
 function toClientPrincipalRef(principalId: string): ClientPrincipalRef {

@@ -8,10 +8,7 @@ import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-manage
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import { hashCanonicalCommand } from '../../services/canonical-command-hash.ts';
-// prettier-ignore
-import type {
-  GroupTopologyConfigMutationCommand,
-} from '../config/mutation/group-topology-config-mutation-contracts.ts';
+import type { GroupTopologyConfigMutationCommand } from '../config/mutation/group-topology-config-mutation-contracts.ts';
 import type { AppInboxEnqueueInput } from '../../services/AppInboxService.ts';
 import { AppInboxType } from '../../services/AppInboxService.ts';
 import type {

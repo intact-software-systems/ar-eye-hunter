@@ -1,6 +1,4 @@
-// prettier-ignore
-import { createRtcBaselineEvidenceAcceptance } from
-  '../acceptance/rtc-baseline-evidence-acceptance.ts';
+import { createRtcBaselineEvidenceAcceptance } from '../acceptance/rtc-baseline-evidence-acceptance.ts';
 import {
   RTC_BASELINE_ACCEPTED_ARTIFACT_DIRECTORIES,
   resolveRtcBaselineAcceptedArtifactPath,

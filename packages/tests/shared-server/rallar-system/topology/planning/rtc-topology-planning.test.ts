@@ -1,22 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
-// prettier-ignore
-import {
-  RallarRtcTopologyService,
-} from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-// prettier-ignore
-import {
-  RtcTopologyMetrics,
-} from '@shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts';
-// prettier-ignore
-import {
-  planRallarRtcTopologySnapshot,
-} from '@shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts';
-// prettier-ignore
-import {
-  RtcTopologyPlanner,
-} from '@shared-server/rallar-system/topology/planning/rtc-topology-planner.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { RtcTopologyMetrics } from '@shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts';
+import { planRallarRtcTopologySnapshot } from '@shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts';
+import { RtcTopologyPlanner } from '@shared-server/rallar-system/topology/planning/rtc-topology-planner.ts';
 
 import {
   createCentralRtcTopologyRttMeasurements,
@@ -26,10 +14,7 @@ import {
 
 describe('RTC topology planning options and revisions', () => {
   it('plans a star topology through the dedicated planning owner', () => {
-    const planner = new RtcTopologyPlanner(
-      { topologyKind: 'star' },
-      { metrics: new RtcTopologyMetrics(), durationNowMs: () => 0 },
-    );
+    const planner = new RtcTopologyPlanner({ topologyKind: 'star' }, { metrics: new RtcTopologyMetrics(), durationNowMs: () => 0 });
 
     const result = planner.plan({
       group: createRtcTopologyGroupSnapshot('planner-owner', createRtcTopologyMemberIds(3)),
@@ -44,10 +29,7 @@ describe('RTC topology planning options and revisions', () => {
 
   it('owns no-RTT tree, weighted tree, and per-update topology decisions', () => {
     const metrics = new RtcTopologyMetrics();
-    const planner = new RtcTopologyPlanner(
-      { topologyKind: 'tree', degreeLimit: 5 },
-      { metrics, durationNowMs: () => 0 },
-    );
+    const planner = new RtcTopologyPlanner({ topologyKind: 'tree', degreeLimit: 5 }, { metrics, durationNowMs: () => 0 });
     const group = createRtcTopologyGroupSnapshot('planner-owner', createRtcTopologyMemberIds(5));
 
     const noRtt = planner.plan({
@@ -59,10 +41,7 @@ describe('RTC topology planning options and revisions', () => {
     });
     const weighted = planner.plan({
       group,
-      rttMeasurements: createCentralRtcTopologyRttMeasurements(
-        createRtcTopologyMemberIds(5),
-        'peer-1',
-      ),
+      rttMeasurements: createCentralRtcTopologyRttMeasurements(createRtcTopologyMemberIds(5), 'peer-1'),
       previous: noRtt.snapshot,
       updateOptions: { topologyOptions: { topologyKind: 'mesh', degreeLimit: 2 } },
       nowEpochMs: 200,
@@ -94,10 +73,7 @@ describe('RTC topology planning options and revisions', () => {
       nowEpochMs: 100,
     });
     const incrementallyPlanned = planner.plan({
-      group: createRtcTopologyGroupSnapshot('planner-incremental', [
-        ...memberSessionIds,
-        'peer-21',
-      ]),
+      group: createRtcTopologyGroupSnapshot('planner-incremental', [...memberSessionIds, 'peer-21']),
       rttMeasurements: [],
       previous: formed.snapshot,
       updateOptions: { planningIntent: 'membership-delta' },
@@ -122,10 +98,7 @@ describe('RTC topology planning options and revisions', () => {
     });
 
     const hysteresisMetrics = new RtcTopologyMetrics();
-    const hysteresisPlanner = new RtcTopologyPlanner(
-      {},
-      { metrics: hysteresisMetrics, durationNowMs: () => 0 },
-    );
+    const hysteresisPlanner = new RtcTopologyPlanner({}, { metrics: hysteresisMetrics, durationNowMs: () => 0 });
     const meshMembers = createRtcTopologyMemberIds(16);
     const meshPlan = hysteresisPlanner.plan({
       group: createRtcTopologyGroupSnapshot('planner-hysteresis', meshMembers),
@@ -191,15 +164,7 @@ describe('RTC topology planning options and revisions', () => {
     });
 
     expect(result.snapshot.topology).toBe('star');
-    expect(result.snapshot.nextHopsBySessionId['peer-1']).toEqual([
-      'peer-2',
-      'peer-3',
-      'peer-4',
-      'peer-5',
-      'peer-6',
-      'peer-7',
-      'peer-8',
-    ]);
+    expect(result.snapshot.nextHopsBySessionId['peer-1']).toEqual(['peer-2', 'peer-3', 'peer-4', 'peer-5', 'peer-6', 'peer-7', 'peer-8']);
   });
 
   it('honors request topology kind override for tree topology', () => {
@@ -256,21 +221,15 @@ describe('RTC topology planning options and revisions', () => {
   it('keeps default threshold behavior when no per-update topology options are passed', () => {
     const service = new RallarRtcTopologyService({ now: () => 100 });
 
-    expect(
-      service.updateGroupTopology(
-        createRtcTopologyGroupSnapshot('small-room', createRtcTopologyMemberIds(4)),
-      ).snapshot.topology,
-    ).toBe('star');
-    expect(
-      service.updateGroupTopology(
-        createRtcTopologyGroupSnapshot('tree-room', createRtcTopologyMemberIds(5)),
-      ).snapshot.topology,
-    ).toBe('tree');
-    expect(
-      service.updateGroupTopology(
-        createRtcTopologyGroupSnapshot('mesh-room', createRtcTopologyMemberIds(16)),
-      ).snapshot.topology,
-    ).toBe('mesh');
+    expect(service.updateGroupTopology(createRtcTopologyGroupSnapshot('small-room', createRtcTopologyMemberIds(4))).snapshot.topology).toBe(
+      'star',
+    );
+    expect(service.updateGroupTopology(createRtcTopologyGroupSnapshot('tree-room', createRtcTopologyMemberIds(5))).snapshot.topology).toBe(
+      'tree',
+    );
+    expect(service.updateGroupTopology(createRtcTopologyGroupSnapshot('mesh-room', createRtcTopologyMemberIds(16))).snapshot.topology).toBe(
+      'mesh',
+    );
   });
 
   it('retains the graph version while advancing an unchanged group revision', () => {
@@ -301,10 +260,7 @@ describe('RTC topology planning options and revisions', () => {
     const service = new RallarRtcTopologyService({ now: () => 100 });
 
     const first = service.updateGroupTopology(group);
-    const second = service.updateGroupTopology(
-      group,
-      createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'),
-    );
+    const second = service.updateGroupTopology(group, createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'));
 
     expect(first.changed).toBe(true);
     expect(second.changed).toBe(true);
@@ -320,11 +276,9 @@ describe('RTC topology planning options and revisions', () => {
     const secondWorker = new RallarRtcTopologyService({ now: () => 200 });
 
     const first = firstWorker.updateGroupTopology(group);
-    const second = secondWorker.updateGroupTopology(
-      group,
-      createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'),
-      { previous: first.snapshot },
-    );
+    const second = secondWorker.updateGroupTopology(group, createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'), {
+      previous: first.snapshot,
+    });
 
     expect(second.changed).toBe(true);
     expect(second.previous).toBe(first.snapshot);

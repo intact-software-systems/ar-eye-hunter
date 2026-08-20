@@ -1,10 +1,4 @@
-// prettier-ignore
-import {
-  afterEach,
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   cleanupStructuralLineageFixtures,
@@ -103,9 +97,7 @@ describe('changed repository style structural lineage', () => {
       baseFindings: [overlongSource('alpha')],
       targetFindings: [[overlongSource('bravo')]],
     });
-    writeLineageManifestAt(fixture.root, 'plans/repo-style-lineages/nested/example.json', [
-      lineage(fixture),
-    ]);
+    writeLineageManifestAt(fixture.root, 'plans/repo-style-lineages/nested/example.json', [lineage(fixture)]);
 
     const worktreeResult = runChangedChecker({
       root: fixture.root,
@@ -256,8 +248,7 @@ describe('changed repository style structural lineage', () => {
     },
     {
       name: 'missing target',
-      mutate: (fixture: SplitFixture) =>
-        lineage(fixture, { targets: ['apps/example/missing-target.ts'] }),
+      mutate: (fixture: SplitFixture) => lineage(fixture, { targets: ['apps/example/missing-target.ts'] }),
       diagnostic: 'target does not exist',
     },
     {
@@ -270,14 +261,12 @@ describe('changed repository style structural lineage', () => {
     },
     {
       name: 'malformed path',
-      mutate: (fixture: SplitFixture) =>
-        lineage(fixture, { targets: ['apps/example/../outside.ts'] }),
+      mutate: (fixture: SplitFixture) => lineage(fixture, { targets: ['apps/example/../outside.ts'] }),
       diagnostic: 'target path must be a normalized repository-relative path',
     },
     {
       name: 'non-production path',
-      mutate: (fixture: SplitFixture) =>
-        lineage(fixture, { targets: ['packages/tests/example.ts'] }),
+      mutate: (fixture: SplitFixture) => lineage(fixture, { targets: ['packages/tests/example.ts'] }),
       diagnostic: 'target path must name production code',
     },
   ])('fails closed for a $name', ({ mutate, diagnostic }) => {
@@ -370,16 +359,8 @@ describe('changed repository style structural lineage', () => {
       baseFindings: [overlongSource('base')],
       targetFindings: [[overlongSource('target')]],
     });
-    writeFixture(
-      fixture.root,
-      'plans/repo-style-lineages/zeta.json',
-      '{"version":1,"lineages":"not-an-array"}\n',
-    );
-    writeFixture(
-      fixture.root,
-      'plans/repo-style-lineages/alpha.json',
-      '{"version":2,"lineages":[]}\n',
-    );
+    writeFixture(fixture.root, 'plans/repo-style-lineages/zeta.json', '{"version":1,"lineages":"not-an-array"}\n');
+    writeFixture(fixture.root, 'plans/repo-style-lineages/alpha.json', '{"version":2,"lineages":[]}\n');
     commitAll(fixture.root, 'add malformed manifests');
 
     const first = runChangedChecker({ root: fixture.root, mergeBase: fixture.mergeBase });

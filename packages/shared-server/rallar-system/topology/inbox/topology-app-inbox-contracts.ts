@@ -1,14 +1,8 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
-// prettier-ignore
-import type {
-  CanonicalGroupTopologyConfigPatch,
-} from '@shared/api/graph-topology-management-types.ts';
+import type { CanonicalGroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 
-// prettier-ignore
-import type {
-  TopologyMutationAuthorityProof,
-} from './topology-mutation-authority-proof.ts';
+import type { TopologyMutationAuthorityProof } from './topology-mutation-authority-proof.ts';
 
 export type TopologyAppInboxOperation =
   | 'putConfig'

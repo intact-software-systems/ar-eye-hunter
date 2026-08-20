@@ -1,20 +1,16 @@
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-// prettier-ignore
 import {
   computeGroupFormationReadiness,
 } from '@shared/api/group-lifecycle/compute-group-formation-readiness.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
-// prettier-ignore
 import {
   createDefaultGroupLifecyclePolicy,
 } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
-// prettier-ignore
 import {
   resolveGroupLifecycleManagers,
   toGroupLifecycleElectionKey,
 } from '@shared/api/group-lifecycle/resolve-group-lifecycle-managers.ts';
-// prettier-ignore
 import type {
   GroupLifecyclePolicyRead,
 } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';

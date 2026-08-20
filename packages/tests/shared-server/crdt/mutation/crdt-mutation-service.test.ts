@@ -1,9 +1,4 @@
-// prettier-ignore
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   RALLAR_CRDT_OPERATION_VERSION,
@@ -23,21 +18,9 @@ import {
   type CrdtMutationRead,
   type CrdtMutationRepository,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  createCrdtMutationCommand,
-} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  createCrdtMutationService,
-} from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
-import {
-  decodeCrdtMutationResult,
-} from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
@@ -94,20 +77,10 @@ describe('CRDT mutation service', () => {
       createWriter: () => repository,
       serviceId: 'server-1',
     });
-    await applyCrdtMutation(
-      service,
-      repository,
-      await createAppendCommand('append-first', 'update-1'),
-    );
+    await applyCrdtMutation(service, repository, await createAppendCommand('append-first', 'update-1'));
 
-    const replay = await computeCrdtMutation(
-      service,
-      await createAppendCommand('append-replay', 'update-1'),
-    );
-    const collision = await computeCrdtMutation(
-      service,
-      await createAppendCommand('append-collision', 'update-1', 'different'),
-    );
+    const replay = await computeCrdtMutation(service, await createAppendCommand('append-replay', 'update-1'));
+    const collision = await computeCrdtMutation(service, await createAppendCommand('append-collision', 'update-1', 'different'));
 
     expect(replay.outcome).toBe('replay');
     expect(collision).toMatchObject({
@@ -128,9 +101,7 @@ describe('CRDT mutation service', () => {
     const first = await computeCrdtMutation(service, command);
     repository.failNextConflict = true;
 
-    await expect(service.write(repository.transaction, first)).rejects.toBeInstanceOf(
-      CrdtMutationConflictError,
-    );
+    await expect(service.write(repository.transaction, first)).rejects.toBeInstanceOf(CrdtMutationConflictError);
     repository.metadata = createMetadata({
       lifecycle: 'archived',
       documentRevision: 1,
@@ -224,12 +195,8 @@ describe('CRDT mutation service', () => {
     const commandMismatch = { ...computed, command: { ...command } };
     const readMismatch = { ...computed, read: { ...read } };
 
-    expect(service.validate({ command, read, computed: commandMismatch })).toMatchObject([
-      { code: 'computed-identity-differs' },
-    ]);
-    expect(service.validate({ command, read, computed: readMismatch })).toMatchObject([
-      { code: 'computed-identity-differs' },
-    ]);
+    expect(service.validate({ command, read, computed: commandMismatch })).toMatchObject([{ code: 'computed-identity-differs' }]);
+    expect(service.validate({ command, read, computed: readMismatch })).toMatchObject([{ code: 'computed-identity-differs' }]);
   });
 
   it('returns all ordered validation issues for a malformed compact accepted result', async () => {
@@ -267,9 +234,7 @@ describe('CRDT mutation service', () => {
     });
 
     expect(() => service.validate({ command, read, computed: malformed })).not.toThrow();
-    expect(
-      service.validate({ command, read, computed: malformed }).map((issue) => issue.code),
-    ).toEqual([
+    expect(service.validate({ command, read, computed: malformed }).map((issue) => issue.code)).toEqual([
       'computed-identity-differs',
       'computed-predecessor-differs',
       'compact-reason-differs',
@@ -335,9 +300,7 @@ function createUpdate(updateId: string, title: string): RallarCrdtUpdateEnvelope
   };
 }
 
-function createMetadata(
-  overrides: Partial<RallarCrdtDocumentMetadata> = {},
-): RallarCrdtDocumentMetadata {
+function createMetadata(overrides: Partial<RallarCrdtDocumentMetadata> = {}): RallarCrdtDocumentMetadata {
   return {
     document: DOCUMENT,
     documentKey: toRallarCrdtDocumentKey(DOCUMENT),
@@ -414,10 +377,8 @@ class MemoryCrdtMutationRepository implements CrdtMutationRepository {
 
 function createUnusedTransaction(): PSqlTransactionSql {
   const transaction: PSqlTransactionSql = Object.assign(
-    <T>(
-      _stringsOrValues: TemplateStringsArray | readonly unknown[],
-      ..._values: unknown[]
-    ): Promise<T> => Promise.reject(new Error('Unexpected SQL execution in mutation unit test')),
+    <T>(_stringsOrValues: TemplateStringsArray | readonly unknown[], ..._values: unknown[]): Promise<T> =>
+      Promise.reject(new Error('Unexpected SQL execution in mutation unit test')),
     {
       begin: <T>(_run: (sql: PSqlTransactionSql) => Promise<T>): Promise<T> =>
         Promise.reject(new Error('Unexpected nested transaction in mutation unit test')),

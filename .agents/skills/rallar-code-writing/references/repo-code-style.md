@@ -193,7 +193,10 @@ migration decision above.
 Use the nearest configured formatter. The repository TypeScript baseline is:
 
 - 2-space indentation;
-- 100-character line width;
+- 100-character line width, measured on code. A module specifier is not measured: its length is
+  the path, and a formatter honouring the same width leaves the line intact. A `function` or
+  `interface` declaration header is measured at 140, because its length is the names it
+  declares. Import depth and naming are owned by the layout and type-organization rules;
 - semicolons;
 - single quotes;
 - trailing commas in multiline declarations, calls, objects, arrays, and types;

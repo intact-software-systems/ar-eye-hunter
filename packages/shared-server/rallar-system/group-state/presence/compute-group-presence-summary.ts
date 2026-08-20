@@ -13,14 +13,8 @@ import {
   groupStateGroupStorageKey,
   groupStatePresenceSummaryStorageKey,
 } from '../persistence/group-state-storage-keys.ts';
-// prettier-ignore
-import {
-  validateRuntimeEntryValue,
-} from '../mutation/state-validation/validate-group-mutation-read.ts';
-// prettier-ignore
-import {
-  presenceAdmissionIdentity,
-} from '../mutation/presence/compute-group-presence-admission.ts';
+import { validateRuntimeEntryValue } from '../mutation/state-validation/validate-group-mutation-read.ts';
+import { presenceAdmissionIdentity } from '../mutation/presence/compute-group-presence-admission.ts';
 import { validateStoredGroup } from '../persistence/validate-persisted-group.ts';
 import { validatePresenceSummaryValue } from '../persistence/validate-persisted-group-presence.ts';
 import {
@@ -29,10 +23,7 @@ import {
   requireJsonSafe,
   requirePositiveSafeInteger,
 } from '../group-state-validation-primitives.ts';
-// prettier-ignore
-import {
-  validateGroupPresenceSummaryReadCollections,
-} from './validate-group-presence-summary-read-collections.ts';
+import { validateGroupPresenceSummaryReadCollections } from './validate-group-presence-summary-read-collections.ts';
 
 export type GroupPresenceSummaryRead = Readonly<{
   group: RuntimeStateEntryValue<Group>;

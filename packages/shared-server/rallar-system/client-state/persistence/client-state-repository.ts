@@ -9,18 +9,9 @@ import type {
 } from '@shared/api/client-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
-// prettier-ignore
-import type {
-  PSqlTransactionSql,
-} from '../../../postgres/PostgresSqlClient.ts';
-// prettier-ignore
-import {
-  PSqlRuntimeStateRepository,
-} from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-// prettier-ignore
-import {
-  PSqlClientStateEventRepository,
-} from '../../../postgres/rallar-system/PSqlStateEventRepository.ts';
+import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+import { PSqlRuntimeStateRepository } from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { PSqlClientStateEventRepository } from '../../../postgres/rallar-system/PSqlStateEventRepository.ts';
 import type {
   RuntimeStateConditionalDeleteResult,
   RuntimeStateConditionalWriteResult,
@@ -58,10 +49,7 @@ export type {
   ClientPrincipalSnapshotRead,
   ClientStateRepositoryOptions,
 } from './client-state-persistence-contracts.ts';
-// prettier-ignore
-export {
-  ClientStateRepositoryInvariantCorruptionError,
-} from './client-state-persistence-contracts.ts';
+export { ClientStateRepositoryInvariantCorruptionError } from './client-state-persistence-contracts.ts';
 
 export function createTransactionBoundClientStateRepository(
   transaction: PSqlTransactionSql,

@@ -3,14 +3,10 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readChangedPathsBetweenRevisions } from '../repository-changes/read-git-changes.mjs';
 import { verifyGovernanceDecisionCommit } from './governance-decision-commit-verification.mjs';
 import { decodeGovernanceDecisionReceipt } from './governance-decision-receipt.mjs';
-// prettier-ignore
-import { verifyHistoricalGovernanceDecisionCommit } from
-  './governance-decision-remote-verification.mjs';
+import { verifyHistoricalGovernanceDecisionCommit } from './governance-decision-remote-verification.mjs';
 import { readGitRepositorySnapshot } from './git-repository-snapshot.mjs';
 import { createGitHubGovernanceApi } from './github-governance-api.mjs';
-// prettier-ignore
-import { verifyGovernanceDecisionAdmission } from
-  './governance-decision-admission-verification.mjs';
+import { verifyGovernanceDecisionAdmission } from './governance-decision-admission-verification.mjs';
 
 const receiptPathPattern = /^governance\/decisions\/([0-9a-f]{64})\.json$/u;
 const gitObjectIdPattern = /^[0-9a-f]{40}$/u;

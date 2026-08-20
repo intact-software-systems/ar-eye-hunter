@@ -1,7 +1,4 @@
-// prettier-ignore
-import {
-  GroupLifecyclePolicyRepository,
-} from '../../persistence/group-lifecycle-policy-repository.ts';
+import { GroupLifecyclePolicyRepository } from '../../persistence/group-lifecycle-policy-repository.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import {
@@ -29,19 +26,10 @@ import {
   groupStateUpdatePresenceDescriptor,
   groupStateUpdatePresenceSummaryDescriptor,
 } from '../../persistence/group-state-write-descriptors.ts';
-// prettier-ignore
-import {
-  createTransactionBoundGroupStateRepository,
-} from '../../persistence/group-state-repository.ts';
+import { createTransactionBoundGroupStateRepository } from '../../persistence/group-state-repository.ts';
 import type { PSqlTransactionSql } from '../../../../postgres/PostgresSqlClient.ts';
-// prettier-ignore
-import {
-  PSqlRuntimeStateRepository,
-} from '../../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-// prettier-ignore
-import {
-  ResourceInboxRepository,
-} from '../../../../postgres/resource-inbox/ResourceInboxRepository.ts';
+import { PSqlRuntimeStateRepository } from '../../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { ResourceInboxRepository } from '../../../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import type {
   GroupMutationComputedWrite,
   GroupMutationReceipt,

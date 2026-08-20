@@ -1,9 +1,4 @@
-// prettier-ignore
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   type AuditStamp,
   type ClientInstance,
@@ -23,33 +18,20 @@ import {
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
-// prettier-ignore
-import {
-  ClientStateRepository,
-} from '@shared-server/rallar-system/repositories/\
+import { ClientStateRepository } from '@shared-server/rallar-system/repositories/\
 ClientStateRepository.ts';
-// prettier-ignore
-import {
-  createClientStateSnapshotReadThroughCache,
-} from '@shared-server/rallar-system/services/\
+import { createClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/\
 client-state-snapshot-read-through-cache.ts';
-// prettier-ignore
-import {
-  createWsServerTargetResolver,
-} from '@shared-server/rallar-system/middleware/\
+import { createWsServerTargetResolver } from '@shared-server/rallar-system/middleware/\
 RallarMiddleware.ts';
 
-// prettier-ignore
-import {
-  findCurrentClientSnapshot,
-} from '../../../../../apps/api-v1/src/crdt/\
+import { findCurrentClientSnapshot } from '../../../../../apps/api-v1/src/crdt/\
 create-api-crdt-document-authorizer.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
 
 const NOW = Date.now();
-const COLD_CACHE_FANOUT_BEHAVIOR =
-  'fails closed while cold, then expands omitted-workspace ' + 'principal to all current sessions';
+const COLD_CACHE_FANOUT_BEHAVIOR = 'fails closed while cold, then expands omitted-workspace ' + 'principal to all current sessions';
 
 describe('CRDT principal fanout from a cold cache', () => {
   it(COLD_CACHE_FANOUT_BEHAVIOR, async () => {
@@ -135,10 +117,7 @@ function principalMessage() {
   );
 }
 
-async function putSnapshot(
-  repository: ClientStateRepository,
-  snapshot: ClientSnapshot,
-): Promise<void> {
+async function putSnapshot(repository: ClientStateRepository, snapshot: ClientSnapshot): Promise<void> {
   await repository.insertPrincipal(snapshot.principal);
   for (const instance of snapshot.instances) {
     await repository.insertInstance(instance);

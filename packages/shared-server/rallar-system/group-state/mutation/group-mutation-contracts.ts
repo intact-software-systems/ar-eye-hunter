@@ -19,14 +19,8 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { GroupPolicyCapacityConfig } from '../../group-policy.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
-// prettier-ignore
-import type {
-  InitialGroupPresenceSummaryCandidate,
-} from '../presence/group-initial-presence-summary.ts';
-// prettier-ignore
-import type {
-  GroupLifecyclePolicyRead,
-} from '../persistence/group-lifecycle-policy-repository.ts';
+import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
+import type { GroupLifecyclePolicyRead } from '../persistence/group-lifecycle-policy-repository.ts';
 
 type NullableActorInput = Readonly<{
   actorPrincipalId: string | null;

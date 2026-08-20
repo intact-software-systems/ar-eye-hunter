@@ -4,12 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 import { toCanonicalJson } from './governance-decisions/canonical-json.mjs';
-// prettier-ignore
-import { verifyGovernanceDecisionCommit } from
-  './governance-decisions/governance-decision-commit-verification.mjs';
-// prettier-ignore
-import { decodeGovernanceDecisionCommand } from
-  './governance-decisions/governance-decision-command.mjs';
+import { verifyGovernanceDecisionCommit } from './governance-decisions/governance-decision-commit-verification.mjs';
+import { decodeGovernanceDecisionCommand } from './governance-decisions/governance-decision-command.mjs';
 import {
   createGovernanceDecisionReceipt,
   serializeGovernanceDecisionReceipt,
@@ -18,12 +14,8 @@ import {
   trustedGovernanceAppSlug,
   verifyPublishedGovernanceDecisionCommit,
 } from './governance-decisions/governance-decision-remote-verification.mjs';
-// prettier-ignore
-import { decodeGovernanceDecisionRequest } from
-  './governance-decisions/governance-decision-request.mjs';
-// prettier-ignore
-import { computeGovernanceDecisionTransition } from
-  './governance-decisions/governance-decision-transition.mjs';
+import { decodeGovernanceDecisionRequest } from './governance-decisions/governance-decision-request.mjs';
+import { computeGovernanceDecisionTransition } from './governance-decisions/governance-decision-transition.mjs';
 import { createGitHubGovernanceApi } from './governance-decisions/github-governance-api.mjs';
 import {
   authenticateGitHubAdministrator,

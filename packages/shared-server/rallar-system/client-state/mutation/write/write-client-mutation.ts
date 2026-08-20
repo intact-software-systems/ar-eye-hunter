@@ -1,12 +1,6 @@
-// prettier-ignore
-import {
-  requireConditionalWrite,
-} from '../../../../runtime-state/optimistic-runtime-state-write.ts';
+import { requireConditionalWrite } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { PSqlTransactionSql } from '../../../../postgres/PostgresSqlClient.ts';
-// prettier-ignore
-import {
-  ResourceInboxRepository,
-} from '../../../../postgres/resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxRepository } from '../../../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ClientStateRepository } from '../../persistence/client-state-repository.ts';
 import type {
   ClientMutationComputedWrite,

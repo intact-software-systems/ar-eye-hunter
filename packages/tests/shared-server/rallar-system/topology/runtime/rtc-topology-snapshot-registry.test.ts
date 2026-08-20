@@ -2,10 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-// prettier-ignore
-import {
-  RtcTopologySnapshotRegistry,
-} from '@shared-server/rallar-system/topology/runtime/rtc-topology-snapshot-registry.ts';
+import { RtcTopologySnapshotRegistry } from '@shared-server/rallar-system/topology/runtime/rtc-topology-snapshot-registry.ts';
 
 describe('RtcTopologySnapshotRegistry', () => {
   it('accepts first and causally dominating observations', () => {
@@ -53,9 +50,7 @@ describe('RtcTopologySnapshotRegistry', () => {
 
     registry.observe(current);
 
-    expect(() => registry.observe(conflicting)).toThrowError(
-      new Error(`RTC topology process-cache causal conflict: ${current.overlayId}`),
-    );
+    expect(() => registry.observe(conflicting)).toThrowError(new Error(`RTC topology process-cache causal conflict: ${current.overlayId}`));
   });
 
   it('owns only snapshot lookup and removal state', () => {
