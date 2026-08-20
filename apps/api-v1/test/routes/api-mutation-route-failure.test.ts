@@ -1,10 +1,30 @@
 import assert from 'node:assert/strict';
 import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
+import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
 
+import { toGroupMutationErrorResponse } from '../../src/group-state/group-state-route-errors.ts';
 import { toApiMutationRouteFailure } from '../../src/routes/api-mutation-route-failure.ts';
 import {
   toGraphTopologyMutationErrorResponse,
 } from '../../src/routes/graph-topology-route-errors.ts';
+import {
+  toApiMutationFailureJsonObject,
+} from '../../src/routes/to-api-mutation-failure-json-object.ts';
+
+const UNINSPECTABLE_DETAILS = { uninspectable: '[Uninspectable]' };
+
+function createUninspectableDetails(): Record<string, string> {
+  return new Proxy({}, {
+    ownKeys() {
+      throw new Error('Details cannot be inspected');
+    },
+  });
+}
+
+Deno.test('canonical mutation failure details preserve explicit absence', () => {
+  assert.equal(toApiMutationFailureJsonObject(null), null);
+  assert.equal(toApiMutationFailureJsonObject(undefined), null);
+});
 
 Deno.test('canonical mutation failures retain BigInt details without throwing', () => {
   const details: Record<string, bigint> = { amount: 1n };
@@ -67,6 +87,61 @@ Deno.test('canonical mutation failures retain undefined-valued detail properties
     retained: 'yes',
     omitted: 'undefined',
   });
+});
+
+Deno.test('canonical AppInbox denials retain an uninspectable root marker', () => {
+  const failure: AppInboxFailure = {
+    type: 'app-inbox-failure',
+    version: 'canonical.v2',
+    code: 'uninspectable-denial',
+    status: 403,
+    message: 'Uninspectable denial',
+    issues: null,
+    denial: {
+      code: 'uninspectable-denial',
+      message: 'Uninspectable denial',
+      details: createUninspectableDetails(),
+    },
+    retry: null,
+  };
+
+  const rendered = toApiMutationRouteFailure(failure).failure;
+
+  assert.deepEqual(rendered.denial?.details, UNINSPECTABLE_DETAILS);
+});
+
+Deno.test('group policy denials retain an uninspectable root marker', async () => {
+  const response = toGroupMutationErrorResponse(
+    {
+      json: (value, status) => Response.json(value, { status: status ?? 200 }),
+    },
+    new GroupPolicyDeniedError({
+      allowed: false,
+      code: 'group-policy-denied',
+      message: 'Group policy denied the mutation',
+      details: createUninspectableDetails(),
+    }),
+  );
+
+  assert.equal(response.status, 403);
+  assert.deepEqual((await response.json()).denial?.details, UNINSPECTABLE_DETAILS);
+});
+
+Deno.test('topology policy denials retain an uninspectable root marker', async () => {
+  const response = toGraphTopologyMutationErrorResponse(
+    {
+      json: (value, status) => Response.json(value, { status: status ?? 200 }),
+    },
+    new GroupPolicyDeniedError({
+      allowed: false,
+      code: 'group-policy-denied',
+      message: 'Topology policy denied the mutation',
+      details: createUninspectableDetails(),
+    }),
+  );
+
+  assert.equal(response.status, 403);
+  assert.deepEqual((await response.json()).denial?.details, UNINSPECTABLE_DETAILS);
 });
 
 Deno.test('topology mutation failures render cyclic issues canonically', async () => {

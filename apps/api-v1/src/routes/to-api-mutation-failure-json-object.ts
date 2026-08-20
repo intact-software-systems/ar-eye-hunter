@@ -6,6 +6,9 @@ import type {
 const API_MUTATION_FAILURE_CYCLE_MARKER = '[Circular]';
 const API_MUTATION_FAILURE_UNINSPECTABLE_MARKER = '[Uninspectable]';
 const API_MUTATION_FAILURE_ACCESSOR_MARKER = '[Accessor]';
+const API_MUTATION_FAILURE_UNINSPECTABLE_ROOT_MARKER: ApiMutationFailureJsonObject = {
+  uninspectable: API_MUTATION_FAILURE_UNINSPECTABLE_MARKER,
+};
 
 export function toApiMutationFailureJsonObject<Value>(
   value: Value | null | undefined,
@@ -14,7 +17,13 @@ export function toApiMutationFailureJsonObject<Value>(
     return null;
   }
   const normalized = toApiMutationFailureJsonValue(value, new Set<object>());
-  return isApiMutationFailureJsonObject(normalized) ? normalized : null;
+  if (isApiMutationFailureJsonObject(normalized)) {
+    return normalized;
+  }
+  return typeof value === 'object' &&
+      normalized === API_MUTATION_FAILURE_UNINSPECTABLE_MARKER
+    ? API_MUTATION_FAILURE_UNINSPECTABLE_ROOT_MARKER
+    : null;
 }
 
 function toApiMutationFailureJsonValue<Value>(
