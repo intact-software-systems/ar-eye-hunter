@@ -6,6 +6,7 @@ import type {
   AuthMutationPublicResult,
   AuthMutationResult,
 } from './auth-mutation-contracts.ts';
+import { deriveAuthMutationId } from './derive-auth-mutation-id.ts';
 
 type AuthMutationPublicResultRequest = AuthMutationIntent | AuthMutationCommand;
 
@@ -59,11 +60,19 @@ async function toIssuedSessionPublicResult(
   const expected =
     'session' in request
       ? request.session
-      : { clientId: request.clientId, username: request.username };
+      : {
+          clientId: request.clientId,
+          username: request.username,
+          sessionId: await deriveAuthMutationId('session', [
+            request.requestId,
+            request.authority.normalizedUsername,
+            request.clientId,
+          ]),
+        };
   if (
     receipt.clientId !== expected.clientId ||
     receipt.username !== expected.username ||
-    ('sessionId' in expected && receipt.sessionId !== expected.sessionId)
+    receipt.sessionId !== expected.sessionId
   ) {
     throw new Error('Auth session result identity differs');
   }
@@ -136,11 +145,26 @@ async function toIssuedAgentTicketsPublicResult(
   credentialIssuer: AuthCredentialIssuer,
 ): Promise<AuthMutationPublicResult> {
   const receipt = requireResultKind(result, 'agent-tickets-issued');
-  const expectedAgentIds =
-    'agentIds' in request ? request.agentIds : request.tickets.map((ticket) => ticket.agentId);
+  const expectedTickets =
+    'agentIds' in request
+      ? await Promise.all(
+          request.agentIds.map(async (agentId) => ({
+            agentId,
+            sessionId: await deriveAuthMutationId('agent-session', [
+              request.requestId,
+              request.authority.clientId,
+              agentId,
+            ]),
+          })),
+        )
+      : request.tickets;
   if (
-    receipt.tickets.length !== expectedAgentIds.length ||
-    receipt.tickets.some((ticket, index) => ticket.agentId !== expectedAgentIds[index])
+    receipt.tickets.length !== expectedTickets.length ||
+    receipt.tickets.some(
+      (ticket, index) =>
+        ticket.agentId !== expectedTickets[index]?.agentId ||
+        ticket.sessionId !== expectedTickets[index]?.sessionId,
+    )
   ) {
     throw new Error('Auth agent ticket result identity differs');
   }
