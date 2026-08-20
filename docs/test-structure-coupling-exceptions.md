@@ -503,8 +503,8 @@ moved or changed test.
       "id": "mutation-capability-type-interface",
       "domain": "Mutation capability type analysis",
       "owner": "Rallar server maintainers",
-      "summary": "Capability declarations remain distinguishable from executable authoritative mutation owners. Executable assertion: “maps all 50 entrypoints and 46 types to real registrations and owners”.",
-      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#maps all 50 entrypoints and 46 types to real registrations and owners",
+      "summary": "Capability declarations remain distinguishable from executable authoritative mutation owners. Executable assertion: “maps all 54 entrypoints and 50 types to real registrations and owners”.",
+      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#maps all 54 entrypoints and 50 types to real registrations and owners",
       "coverageRelation": "The route-owner suite executes type-to-owner mapping over the complete inventory; this AST parse distinguishes type declarations from executable mutation owners."
     },
     {
@@ -546,6 +546,46 @@ moved or changed test.
       "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “rejects GROUP_CREATE removed from the imported live group registration collection”.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts#rejects GROUP_CREATE removed from the imported live group registration collection",
       "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
+    },
+    {
+      "id": "mutation-registration-predicates--evaluates-safe-logical-includes-and-identity-map-chains-exactly",
+      "domain": "Mutation registration predicates",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “evaluates safe logical includes and identity map chains exactly”.",
+      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#evaluates safe logical includes and identity map chains exactly",
+      "coverageRelation": "The named test mutates the live auth registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
+    },
+    {
+      "id": "mutation-registration-predicates--fails-closed-for-an-opaque-registration-predicate",
+      "domain": "Mutation registration predicates",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “fails closed for an opaque registration predicate”.",
+      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#fails closed for an opaque registration predicate",
+      "coverageRelation": "The named test mutates the live group registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
+    },
+    {
+      "id": "mutation-registration-predicates--narrows-the-auth-registration-array-with-an-exact-equality-filte",
+      "domain": "Mutation registration predicates",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “narrows the auth registration array with an exact equality filter”.",
+      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#narrows the auth registration array with an exact equality filter",
+      "coverageRelation": "The named test mutates the live auth registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
+    },
+    {
+      "id": "mutation-registration-predicates--narrows-the-group-registration-array-with-an-exact-equality-filt",
+      "domain": "Mutation registration predicates",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “narrows the group registration array with an exact equality filter”.",
+      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#narrows the group registration array with an exact equality filter",
+      "coverageRelation": "The named test mutates the live group registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
+    },
+    {
+      "id": "mutation-registration-predicates--rejects-a-group-registration-filter-that-is-always-false",
+      "domain": "Mutation registration predicates",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “rejects a group registration filter that is always false”.",
+      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#rejects a group registration filter that is always false",
+      "coverageRelation": "The named test mutates the live group registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
     },
     {
       "id": "mutation-route-owner-analysis--requires-the-admin-mutation-gateway-and-contains-no-direct-write",
@@ -740,6 +780,14 @@ moved or changed test.
       "coverageRelation": "The architecture assertion reads the accepted workload catalog and package check command, then proves each maintained diagnostic is excluded from accepted evidence and included in Deno checking."
     },
     {
+      "id": "group-topology-canonical-import-direction",
+      "domain": "Group topology canonical import direction",
+      "owner": "Rallar server maintainers",
+      "summary": "Active composition and package exports use canonical topology owners without routing through compatibility-only predecessor paths. Executable assertion: “routes active composition and replay imports directly to canonical topology owners”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners",
+      "coverageRelation": "Adjacent runtime identity assertions prove public exports resolve to canonical classes and command functions; this bounded source check covers the separate composition/import-direction promise that runtime identity cannot distinguish from a wrapper hop."
+    },
+    {
       "id": "typescript-seven-release-boundary",
       "domain": "TypeScript 7 release boundary",
       "owner": "Rallar repository maintainers",
@@ -749,6 +797,149 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-261ca31da4a525f9",
+      "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
+      "line": 42,
+      "column": 20,
+      "kind": "production-source-read",
+      "contract": "mutation-registration-predicates--narrows-the-group-registration-array-with-an-exact-equality-filt",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the live group registration expression that the test narrows before executing the analyzer and requiring the omitted owner family to fail closed.",
+      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#narrows the group registration array with an exact equality filter"
+    },
+    {
+      "id": "test-structure-coupling-77029888ca1be290",
+      "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
+      "line": 57,
+      "column": 20,
+      "kind": "production-source-read",
+      "contract": "mutation-registration-predicates--rejects-a-group-registration-filter-that-is-always-false",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the live group registration predicate that the test replaces with false before executing the analyzer and requiring all group owner connections to disappear.",
+      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#rejects a group registration filter that is always false"
+    },
+    {
+      "id": "test-structure-coupling-d58d4cea2ca6784a",
+      "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
+      "line": 72,
+      "column": 20,
+      "kind": "production-source-read",
+      "contract": "mutation-registration-predicates--narrows-the-auth-registration-array-with-an-exact-equality-filte",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the live auth registration loop that the test narrows before executing the analyzer and requiring an excluded auth command to lose its owner connection.",
+      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#narrows the auth registration array with an exact equality filter"
+    },
+    {
+      "id": "test-structure-coupling-6229b79ae3b7dbee",
+      "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
+      "line": 88,
+      "column": 20,
+      "kind": "production-source-read",
+      "contract": "mutation-registration-predicates--fails-closed-for-an-opaque-registration-predicate",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the live group registration predicate that the test makes opaque before executing the analyzer and requiring unknown registration semantics to fail closed.",
+      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#fails closed for an opaque registration predicate"
+    },
+    {
+      "id": "test-structure-coupling-949f17842a0dbcc1",
+      "path": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts",
+      "line": 104,
+      "column": 20,
+      "kind": "production-source-read",
+      "contract": "mutation-registration-predicates--evaluates-safe-logical-includes-and-identity-map-chains-exactly",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the live auth registration loop that the test replaces with a transparent filter/map chain before executing exact owner-coverage assertions.",
+      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#evaluates safe logical includes and identity map chains exactly"
+    },
+    {
+      "id": "test-structure-coupling-fd50e2c7deef39e6",
+      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
+      "line": 52,
+      "column": 26,
+      "kind": "production-source-read",
+      "contract": "group-topology-canonical-import-direction",
+      "disposition": "durable-boundary",
+      "boundary": "compatibility",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the package entry whose adjacent runtime assertions require public topology exports to resolve to the canonical owners.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
+    },
+    {
+      "id": "test-structure-coupling-f618a827c45f29a6",
+      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
+      "line": 53,
+      "column": 28,
+      "kind": "production-source-read",
+      "contract": "group-topology-canonical-import-direction",
+      "disposition": "durable-boundary",
+      "boundary": "compatibility",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the API composition root to distinguish a direct canonical dependency from a compatibility wrapper with the same runtime export identity.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
+    },
+    {
+      "id": "test-structure-coupling-b32d4e1574f65ec9",
+      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
+      "line": 58,
+      "column": 5,
+      "kind": "symbol-assertion",
+      "contract": "group-topology-canonical-import-direction",
+      "disposition": "durable-boundary",
+      "boundary": "compatibility",
+      "owner": "Rallar server maintainers",
+      "rationale": "Pins the package repository export to its canonical implementation path, paired with the adjacent runtime constructor-identity assertion.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
+    },
+    {
+      "id": "test-structure-coupling-a0b4058dbfe2f399",
+      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
+      "line": 61,
+      "column": 5,
+      "kind": "symbol-assertion",
+      "contract": "group-topology-canonical-import-direction",
+      "disposition": "durable-boundary",
+      "boundary": "compatibility",
+      "owner": "Rallar server maintainers",
+      "rationale": "Pins the package management export to its canonical implementation path, paired with the adjacent runtime constructor-identity assertion.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
+    },
+    {
+      "id": "test-structure-coupling-71da58060c73ca4f",
+      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
+      "line": 64,
+      "column": 5,
+      "kind": "symbol-assertion",
+      "contract": "group-topology-canonical-import-direction",
+      "disposition": "durable-boundary",
+      "boundary": "compatibility",
+      "owner": "Rallar server maintainers",
+      "rationale": "Requires the active API composition root to import the canonical topology management owner directly rather than traverse a predecessor wrapper.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
+    },
+    {
+      "id": "test-structure-coupling-585c2caa538c200a",
+      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
+      "line": 70,
+      "column": 5,
+      "kind": "symbol-assertion",
+      "contract": "group-topology-canonical-import-direction",
+      "disposition": "durable-boundary",
+      "boundary": "compatibility",
+      "owner": "Rallar server maintainers",
+      "rationale": "Requires the replay owner to import the canonical topology broadcast materializer directly instead of a compatibility facade.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
+    },
     {
       "id": "test-structure-coupling-f903c4487c4113b0",
       "path": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts",
@@ -851,7 +1042,7 @@ moved or changed test.
       "boundary": "security",
       "owner": "Rallar server maintainers",
       "rationale": "Inspects the canonical capability declarations so every inventoried mutation type can be joined to an actual registration and owner.",
-      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#maps all 50 entrypoints and 46 types to real registrations and owners"
+      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#maps all 54 entrypoints and 50 types to real registrations and owners"
     },
     {
       "id": "test-structure-coupling-f5689a4960545ce1",
