@@ -11,6 +11,7 @@ import type {
   StoredGroupTopologyConfig,
 } from '@shared/api/graph-topology-management-types.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 
 // prettier-ignore
 import type {
@@ -79,7 +80,6 @@ import type {
   GroupTopologyReconfigureRead,
 } from '@shared-server/rallar-system/topology/reconfigure/group-topology-reconfigure-contracts.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
-import { createAppInboxTestDatabase } from '../../../app-inbox-test-database.ts';
 
 vi.mock(
   '@shared-server/rallar-system/topology/config/mutation/write-topology-config-mutation.ts',
@@ -128,6 +128,9 @@ describe('TopologyAppInboxHandler', () => {
     const phases: string[] = [];
     const context = await topologyContext(phases);
     const computed = configWriteComputed();
+    if (computed.result.kind !== 'config') {
+      throw new TypeError('Expected topology config mutation result');
+    }
     const expected = { receipt: computed.receipt, config: computed.result.config };
     const owners = {
       configMutationService: {
@@ -163,7 +166,7 @@ describe('TopologyAppInboxHandler', () => {
       transactionWriter: {
         writeMutation: async (_context, write) => {
           phases.push('transaction');
-          const result = await write(createAppInboxTestDatabase().sql);
+          const result = await write({} as PSqlTransactionSql);
           phases.push('commit');
           return result;
         },
@@ -250,7 +253,7 @@ describe('TopologyAppInboxHandler', () => {
       transactionWriter: {
         writeMutation: async (_context, write) => {
           phases.push('transaction');
-          const result = await write(createAppInboxTestDatabase().sql);
+          const result = await write({} as PSqlTransactionSql);
           phases.push('commit');
           return result;
         },
@@ -342,7 +345,7 @@ function createMessageContext(enqueue: AppInboxMessageContext['enqueue']): AppIn
     newALRoute(
       enqueue.topicId ?? 'app-inbox.group-state',
       enqueue.contextId ?? 'topology-handler-context',
-      enqueue.resourceId,
+      requireResourceId(enqueue.resourceId),
     ),
     enqueue.type,
     enqueue,
@@ -356,6 +359,13 @@ function createMessageContext(enqueue: AppInboxMessageContext['enqueue']): AppIn
       dequeueAudit: { ...entry.dequeueAudit, attempts: 7 },
     },
   };
+}
+
+function requireResourceId(value: string | undefined): string {
+  if (!value) {
+    throw new TypeError('Topology AppInbox test resourceId is required');
+  }
+  return value;
 }
 
 async function persistedSession(): Promise<PersistedAuthSession> {

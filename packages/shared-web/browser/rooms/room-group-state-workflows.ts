@@ -9,7 +9,7 @@ import {
 import {
   requireStateWorkflowResult,
   tolerateStateWorkflowNotFound,
-  toStateWorkflowRequestId,
+  toApiMutationWorkflowRequestId,
 } from '@shared-web/browser/state-workflow-support.ts';
 import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
@@ -88,12 +88,8 @@ async function createAndJoinStateGroupWithInput(
   input: CreateAndJoinStateGroupInput,
 ): Promise<GroupSnapshot> {
   const groupId = input.requestedGroupId?.trim() || crypto.randomUUID();
-  const createRequestId = toStateWorkflowRequestId('group-create', groupId);
-  const presenceRequestId = toStateWorkflowRequestId(
-    'group-presence-connect',
-    groupId,
-    input.sessionId,
-  );
+  const createRequestId = toApiMutationWorkflowRequestId();
+  const presenceRequestId = toApiMutationWorkflowRequestId();
   const createRequest = toCreateGroupStateRequest({
     groupId,
     room: { displayName: input.displayName, ...input.options },
@@ -108,6 +104,8 @@ async function createAndJoinStateGroupWithInput(
     actorSessionId: input.sessionId,
     requestId: presenceRequestId,
   });
+  const { requestId: _createRequestId, ...createBody } = createRequest;
+  const { requestId: _presenceRequestId, ...presenceBody } = presenceRequest;
   const flow = CommandsOrchestrator.withPolicies<GroupWorkflowKey, StateGroupWorkflowValue>(
     input.policies,
   );
@@ -115,12 +113,16 @@ async function createAndJoinStateGroupWithInput(
   const results = await flow
     .sequential(
       flow.commandStep('created', (signal) =>
-        createStateGroup(createRequest, input.scope, { signal }),
+        createStateGroup(createBody, { requestId: createRequestId, signal }, input.scope),
       ),
       flow.commandStep('joined', (signal) =>
-        connectStateGroupPresenceSession(groupId, input.sessionId, presenceRequest, input.scope, {
-          signal,
-        }),
+        connectStateGroupPresenceSession(
+          groupId,
+          input.sessionId,
+          presenceBody,
+          { requestId: presenceRequestId, signal },
+          input.scope,
+        ),
       ),
     )
     .run();
@@ -149,12 +151,8 @@ export async function joinStateGroup(
 }
 
 async function joinStateGroupWithInput(input: JoinStateGroupInput): Promise<GroupSnapshot> {
-  const joinRequestId = toStateWorkflowRequestId('group-join', input.groupId, input.principalId);
-  const presenceRequestId = toStateWorkflowRequestId(
-    'group-presence-connect',
-    input.groupId,
-    input.sessionId,
-  );
+  const joinRequestId = toApiMutationWorkflowRequestId();
+  const presenceRequestId = toApiMutationWorkflowRequestId();
   const joinRequest = toJoinGroupStateRequest({
     room: input.intent,
     actorPrincipalId: input.principalId,
@@ -168,6 +166,8 @@ async function joinStateGroupWithInput(input: JoinStateGroupInput): Promise<Grou
     actorSessionId: input.sessionId,
     requestId: presenceRequestId,
   });
+  const { requestId: _joinRequestId, ...joinBody } = joinRequest;
+  const { requestId: _presenceRequestId, ...presenceBody } = presenceRequest;
   const flow = CommandsOrchestrator.withPolicies<GroupWorkflowKey, StateGroupWorkflowValue>(
     input.policies,
   );
@@ -175,15 +175,20 @@ async function joinStateGroupWithInput(input: JoinStateGroupInput): Promise<Grou
   const results = await flow
     .sequential(
       flow.commandStep('member', (signal) =>
-        joinStateGroupApi(input.groupId, joinRequest, input.scope, { signal }),
+        joinStateGroupApi(
+          input.groupId,
+          joinBody,
+          { requestId: joinRequestId, signal },
+          input.scope,
+        ),
       ),
       flow.commandStep('joined', (signal) =>
         connectStateGroupPresenceSession(
           input.groupId,
           input.sessionId,
-          presenceRequest,
+          presenceBody,
+          { requestId: presenceRequestId, signal },
           input.scope,
-          { signal },
         ),
       ),
     )
@@ -211,16 +216,8 @@ export async function leaveStateGroup(
 }
 
 async function leaveStateGroupWithInput(input: LeaveStateGroupInput): Promise<GroupSnapshot> {
-  const disconnectRequestId = toStateWorkflowRequestId(
-    'group-presence-disconnect',
-    input.groupId,
-    input.sessionId,
-  );
-  const memberRequestId = toStateWorkflowRequestId(
-    'group-member-upsert',
-    input.groupId,
-    input.principalId,
-  );
+  const disconnectRequestId = toApiMutationWorkflowRequestId();
+  const memberRequestId = toApiMutationWorkflowRequestId();
   const disconnectRequest = toDisconnectRoomPresenceGroupStateRequest({
     generationId: input.generationId,
     principalId: input.principalId,
@@ -233,6 +230,8 @@ async function leaveStateGroupWithInput(input: LeaveStateGroupInput): Promise<Gr
     actorSessionId: input.sessionId,
     requestId: memberRequestId,
   });
+  const { requestId: _disconnectRequestId, ...disconnectBody } = disconnectRequest;
+  const { requestId: _memberRequestId, ...memberBody } = memberRequest;
   const flow = CommandsOrchestrator.withPolicies<GroupWorkflowKey, StateGroupWorkflowValue>(
     input.policies,
   );
@@ -245,9 +244,9 @@ async function leaveStateGroupWithInput(input: LeaveStateGroupInput): Promise<Gr
           disconnectStateGroupPresenceSession(
             input.groupId,
             input.sessionId,
-            disconnectRequest,
+            disconnectBody,
+            { requestId: disconnectRequestId, signal },
             input.scope,
-            { signal },
           ),
         {
           errorOnNull: false,
@@ -255,9 +254,13 @@ async function leaveStateGroupWithInput(input: LeaveStateGroupInput): Promise<Gr
         },
       ),
       flow.commandStep('left', (signal) =>
-        upsertStateGroupMember(input.groupId, input.principalId, memberRequest, input.scope, {
-          signal,
-        }),
+        upsertStateGroupMember(
+          input.groupId,
+          input.principalId,
+          memberBody,
+          { requestId: memberRequestId, signal },
+          input.scope,
+        ),
       ),
     )
     .run();

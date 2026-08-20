@@ -39,13 +39,18 @@ import {
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
   toGraphTopologyErrorResponse as toErrorResponse,
-  TopologyAppInboxFailureError,
+  toGraphTopologyMutationErrorResponse as toMutationErrorResponse,
 } from './graph-topology-route-errors.ts';
+import { toApiMutationRouteFailure } from './api-mutation-route-failure.ts';
 import {
   decodePutTopologyConfigBody,
   decodePutTopologyOverrideBody,
   decodeReconfigureTopologyBody,
 } from './graph-topology-request-codec.ts';
+import { readApiMutationRouteRequestId } from './api-mutation-route-ingress.ts';
+
+const GROUP_TOPOLOGY_PATH =
+  '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology';
 
 export type ProcessTopologyAppInbox = (
   authority: IssuedAuthSession,
@@ -191,7 +196,7 @@ export function registerGraphTopologyRoutes(
   );
 
   app.put(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config',
+    `${GROUP_TOPOLOGY_PATH}/config/requests/:requestId`,
     async (c) => {
       try {
         const { authSession, groupRef } = await assertCanManageGroupRef(
@@ -210,13 +215,13 @@ export function registerGraphTopologyRoutes(
           }),
         );
       } catch (error) {
-        return toErrorResponse(c, error);
+        return toMutationErrorResponse(c, error);
       }
     },
   );
 
   app.delete(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config',
+    `${GROUP_TOPOLOGY_PATH}/config/requests/:requestId`,
     async (c) => {
       try {
         const { authSession, groupRef } = await assertCanManageGroupRef(
@@ -224,17 +229,18 @@ export function registerGraphTopologyRoutes(
           deps,
           toGroupRef(c),
         );
+        const body = await readOptionalJsonBody<JsonWireValue>(c, {}, (value) => value);
         return c.json(
           await writeTopologyAppInboxCommand({
             dependencies: deps,
             authSession,
             groupRef,
-            requestId: requireRequestId(c, {}),
+            requestId: requireRequestId(c, body),
             payload: { operation: 'deleteConfig', target: 'config' },
           }),
         );
       } catch (error) {
-        return toErrorResponse(c, error);
+        return toMutationErrorResponse(c, error);
       }
     },
   );
@@ -254,12 +260,12 @@ export function registerGraphTopologyRoutes(
   );
 
   app.put(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override',
+    `${GROUP_TOPOLOGY_PATH}/override/requests/:requestId`,
     (context) => handlePutTopologyOverride(context, deps),
   );
 
   app.delete(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override',
+    `${GROUP_TOPOLOGY_PATH}/override/requests/:requestId`,
     async (c) => {
       try {
         const { authSession, groupRef } = await assertCanManageGroupRef(
@@ -267,23 +273,24 @@ export function registerGraphTopologyRoutes(
           deps,
           toGroupRef(c),
         );
+        const body = await readOptionalJsonBody<JsonWireValue>(c, {}, (value) => value);
         return c.json(
           await writeTopologyAppInboxCommand({
             dependencies: deps,
             authSession,
             groupRef,
-            requestId: requireRequestId(c, {}),
+            requestId: requireRequestId(c, body),
             payload: { operation: 'deleteOverride', target: 'override' },
           }),
         );
       } catch (error) {
-        return toErrorResponse(c, error);
+        return toMutationErrorResponse(c, error);
       }
     },
   );
 
   app.post(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/reconfigure',
+    `${GROUP_TOPOLOGY_PATH}/reconfigure/requests/:requestId`,
     async (c) => {
       try {
         const { authSession, groupRef } = await assertCanManageGroupRef(
@@ -306,7 +313,7 @@ export function registerGraphTopologyRoutes(
           }),
         );
       } catch (error) {
-        return toErrorResponse(c, error);
+        return toMutationErrorResponse(c, error);
       }
     },
   );
@@ -338,7 +345,7 @@ async function handlePutTopologyOverride(
       }),
     );
   } catch (error) {
-    return toErrorResponse(context, error);
+    return toMutationErrorResponse(context, error);
   }
 }
 
@@ -468,20 +475,15 @@ async function readOptionalJsonBody<T>(
   }
 }
 
-function requireRequestId(
+function requireRequestId<Body>(
   c: Context,
-  body: Readonly<{ requestId?: string }>,
+  body: Body,
 ): string {
-  const requestId = c.req.header('Idempotency-Key')?.trim();
-  if (!requestId) {
-    throw topologyRequestError('Topology mutation requestId is required');
-  }
-  if (body.requestId !== undefined && body.requestId !== requestId) {
-    throw topologyRequestError(
-      'Topology mutation body requestId must match Idempotency-Key',
-    );
-  }
-  return requestId;
+  return readApiMutationRouteRequestId({
+    requestId: c.req.param('requestId'),
+    idempotencyKey: c.req.header('Idempotency-Key'),
+    mutationBody: JSON.parse(JSON.stringify(body)) as JsonWireValue,
+  });
 }
 
 function readGraphDiagnosticRefreshMode(
@@ -517,8 +519,9 @@ async function writeTopologyAppInboxCommand(
   });
   return await input.dependencies.processTopologyAppInbox(input.authSession, {
     type: toTopologyAppInboxType(command.operation),
+    topicId: toTopologyAppInboxType(command.operation),
     resourceId: command.requestId,
-    contextId: toTopologyAppInboxContextId(input.groupRef),
+    contextId: toTopologyAppInboxContextId(input.groupRef, input.authSession),
     senderId: command.actor.principalId,
     data: command,
   });
@@ -541,10 +544,16 @@ function toTopologyAppInboxType(
   }
 }
 
-function toTopologyAppInboxContextId(groupRef: GroupRef): string {
-  return [groupRef.applicationId, groupRef.workspaceId, groupRef.groupId]
-    .map(encodeURIComponent)
-    .join(':');
+function toTopologyAppInboxContextId(
+  groupRef: GroupRef,
+  authSession: Pick<IssuedAuthSession, 'clientId'>,
+): string {
+  return [
+    ['application', groupRef.applicationId],
+    ['workspace', groupRef.workspaceId],
+    ['group', groupRef.groupId],
+    ['caller', authSession.clientId],
+  ].map(([name, value]) => `${name}=${encodeURIComponent(value)}`).join(':');
 }
 
 export async function processTopologyAppInbox(
@@ -558,7 +567,7 @@ export async function processTopologyAppInbox(
   );
   return result.fold(
     (error) => {
-      throw new TopologyAppInboxFailureError(error);
+      throw toApiMutationRouteFailure(error);
     },
     (value): TopologyAppInboxResult => value,
   );

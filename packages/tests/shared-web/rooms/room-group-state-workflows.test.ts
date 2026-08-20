@@ -9,6 +9,7 @@ import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 interface FetchCall {
   readonly url: string;
+  readonly requestId?: string;
   readonly method: string;
   readonly rawBody?: string;
   readonly body?: Record<string, unknown>;
@@ -39,7 +40,7 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
   });
 
   it('creates a generated room before connecting its presence', async () => {
-    stubUuids('generated-room', 'create-request', 'presence-request');
+    stubUuids('generated-room', 'create-request-00000001', 'presence-request-000001');
     stubSuccessfulGroupFetch(fetchCalls);
 
     await workflows.createAndJoinStateGroup('My Room', 'principal-1', 'session-1', 'generation-1');
@@ -47,12 +48,12 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
     expect(fetchCalls).toEqual([
       {
         url: '/api/state/apps/rallar-server/workspaces/default/groups',
+        requestId: 'create-request-00000001',
         method: 'POST',
         rawBody:
           '{"groupId":"generated-room","slug":"my-room","displayName":"My Room",' +
           '"kind":"room","joinMode":"invite-only","createdByPrincipalId":"principal-1",' +
-          '"actorPrincipalId":"principal-1","actorSessionId":"session-1",' +
-          '"requestId":"group-create:generated-room:create-request","metadata":{}}',
+          '"actorPrincipalId":"principal-1","actorSessionId":"session-1","metadata":{}}',
         body: {
           groupId: 'generated-room',
           slug: 'my-room',
@@ -62,30 +63,28 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
           createdByPrincipalId: 'principal-1',
           actorPrincipalId: 'principal-1',
           actorSessionId: 'session-1',
-          requestId: 'group-create:generated-room:create-request',
           metadata: {},
         },
       },
       {
         url: '/api/state/apps/rallar-server/workspaces/default/groups/generated-room/sessions/session-1',
+        requestId: 'presence-request-000001',
         method: 'PUT',
         rawBody:
           '{"principalId":"principal-1","generationId":"generation-1",' +
-          '"actorPrincipalId":"principal-1","actorSessionId":"session-1",' +
-          '"requestId":"group-presence-connect:generated-room:session-1:presence-request"}',
+          '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
         body: {
           principalId: 'principal-1',
           generationId: 'generation-1',
           actorPrincipalId: 'principal-1',
           actorSessionId: 'session-1',
-          requestId: 'group-presence-connect:generated-room:session-1:presence-request',
         },
       },
     ]);
   });
 
   it('preserves explicit room identity and every safe create field', async () => {
-    stubUuids('create-request', 'presence-request');
+    stubUuids('create-request-00000001', 'presence-request-000001');
     stubSuccessfulGroupFetch(fetchCalls);
 
     await workflows.createAndJoinStateGroup(
@@ -110,13 +109,14 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
     expect(fetchCalls).toEqual([
       {
         url: '/api/state/apps/app-1/workspaces/workspace-1/groups',
+        requestId: 'create-request-00000001',
         method: 'POST',
         rawBody:
           '{"groupId":"rallar","slug":"rallar","displayName":"Rallar","kind":"room",' +
           '"description":"Mission room","joinMode":"open","maxMembers":8,' +
           '"maxSessionsPerMember":2,"createdByPrincipalId":"principal-1",' +
           '"actorPrincipalId":"principal-1","actorSessionId":"session-1",' +
-          '"requestId":"group-create:rallar:create-request","metadata":{"map":"fjord"},' +
+          '"metadata":{"map":"fjord"},' +
           '"expiresAtEpochMs":2000,"purgeAfterEpochMs":3000}',
         body: {
           groupId: 'rallar',
@@ -130,7 +130,6 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
           createdByPrincipalId: 'principal-1',
           actorPrincipalId: 'principal-1',
           actorSessionId: 'session-1',
-          requestId: 'group-create:rallar:create-request',
           metadata: { map: 'fjord' },
           expiresAtEpochMs: 2_000,
           purgeAfterEpochMs: 3_000,
@@ -138,24 +137,28 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
       },
       {
         url: '/api/state/apps/app-1/workspaces/workspace-1/groups/rallar/sessions/session-1',
+        requestId: 'presence-request-000001',
         method: 'PUT',
         rawBody:
           '{"principalId":"principal-1","generationId":"generation-1",' +
-          '"actorPrincipalId":"principal-1","actorSessionId":"session-1",' +
-          '"requestId":"group-presence-connect:rallar:session-1:presence-request"}',
+          '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
         body: {
           principalId: 'principal-1',
           generationId: 'generation-1',
           actorPrincipalId: 'principal-1',
           actorSessionId: 'session-1',
-          requestId: 'group-presence-connect:rallar:session-1:presence-request',
         },
       },
     ]);
   });
 
   it('keeps create and presence request IDs stable across retries', async () => {
-    stubUuids('retry-room', 'create-request', 'presence-request', 'unused-request');
+    stubUuids(
+      'retry-room',
+      'create-request-00000001',
+      'presence-request-000001',
+      'unused-request-0000001',
+    );
     stubTransientGroupFetch(fetchCalls, '/groups', '/sessions/session-1');
 
     await workflows.createAndJoinStateGroup(
@@ -168,17 +171,17 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
     );
 
     expect(readRequestIds(fetchCalls, 'POST', '/groups')).toEqual([
-      'group-create:retry-room:create-request',
-      'group-create:retry-room:create-request',
+      'create-request-00000001',
+      'create-request-00000001',
     ]);
     expect(readRequestIds(fetchCalls, 'PUT', '/sessions/session-1')).toEqual([
-      'group-presence-connect:retry-room:session-1:presence-request',
-      'group-presence-connect:retry-room:session-1:presence-request',
+      'presence-request-000001',
+      'presence-request-000001',
     ]);
   });
 
   it('joins membership before presence with literal intent and identity fields', async () => {
-    stubUuids('join-request', 'presence-request');
+    stubUuids('join-request-00000001', 'presence-request-000001');
     stubSuccessfulGroupFetch(fetchCalls);
 
     await workflows.joinStateGroup(
@@ -194,39 +197,37 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
     expect(fetchCalls).toEqual([
       {
         url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/join',
+        requestId: 'join-request-00000001',
         method: 'POST',
         rawBody:
           '{"inviteToken":"invite-1","joinCode":"code-1",' +
-          '"actorPrincipalId":"principal-1","actorSessionId":"session-1",' +
-          '"requestId":"group-join:group-1:principal-1:join-request"}',
+          '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
         body: {
           inviteToken: 'invite-1',
           joinCode: 'code-1',
           actorPrincipalId: 'principal-1',
           actorSessionId: 'session-1',
-          requestId: 'group-join:group-1:principal-1:join-request',
         },
       },
       {
         url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/sessions/session-1',
+        requestId: 'presence-request-000001',
         method: 'PUT',
         rawBody:
           '{"principalId":"principal-1","generationId":"generation-1",' +
-          '"actorPrincipalId":"principal-1","actorSessionId":"session-1",' +
-          '"requestId":"group-presence-connect:group-1:session-1:presence-request"}',
+          '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
         body: {
           principalId: 'principal-1',
           generationId: 'generation-1',
           actorPrincipalId: 'principal-1',
           actorSessionId: 'session-1',
-          requestId: 'group-presence-connect:group-1:session-1:presence-request',
         },
       },
     ]);
   });
 
   it('keeps join and presence request IDs stable across retries', async () => {
-    stubUuids('join-request', 'presence-request', 'unused-request');
+    stubUuids('join-request-00000001', 'presence-request-000001', 'unused-request-0000001');
     stubTransientGroupFetch(fetchCalls, '/join', '/sessions/session-1');
 
     await workflows.joinStateGroup(
@@ -239,17 +240,17 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
     );
 
     expect(readRequestIds(fetchCalls, 'POST', '/join')).toEqual([
-      'group-join:group-1:principal-1:join-request',
-      'group-join:group-1:principal-1:join-request',
+      'join-request-00000001',
+      'join-request-00000001',
     ]);
     expect(readRequestIds(fetchCalls, 'PUT', '/sessions/session-1')).toEqual([
-      'group-presence-connect:group-1:session-1:presence-request',
-      'group-presence-connect:group-1:session-1:presence-request',
+      'presence-request-000001',
+      'presence-request-000001',
     ]);
   });
 
   it('continues leave after missing presence with exact disconnect and member requests', async () => {
-    stubUuids('disconnect-request', 'member-request');
+    stubUuids('disconnect-request-0001', 'member-request-0000001');
     stubLeaveFetch(fetchCalls, true);
 
     await workflows.leaveStateGroup('group-1', 'principal-1', 'session-1', 'generation-1');
@@ -257,41 +258,39 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
     expect(fetchCalls).toEqual([
       {
         url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/sessions/session-1/disconnect',
+        requestId: 'disconnect-request-0001',
         method: 'POST',
         rawBody:
           '{"generationId":"generation-1","principalId":"principal-1",' +
           '"actorPrincipalId":"principal-1","actorSessionId":"session-1",' +
-          '"reason":"left-group",' +
-          '"requestId":"group-presence-disconnect:group-1:session-1:disconnect-request"}',
+          '"reason":"left-group"}',
         body: {
           generationId: 'generation-1',
           principalId: 'principal-1',
           actorPrincipalId: 'principal-1',
           actorSessionId: 'session-1',
           reason: 'left-group',
-          requestId: 'group-presence-disconnect:group-1:session-1:disconnect-request',
         },
       },
       {
         url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/principal-1',
+        requestId: 'member-request-0000001',
         method: 'PUT',
         rawBody:
           '{"status":"left","actorPrincipalId":"principal-1",' +
-          '"actorSessionId":"session-1","reason":"left-group",' +
-          '"requestId":"group-member-upsert:group-1:principal-1:member-request"}',
+          '"actorSessionId":"session-1","reason":"left-group"}',
         body: {
           status: 'left',
           actorPrincipalId: 'principal-1',
           actorSessionId: 'session-1',
           reason: 'left-group',
-          requestId: 'group-member-upsert:group-1:principal-1:member-request',
         },
       },
     ]);
   });
 
   it('keeps disconnect and member request IDs stable across leave retries', async () => {
-    stubUuids('disconnect-request', 'member-request', 'unused-request');
+    stubUuids('disconnect-request-0001', 'member-request-0000001', 'unused-request-0000001');
     stubTransientGroupFetch(fetchCalls, '/disconnect', '/members/principal-1');
 
     await workflows.leaveStateGroup(
@@ -304,12 +303,12 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
     );
 
     expect(readRequestIds(fetchCalls, 'POST', '/disconnect')).toEqual([
-      'group-presence-disconnect:group-1:session-1:disconnect-request',
-      'group-presence-disconnect:group-1:session-1:disconnect-request',
+      'disconnect-request-0001',
+      'disconnect-request-0001',
     ]);
     expect(readRequestIds(fetchCalls, 'PUT', '/members/principal-1')).toEqual([
-      'group-member-upsert:group-1:principal-1:member-request',
-      'group-member-upsert:group-1:principal-1:member-request',
+      'member-request-0000001',
+      'member-request-0000001',
     ]);
   });
 });
@@ -351,9 +350,11 @@ function stubLeaveFetch(fetchCalls: FetchCall[], disconnectMissing: boolean): vo
 
 function stubFetch(fetchCalls: FetchCall[], handler: (call: FetchCall) => Response): void {
   vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+    const physicalUrl = String(input);
     const rawBody = init?.body ? String(init.body) : undefined;
     const call = {
-      url: String(input),
+      url: withoutMutationRequestPath(physicalUrl),
+      requestId: readMutationRequestId(physicalUrl),
       method: init?.method ?? 'GET',
       rawBody,
       body: rawBody ? JSON.parse(rawBody) : undefined,
@@ -370,7 +371,15 @@ function readRequestIds(
 ): unknown[] {
   return fetchCalls
     .filter((call) => call.method === method && call.url.endsWith(suffix))
-    .map((call) => call.body?.requestId);
+    .map((call) => call.requestId);
+}
+
+function withoutMutationRequestPath(url: string): string {
+  return url.replace(/\/requests\/[A-Za-z0-9_-]+$/u, '');
+}
+
+function readMutationRequestId(url: string): string | undefined {
+  return url.match(/\/requests\/([A-Za-z0-9_-]+)$/u)?.[1];
 }
 
 function readGroupId(url: string): string {

@@ -12,6 +12,8 @@ import type {
 } from '../../services/ws-session-generation-lifecycle.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type {
+  AuthorizedGroupMutation,
+  GroupMutationAuthority,
   GroupMutationPreparation,
   GroupStateMutationCommand,
   GroupStateMutationService,
@@ -33,6 +35,14 @@ export interface GroupStateInboxHandlerDependencies {
   readonly transactionWriter: AppInboxMutationTransactionWriter;
   readonly wakeQueue?: () => void;
   readonly formationMetrics?: GroupFormationGroupMutationSink;
+  readonly prepareMutation: (
+    descriptor: AuthorizedGroupMutation['descriptor'],
+    authority: GroupMutationAuthority,
+  ) => Promise<GroupMutationPreparation>;
+  readonly persistPreparation: (
+    context: AppInboxMessageContext,
+    preparation: GroupMutationPreparation,
+  ) => Promise<void>;
 }
 
 interface CommitGroupStateMutationInput {
@@ -52,7 +62,7 @@ export class GroupStateInboxHandler {
   async processGroupStateMutation(
     context: AppInboxMessageContext,
   ): Promise<GroupStateInboxDurableResult | InactiveGroupPresenceResult> {
-    const prepared = readGroupMutationPreparation(context.enqueue.authority);
+    const prepared = await this.readOrPrepareGroupMutation(context);
     const command: GroupStateMutationCommand = {
       authorityProof: prepared.authorityProof,
       descriptor: prepared.descriptor,
@@ -86,6 +96,22 @@ export class GroupStateInboxHandler {
     const computed = this.dependencies.mutationService.compute(command, read);
     this.dependencies.mutationService.validate(command, read, computed);
     return await this.commitMutation({ context, command, computed });
+  }
+
+  private async readOrPrepareGroupMutation(
+    context: AppInboxMessageContext,
+  ): Promise<GroupMutationPreparation> {
+    const prepared = readGroupMutationPreparation(context.enqueue.authority);
+    if (prepared) {
+      return prepared;
+    }
+    const authorized = readAuthorizedGroupMutation(context.enqueue.authority);
+    const materialized = await this.dependencies.prepareMutation(
+      authorized.descriptor,
+      authorized.authorityProof,
+    );
+    await this.dependencies.persistPreparation(context, materialized);
+    return materialized;
   }
 
   private async commitMutation(
@@ -149,7 +175,7 @@ export class GroupStateInboxHandler {
   }
 }
 
-function readGroupMutationPreparation(value: unknown): GroupMutationPreparation {
+function readGroupMutationPreparation(value: unknown): GroupMutationPreparation | undefined {
   const expectedKeys = [
     'authorityProof',
     'descriptor',
@@ -178,11 +204,30 @@ function readGroupMutationPreparation(value: unknown): GroupMutationPreparation 
     !('queueResourceId' in value) ||
     typeof value.queueResourceId !== 'string'
   ) {
-    throw new GroupMutationAuthorizationError(
-      'App inbox durable group mutation facts are malformed.',
-    );
+    return undefined;
   }
   return value as GroupMutationPreparation;
+}
+
+function readAuthorizedGroupMutation<Value>(value: Value): AuthorizedGroupMutation {
+  const expectedKeys = ['authorityProof', 'descriptor'].toSorted();
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    JSON.stringify(Object.keys(value).toSorted()) !== JSON.stringify(expectedKeys) ||
+    !('authorityProof' in value) ||
+    !isAuthorityProofOrNull(value.authorityProof) ||
+    value.authorityProof === null ||
+    !('descriptor' in value) ||
+    !isRecordOrNull(value.descriptor) ||
+    value.descriptor === null
+  ) {
+    throw new GroupMutationAuthorizationError(
+      'App inbox authenticated group mutation intent is malformed.',
+    );
+  }
+  return value as AuthorizedGroupMutation;
 }
 
 function isAuthorityProofOrNull(value: unknown): boolean {

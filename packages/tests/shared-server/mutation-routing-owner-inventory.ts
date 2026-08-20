@@ -57,6 +57,7 @@ const CLIENT_SESSION_ROUTE = `${CLIENT_INSTANCE_ROUTE}/sessions/:sessionId`;
 const GROUP_ROUTE = '/api/state/apps/:applicationId/workspaces/:workspaceId/groups';
 const GROUP_ITEM_ROUTE = `${GROUP_ROUTE}/:groupId`;
 const TOPOLOGY_ROUTE = `${GROUP_ITEM_ROUTE}/topology`;
+const MUTATION_REQUEST_ROUTE = '/requests/:requestId';
 
 export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[] = [
   {
@@ -256,7 +257,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ROUTE}`,
+    entrypoint: `POST ${GROUP_ROUTE}${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_CREATE',
     source: 'gs',
     registrationMarker: 'registerCreateGroupRoute',
@@ -274,7 +275,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `PUT ${GROUP_ITEM_ROUTE}`,
+    entrypoint: `PUT ${GROUP_ITEM_ROUTE}${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_UPDATE',
     source: 'gs',
     registrationMarker: 'registerUpdateGroupRoute',
@@ -292,7 +293,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/director/appoint`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/director/appoint${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_DIRECTOR_APPOINT',
     source: 'gs',
     registrationMarker: 'registerAppointGroupDirectorRoute',
@@ -310,7 +311,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/lifecycle/establish`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/lifecycle/establish${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_ESTABLISHMENT_START',
     source: 'gs',
     registrationMarker: 'registerStartGroupEstablishmentRoute',
@@ -328,7 +329,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/lifecycle/activate`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/lifecycle/activate${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_ACTIVATE',
     source: 'gs',
     registrationMarker: 'registerActivateGroupRoute',
@@ -346,7 +347,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/lifecycle/reopen`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/lifecycle/reopen${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_ESTABLISHMENT_REOPEN',
     source: 'gs',
     registrationMarker: 'registerReopenGroupEstablishmentRoute',
@@ -364,7 +365,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/join`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/join${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_JOIN',
     source: 'ga',
     registrationMarker: 'registerJoinGroupRoute',
@@ -382,7 +383,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/invites/:principalId`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/invites/:principalId${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_INVITE_CREATE',
     source: 'ga',
     registrationMarker: 'registerCreateGroupInviteRoute',
@@ -400,7 +401,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/invites/:principalId/revoke`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/invites/:principalId/revoke${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_INVITE_REVOKE',
     source: 'ga',
     registrationMarker: 'registerRevokeGroupInviteRoute',
@@ -418,7 +419,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/invites/accept`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/invites/accept${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_INVITE_ACCEPT',
     source: 'ga',
     registrationMarker: 'registerAcceptGroupInviteRoute',
@@ -436,7 +437,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/join-code/rotate`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/join-code/rotate${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_JOIN_CODE_ROTATE',
     source: 'ga',
     registrationMarker: 'registerRotateGroupJoinCodeRoute',
@@ -454,7 +455,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/admissions/:principalId/grant`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/admissions/:principalId/grant${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_ADMISSION_GRANT',
     source: 'ga',
     registrationMarker: 'registerGrantGroupAdmissionRoute',
@@ -472,7 +473,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/admissions/:principalId/decline`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/admissions/:principalId/decline${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_ADMISSION_DECLINE',
     source: 'ga',
     registrationMarker: 'registerDeclineGroupAdmissionRoute',
@@ -490,7 +491,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/members/:principalId/remove`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/members/:principalId/remove${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_MEMBER_REMOVE',
     source: 'gm',
     registrationMarker: 'registerRemoveGroupMemberRoute',
@@ -508,7 +509,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/members/:principalId/ban`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/members/:principalId/ban${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_MEMBER_BAN',
     source: 'gm',
     registrationMarker: 'registerBanGroupMemberRoute',
@@ -526,7 +527,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/members/:principalId/unban`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/members/:principalId/unban${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_MEMBER_UNBAN',
     source: 'gm',
     registrationMarker: 'registerUnbanGroupMemberRoute',
@@ -544,7 +545,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `PUT ${GROUP_ITEM_ROUTE}/members/:principalId/role`,
+    entrypoint: `PUT ${GROUP_ITEM_ROUTE}/members/:principalId/role${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_MEMBER_ROLE_SET',
     source: 'gm',
     registrationMarker: 'registerSetGroupMemberRoleRoute',
@@ -562,7 +563,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/owner/transfer`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/owner/transfer${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_OWNERSHIP_TRANSFER',
     source: 'gm',
     registrationMarker: 'registerTransferGroupOwnershipRoute',
@@ -580,7 +581,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `PUT ${GROUP_ITEM_ROUTE}/members/:principalId`,
+    entrypoint: `PUT ${GROUP_ITEM_ROUTE}/members/:principalId${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_MEMBER_UPSERT',
     source: 'gm',
     registrationMarker: 'registerUpsertSelfGroupMemberRoute',
@@ -598,7 +599,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `PUT ${GROUP_ITEM_ROUTE}/sessions/:sessionId`,
+    entrypoint: `PUT ${GROUP_ITEM_ROUTE}/sessions/:sessionId${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_PRESENCE_CONNECT',
     source: 'gp',
     registrationMarker: 'registerConnectGroupPresenceRoute',
@@ -616,7 +617,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/sessions/:sessionId/heartbeat`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/sessions/:sessionId/heartbeat${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_PRESENCE_HEARTBEAT',
     source: 'gp',
     registrationMarker: 'registerHeartbeatGroupPresenceRoute',
@@ -634,7 +635,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${GROUP_ITEM_ROUTE}/sessions/:sessionId/disconnect`,
+    entrypoint: `POST ${GROUP_ITEM_ROUTE}/sessions/:sessionId/disconnect${MUTATION_REQUEST_ROUTE}`,
     type: 'GROUP_PRESENCE_DISCONNECT',
     source: 'gp',
     registrationMarker: 'registerDisconnectGroupPresenceRoute',
@@ -691,7 +692,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `PUT ${TOPOLOGY_ROUTE}/config`,
+    entrypoint: `PUT ${TOPOLOGY_ROUTE}/config${MUTATION_REQUEST_ROUTE}`,
     type: 'TOPOLOGY_CONFIG_PUT',
     source: 't',
     registrationMarker: '/topology/config',
@@ -704,7 +705,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `DELETE ${TOPOLOGY_ROUTE}/config`,
+    entrypoint: `DELETE ${TOPOLOGY_ROUTE}/config${MUTATION_REQUEST_ROUTE}`,
     type: 'TOPOLOGY_CONFIG_DELETE',
     source: 't',
     registrationMarker: '/topology/config',
@@ -717,7 +718,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `PUT ${TOPOLOGY_ROUTE}/override`,
+    entrypoint: `PUT ${TOPOLOGY_ROUTE}/override${MUTATION_REQUEST_ROUTE}`,
     type: 'TOPOLOGY_OVERRIDE_PUT',
     source: 't',
     registrationMarker: '/topology/override',
@@ -730,7 +731,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `DELETE ${TOPOLOGY_ROUTE}/override`,
+    entrypoint: `DELETE ${TOPOLOGY_ROUTE}/override${MUTATION_REQUEST_ROUTE}`,
     type: 'TOPOLOGY_OVERRIDE_DELETE',
     source: 't',
     registrationMarker: '/topology/override',
@@ -743,7 +744,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
   },
   {
     transport: 'HTTP',
-    entrypoint: `POST ${TOPOLOGY_ROUTE}/reconfigure`,
+    entrypoint: `POST ${TOPOLOGY_ROUTE}/reconfigure${MUTATION_REQUEST_ROUTE}`,
     type: 'TOPOLOGY_RECONFIGURE',
     source: 't',
     registrationMarker: '/topology/reconfigure',

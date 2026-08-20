@@ -56,14 +56,15 @@ it('rejects a wrong local presence route constant', () => {
 it('rejects a dead exact registration masking the live named route owner', () => {
   const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');
   const wrongLiveRoute = source.replace(
-    '    GROUP_PRESENCE_PATH,',
-    '    `${GROUP_PRESENCE_PATH}/wrong`,',
+    '    `${GROUP_PRESENCE_PATH}/requests/:requestId`,',
+    '    `${GROUP_PRESENCE_PATH}/wrong/requests/:requestId`,',
   );
   expect(wrongLiveRoute).not.toBe(source);
   const mutated = `${wrongLiveRoute}
 function deadCorrectPresenceRegistration(app: Hono): void {
   app.put(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/sessions/:sessionId',
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/' +
+      'sessions/:sessionId/requests/:requestId',
     async (context) =>
       toGroupStateCommand({
         operation: 'connect-group-presence',
@@ -83,14 +84,14 @@ function deadCorrectPresenceRegistration(app: Hono): void {
 it('rejects an exact route registered only from a request-time callback', () => {
   const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');
   const liveRegistration = `  app.put(
-    GROUP_PRESENCE_PATH,
+    \`\${GROUP_PRESENCE_PATH}/requests/:requestId\`,
     (context) => handleConnectGroupPresenceRoute(context, dependencies, authorization),
   );`;
   const lateRegistration = `  app.put(
     \`\${GROUP_PRESENCE_PATH}/wrong\`,
     (context) => {
       app.put(
-        GROUP_PRESENCE_PATH,
+        \`\${GROUP_PRESENCE_PATH}/requests/:requestId\`,
         (lateContext) =>
           handleConnectGroupPresenceRoute(lateContext, dependencies, authorization),
       );

@@ -13,6 +13,7 @@ export type PromiseReturningMethodKey<Service> = {
 export type PromiseReturningGroupStateServiceKey = PromiseReturningMethodKey<GroupStateService>;
 
 export const TIMED_ASYNC_OPERATIONS = [
+  'authorizeMutation',
   'prepareMutation',
   'prepareExpiredPresenceMutations',
   'prepareSessionCleanupMutations',
@@ -104,12 +105,15 @@ function createPreparationFake(
   record: RecordTimedOperation,
 ): Pick<
   GroupStateService,
+  | 'authorizeMutation'
   | 'prepareMutation'
   | 'prepareExpiredPresenceMutations'
   | 'prepareSessionCleanupMutations'
   | 'prepareFormationCriterionMutation'
 > {
   return {
+    authorizeMutation: async (...arguments_) =>
+      (await record('authorizeMutation', arguments_)) as never,
     prepareMutation: async (...arguments_) =>
       (await record('prepareMutation', arguments_)) as never,
     prepareExpiredPresenceMutations: async (...arguments_) =>
@@ -234,6 +238,7 @@ type TimedOperationArgumentsByOperation = {
 };
 
 export const TIMED_OPERATION_ARGUMENTS: TimedOperationArgumentsByOperation = {
+  authorizeMutation: [timingDescriptor, timingAuthority],
   prepareMutation: [timingDescriptor, timingAuthority],
   prepareExpiredPresenceMutations: [1_000],
   prepareSessionCleanupMutations: [timingCleanup],
@@ -255,6 +260,8 @@ export const TIMED_OPERATION_ARGUMENTS: TimedOperationArgumentsByOperation = {
 const TIMED_OPERATION_INVOCATIONS: Readonly<
   Record<TimedAsyncOperation, (service: GroupStateService) => Promise<unknown>>
 > = {
+  authorizeMutation: async (service) =>
+    await service.authorizeMutation(...TIMED_OPERATION_ARGUMENTS.authorizeMutation),
   prepareMutation: async (service) =>
     await service.prepareMutation(...TIMED_OPERATION_ARGUMENTS.prepareMutation),
   prepareExpiredPresenceMutations: async (service) =>

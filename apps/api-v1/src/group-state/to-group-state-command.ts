@@ -79,8 +79,9 @@ function toCreateGroupCommand(
 
   return {
     type: AppInboxType.GROUP_CREATE,
+    topicId: AppInboxType.GROUP_CREATE,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, request.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, request.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: {
       scope: input.scope,
@@ -97,8 +98,9 @@ function toUpdateGroupCommand(
 
   return {
     type: AppInboxType.GROUP_UPDATE,
+    topicId: AppInboxType.GROUP_UPDATE,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: {
       scope: input.scope,
@@ -116,8 +118,9 @@ function toAppointGroupDirectorCommand(
 
   return {
     type: AppInboxType.GROUP_DIRECTOR_APPOINT,
+    topicId: AppInboxType.GROUP_DIRECTOR_APPOINT,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: {
       scope: input.scope,
@@ -135,8 +138,9 @@ function toStartGroupEstablishmentCommand(
 
   return {
     type: AppInboxType.GROUP_ESTABLISHMENT_START,
+    topicId: AppInboxType.GROUP_ESTABLISHMENT_START,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: {
       scope: input.scope,
@@ -154,8 +158,9 @@ function toActivateGroupCommand(
 
   return {
     type: AppInboxType.GROUP_ACTIVATE,
+    topicId: AppInboxType.GROUP_ACTIVATE,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: {
       scope: input.scope,
@@ -173,8 +178,9 @@ function toReopenGroupEstablishmentCommand(
 
   return {
     type: AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
+    topicId: AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: {
       scope: input.scope,
@@ -192,8 +198,9 @@ function toJoinGroupCommand(
 
   return {
     type: AppInboxType.GROUP_JOIN,
+    topicId: AppInboxType.GROUP_JOIN,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: { scope: input.scope, groupId: input.groupId, request },
   };
@@ -207,8 +214,9 @@ function toAcceptGroupInviteCommand(
 
   return {
     type: AppInboxType.GROUP_INVITE_ACCEPT,
+    topicId: AppInboxType.GROUP_INVITE_ACCEPT,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: { scope: input.scope, groupId: input.groupId, request },
   };
@@ -222,8 +230,9 @@ function toRotateGroupJoinCodeCommand(
 
   return {
     type: AppInboxType.GROUP_JOIN_CODE_ROTATE,
+    topicId: AppInboxType.GROUP_JOIN_CODE_ROTATE,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: { scope: input.scope, groupId: input.groupId, request },
   };
@@ -237,8 +246,9 @@ function toCreateGroupInviteCommand(
 
   return {
     type: AppInboxType.GROUP_INVITE_CREATE,
+    topicId: AppInboxType.GROUP_INVITE_CREATE,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: {
       scope: input.scope,
@@ -257,8 +267,9 @@ function toRevokeGroupInviteCommand(
 
   return {
     type: AppInboxType.GROUP_INVITE_REVOKE,
+    topicId: AppInboxType.GROUP_INVITE_REVOKE,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: {
       scope: input.scope,
@@ -317,8 +328,9 @@ function toRemoveGroupMemberCommand(
 
   return {
     type: AppInboxType.GROUP_MEMBER_REMOVE,
+    topicId: AppInboxType.GROUP_MEMBER_REMOVE,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: { scope: input.scope, groupId: input.groupId, principalId: input.principalId, request },
   };
@@ -332,8 +344,9 @@ function toBanGroupMemberCommand(
 
   return {
     type: AppInboxType.GROUP_MEMBER_BAN,
+    topicId: AppInboxType.GROUP_MEMBER_BAN,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: { scope: input.scope, groupId: input.groupId, principalId: input.principalId, request },
   };
@@ -347,8 +360,9 @@ function toUnbanGroupMemberCommand(
 
   return {
     type: AppInboxType.GROUP_MEMBER_UNBAN,
+    topicId: AppInboxType.GROUP_MEMBER_UNBAN,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: { scope: input.scope, groupId: input.groupId, principalId: input.principalId, request },
   };
@@ -362,8 +376,9 @@ function toSetGroupMemberRoleCommand(
 
   return {
     type: AppInboxType.GROUP_MEMBER_ROLE_SET,
+    topicId: AppInboxType.GROUP_MEMBER_ROLE_SET,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: { scope: input.scope, groupId: input.groupId, principalId: input.principalId, request },
   };
@@ -377,8 +392,9 @@ function toTransferGroupOwnershipCommand(
 
   return {
     type: AppInboxType.GROUP_OWNERSHIP_TRANSFER,
+    topicId: AppInboxType.GROUP_OWNERSHIP_TRANSFER,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: { scope: input.scope, groupId: input.groupId, request },
   };
@@ -393,8 +409,9 @@ function toUpsertGroupMemberCommand(
 
   return {
     type: AppInboxType.GROUP_MEMBER_UPSERT,
+    topicId: AppInboxType.GROUP_MEMBER_UPSERT,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: { scope: input.scope, groupId: input.groupId, principalId: input.principalId, request },
   };
@@ -408,8 +425,9 @@ function toConnectGroupPresenceCommand(
 
   return {
     type: AppInboxType.GROUP_PRESENCE_CONNECT,
+    topicId: AppInboxType.GROUP_PRESENCE_CONNECT,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: { scope: input.scope, groupId: input.groupId, sessionId: input.sessionId, request },
   };
@@ -423,8 +441,9 @@ function toHeartbeatGroupPresenceCommand(
 
   return {
     type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
+    topicId: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: { scope: input.scope, groupId: input.groupId, sessionId: input.sessionId, request },
   };
@@ -438,8 +457,9 @@ function toDisconnectGroupPresenceCommand(
 
   return {
     type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
+    topicId: AppInboxType.GROUP_PRESENCE_DISCONNECT,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: { scope: input.scope, groupId: input.groupId, sessionId: input.sessionId, request },
   };
@@ -474,8 +494,15 @@ function withPresenceActor<
   };
 }
 
-function toGroupAppInboxContextId(scope: StateScope, groupId: string): string {
-  return [scope.applicationId, scope.workspaceId, groupId]
-    .map(encodeURIComponent)
-    .join(':');
+function toGroupAppInboxContextId(
+  scope: StateScope,
+  groupId: string,
+  authSession: Readonly<{ clientId: string }>,
+): string {
+  return [
+    ['application', scope.applicationId],
+    ['workspace', scope.workspaceId],
+    ['group', groupId],
+    ['caller', authSession.clientId],
+  ].map(([name, value]) => `${name}=${encodeURIComponent(value)}`).join(':');
 }

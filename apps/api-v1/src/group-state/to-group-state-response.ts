@@ -12,6 +12,9 @@ import type {
   GroupStateWritten,
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import {
+  GroupMutationRejectedError,
+} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import {
   requireGroupJoinCodeWritten,
   requireGroupPresenceInboxDurableResult,
   requireGroupStateWritten,
@@ -90,7 +93,9 @@ async function toGroupPresenceResponse(
   },
 ): Promise<GroupSnapshot> {
   if ('commandId' in input.receipt && input.receipt.outcome === 'rejected') {
-    throw new Error(input.receipt.rejection ?? 'Group presence mutation rejected');
+    throw new GroupMutationRejectedError(
+      input.receipt.rejection ?? 'Group presence mutation rejected',
+    );
   }
 
   const snapshot = await input.service.readCurrentSnapshot(input.ref);

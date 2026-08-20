@@ -24,35 +24,61 @@ Deno.test('group lifecycle transition routes retain their AppInbox envelopes', a
     await postGroupStateMutation(runtime.app, `${API_BASE}/room-1/lifecycle/establish`, {
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
-      requestId: 'start-body',
+      requestId: 'group-route-start-body',
     }),
     await postGroupStateMutation(runtime.app, `${API_BASE}/room-1/lifecycle/activate`, {
-      requestId: 'activate-body',
+      requestId: 'group-route-activate-body',
     }),
     await postGroupStateMutation(runtime.app, `${API_BASE}/room-1/lifecycle/reopen`, {
       reason: 'topology-refresh',
-      requestId: 'reopen-body',
+      requestId: 'group-route-reopen-body',
     }),
   ];
   for (const response of responses) assert.equal(response.status, 200);
-  assert.equal(
-    JSON.stringify(enqueued),
-    '[{"type":"GROUP_ESTABLISHMENT_START","resourceId":"start-body",' +
-      '"contextId":"app-1:workspace-1:room-1","senderId":"alice",' +
-      '"data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},' +
-      '"groupId":"room-1","request":{"actorPrincipalId":"alice",' +
-      '"actorSessionId":"alice-session","requestId":"start-body"}}},' +
-      '{"type":"GROUP_ACTIVATE","resourceId":"activate-body",' +
-      '"contextId":"app-1:workspace-1:room-1","senderId":"alice",' +
-      '"data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},' +
-      '"groupId":"room-1","request":{"requestId":"activate-body",' +
-      '"actorPrincipalId":"alice","actorSessionId":"alice-session"}}},' +
-      '{"type":"GROUP_ESTABLISHMENT_REOPEN","resourceId":"reopen-body",' +
-      '"contextId":"app-1:workspace-1:room-1","senderId":"alice",' +
-      '"data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},' +
-      '"groupId":"room-1","request":{"reason":"topology-refresh",' +
-      '"requestId":"reopen-body","actorPrincipalId":"alice",' +
-      '"actorSessionId":"alice-session"}}}]',
+  assert.deepEqual(
+    enqueued.map((enqueue) => ({
+      type: enqueue.type,
+      topicId: enqueue.topicId,
+      resourceId: enqueue.resourceId,
+      contextId: enqueue.contextId,
+      request: enqueue.data.request,
+    })),
+    [
+      {
+        type: 'GROUP_ESTABLISHMENT_START',
+        topicId: 'GROUP_ESTABLISHMENT_START',
+        resourceId: 'group-route-start-body',
+        contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
+        request: {
+          actorPrincipalId: 'alice',
+          actorSessionId: 'alice-session',
+          requestId: 'group-route-start-body',
+        },
+      },
+      {
+        type: 'GROUP_ACTIVATE',
+        topicId: 'GROUP_ACTIVATE',
+        resourceId: 'group-route-activate-body',
+        contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
+        request: {
+          actorPrincipalId: 'alice',
+          actorSessionId: 'alice-session',
+          requestId: 'group-route-activate-body',
+        },
+      },
+      {
+        type: 'GROUP_ESTABLISHMENT_REOPEN',
+        topicId: 'GROUP_ESTABLISHMENT_REOPEN',
+        resourceId: 'group-route-reopen-body',
+        contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
+        request: {
+          reason: 'topology-refresh',
+          actorPrincipalId: 'alice',
+          actorSessionId: 'alice-session',
+          requestId: 'group-route-reopen-body',
+        },
+      },
+    ],
   );
 });
 

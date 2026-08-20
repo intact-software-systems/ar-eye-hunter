@@ -36,6 +36,8 @@ export function createCachedGroupStateService(
 ): CachedGroupStateService {
   return {
     sessionGenerationLifecycle: options.durable.sessionGenerationLifecycle,
+    authorizeMutation: async (descriptor, authority) =>
+      await options.durable.authorizeMutation(descriptor, authority),
     prepareMutation: async (descriptor, authority) =>
       await options.durable.prepareMutation(descriptor, authority),
     prepareExpiredPresenceMutations: async (atEpochMs) =>

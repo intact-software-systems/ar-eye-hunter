@@ -28,6 +28,7 @@ import { toLifecycleMutationCommand } from './to-lifecycle-mutation-command.ts';
 import { toPresenceMutationCommand } from './group-presence-mutation-command.ts';
 import {
   GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,
+  type AuthorizedGroupMutation,
   type GroupMutationAuthority,
   type GroupMutationAuthorityProof,
   type GroupMutationDescriptor,
@@ -70,17 +71,10 @@ export class GroupMutationAuthorizationError extends Error {
 export async function prepareGroupMutation(
   dependencies: GroupMutationAuthorityDependencies,
   descriptor: GroupMutationDescriptor,
-  authority: IssuedAuthSession,
+  authority: GroupMutationAuthority,
 ): Promise<GroupMutationPreparation> {
-  const verified = await verifyGroupMutationAuthority({
-    repository: dependencies.authSessionRepository,
-    descriptor,
-    authority,
-    nowEpochMs: dependencies.now(),
-  });
-  requireGroupMutationRequestId(verified.descriptor);
-  const command = toDescriptorCommand(verified.descriptor, dependencies.randomId);
-  validateGroupMutationCommand(command);
+  const authorized = await authorizeGroupMutation(dependencies, descriptor, authority);
+  const command = toDescriptorCommand(authorized.descriptor, dependencies.randomId);
   const commandHash = await hashMutationCommand(command as JsonWireValue);
   const resolvedJoinCode = resolveCommandJoinCode(command, commandHash);
   const facts: Omit<GroupMutationFacts, 'attemptCount'> = {
@@ -95,14 +89,10 @@ export async function prepareGroupMutation(
     formationDamping: dependencies.formationDamping,
     ...(dependencies.capacity ? { capacity: dependencies.capacity } : {}),
     authenticatedAuthority: {
-      principalId: verified.session.clientId,
-      sessionId: verified.session.sessionId,
+      principalId: authorized.authorityProof.principalId,
+      sessionId: authorized.authorityProof.sessionId,
     },
   };
-  const authorityProof = await createGroupMutationAuthorityProof(
-    verified.session,
-    verified.descriptor,
-  );
   const preparationCausalRevision =
     (await dependencies.readCausalRevision(command.aggregateRef)) ?? null;
   const causalToken = await sha256CanonicalJson({ command, facts, preparationCausalRevision });
@@ -110,21 +100,42 @@ export async function prepareGroupMutation(
     await sha256CanonicalJson({
       requestId: command.requestId,
       authoritySession: {
-        sessionId: verified.session.sessionId,
-        issuedAtEpochMs: verified.session.issuedAtEpochMs,
-        expiresAtEpochMs: verified.session.expiresAtEpochMs,
+        sessionId: authorized.authorityProof.sessionId,
+        issuedAtEpochMs: authorized.authorityProof.sessionIssuedAtEpochMs,
+        expiresAtEpochMs: authorized.authorityProof.sessionExpiresAtEpochMs,
       },
-      commandMac: authorityProof.commandMac,
+      commandMac: authorized.authorityProof.commandMac,
       causalToken,
     })
   ).slice(0, 34)}`;
   return {
-    authorityProof,
-    descriptor: verified.descriptor,
+    ...authorized,
     command,
     facts,
     causalToken,
     queueResourceId,
+  };
+}
+
+export async function authorizeGroupMutation(
+  dependencies: Pick<GroupMutationAuthorityDependencies, 'authSessionRepository' | 'now'>,
+  descriptor: GroupMutationDescriptor,
+  authority: GroupMutationAuthority,
+): Promise<AuthorizedGroupMutation> {
+  const verified = await verifyGroupMutationAuthority({
+    repository: dependencies.authSessionRepository,
+    descriptor,
+    authority,
+    nowEpochMs: dependencies.now(),
+  });
+  requireGroupMutationRequestId(verified.descriptor);
+  const command = toDescriptorCommand(verified.descriptor, () => {
+    throw new NonRetryableException('Authenticated group mutation requestId is required.');
+  });
+  validateGroupMutationCommand(command);
+  return {
+    authorityProof: await createGroupMutationAuthorityProof(verified.session, verified.descriptor),
+    descriptor: verified.descriptor,
   };
 }
 

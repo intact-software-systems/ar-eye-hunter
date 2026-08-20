@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { decodeApiMutationFailure } from '@shared/api/mutation/api-mutation-failure.ts';
 
 import type {
   GroupMutationReceipt,
@@ -38,8 +39,9 @@ const PRESENCE_DISCONNECT_ROUTE = { path: `${API_BASE}/disconnect`, method: 'POS
 const EXPECTED_PRESENCE_COMMANDS = [
   {
     type: AppInboxType.GROUP_PRESENCE_CONNECT,
-    resourceId: 'connect-request',
-    contextId: 'app-1:workspace-1:room-1',
+    topicId: AppInboxType.GROUP_PRESENCE_CONNECT,
+    resourceId: 'group-route-connect-request',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
     senderId: 'alice',
     data: {
       scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -53,14 +55,15 @@ const EXPECTED_PRESENCE_COMMANDS = [
         connectedAtEpochMs: 1,
         lastHeartbeatAtEpochMs: 1,
         expiresAtEpochMs: 2,
-        requestId: 'connect-request',
+        requestId: 'group-route-connect-request',
       },
     },
   },
   {
     type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
-    resourceId: 'heartbeat-request',
-    contextId: 'app-1:workspace-1:room-1',
+    topicId: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
+    resourceId: 'group-route-heartbeat-request',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
     senderId: 'alice',
     data: {
       scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -73,14 +76,15 @@ const EXPECTED_PRESENCE_COMMANDS = [
         actorSessionId: 'alice-session',
         lastHeartbeatAtEpochMs: 2,
         expiresAtEpochMs: 3,
-        requestId: 'heartbeat-request',
+        requestId: 'group-route-heartbeat-request',
       },
     },
   },
   {
     type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
-    resourceId: 'disconnect-request',
-    contextId: 'app-1:workspace-1:room-1',
+    topicId: AppInboxType.GROUP_PRESENCE_DISCONNECT,
+    resourceId: 'group-route-disconnect-request',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
     senderId: 'alice',
     data: {
       scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -94,7 +98,7 @@ const EXPECTED_PRESENCE_COMMANDS = [
         lastHeartbeatAtEpochMs: 3,
         disconnectedAtEpochMs: 4,
         expiresAtEpochMs: 5,
-        requestId: 'disconnect-request',
+        requestId: 'group-route-disconnect-request',
       },
     },
   },
@@ -123,7 +127,7 @@ Deno.test('group presence commands retain validation and authenticated envelopes
         connectedAtEpochMs: 1,
         lastHeartbeatAtEpochMs: 1,
         expiresAtEpochMs: 2,
-        requestId: 'connect-request',
+        requestId: 'group-route-connect-request',
       },
     }),
     toGroupStateCommand({
@@ -134,7 +138,7 @@ Deno.test('group presence commands retain validation and authenticated envelopes
         ...forgedActor,
         lastHeartbeatAtEpochMs: 2,
         expiresAtEpochMs: 3,
-        requestId: 'heartbeat-request',
+        requestId: 'group-route-heartbeat-request',
       },
     }),
     toGroupStateCommand({
@@ -146,7 +150,7 @@ Deno.test('group presence commands retain validation and authenticated envelopes
         lastHeartbeatAtEpochMs: 3,
         disconnectedAtEpochMs: 4,
         expiresAtEpochMs: 5,
-        requestId: 'disconnect-request',
+        requestId: 'group-route-disconnect-request',
       },
     }),
   ];
@@ -251,7 +255,7 @@ Deno.test(
         connectedAtEpochMs: 1,
         lastHeartbeatAtEpochMs: 1,
         expiresAtEpochMs: 2,
-        requestId: 'connect-request',
+        requestId: 'group-route-connect-request',
       }),
       await requestPresenceMutation(runtime.app, PRESENCE_HEARTBEAT_ROUTE, {
         generationId: 'generation-heartbeat',
@@ -260,7 +264,7 @@ Deno.test(
         actorSessionId: 'forged-session',
         lastHeartbeatAtEpochMs: 2,
         expiresAtEpochMs: 3,
-        requestId: 'heartbeat-request',
+        requestId: 'group-route-heartbeat-request',
       }),
       await requestPresenceMutation(runtime.app, PRESENCE_DISCONNECT_ROUTE, {
         generationId: 'generation-disconnect',
@@ -270,7 +274,7 @@ Deno.test(
         lastHeartbeatAtEpochMs: 3,
         disconnectedAtEpochMs: 4,
         expiresAtEpochMs: 5,
-        requestId: 'disconnect-request',
+        requestId: 'group-route-disconnect-request',
       }),
     ];
 
@@ -342,7 +346,23 @@ Deno.test('group presence route rejects a receipt before its cleanup read', asyn
   });
 
   assert.equal(response.status, 400);
-  assert.deepEqual(await response.json(), { error: 'Presence rejected by current authority' });
+  assert.deepEqual(decodeApiMutationFailure(await response.json()), {
+    type: 'api-mutation-failure',
+    version: 'canonical.v1',
+    code: 'group-mutation-rejected',
+    status: 400,
+    message: 'Presence rejected by current authority',
+    issues: [
+      {
+        code: 'group-mutation-rejected',
+        path: null,
+        message: 'Presence rejected by current authority',
+        details: null,
+      },
+    ],
+    denial: null,
+    retry: null,
+  });
   assert.equal(currentSnapshotReads, 0);
 });
 
@@ -410,10 +430,12 @@ async function requestPresenceMutation(
   route: PresenceMutationRoute,
   body: Record<string, unknown>,
 ): Promise<Response> {
-  return await app.request(route.path, {
+  const { requestId: candidate, ...requestBody } = body;
+  const requestId = typeof candidate === 'string' ? candidate : 'group-route-presence-default';
+  return await app.request(`${route.path}/requests/${encodeURIComponent(requestId)}`, {
     method: route.method,
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(requestBody),
   });
 }
 
@@ -478,14 +500,17 @@ async function verifyMalformedPresenceRequests(
       },
     },
   ] as const;
-  for (const testCase of malformed) {
-    const response = await app.request(testCase.path, {
-      method: testCase.method,
-      headers: AUTHENTICATED_HEADERS,
-      body: JSON.stringify(testCase.body),
-    });
+  for (const [index, testCase] of malformed.entries()) {
+    const response = await app.request(
+      `${testCase.path}/requests/group-route-malformed-presence-${index}`,
+      {
+        method: testCase.method,
+        headers: AUTHENTICATED_HEADERS,
+        body: JSON.stringify(testCase.body),
+      },
+    );
     assert.equal(response.status, 400, testCase.path);
-    assert.match((await response.json()).error, /Group|group/);
+    assert.equal((await response.json()).type, 'api-mutation-failure');
   }
 }
 
@@ -500,16 +525,19 @@ async function verifyValidPresenceRequests(
       { method: 'POST', path: `${sessionPath}/disconnect` },
     ] as const
   ) {
-    const response = await app.request(testCase.path, {
-      method: testCase.method,
-      headers: AUTHENTICATED_HEADERS,
-      body: JSON.stringify({
-        generationId: 'generation-1',
-        lastHeartbeatAtEpochMs: 1,
-        expiresAtEpochMs: 1,
-        ...(testCase.path.endsWith('/disconnect') ? { disconnectedAtEpochMs: 1 } : {}),
-      }),
-    });
+    const response = await app.request(
+      `${testCase.path}/requests/group-route-valid-presence-${testCase.method.toLowerCase()}`,
+      {
+        method: testCase.method,
+        headers: AUTHENTICATED_HEADERS,
+        body: JSON.stringify({
+          generationId: 'generation-1',
+          lastHeartbeatAtEpochMs: 1,
+          expiresAtEpochMs: 1,
+          ...(testCase.path.endsWith('/disconnect') ? { disconnectedAtEpochMs: 1 } : {}),
+        }),
+      },
+    );
     assert.equal(response.status, 200, testCase.path);
   }
 }

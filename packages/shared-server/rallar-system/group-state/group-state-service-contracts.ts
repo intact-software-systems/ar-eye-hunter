@@ -132,6 +132,11 @@ export type GroupMutationPreparation = Readonly<{
   queueResourceId: string;
 }>;
 
+export type AuthorizedGroupMutation = Readonly<{
+  authorityProof: GroupMutationAuthorityProof;
+  descriptor: GroupMutationDescriptor;
+}>;
+
 export type GroupStateMutationCommand = Readonly<{
   authorityProof: GroupMutationAuthorityProof | null;
   descriptor: GroupMutationDescriptor | null;
@@ -156,9 +161,13 @@ export type GroupStateMutationService = Readonly<{
 export type GroupStateService = GroupStateMutationService &
   Readonly<{
     sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
-    prepareMutation(
+    authorizeMutation(
       descriptor: GroupMutationDescriptor,
       authority: IssuedAuthSession,
+    ): Promise<AuthorizedGroupMutation>;
+    prepareMutation(
+      descriptor: GroupMutationDescriptor,
+      authority: GroupMutationAuthority,
     ): Promise<GroupMutationPreparation>;
     prepareExpiredPresenceMutations(
       atEpochMs: number,

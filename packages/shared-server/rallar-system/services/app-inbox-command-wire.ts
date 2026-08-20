@@ -4,6 +4,12 @@ import { readCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topolog
 import { validateRtcRttMeasurement } from '../rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
 import { hashCanonicalCommand } from './canonical-command-hash.ts';
 import { decodeAuthMutationIntent } from '../auth/mutation/decode-auth-mutation-intent.ts';
+import { toDescriptorCommand } from '../group-state/group-mutation-authority.ts';
+import type { GroupMutationDescriptor } from '../group-state/group-state-service-contracts.ts';
+// prettier-ignore
+import {
+  validateGroupMutationCommand,
+} from '../group-state/mutation/command-validation/validate-group-mutation-command.ts';
 import { toAuthAppInboxType } from '../auth/inbox/auth-app-inbox-routing.ts';
 import {
   type JsonWireValue,
@@ -67,6 +73,14 @@ export function toLogicalAppInboxCommand(enqueue: AppInboxEnqueueInput<unknown>)
       data: stableAuth,
     };
   }
+  const stableGroup = toStableGroupCommand(enqueue.type, enqueue.authority);
+  if (stableGroup) {
+    return {
+      type: enqueue.type,
+      authority: null,
+      data: stableGroup,
+    };
+  }
   const stable = toStableTopologyCommand(enqueue.type, enqueue.data);
   if (stable) {
     return {
@@ -82,17 +96,63 @@ export function toLogicalAppInboxCommand(enqueue: AppInboxEnqueueInput<unknown>)
   };
 }
 
-function toStableAuthCommand(
+function toStableGroupCommand<Authority>(
   type: AppInboxType,
-  value: JsonWireValue,
+  authority: Authority,
 ): JsonWireValue | undefined {
+  const expectedOperation = GROUP_APP_INBOX_OPERATIONS.get(type);
+  if (!expectedOperation) {
+    return undefined;
+  }
+  const authorized = requireRecord(authority);
+  const descriptor = requireRecord(authorized.descriptor) as GroupMutationDescriptor;
+  const command = toDescriptorCommand(descriptor, () => {
+    throw new TypeError('Authenticated group mutation requestId is required');
+  });
+  validateGroupMutationCommand(command);
+  if (command.operation !== expectedOperation) {
+    throw new TypeError('Group mutation operation differs from AppInbox type');
+  }
+  return {
+    ...command,
+    input: {
+      ...command.input,
+      actorSessionId: null,
+    },
+  } as JsonWireValue;
+}
+
+const GROUP_APP_INBOX_OPERATIONS = new Map<AppInboxType, GroupMutationDescriptor['operation']>([
+  [AppInboxType.GROUP_CREATE, 'createGroup'],
+  [AppInboxType.GROUP_UPDATE, 'updateGroup'],
+  [AppInboxType.GROUP_DIRECTOR_APPOINT, 'appointDirector'],
+  [AppInboxType.GROUP_ESTABLISHMENT_START, 'startGroupEstablishment'],
+  [AppInboxType.GROUP_ACTIVATE, 'activateGroup'],
+  [AppInboxType.GROUP_ESTABLISHMENT_REOPEN, 'reopenGroupEstablishment'],
+  [AppInboxType.GROUP_JOIN, 'joinGroup'],
+  [AppInboxType.GROUP_INVITE_CREATE, 'createGroupInvite'],
+  [AppInboxType.GROUP_INVITE_REVOKE, 'revokeGroupInvite'],
+  [AppInboxType.GROUP_INVITE_ACCEPT, 'acceptGroupInvite'],
+  [AppInboxType.GROUP_JOIN_CODE_ROTATE, 'rotateGroupJoinCode'],
+  [AppInboxType.GROUP_ADMISSION_GRANT, 'grantGroupAdmission'],
+  [AppInboxType.GROUP_ADMISSION_DECLINE, 'declineGroupAdmission'],
+  [AppInboxType.GROUP_MEMBER_REMOVE, 'removeGroupMember'],
+  [AppInboxType.GROUP_MEMBER_BAN, 'banGroupMember'],
+  [AppInboxType.GROUP_MEMBER_UNBAN, 'unbanGroupMember'],
+  [AppInboxType.GROUP_MEMBER_ROLE_SET, 'setGroupMemberRole'],
+  [AppInboxType.GROUP_OWNERSHIP_TRANSFER, 'transferGroupOwnership'],
+  [AppInboxType.GROUP_MEMBER_UPSERT, 'upsertMember'],
+  [AppInboxType.GROUP_PRESENCE_CONNECT, 'connectPresence'],
+  [AppInboxType.GROUP_PRESENCE_HEARTBEAT, 'heartbeatPresence'],
+  [AppInboxType.GROUP_PRESENCE_DISCONNECT, 'disconnectPresence'],
+]);
+
+function toStableAuthCommand(type: AppInboxType, value: JsonWireValue): JsonWireValue | undefined {
   if (!type.startsWith('AUTH_')) {
     return undefined;
   }
   try {
-    const intent = decodeAuthMutationIntent(
-      JSON.parse(JSON.stringify(value)) as JsonWireValue,
-    );
+    const intent = decodeAuthMutationIntent(JSON.parse(JSON.stringify(value)) as JsonWireValue);
     if (toAuthAppInboxType(intent) !== type) {
       return undefined;
     }
@@ -302,9 +362,7 @@ function requireRecord(value: unknown): Record<string, unknown> {
 }
 
 function requireExactKeys(record: Record<string, unknown>, expected: readonly string[]): void {
-  if (
-    JSON.stringify(Object.keys(record).toSorted()) !== JSON.stringify([...expected].toSorted())
-  ) {
+  if (JSON.stringify(Object.keys(record).toSorted()) !== JSON.stringify([...expected].toSorted())) {
     throw new TypeError('Unexpected durable command fields');
   }
 }

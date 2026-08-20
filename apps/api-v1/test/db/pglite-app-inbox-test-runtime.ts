@@ -62,7 +62,7 @@ export async function readPGliteAppInboxFailure(
     },
   );
   const enqueue = {
-    type: AppInboxType.GROUP_CREATE,
+    type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
     resourceId,
     contextId: 'legacy-context',
     data: { requestId: resourceId },

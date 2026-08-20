@@ -32,8 +32,9 @@ const AUTHENTICATED_HEADERS = { authorization: 'Bearer token' } as const;
 const EXPECTED_MEMBERSHIP_COMMANDS = [
   {
     type: AppInboxType.GROUP_MEMBER_REMOVE,
-    resourceId: 'remove-request',
-    contextId: 'app-1:workspace-1:room-1',
+    topicId: AppInboxType.GROUP_MEMBER_REMOVE,
+    resourceId: 'group-route-remove-request',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
     senderId: 'alice',
     data: {
       scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -42,14 +43,15 @@ const EXPECTED_MEMBERSHIP_COMMANDS = [
       request: {
         actorPrincipalId: 'alice',
         actorSessionId: 'alice-session',
-        requestId: 'remove-request',
+        requestId: 'group-route-remove-request',
       },
     },
   },
   {
     type: AppInboxType.GROUP_MEMBER_BAN,
-    resourceId: 'ban-request',
-    contextId: 'app-1:workspace-1:room-1',
+    topicId: AppInboxType.GROUP_MEMBER_BAN,
+    resourceId: 'group-route-ban-request',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
     senderId: 'alice',
     data: {
       scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -58,14 +60,15 @@ const EXPECTED_MEMBERSHIP_COMMANDS = [
       request: {
         actorPrincipalId: 'alice',
         actorSessionId: 'alice-session',
-        requestId: 'ban-request',
+        requestId: 'group-route-ban-request',
       },
     },
   },
   {
     type: AppInboxType.GROUP_MEMBER_UNBAN,
-    resourceId: 'unban-request',
-    contextId: 'app-1:workspace-1:room-1',
+    topicId: AppInboxType.GROUP_MEMBER_UNBAN,
+    resourceId: 'group-route-unban-request',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
     senderId: 'alice',
     data: {
       scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -74,14 +77,15 @@ const EXPECTED_MEMBERSHIP_COMMANDS = [
       request: {
         actorPrincipalId: 'alice',
         actorSessionId: 'alice-session',
-        requestId: 'unban-request',
+        requestId: 'group-route-unban-request',
       },
     },
   },
   {
     type: AppInboxType.GROUP_MEMBER_ROLE_SET,
-    resourceId: 'role-request',
-    contextId: 'app-1:workspace-1:room-1',
+    topicId: AppInboxType.GROUP_MEMBER_ROLE_SET,
+    resourceId: 'group-route-role-request',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
     senderId: 'alice',
     data: {
       scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -91,14 +95,15 @@ const EXPECTED_MEMBERSHIP_COMMANDS = [
         role: 'admin',
         actorPrincipalId: 'alice',
         actorSessionId: 'alice-session',
-        requestId: 'role-request',
+        requestId: 'group-route-role-request',
       },
     },
   },
   {
     type: AppInboxType.GROUP_OWNERSHIP_TRANSFER,
-    resourceId: 'transfer-request',
-    contextId: 'app-1:workspace-1:room-1',
+    topicId: AppInboxType.GROUP_OWNERSHIP_TRANSFER,
+    resourceId: 'group-route-transfer-request',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
     senderId: 'alice',
     data: {
       scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -107,14 +112,15 @@ const EXPECTED_MEMBERSHIP_COMMANDS = [
         newOwnerPrincipalId: 'bob',
         actorPrincipalId: 'alice',
         actorSessionId: 'alice-session',
-        requestId: 'transfer-request',
+        requestId: 'group-route-transfer-request',
       },
     },
   },
   {
     type: AppInboxType.GROUP_MEMBER_UPSERT,
-    resourceId: 'upsert-request',
-    contextId: 'app-1:workspace-1:room-1',
+    topicId: AppInboxType.GROUP_MEMBER_UPSERT,
+    resourceId: 'group-route-upsert-request',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
     senderId: 'alice',
     data: {
       scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -124,7 +130,7 @@ const EXPECTED_MEMBERSHIP_COMMANDS = [
         status: 'active',
         actorPrincipalId: 'alice',
         actorSessionId: 'alice-session',
-        requestId: 'upsert-request',
+        requestId: 'group-route-upsert-request',
       },
     },
   },
@@ -143,7 +149,7 @@ Deno.test('group membership commands retain governance and self-service envelope
       request: {
         role: 'admin',
         ...forgedActor,
-        requestId: 'role-request',
+        requestId: 'group-route-role-request',
       },
     }),
     toGroupStateCommand({
@@ -152,7 +158,7 @@ Deno.test('group membership commands retain governance and self-service envelope
       request: {
         newOwnerPrincipalId: 'bob',
         ...forgedActor,
-        requestId: 'transfer-request',
+        requestId: 'group-route-transfer-request',
       },
     }),
     toGroupStateCommand({
@@ -163,7 +169,7 @@ Deno.test('group membership commands retain governance and self-service envelope
         status: 'active',
         role: 'admin',
         ...forgedActor,
-        requestId: 'upsert-request',
+        requestId: 'group-route-upsert-request',
       },
     }),
   ];
@@ -184,36 +190,36 @@ Deno.test(
       await postGroupStateMutation(runtime.app, `${API_BASE}/members/bob/remove`, {
         actorPrincipalId: 'forged-actor',
         actorSessionId: 'forged-session',
-        requestId: 'remove-request',
+        requestId: 'group-route-remove-request',
       }),
       await postGroupStateMutation(runtime.app, `${API_BASE}/members/bob/ban`, {
         actorPrincipalId: 'forged-actor',
         actorSessionId: 'forged-session',
-        requestId: 'ban-request',
+        requestId: 'group-route-ban-request',
       }),
       await postGroupStateMutation(runtime.app, `${API_BASE}/members/bob/unban`, {
         actorPrincipalId: 'forged-actor',
         actorSessionId: 'forged-session',
-        requestId: 'unban-request',
+        requestId: 'group-route-unban-request',
       }),
       await putGroupStateMutation(runtime.app, `${API_BASE}/members/bob/role`, {
         role: 'admin',
         actorPrincipalId: 'forged-actor',
         actorSessionId: 'forged-session',
-        requestId: 'role-request',
+        requestId: 'group-route-role-request',
       }),
       await postGroupStateMutation(runtime.app, `${API_BASE}/owner/transfer`, {
         newOwnerPrincipalId: 'bob',
         actorPrincipalId: 'forged-actor',
         actorSessionId: 'forged-session',
-        requestId: 'transfer-request',
+        requestId: 'group-route-transfer-request',
       }),
       await putGroupStateMutation(runtime.app, `${API_BASE}/members/alice`, {
         status: 'active',
         role: 'admin',
         actorPrincipalId: 'forged-actor',
         actorSessionId: 'forged-session',
-        requestId: 'upsert-request',
+        requestId: 'group-route-upsert-request',
       }),
     ];
 
@@ -256,24 +262,23 @@ async function requestGovernanceRoutes(
   return await Promise.all([
     postGroupStateMutationWithHeaders(app, `${API_BASE}/members/bob/remove`, {
       headers: AUTHENTICATED_HEADERS,
-      body: { requestId: 'remove-bob' },
+      body: { requestId: 'group-route-remove-bob' },
     }),
     postGroupStateMutationWithHeaders(app, `${API_BASE}/members/bob/ban`, {
       headers: AUTHENTICATED_HEADERS,
-      body: { requestId: 'ban-bob' },
+      body: { requestId: 'group-route-ban-bob-1' },
     }),
     postGroupStateMutationWithHeaders(app, `${API_BASE}/members/bob/unban`, {
       headers: AUTHENTICATED_HEADERS,
-      body: { requestId: 'unban-bob' },
+      body: { requestId: 'group-route-unban-bob' },
     }),
-    app.request(`${API_BASE}/members/bob/role`, {
-      method: 'PUT',
-      headers: { ...AUTHENTICATED_HEADERS, 'content-type': 'application/json' },
-      body: JSON.stringify({ role: 'admin', requestId: 'role-bob' }),
+    putGroupStateMutation(app, `${API_BASE}/members/bob/role`, {
+      role: 'admin',
+      requestId: 'group-route-role-bob',
     }),
     postGroupStateMutationWithHeaders(app, `${API_BASE}/owner/transfer`, {
       headers: AUTHENTICATED_HEADERS,
-      body: { newOwnerPrincipalId: 'bob', requestId: 'transfer-owner' },
+      body: { newOwnerPrincipalId: 'bob', requestId: 'group-route-transfer-owner' },
     }),
   ]);
 }
@@ -282,8 +287,9 @@ function assertMemberRestrictionEnvelopes(enqueued: AuthenticatedGroupMutationEn
   assert.deepEqual(enqueued, [
     {
       type: AppInboxType.GROUP_MEMBER_REMOVE,
-      resourceId: 'remove-bob',
-      contextId: 'app-1:workspace-1:room-1',
+      topicId: AppInboxType.GROUP_MEMBER_REMOVE,
+      resourceId: 'group-route-remove-bob',
+      contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
       senderId: 'alice',
       data: {
         scope: TEST_GROUP_SCOPE,
@@ -292,14 +298,15 @@ function assertMemberRestrictionEnvelopes(enqueued: AuthenticatedGroupMutationEn
         request: {
           actorPrincipalId: 'alice',
           actorSessionId: 'alice-session',
-          requestId: 'remove-bob',
+          requestId: 'group-route-remove-bob',
         },
       },
     },
     {
       type: AppInboxType.GROUP_MEMBER_BAN,
-      resourceId: 'ban-bob',
-      contextId: 'app-1:workspace-1:room-1',
+      topicId: AppInboxType.GROUP_MEMBER_BAN,
+      resourceId: 'group-route-ban-bob-1',
+      contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
       senderId: 'alice',
       data: {
         scope: TEST_GROUP_SCOPE,
@@ -308,14 +315,15 @@ function assertMemberRestrictionEnvelopes(enqueued: AuthenticatedGroupMutationEn
         request: {
           actorPrincipalId: 'alice',
           actorSessionId: 'alice-session',
-          requestId: 'ban-bob',
+          requestId: 'group-route-ban-bob-1',
         },
       },
     },
     {
       type: AppInboxType.GROUP_MEMBER_UNBAN,
-      resourceId: 'unban-bob',
-      contextId: 'app-1:workspace-1:room-1',
+      topicId: AppInboxType.GROUP_MEMBER_UNBAN,
+      resourceId: 'group-route-unban-bob',
+      contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
       senderId: 'alice',
       data: {
         scope: TEST_GROUP_SCOPE,
@@ -324,7 +332,7 @@ function assertMemberRestrictionEnvelopes(enqueued: AuthenticatedGroupMutationEn
         request: {
           actorPrincipalId: 'alice',
           actorSessionId: 'alice-session',
-          requestId: 'unban-bob',
+          requestId: 'group-route-unban-bob',
         },
       },
     },
@@ -335,8 +343,9 @@ function assertRoleAndOwnershipEnvelopes(enqueued: AuthenticatedGroupMutationEnq
   assert.deepEqual(enqueued, [
     {
       type: AppInboxType.GROUP_MEMBER_ROLE_SET,
-      resourceId: 'role-bob',
-      contextId: 'app-1:workspace-1:room-1',
+      topicId: AppInboxType.GROUP_MEMBER_ROLE_SET,
+      resourceId: 'group-route-role-bob',
+      contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
       senderId: 'alice',
       data: {
         scope: TEST_GROUP_SCOPE,
@@ -346,14 +355,15 @@ function assertRoleAndOwnershipEnvelopes(enqueued: AuthenticatedGroupMutationEnq
           role: 'admin',
           actorPrincipalId: 'alice',
           actorSessionId: 'alice-session',
-          requestId: 'role-bob',
+          requestId: 'group-route-role-bob',
         },
       },
     },
     {
       type: AppInboxType.GROUP_OWNERSHIP_TRANSFER,
-      resourceId: 'transfer-owner',
-      contextId: 'app-1:workspace-1:room-1',
+      topicId: AppInboxType.GROUP_OWNERSHIP_TRANSFER,
+      resourceId: 'group-route-transfer-owner',
+      contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
       senderId: 'alice',
       data: {
         scope: TEST_GROUP_SCOPE,
@@ -362,7 +372,7 @@ function assertRoleAndOwnershipEnvelopes(enqueued: AuthenticatedGroupMutationEnq
           newOwnerPrincipalId: 'bob',
           actorPrincipalId: 'alice',
           actorSessionId: 'alice-session',
-          requestId: 'transfer-owner',
+          requestId: 'group-route-transfer-owner',
         },
       },
     },
@@ -379,19 +389,19 @@ function createMemberRestrictionCommands(
       operation: 'remove-group-member',
       ...commandBase,
       principalId: 'bob',
-      request: { ...forgedActor, requestId: 'remove-request' },
+      request: { ...forgedActor, requestId: 'group-route-remove-request' },
     }),
     toGroupStateCommand({
       operation: 'ban-group-member',
       ...commandBase,
       principalId: 'bob',
-      request: { ...forgedActor, requestId: 'ban-request' },
+      request: { ...forgedActor, requestId: 'group-route-ban-request' },
     }),
     toGroupStateCommand({
       operation: 'unban-group-member',
       ...commandBase,
       principalId: 'bob',
-      request: { ...forgedActor, requestId: 'unban-request' },
+      request: { ...forgedActor, requestId: 'group-route-unban-request' },
     }),
   ];
 }

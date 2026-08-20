@@ -14,6 +14,7 @@ import { hashMutationCommand, type JsonWireValue } from '../services/mutation-co
 import { sha256CanonicalJson } from './mutation/group-state-crypto.ts';
 import { createTimedGroupStateService } from './group-state-service-timing.ts';
 import {
+  authorizeGroupMutation,
   prepareGroupMutation,
   type GroupMutationAuthorityDependencies,
   GroupMutationAuthorizationError,
@@ -154,6 +155,7 @@ function createPreparationOperations(
   owners: GroupStateRuntimeOwners,
 ): Pick<
   GroupStateService,
+  | 'authorizeMutation'
   | 'prepareMutation'
   | 'prepareExpiredPresenceMutations'
   | 'prepareSessionCleanupMutations'
@@ -162,6 +164,8 @@ function createPreparationOperations(
   const { dependencies, repositoryFor, authorityDependencies, prepareInternalMutation } = owners;
   const runtime = dependencies.runtimeRepository;
   return {
+    authorizeMutation: async (descriptor, authority) =>
+      await authorizeGroupMutation(authorityDependencies, descriptor, authority),
     prepareMutation: async (descriptor, authority) =>
       await prepareGroupMutation(authorityDependencies, descriptor, authority),
     prepareExpiredPresenceMutations: async (atEpochMs) => {

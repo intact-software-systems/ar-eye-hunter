@@ -2,12 +2,19 @@ import {
   GROUP_POLICY_REASON_CODES,
   type GroupPolicyDenied,
 } from '@shared/api/group-policy-types.ts';
+import type { ApiMutationFailure } from '@shared/api/mutation/api-mutation-failure.ts';
 import {
   GroupPolicyDeniedError,
   isGroupPolicyDeniedError,
 } from '@shared-server/rallar-system/group-policy.ts';
 
 import { isGroupAdmissionRateLimitedError } from '../services/group-admission-rate-limit.ts';
+import {
+  createApiMutationFailure,
+  toApiMutationFailureJsonObject,
+  toApiMutationFailureResponse,
+  toApiMutationRateLimitResponse,
+} from '../routes/api-mutation-route-failure.ts';
 
 interface GroupAppInboxRouteFailure {
   readonly code: string;
@@ -70,6 +77,40 @@ export function toGroupStateErrorResponse(
     error: message,
     ...(code ? { code } : {}),
   }, status);
+}
+
+interface GroupMutationFailureResponseWriter {
+  json(value: ApiMutationFailure, status?: number): Response;
+}
+
+export function toGroupMutationErrorResponse<Failure>(
+  context: GroupMutationFailureResponseWriter,
+  error: Failure,
+): Response {
+  if (isGroupAdmissionRateLimitedError(error)) {
+    return toApiMutationRateLimitResponse(
+      context,
+      error.message,
+      error.retryAfterSeconds * 1_000,
+    );
+  }
+  if (isGroupPolicyDeniedError(error)) {
+    const failure = createApiMutationFailure({
+      code: error.denial.code,
+      status: error.status,
+      message: error.denial.message,
+      denial: {
+        code: error.denial.code,
+        message: error.denial.message,
+        details: toApiMutationFailureJsonObject(error.denial.details),
+      },
+    });
+    return context.json(failure, failure.status);
+  }
+  return toApiMutationFailureResponse(
+    context,
+    error instanceof Error ? error : new Error(String(error)),
+  );
 }
 
 function readGroupAppInboxRouteFailure(value: string): GroupAppInboxRouteFailure | undefined {

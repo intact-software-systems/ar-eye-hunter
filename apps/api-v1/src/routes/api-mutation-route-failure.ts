@@ -3,6 +3,7 @@ import type {
   ApiMutationFailureDenial,
   ApiMutationFailureIssue,
   ApiMutationFailureJsonObject,
+  ApiMutationFailureJsonValue,
   ApiMutationFailureRetry,
 } from '@shared/api/mutation/api-mutation-failure.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
@@ -53,13 +54,13 @@ export function toApiMutationRouteFailure(failure: AppInboxFailure): ApiMutation
       code: issue.code,
       path: issue.path,
       message: issue.message,
-      details: issue.details as ApiMutationFailureJsonObject | null,
+      details: toApiMutationFailureJsonObject(issue.details),
     })) ?? null,
     denial: failure.denial
       ? {
         code: failure.denial.code,
         message: failure.denial.message,
-        details: failure.denial.details as ApiMutationFailureJsonObject | null,
+        details: toApiMutationFailureJsonObject(failure.denial.details),
       }
       : failure.status === 401 || failure.status === 403
       ? { code: failure.code, message: failure.message, details: null }
@@ -75,6 +76,39 @@ export function toApiMutationRouteFailure(failure: AppInboxFailure): ApiMutation
       }
       : null,
   }));
+}
+
+export function toApiMutationFailureJsonObject(
+  value: Readonly<Record<string, unknown>> | null | undefined,
+): ApiMutationFailureJsonObject | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [key, toApiMutationFailureJsonValue(entry)]),
+  );
+}
+
+function toApiMutationFailureJsonValue(value: unknown): ApiMutationFailureJsonValue {
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(toApiMutationFailureJsonValue);
+  }
+  if (isUnknownRecord(value)) {
+    return toApiMutationFailureJsonObject(value);
+  }
+  return String(value);
+}
+
+function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null;
 }
 
 export function toApiMutationFailureResponse(

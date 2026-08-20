@@ -14,7 +14,7 @@ import {
   type GroupStateRouteDependencies,
   toGroupStateRouteScope,
 } from './group-state-route-contracts.ts';
-import { toGroupStateErrorResponse } from './group-state-route-errors.ts';
+import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
 import { readGroupStateRouteRequest } from './read-group-state-route-request.ts';
 import { toPendingMemberGroupSnapshot } from '@shared/api/group-client-views.ts';
 import { toGroupStateCommand } from './to-group-state-command.ts';
@@ -22,6 +22,7 @@ import { toGroupStateResponse } from './to-group-state-response.ts';
 
 const GROUP_MEMBER_PATH =
   '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/members/:principalId';
+const GROUP_PATH = '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId';
 
 export function registerGroupMembershipRoutes(
   app: Hono,
@@ -41,7 +42,7 @@ function registerRemoveGroupMemberRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
-    `${GROUP_MEMBER_PATH}/remove`,
+    `${GROUP_MEMBER_PATH}/remove/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -65,7 +66,7 @@ function registerRemoveGroupMemberRoute(
 
         return context.json(written.snapshot);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );
@@ -76,7 +77,7 @@ function registerBanGroupMemberRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
-    `${GROUP_MEMBER_PATH}/ban`,
+    `${GROUP_MEMBER_PATH}/ban/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -100,7 +101,7 @@ function registerBanGroupMemberRoute(
 
         return context.json(written.snapshot);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );
@@ -111,7 +112,7 @@ function registerUnbanGroupMemberRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
-    `${GROUP_MEMBER_PATH}/unban`,
+    `${GROUP_MEMBER_PATH}/unban/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -135,7 +136,7 @@ function registerUnbanGroupMemberRoute(
 
         return context.json(written.snapshot);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );
@@ -146,7 +147,7 @@ function registerSetGroupMemberRoleRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.put(
-    `${GROUP_MEMBER_PATH}/role`,
+    `${GROUP_MEMBER_PATH}/role/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -170,7 +171,7 @@ function registerSetGroupMemberRoleRoute(
 
         return context.json(written.snapshot);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );
@@ -181,7 +182,7 @@ function registerTransferGroupOwnershipRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/owner/transfer',
+    `${GROUP_PATH}/owner/transfer/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -203,7 +204,7 @@ function registerTransferGroupOwnershipRoute(
 
         return context.json(written.snapshot);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );
@@ -215,7 +216,7 @@ function registerUpsertSelfGroupMemberRoute(
   authorization: GroupStateRouteAuthorization,
 ): void {
   app.put(
-    GROUP_MEMBER_PATH,
+    `${GROUP_MEMBER_PATH}/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -240,7 +241,7 @@ function registerUpsertSelfGroupMemberRoute(
         const body = toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId);
         return context.json(body);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );

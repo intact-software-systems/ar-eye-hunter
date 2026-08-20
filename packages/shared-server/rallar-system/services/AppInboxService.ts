@@ -199,6 +199,34 @@ export class AppInboxService {
     await this.transactionWriter.writeTerminalFailure(context, error);
   }
 
+  protected async persistReservedEntryAuthority<Authority>(
+    context: AppInboxMessageContext,
+    authority: Authority,
+  ): Promise<void> {
+    const enqueue = toJsonWireAppInboxEnqueue({ ...context.enqueue, authority });
+    const message: ALMessage = {
+      ...context.message,
+      payload: {
+        ...context.message.payload,
+        resource: JSON.stringify(enqueue),
+      },
+    };
+    const replacement: ResourceEntry = {
+      ...context.entry,
+      resource: JSON.stringify(message),
+    };
+    const result = await this.inbox.inbox.enqueueOrUpdate(replacement, (existing) =>
+      existing.status === EntityStatus.RESERVED &&
+      existing.dequeueAudit.attempts === context.entry.dequeueAudit.attempts &&
+      existing.resource === context.entry.resource
+        ? replacement
+        : undefined,
+    );
+    if (result.action !== 'updated') {
+      throw new AppInboxReservationConflictError(context.entry.key);
+    }
+  }
+
   public processEntryNoWaiting<V>(enqueue: AppInboxEnqueueInput<V>): void {
     this.processEntryUntilCompletionInternal(
       enqueue,

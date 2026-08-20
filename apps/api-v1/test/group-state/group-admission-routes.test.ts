@@ -35,8 +35,9 @@ const AUTHENTICATED_HEADERS = { authorization: 'Bearer token' } as const;
 const EXPECTED_ADMISSION_COMMANDS = [
   {
     type: AppInboxType.GROUP_JOIN,
-    resourceId: 'join-request',
-    contextId: 'app-1:workspace-1:room-1',
+    topicId: AppInboxType.GROUP_JOIN,
+    resourceId: 'group-route-join-request',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
     senderId: 'alice',
     data: {
       scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -46,14 +47,15 @@ const EXPECTED_ADMISSION_COMMANDS = [
         joinCode: 'code-1',
         actorPrincipalId: 'alice',
         actorSessionId: 'alice-session',
-        requestId: 'join-request',
+        requestId: 'group-route-join-request',
       },
     },
   },
   {
     type: AppInboxType.GROUP_INVITE_ACCEPT,
-    resourceId: 'accept-request',
-    contextId: 'app-1:workspace-1:room-1',
+    topicId: AppInboxType.GROUP_INVITE_ACCEPT,
+    resourceId: 'group-route-accept-request',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
     senderId: 'alice',
     data: {
       scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -61,14 +63,15 @@ const EXPECTED_ADMISSION_COMMANDS = [
       request: {
         actorPrincipalId: 'alice',
         actorSessionId: 'alice-session',
-        requestId: 'accept-request',
+        requestId: 'group-route-accept-request',
       },
     },
   },
   {
     type: AppInboxType.GROUP_JOIN_CODE_ROTATE,
-    resourceId: 'rotate-request',
-    contextId: 'app-1:workspace-1:room-1',
+    topicId: AppInboxType.GROUP_JOIN_CODE_ROTATE,
+    resourceId: 'group-route-rotate-request',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
     senderId: 'alice',
     data: {
       scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -78,14 +81,15 @@ const EXPECTED_ADMISSION_COMMANDS = [
         expiresAtEpochMs: 2000,
         actorPrincipalId: 'alice',
         actorSessionId: 'alice-session',
-        requestId: 'rotate-request',
+        requestId: 'group-route-rotate-request',
       },
     },
   },
   {
     type: AppInboxType.GROUP_INVITE_CREATE,
-    resourceId: 'invite-request',
-    contextId: 'app-1:workspace-1:room-1',
+    topicId: AppInboxType.GROUP_INVITE_CREATE,
+    resourceId: 'group-route-invite-request',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
     senderId: 'alice',
     data: {
       scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -95,14 +99,15 @@ const EXPECTED_ADMISSION_COMMANDS = [
         invitationExpiresAtEpochMs: 2000,
         actorPrincipalId: 'alice',
         actorSessionId: 'alice-session',
-        requestId: 'invite-request',
+        requestId: 'group-route-invite-request',
       },
     },
   },
   {
     type: AppInboxType.GROUP_INVITE_REVOKE,
-    resourceId: 'revoke-request',
-    contextId: 'app-1:workspace-1:room-1',
+    topicId: AppInboxType.GROUP_INVITE_REVOKE,
+    resourceId: 'group-route-revoke-request',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
     senderId: 'alice',
     data: {
       scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -111,7 +116,7 @@ const EXPECTED_ADMISSION_COMMANDS = [
       request: {
         actorPrincipalId: 'alice',
         actorSessionId: 'alice-session',
-        requestId: 'revoke-request',
+        requestId: 'group-route-revoke-request',
       },
     },
   },
@@ -129,7 +134,7 @@ Deno.test('group admission commands retain every authenticated AppInbox envelope
         inviteToken: 'invite-1',
         joinCode: 'code-1',
         ...forgedActor,
-        requestId: 'join-request',
+        requestId: 'group-route-join-request',
       },
     }),
     toGroupStateCommand({
@@ -137,7 +142,7 @@ Deno.test('group admission commands retain every authenticated AppInbox envelope
       ...commandBase,
       request: {
         ...forgedActor,
-        requestId: 'accept-request',
+        requestId: 'group-route-accept-request',
       },
     }),
     toGroupStateCommand({
@@ -147,7 +152,7 @@ Deno.test('group admission commands retain every authenticated AppInbox envelope
         joinCode: 'next-code',
         expiresAtEpochMs: 2000,
         ...forgedActor,
-        requestId: 'rotate-request',
+        requestId: 'group-route-rotate-request',
       },
     }),
     toGroupStateCommand({
@@ -157,7 +162,7 @@ Deno.test('group admission commands retain every authenticated AppInbox envelope
       request: {
         invitationExpiresAtEpochMs: 2000,
         ...forgedActor,
-        requestId: 'invite-request',
+        requestId: 'group-route-invite-request',
       },
     }),
     toGroupStateCommand({
@@ -166,7 +171,7 @@ Deno.test('group admission commands retain every authenticated AppInbox envelope
       principalId: 'bob',
       request: {
         ...forgedActor,
-        requestId: 'revoke-request',
+        requestId: 'group-route-revoke-request',
       },
     }),
   ];
@@ -205,30 +210,30 @@ Deno.test('group admission routes retain every AppInbox envelope and actor overr
       joinCode: 'code-1',
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
-      requestId: 'join-request',
+      requestId: 'group-route-join-request',
     }),
     await postGroupStateMutation(runtime.app, `${API_BASE}/invites/accept`, {
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
-      requestId: 'accept-request',
+      requestId: 'group-route-accept-request',
     }),
     await postGroupStateMutation(runtime.app, `${API_BASE}/join-code/rotate`, {
       joinCode: 'next-code',
       expiresAtEpochMs: 2000,
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
-      requestId: 'rotate-request',
+      requestId: 'group-route-rotate-request',
     }),
     await postGroupStateMutation(runtime.app, `${API_BASE}/invites/bob`, {
       invitationExpiresAtEpochMs: 2000,
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
-      requestId: 'invite-request',
+      requestId: 'group-route-invite-request',
     }),
     await postGroupStateMutation(runtime.app, `${API_BASE}/invites/bob/revoke`, {
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
-      requestId: 'revoke-request',
+      requestId: 'group-route-revoke-request',
     }),
   ];
   for (const response of responses) {
@@ -250,7 +255,7 @@ Deno.test('group join route enqueues explicit join intent with authenticated act
       body: {
         inviteToken: 'invite-1',
         joinCode: 'code-1',
-        requestId: 'join-request-1',
+        requestId: 'group-route-join-request-1',
       },
     });
     assert.equal(response.status, 200);
@@ -258,8 +263,9 @@ Deno.test('group join route enqueues explicit join intent with authenticated act
     assert.equal(enqueued.length, 1);
     assert.deepEqual(enqueued[0], {
       type: AppInboxType.GROUP_JOIN,
-      resourceId: 'join-request-1',
-      contextId: 'app-1:workspace-1:room-1',
+      topicId: AppInboxType.GROUP_JOIN,
+      resourceId: 'group-route-join-request-1',
+      contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
       senderId: 'alice',
       data: {
         scope: TEST_GROUP_SCOPE,
@@ -269,7 +275,7 @@ Deno.test('group join route enqueues explicit join intent with authenticated act
           joinCode: 'code-1',
           actorPrincipalId: 'alice',
           actorSessionId: 'alice-session',
-          requestId: 'join-request-1',
+          requestId: 'group-route-join-request-1',
         },
       },
     });
@@ -300,7 +306,7 @@ Deno.test('group join-code route enqueues rotation workflow with authenticated a
         body: {
           joinCode: 'code-1',
           expiresAtEpochMs: 2_000,
-          requestId: 'rotate-code-1',
+          requestId: 'group-route-rotate-code-1',
         },
       },
     );
@@ -309,8 +315,9 @@ Deno.test('group join-code route enqueues rotation workflow with authenticated a
     assert.deepEqual(enqueued, [
       {
         type: AppInboxType.GROUP_JOIN_CODE_ROTATE,
-        resourceId: 'rotate-code-1',
-        contextId: 'app-1:workspace-1:room-1',
+        topicId: AppInboxType.GROUP_JOIN_CODE_ROTATE,
+        resourceId: 'group-route-rotate-code-1',
+        contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
         data: {
           scope: TEST_GROUP_SCOPE,
@@ -320,7 +327,7 @@ Deno.test('group join-code route enqueues rotation workflow with authenticated a
             expiresAtEpochMs: 2_000,
             actorPrincipalId: 'alice',
             actorSessionId: 'alice-session',
-            requestId: 'rotate-code-1',
+            requestId: 'group-route-rotate-code-1',
           },
         },
       },
@@ -338,17 +345,17 @@ async function verifyGroupInviteRoutes(): Promise<void> {
   });
   const createResponse = await postGroupStateMutationWithHeaders(app, `${API_BASE}/invites/bob`, {
     headers: AUTHENTICATED_HEADERS,
-    body: { invitationExpiresAtEpochMs: 2_000, requestId: 'invite-create-1' },
+    body: { invitationExpiresAtEpochMs: 2_000, requestId: 'group-route-invite-create-1' },
   });
   const revokeResponse = await postGroupStateMutationWithHeaders(
     app,
     `${API_BASE}/invites/bob/revoke`,
-    { headers: AUTHENTICATED_HEADERS, body: { requestId: 'invite-revoke-1' } },
+    { headers: AUTHENTICATED_HEADERS, body: { requestId: 'group-route-invite-revoke-1' } },
   );
   const acceptResponse = await postGroupStateMutationWithHeaders(
     app,
     `${API_BASE}/invites/accept`,
-    { headers: AUTHENTICATED_HEADERS, body: { requestId: 'invite-accept-1' } },
+    { headers: AUTHENTICATED_HEADERS, body: { requestId: 'group-route-invite-accept-1' } },
   );
 
   assert.equal(createResponse.status, 200);
@@ -361,8 +368,9 @@ function assertGroupInviteEnvelopes(enqueued: AuthenticatedGroupMutationEnqueue[
   assert.deepEqual(enqueued, [
     {
       type: AppInboxType.GROUP_INVITE_CREATE,
-      resourceId: 'invite-create-1',
-      contextId: 'app-1:workspace-1:room-1',
+      topicId: AppInboxType.GROUP_INVITE_CREATE,
+      resourceId: 'group-route-invite-create-1',
+      contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
       senderId: 'alice',
       data: {
         scope: TEST_GROUP_SCOPE,
@@ -372,14 +380,15 @@ function assertGroupInviteEnvelopes(enqueued: AuthenticatedGroupMutationEnqueue[
           invitationExpiresAtEpochMs: 2_000,
           actorPrincipalId: 'alice',
           actorSessionId: 'alice-session',
-          requestId: 'invite-create-1',
+          requestId: 'group-route-invite-create-1',
         },
       },
     },
     {
       type: AppInboxType.GROUP_INVITE_REVOKE,
-      resourceId: 'invite-revoke-1',
-      contextId: 'app-1:workspace-1:room-1',
+      topicId: AppInboxType.GROUP_INVITE_REVOKE,
+      resourceId: 'group-route-invite-revoke-1',
+      contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
       senderId: 'alice',
       data: {
         scope: TEST_GROUP_SCOPE,
@@ -388,14 +397,15 @@ function assertGroupInviteEnvelopes(enqueued: AuthenticatedGroupMutationEnqueue[
         request: {
           actorPrincipalId: 'alice',
           actorSessionId: 'alice-session',
-          requestId: 'invite-revoke-1',
+          requestId: 'group-route-invite-revoke-1',
         },
       },
     },
     {
       type: AppInboxType.GROUP_INVITE_ACCEPT,
-      resourceId: 'invite-accept-1',
-      contextId: 'app-1:workspace-1:room-1',
+      topicId: AppInboxType.GROUP_INVITE_ACCEPT,
+      resourceId: 'group-route-invite-accept-1',
+      contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
       senderId: 'alice',
       data: {
         scope: TEST_GROUP_SCOPE,
@@ -403,7 +413,7 @@ function assertGroupInviteEnvelopes(enqueued: AuthenticatedGroupMutationEnqueue[
         request: {
           actorPrincipalId: 'alice',
           actorSessionId: 'alice-session',
-          requestId: 'invite-accept-1',
+          requestId: 'group-route-invite-accept-1',
         },
       },
     },

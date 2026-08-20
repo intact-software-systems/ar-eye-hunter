@@ -195,6 +195,10 @@ class AppGroupInboxService extends AppInboxService {
       transactionWriter: this.transactionWriter,
       wakeQueue: this.wakeQueue,
       formationMetrics: config.formationMetrics,
+      prepareMutation: (descriptor, authority) =>
+        this.groupStateService.prepareMutation(descriptor, authority),
+      persistPreparation: (context, preparation) =>
+        this.persistReservedEntryAuthority(context, preparation),
     });
     this.topologyAppInboxHandler = new TopologyAppInboxHandler({
       groupStateService: this.groupStateService,
@@ -284,15 +288,25 @@ class AppGroupInboxService extends AppInboxService {
     enqueue: AuthenticatedGroupMutationEnqueue,
     authority: IssuedAuthSession,
   ): Promise<Either<string, GroupStateInboxDurableResult>> {
+    const result = await this.processAuthenticatedGroupEntryUntilCompletionResult(
+      enqueue,
+      authority,
+    );
+    return result.mapLeft(toLegacyAppInboxFailure);
+  }
+
+  public async processAuthenticatedGroupEntryUntilCompletionResult(
+    enqueue: AuthenticatedGroupMutationEnqueue,
+    authority: IssuedAuthSession,
+  ): Promise<Either<AppInboxFailure, GroupStateInboxDurableResult>> {
     if (isTopologyConfigInboxType(enqueue.type)) {
       throw new TypeError('Authenticated group mutation type is required');
     }
     const prepared = await this.prepareAuthenticatedGroupMutation(enqueue, authority);
-    const result = await super.processEntryUntilCompletionResult<
+    return await super.processEntryUntilCompletionResult<
       AuthenticatedGroupMutationPayloadByType[AuthenticatedGroupMutationInboxType],
       GroupStateInboxDurableResult
     >(prepared, (value) => decodeGroupStateInboxDurableResult(value, enqueue.type));
-    return result.mapLeft(toLegacyAppInboxFailure);
   }
 
   public async processAuthenticatedTopologyEntryUntilCompletion<V>(
@@ -361,14 +375,13 @@ class AppGroupInboxService extends AppInboxService {
         'App inbox type is not an authenticated group mutation.',
       );
     }
-    const preparation = await this.groupStateService.prepareMutation(
+    const authorized = await this.groupStateService.authorizeMutation(
       toGroupMutationDescriptor(enqueue),
       authority,
     );
     return {
       ...enqueue,
-      resourceId: preparation.queueResourceId,
-      authority: preparation,
+      authority: authorized,
     };
   }
 

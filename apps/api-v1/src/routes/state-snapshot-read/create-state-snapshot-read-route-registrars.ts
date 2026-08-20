@@ -23,10 +23,10 @@ import type {
 } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
 import type { ApiV1Runtime } from '../../composition/api-v1-runtime.ts';
-import { toGroupAppInboxError } from '../../group-state/group-state-route-errors.ts';
 import type { GroupStateRouteAuthSession } from '../../group-state/group-state-route-contracts.ts';
 import * as groupStateRoutes from '../../group-state/register-group-state-routes.ts';
 import * as clientStateRoutes from '../client-state-routes.ts';
+import { toApiMutationRouteFailure } from '../api-mutation-route-failure.ts';
 
 export interface ApiV1StateSnapshotRouteRuntime {
   readonly authSessionRepository: object;
@@ -36,7 +36,7 @@ export interface ApiV1StateSnapshotRouteRuntime {
   >;
   readonly appGroupInboxService: Pick<
     ApiV1Runtime['appGroupInboxService'],
-    | 'processAuthenticatedGroupEntryUntilCompletion'
+    | 'processAuthenticatedGroupEntryUntilCompletionResult'
     | 'processAuthenticatedTopologyEntryUntilCompletionResult'
   >;
   readonly clientStateService: Pick<
@@ -113,13 +113,13 @@ export function createStateSnapshotReadRouteRegistrars<
           enqueue: AuthenticatedGroupMutationEnqueue,
         ): Promise<GroupStateInboxDurableResult> => {
           const result = await runtime.appGroupInboxService
-            .processAuthenticatedGroupEntryUntilCompletion(
+            .processAuthenticatedGroupEntryUntilCompletionResult(
               enqueue,
               authority,
             );
           return result.fold(
             (error) => {
-              throw toGroupAppInboxError(error);
+              throw toApiMutationRouteFailure(error);
             },
             (value) => value,
           );

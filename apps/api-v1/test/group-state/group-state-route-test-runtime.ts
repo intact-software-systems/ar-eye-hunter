@@ -273,10 +273,11 @@ export async function postGroupStateMutation(
   path: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
-  return await app.request(path, {
+  const mutation = toGroupStateRouteMutationRequest(path, body);
+  return await app.request(mutation.path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(mutation.body),
   });
 }
 
@@ -285,10 +286,11 @@ export async function putGroupStateMutation(
   path: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
-  return await app.request(path, {
+  const mutation = toGroupStateRouteMutationRequest(path, body);
+  return await app.request(mutation.path, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(mutation.body),
   });
 }
 
@@ -297,11 +299,31 @@ export async function postGroupStateMutationWithHeaders(
   path: string,
   request: GroupStateRoutePostRequestWithHeaders,
 ): Promise<Response> {
-  return await app.request(path, {
+  const mutation = toGroupStateRouteMutationRequest(path, request.body);
+  return await app.request(mutation.path, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...request.headers },
-    body: JSON.stringify(request.body),
+    body: JSON.stringify(mutation.body),
   });
+}
+
+interface GroupStateRouteMutationRequest<Body extends object> {
+  readonly path: string;
+  readonly body: Omit<Body, 'requestId'>;
+}
+
+function toGroupStateRouteMutationRequest<Body extends object>(
+  path: string,
+  body: Body,
+): GroupStateRouteMutationRequest<Body> {
+  const candidate = Reflect.get(body, 'requestId');
+  const mutationBody = { ...body };
+  Reflect.deleteProperty(mutationBody, 'requestId');
+  const requestId = typeof candidate === 'string' ? candidate : 'group-route-default-request';
+  return {
+    path: `${path}/requests/${encodeURIComponent(requestId)}`,
+    body: mutationBody as Omit<Body, 'requestId'>,
+  };
 }
 
 function createGroupStateRouteService(

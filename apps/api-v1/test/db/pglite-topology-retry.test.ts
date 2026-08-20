@@ -155,11 +155,10 @@ Deno.test(
         requestId: string,
         config: GroupTopologyConfigPatch,
       ) =>
-        app.request(routePath, {
+        app.request(`${routePath}/requests/${requestId}`, {
           method: 'PUT',
           headers: {
             authorization: 'Bearer owner-token',
-            'Idempotency-Key': requestId,
             'content-type': 'application/json',
           },
           body: JSON.stringify({ config }),
@@ -167,7 +166,7 @@ Deno.test(
 
       const validationPending = submit(
         createRouteApp(appGroup),
-        'route-validation',
+        'route-validation-request-0001',
         { degreeLimit: 0 },
       );
       await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
@@ -178,8 +177,10 @@ Deno.test(
       const validation = await validationPending;
       assert.equal(validation.status, 422);
       assert.deepEqual(await validation.json(), {
-        error: 'Group topology config validation failed',
+        type: 'api-mutation-failure',
+        version: 'canonical.v1',
         code: 'group-topology-config-validation-failed',
+        status: 422,
         message: 'Group topology config validation failed',
         issues: [{
           code: 'invalid-positive-integer',
@@ -193,7 +194,7 @@ Deno.test(
 
       const authorityPending = submit(
         createRouteApp(appGroup),
-        'route-authority',
+        'route-authority-request-0001',
         { topologyKind: 'tree' },
       );
       await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
@@ -216,7 +217,7 @@ Deno.test(
 
       const firstPending = submit(
         createRouteApp(appGroup),
-        'route-idempotency',
+        'route-idempotency-request-0001',
         { topologyKind: 'tree' },
       );
       await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
@@ -227,7 +228,7 @@ Deno.test(
       assert.equal((await firstPending).status, 200);
       const conflict = await submit(
         createRouteApp(appGroup),
-        'route-idempotency',
+        'route-idempotency-request-0001',
         { topologyKind: 'mesh' },
       );
       assert.equal(conflict.status, 409);
@@ -238,18 +239,21 @@ Deno.test(
 
       const unavailable = await submit(
         createRouteApp(createAppGroup(0)),
-        'route-unavailable',
+        'route-unavailable-request-0001',
         { topologyKind: 'mesh' },
       );
       assert.equal(unavailable.status, 503);
       assert.deepEqual(await unavailable.json(), {
-        error: 'App inbox entry did not complete within the wait budget',
+        type: 'api-mutation-failure',
+        version: 'canonical.v1',
         code: 'app-inbox-unavailable',
+        status: 503,
         message: 'App inbox entry did not complete within the wait budget',
         issues: null,
         denial: null,
         retry: {
           kind: 'unavailable',
+          retryAfterMs: null,
           attempts: null,
           lane: null,
           queueAgeMs: null,
