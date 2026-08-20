@@ -11,10 +11,12 @@ import {
   type GroupStateRouteDependencies,
   toGroupStateRouteScope,
 } from './group-state-route-contracts.ts';
-import { toGroupStateErrorResponse } from './group-state-route-errors.ts';
+import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
 import { readGroupStateRouteRequest } from './read-group-state-route-request.ts';
 import { toGroupStateCommand } from './to-group-state-command.ts';
 import { toGroupStateResponse } from './to-group-state-response.ts';
+
+const GROUP_PATH = '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId';
 
 export function registerGroupStateMutationRoutes(
   app: Hono,
@@ -34,7 +36,7 @@ function registerStartGroupEstablishmentRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/lifecycle/establish',
+    `${GROUP_PATH}/lifecycle/establish/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -54,7 +56,7 @@ function registerStartGroupEstablishmentRoute(
 
         return context.json(written.snapshot);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );
@@ -65,7 +67,7 @@ function registerActivateGroupRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/lifecycle/activate',
+    `${GROUP_PATH}/lifecycle/activate/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -85,7 +87,7 @@ function registerActivateGroupRoute(
 
         return context.json(written.snapshot);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );
@@ -96,7 +98,7 @@ function registerReopenGroupEstablishmentRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/lifecycle/reopen',
+    `${GROUP_PATH}/lifecycle/reopen/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -116,7 +118,7 @@ function registerReopenGroupEstablishmentRoute(
 
         return context.json(written.snapshot);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );
@@ -127,7 +129,7 @@ function registerCreateGroupRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups',
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/requests/:requestId',
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -147,7 +149,7 @@ function registerCreateGroupRoute(
 
         return context.json(written.snapshot, 201);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );
@@ -159,7 +161,7 @@ function registerUpdateGroupRoute(
   authorization: GroupStateRouteAuthorization,
 ): void {
   app.put(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId',
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/requests/:requestId',
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -181,7 +183,7 @@ function registerUpdateGroupRoute(
         });
         return context.json(written.snapshot);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );
@@ -192,7 +194,7 @@ function registerAppointGroupDirectorRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/director/appoint',
+    `${GROUP_PATH}/director/appoint/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -214,7 +216,7 @@ function registerAppointGroupDirectorRoute(
 
         return context.json(written.snapshot);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );

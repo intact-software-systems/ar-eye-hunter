@@ -3,7 +3,7 @@ import {
   findStateGroup,
   updateStateGroup,
 } from '@shared-web/browser/api-integration.ts';
-import { toStateWorkflowRequestId } from '@shared-web/browser/state-workflow-support.ts';
+import { toApiMutationWorkflowRequestId } from '@shared-web/browser/state-workflow-support.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 
@@ -66,11 +66,7 @@ export async function updateStateGroupMetadata(
 async function updateStateGroupMetadataWithInput(
   input: UpdateStateGroupMetadataInput,
 ): Promise<GroupSnapshot> {
-  const requestId = toStateWorkflowRequestId(
-    'group-metadata-update',
-    input.groupId,
-    input.sessionId,
-  );
+  const requestId = toApiMutationWorkflowRequestId();
   const commandOptions = (input.policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const current = await new Command<GroupSnapshot>(
     (signal) => findStateGroup(input.groupId, input.scope, { signal }),
@@ -83,9 +79,11 @@ async function updateStateGroupMetadataWithInput(
     actorSessionId: input.sessionId,
     requestId,
   });
+  const { requestId: _requestId, ...semanticRequest } = request;
 
   return await new Command<GroupSnapshot>(
-    (signal) => updateStateGroup(input.groupId, request, input.scope, { signal }),
+    (signal) =>
+      updateStateGroup(input.groupId, semanticRequest, { requestId, signal }, input.scope),
     commandOptions,
   ).run();
 }
@@ -111,9 +109,7 @@ export async function updateStateGroupDetails(
 async function updateStateGroupDetailsWithInput(
   input: UpdateStateGroupDetailsInput,
 ): Promise<GroupSnapshot> {
-  const requestId =
-    input.request.requestId ??
-    toStateWorkflowRequestId('group-update', input.groupId, input.sessionId);
+  const requestId = input.request.requestId ?? toApiMutationWorkflowRequestId();
   const commandOptions = (input.policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const updateRequest = toUpdateGroupStateRequest({
     request: input.request,
@@ -121,9 +117,11 @@ async function updateStateGroupDetailsWithInput(
     actorSessionId: input.sessionId,
     requestId,
   });
+  const { requestId: _requestId, ...semanticRequest } = updateRequest;
 
   return await new Command<GroupSnapshot>(
-    (signal) => updateStateGroup(input.groupId, updateRequest, input.scope, { signal }),
+    (signal) =>
+      updateStateGroup(input.groupId, semanticRequest, { requestId, signal }, input.scope),
     commandOptions,
   ).run();
 }
@@ -169,9 +167,7 @@ export async function deleteStateGroup(
 async function updateStateGroupLifecycle(
   input: UpdateStateGroupLifecycleInput,
 ): Promise<GroupSnapshot> {
-  const requestId =
-    input.request.requestId ??
-    toStateWorkflowRequestId('group-update', input.groupId, input.sessionId);
+  const requestId = input.request.requestId ?? toApiMutationWorkflowRequestId();
   const commandOptions = (input.policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const lifecycleRequest = toRoomLifecycleGroupStateRequest({
     request: input.request,
@@ -180,9 +176,11 @@ async function updateStateGroupLifecycle(
     actorSessionId: input.sessionId,
     requestId,
   });
+  const { requestId: _requestId, ...semanticRequest } = lifecycleRequest;
 
   return await new Command<GroupSnapshot>(
-    (signal) => updateStateGroup(input.groupId, lifecycleRequest, input.scope, { signal }),
+    (signal) =>
+      updateStateGroup(input.groupId, semanticRequest, { requestId, signal }, input.scope),
     commandOptions,
   ).run();
 }

@@ -11,7 +11,7 @@ import {
 } from '@shared-web/browser/api-integration.ts';
 import {
   requireStateWorkflowResult,
-  toStateWorkflowRequestId,
+  toApiMutationWorkflowRequestId,
 } from '@shared-web/browser/state-workflow-support.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
@@ -87,9 +87,7 @@ export async function createStateGroupInvite(
 async function createStateGroupInviteWithInput(
   input: TargetStateGroupRequestWorkflowInput<CreateGroupInviteRequest>,
 ): Promise<GroupSnapshot> {
-  const requestId =
-    input.request.requestId ??
-    toStateWorkflowRequestId('group-invite-create', input.groupId, input.targetPrincipalId);
+  const requestId = input.request.requestId ?? toApiMutationWorkflowRequestId();
   const commandOptions = (input.policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const inviteRequest = toCreateRoomInviteGroupStateRequest({
     request: input.request,
@@ -97,15 +95,16 @@ async function createStateGroupInviteWithInput(
     actorSessionId: input.sessionId,
     requestId,
   });
+  const { requestId: _requestId, ...semanticRequest } = inviteRequest;
 
   return await new Command<GroupSnapshot>(
     (signal) =>
       createStateGroupInviteApi(
         input.groupId,
         input.targetPrincipalId,
-        inviteRequest,
+        semanticRequest,
+        { requestId, signal },
         input.scope,
-        { signal },
       ),
     commandOptions,
   ).run();
@@ -132,16 +131,8 @@ export async function acceptStateGroupInvite(
 async function acceptStateGroupInviteWithInput(
   input: AcceptStateGroupInviteInput,
 ): Promise<GroupSnapshot> {
-  const acceptRequestId = toStateWorkflowRequestId(
-    'group-invite-accept',
-    input.groupId,
-    input.actorPrincipalId,
-  );
-  const presenceRequestId = toStateWorkflowRequestId(
-    'group-presence-connect',
-    input.groupId,
-    input.sessionId,
-  );
+  const acceptRequestId = toApiMutationWorkflowRequestId();
+  const presenceRequestId = toApiMutationWorkflowRequestId();
   const acceptRequest = toAcceptRoomInviteGroupStateRequest({
     actorPrincipalId: input.actorPrincipalId,
     actorSessionId: input.sessionId,
@@ -154,6 +145,8 @@ async function acceptStateGroupInviteWithInput(
     actorSessionId: input.sessionId,
     requestId: presenceRequestId,
   });
+  const { requestId: _acceptRequestId, ...acceptBody } = acceptRequest;
+  const { requestId: _presenceRequestId, ...presenceBody } = presenceRequest;
   const flow = CommandsOrchestrator.withPolicies<InviteWorkflowKey, StateGroupWorkflowValue>(
     input.policies,
   );
@@ -161,15 +154,20 @@ async function acceptStateGroupInviteWithInput(
   const results = await flow
     .sequential(
       flow.commandStep('accepted', (signal) =>
-        acceptStateGroupInviteApi(input.groupId, acceptRequest, input.scope, { signal }),
+        acceptStateGroupInviteApi(
+          input.groupId,
+          acceptBody,
+          { requestId: acceptRequestId, signal },
+          input.scope,
+        ),
       ),
       flow.commandStep('joined', (signal) =>
         connectStateGroupPresenceSession(
           input.groupId,
           input.sessionId,
-          presenceRequest,
+          presenceBody,
+          { requestId: presenceRequestId, signal },
           input.scope,
-          { signal },
         ),
       ),
     )
@@ -201,9 +199,7 @@ export async function removeStateGroupMember(
 async function removeStateGroupMemberWithInput(
   input: TargetStateGroupRequestWorkflowInput<RemoveGroupMemberRequest>,
 ): Promise<GroupSnapshot> {
-  const requestId =
-    input.request.requestId ??
-    toStateWorkflowRequestId('group-member-remove', input.groupId, input.targetPrincipalId);
+  const requestId = input.request.requestId ?? toApiMutationWorkflowRequestId();
   const commandOptions = (input.policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const removeRequest = toRemoveRoomMemberGroupStateRequest({
     request: input.request,
@@ -211,15 +207,16 @@ async function removeStateGroupMemberWithInput(
     actorSessionId: input.sessionId,
     requestId,
   });
+  const { requestId: _requestId, ...semanticRequest } = removeRequest;
 
   return await new Command<GroupSnapshot>(
     (signal) =>
       removeStateGroupMemberApi(
         input.groupId,
         input.targetPrincipalId,
-        removeRequest,
+        semanticRequest,
+        { requestId, signal },
         input.scope,
-        { signal },
       ),
     commandOptions,
   ).run();
@@ -248,9 +245,7 @@ export async function banStateGroupMember(
 async function banStateGroupMemberWithInput(
   input: TargetStateGroupRequestWorkflowInput<BanGroupMemberRequest>,
 ): Promise<GroupSnapshot> {
-  const requestId =
-    input.request.requestId ??
-    toStateWorkflowRequestId('group-member-ban', input.groupId, input.targetPrincipalId);
+  const requestId = input.request.requestId ?? toApiMutationWorkflowRequestId();
   const commandOptions = (input.policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const banRequest = toBanRoomMemberGroupStateRequest({
     request: input.request,
@@ -258,12 +253,17 @@ async function banStateGroupMemberWithInput(
     actorSessionId: input.sessionId,
     requestId,
   });
+  const { requestId: _requestId, ...semanticRequest } = banRequest;
 
   return await new Command<GroupSnapshot>(
     (signal) =>
-      banStateGroupMemberApi(input.groupId, input.targetPrincipalId, banRequest, input.scope, {
-        signal,
-      }),
+      banStateGroupMemberApi(
+        input.groupId,
+        input.targetPrincipalId,
+        semanticRequest,
+        { requestId, signal },
+        input.scope,
+      ),
     commandOptions,
   ).run();
 }
@@ -291,9 +291,7 @@ export async function unbanStateGroupMember(
 async function unbanStateGroupMemberWithInput(
   input: TargetStateGroupRequestWorkflowInput<UnbanGroupMemberRequest>,
 ): Promise<GroupSnapshot> {
-  const requestId =
-    input.request.requestId ??
-    toStateWorkflowRequestId('group-member-unban', input.groupId, input.targetPrincipalId);
+  const requestId = input.request.requestId ?? toApiMutationWorkflowRequestId();
   const commandOptions = (input.policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const unbanRequest = toUnbanRoomMemberGroupStateRequest({
     request: input.request,
@@ -301,12 +299,17 @@ async function unbanStateGroupMemberWithInput(
     actorSessionId: input.sessionId,
     requestId,
   });
+  const { requestId: _requestId, ...semanticRequest } = unbanRequest;
 
   return await new Command<GroupSnapshot>(
     (signal) =>
-      unbanStateGroupMemberApi(input.groupId, input.targetPrincipalId, unbanRequest, input.scope, {
-        signal,
-      }),
+      unbanStateGroupMemberApi(
+        input.groupId,
+        input.targetPrincipalId,
+        semanticRequest,
+        { requestId, signal },
+        input.scope,
+      ),
     commandOptions,
   ).run();
 }
@@ -334,9 +337,7 @@ export async function setStateGroupMemberRole(
 async function setStateGroupMemberRoleWithInput(
   input: TargetStateGroupRequestWorkflowInput<SetGroupMemberRoleRequest>,
 ): Promise<GroupSnapshot> {
-  const requestId =
-    input.request.requestId ??
-    toStateWorkflowRequestId('group-member-role', input.groupId, input.targetPrincipalId);
+  const requestId = input.request.requestId ?? toApiMutationWorkflowRequestId();
   const commandOptions = (input.policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const roleRequest = toSetRoomMemberRoleGroupStateRequest({
     request: input.request,
@@ -344,12 +345,17 @@ async function setStateGroupMemberRoleWithInput(
     actorSessionId: input.sessionId,
     requestId,
   });
+  const { requestId: _requestId, ...semanticRequest } = roleRequest;
 
   return await new Command<GroupSnapshot>(
     (signal) =>
-      setStateGroupMemberRoleApi(input.groupId, input.targetPrincipalId, roleRequest, input.scope, {
-        signal,
-      }),
+      setStateGroupMemberRoleApi(
+        input.groupId,
+        input.targetPrincipalId,
+        semanticRequest,
+        { requestId, signal },
+        input.scope,
+      ),
     commandOptions,
   ).run();
 }
@@ -376,13 +382,7 @@ async function transferStateGroupOwnershipWithInput(
   input: TransferStateGroupOwnershipInput,
 ): Promise<GroupSnapshot> {
   const request = input.request;
-  const requestId =
-    request.requestId ??
-    toStateWorkflowRequestId(
-      'group-ownership-transfer',
-      input.groupId,
-      request.newOwnerPrincipalId,
-    );
+  const requestId = request.requestId ?? toApiMutationWorkflowRequestId();
   const commandOptions = (input.policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const transferRequest = toTransferRoomOwnershipGroupStateRequest({
     request,
@@ -390,10 +390,16 @@ async function transferStateGroupOwnershipWithInput(
     actorSessionId: input.sessionId,
     requestId,
   });
+  const { requestId: _requestId, ...semanticRequest } = transferRequest;
 
   return await new Command<GroupSnapshot>(
     (signal) =>
-      transferStateGroupOwnershipApi(input.groupId, transferRequest, input.scope, { signal }),
+      transferStateGroupOwnershipApi(
+        input.groupId,
+        semanticRequest,
+        { requestId, signal },
+        input.scope,
+      ),
     commandOptions,
   ).run();
 }

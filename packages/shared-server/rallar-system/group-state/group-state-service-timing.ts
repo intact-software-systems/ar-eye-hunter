@@ -66,12 +66,20 @@ function createTimedPreparationOperations(
   input: TimedGroupStateServiceInput,
 ): Pick<
   GroupStateService,
+  | 'authorizeMutation'
   | 'prepareMutation'
   | 'prepareExpiredPresenceMutations'
   | 'prepareSessionCleanupMutations'
   | 'prepareFormationCriterionMutation'
 > {
   return {
+    authorizeMutation: async (descriptor, authority) =>
+      await timeGroupStateOperation({
+        ...input,
+        operation: 'authorizeMutation',
+        details: {},
+        action: async () => await service.authorizeMutation(descriptor, authority),
+      }),
     prepareMutation: async (descriptor, authority) =>
       await timeGroupStateOperation({
         ...input,

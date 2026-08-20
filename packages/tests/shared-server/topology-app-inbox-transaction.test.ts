@@ -228,8 +228,11 @@ async function topologyCommand(requestId: string, degreeLimit: number) {
 function topologyEnqueue(command: Awaited<ReturnType<typeof topologyCommand>>) {
   return {
     type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+    topicId: AppInboxType.TOPOLOGY_CONFIG_PUT,
     resourceId: command.requestId,
-    contextId: `${GROUP_REF.applicationId}:${GROUP_REF.workspaceId}:${GROUP_REF.groupId}`,
+    contextId:
+      `application=${GROUP_REF.applicationId}:workspace=${GROUP_REF.workspaceId}:` +
+      `group=${GROUP_REF.groupId}:caller=${command.actor.principalId}`,
     senderId: command.actor.principalId,
     data: command,
   };

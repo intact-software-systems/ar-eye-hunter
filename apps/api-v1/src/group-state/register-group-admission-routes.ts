@@ -14,15 +14,15 @@ import {
   type GroupStateRouteDependencies,
   toGroupStateRouteScope,
 } from './group-state-route-contracts.ts';
-import { toGroupStateErrorResponse } from './group-state-route-errors.ts';
+import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
 import { readGroupStateRouteRequest } from './read-group-state-route-request.ts';
 import { toGroupStateCommand } from './to-group-state-command.ts';
 import { toGroupStateResponse } from './to-group-state-response.ts';
 
 const GROUP_INVITE_PATH =
   '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/invites/:principalId';
-const GROUP_ADMISSION_PATH =
-  '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/admissions/:principalId';
+const GROUP_PATH = '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId';
+const GROUP_ADMISSION_PATH = `${GROUP_PATH}/admissions/:principalId`;
 
 export function registerGroupAdmissionRoutes(
   app: Hono,
@@ -42,7 +42,7 @@ function registerJoinGroupRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/join',
+    `${GROUP_PATH}/join/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -67,7 +67,7 @@ function registerJoinGroupRoute(
           toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId),
         );
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );
@@ -78,7 +78,7 @@ function registerAcceptGroupInviteRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/invites/accept',
+    `${GROUP_PATH}/invites/accept/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -103,7 +103,7 @@ function registerAcceptGroupInviteRoute(
           toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId),
         );
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );
@@ -114,7 +114,7 @@ function registerRotateGroupJoinCodeRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/join-code/rotate',
+    `${GROUP_PATH}/join-code/rotate/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -136,7 +136,7 @@ function registerRotateGroupJoinCodeRoute(
 
         return context.json(response);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );
@@ -147,7 +147,7 @@ function registerCreateGroupInviteRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/invites/:principalId',
+    `${GROUP_INVITE_PATH}/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -171,7 +171,7 @@ function registerCreateGroupInviteRoute(
 
         return context.json(written.snapshot);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );
@@ -182,7 +182,7 @@ function registerGrantGroupAdmissionRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
-    `${GROUP_ADMISSION_PATH}/grant`,
+    `${GROUP_ADMISSION_PATH}/grant/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -206,7 +206,7 @@ function registerGrantGroupAdmissionRoute(
 
         return context.json(written.snapshot);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );
@@ -217,7 +217,7 @@ function registerDeclineGroupAdmissionRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
-    `${GROUP_ADMISSION_PATH}/decline`,
+    `${GROUP_ADMISSION_PATH}/decline/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -241,7 +241,7 @@ function registerDeclineGroupAdmissionRoute(
 
         return context.json(written.snapshot);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );
@@ -252,7 +252,7 @@ function registerRevokeGroupInviteRoute(
   dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
-    `${GROUP_INVITE_PATH}/revoke`,
+    `${GROUP_INVITE_PATH}/revoke/requests/:requestId`,
     async (context) => {
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
@@ -276,7 +276,7 @@ function registerRevokeGroupInviteRoute(
 
         return context.json(written.snapshot);
       } catch (error) {
-        return toGroupStateErrorResponse(context, error);
+        return toGroupMutationErrorResponse(context, error);
       }
     },
   );

@@ -11,7 +11,7 @@ import {
   type GroupStateRouteDependencies,
   toGroupStateRouteScope,
 } from './group-state-route-contracts.ts';
-import { toGroupStateErrorResponse } from './group-state-route-errors.ts';
+import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
 import { readGroupStateRouteRequest } from './read-group-state-route-request.ts';
 import { toGroupStateCommand } from './to-group-state-command.ts';
 import { toGroupStateResponse } from './to-group-state-response.ts';
@@ -35,7 +35,7 @@ function registerConnectGroupPresenceRoute(
   authorization: GroupStateRouteAuthorization,
 ): void {
   app.put(
-    GROUP_PRESENCE_PATH,
+    `${GROUP_PRESENCE_PATH}/requests/:requestId`,
     (context) => handleConnectGroupPresenceRoute(context, dependencies, authorization),
   );
 }
@@ -46,7 +46,7 @@ function registerHeartbeatGroupPresenceRoute(
   authorization: GroupStateRouteAuthorization,
 ): void {
   app.post(
-    `${GROUP_PRESENCE_PATH}/heartbeat`,
+    `${GROUP_PRESENCE_PATH}/heartbeat/requests/:requestId`,
     (context) => handleHeartbeatGroupPresenceRoute(context, dependencies, authorization),
   );
 }
@@ -57,7 +57,7 @@ function registerDisconnectGroupPresenceRoute(
   authorization: GroupStateRouteAuthorization,
 ): void {
   app.post(
-    `${GROUP_PRESENCE_PATH}/disconnect`,
+    `${GROUP_PRESENCE_PATH}/disconnect/requests/:requestId`,
     (context) => handleDisconnectGroupPresenceRoute(context, dependencies, authorization),
   );
 }
@@ -98,7 +98,7 @@ async function handleConnectGroupPresenceRoute(
       }),
     );
   } catch (error) {
-    return toGroupStateErrorResponse(context, error);
+    return toGroupMutationErrorResponse(context, error);
   }
 }
 
@@ -133,7 +133,7 @@ async function handleHeartbeatGroupPresenceRoute(
       }),
     );
   } catch (error) {
-    return toGroupStateErrorResponse(context, error);
+    return toGroupMutationErrorResponse(context, error);
   }
 }
 
@@ -168,6 +168,6 @@ async function handleDisconnectGroupPresenceRoute(
       }),
     );
   } catch (error) {
-    return toGroupStateErrorResponse(context, error);
+    return toGroupMutationErrorResponse(context, error);
   }
 }

@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
+import {
+  type ApiMutationFailureJsonObject,
+  decodeApiMutationFailure,
+} from '@shared/api/mutation/api-mutation-failure.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { authenticationRequired } from '@shared-server/http/request-auth-service.ts';
 import type {
   GroupCreateAppInboxPayload,
   GroupUpdateAppInboxPayload,
@@ -24,7 +29,6 @@ import {
   createPredecessorGroupStateRouteSnapshot,
   createPredecessorGroupStateRouteTestRuntime,
   postGroupStateMutation,
-  postGroupStateMutationWithHeaders,
   putGroupStateMutation,
   TEST_GROUP_SCOPE,
   toGroupStateWritten,
@@ -60,12 +64,11 @@ const MALFORMED_NON_PRESENCE_ROUTE_CASES = [
     body: { status: 'active', invitationExpiresAtEpochMs: -1 },
   },
 ] as const;
-const randomUuidDescriptor = Object.getOwnPropertyDescriptor(crypto, 'randomUUID');
-const randomUuidAtModuleLoad = crypto.randomUUID;
 const EXPECTED_CREATE_COMMAND = {
   type: AppInboxType.GROUP_CREATE,
-  resourceId: 'create-body',
-  contextId: 'app-1:workspace-1:room%2F1',
+  topicId: AppInboxType.GROUP_CREATE,
+  resourceId: 'group-route-create-body',
+  contextId: 'application=app-1:workspace=workspace-1:group=room%2F1:caller=alice',
   senderId: 'alice',
   data: {
     scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -76,15 +79,16 @@ const EXPECTED_CREATE_COMMAND = {
       createdByPrincipalId: 'alice',
       actorPrincipalId: 'alice',
       actorSessionId: 'alice-session',
-      requestId: 'create-body',
+      requestId: 'group-route-create-body',
     },
   },
 } satisfies AuthenticatedGroupMutationEnqueue;
 const EXPECTED_AGGREGATE_COMMANDS = [
   {
     type: AppInboxType.GROUP_UPDATE,
-    resourceId: 'update-body',
-    contextId: 'app-1:workspace-1:room-2',
+    topicId: AppInboxType.GROUP_UPDATE,
+    resourceId: 'group-route-update-body',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-2:caller=alice',
     senderId: 'alice',
     data: {
       scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -93,14 +97,15 @@ const EXPECTED_AGGREGATE_COMMANDS = [
         displayName: 'Renamed',
         actorPrincipalId: 'alice',
         actorSessionId: 'alice-session',
-        requestId: 'update-body',
+        requestId: 'group-route-update-body',
       },
     },
   },
   {
     type: AppInboxType.GROUP_DIRECTOR_APPOINT,
-    resourceId: 'appoint-body',
-    contextId: 'app-1:workspace-1:room-3',
+    topicId: AppInboxType.GROUP_DIRECTOR_APPOINT,
+    resourceId: 'group-route-appoint-body',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-3:caller=alice',
     senderId: 'alice',
     data: {
       scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -109,20 +114,47 @@ const EXPECTED_AGGREGATE_COMMANDS = [
         heartbeatTtlMs: 20,
         actorPrincipalId: 'alice',
         actorSessionId: 'alice-session',
-        requestId: 'appoint-body',
+        requestId: 'group-route-appoint-body',
       },
     },
   },
 ] satisfies readonly AuthenticatedGroupMutationEnqueue[];
 
-Deno.test('canonical group request reader retains body request ID precedence', async () => {
+Deno.test('canonical group request reader accepts only the path request ID', async () => {
   const request = await readGroupStateRouteRequest<{ requestId?: string; name: string }>({
     req: {
-      json: () => Promise.resolve({ requestId: 'body-request', name: 'Room' }),
-      header: () => 'header-request',
+      json: () => Promise.resolve({ name: 'Room' }),
+      header: () => undefined,
+      param: (name) => name === 'requestId' ? 'group-request-000001' : undefined,
     },
   });
-  assert.deepEqual(request, { requestId: 'body-request', name: 'Room' });
+  assert.deepEqual(request, { requestId: 'group-request-000001', name: 'Room' });
+});
+Deno.test('canonical group request reader rejects header and body identities', async () => {
+  const identities: readonly Readonly<{
+    body: ApiMutationFailureJsonObject;
+    header: string | undefined;
+  }>[] = [
+    {
+      body: { name: 'Room', requestId: 'body-request-000001' },
+      header: undefined,
+    },
+    { body: { name: 'Room' }, header: 'header-request-0001' },
+  ];
+  for (const identity of identities) {
+    await assert.rejects(
+      () =>
+        readGroupStateRouteRequest<{ requestId?: string; name: string }>({
+          req: {
+            json: () => Promise.resolve(identity.body),
+            header: () => identity.header,
+            param: (name) => name === 'requestId' ? 'group-request-000001' : undefined,
+          },
+        }),
+      TypeError,
+      'API mutation requestId must be supplied only by the request path',
+    );
+  }
 });
 Deno.test('group create command retains its authenticated AppInbox envelope', () => {
   const command = toGroupStateCommand({
@@ -136,7 +168,7 @@ Deno.test('group create command retains its authenticated AppInbox envelope', ()
       createdByPrincipalId: 'forged-creator',
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
-      requestId: 'create-body',
+      requestId: 'group-route-create-body',
     },
   });
   assert.deepEqual(command, EXPECTED_CREATE_COMMAND);
@@ -175,7 +207,7 @@ Deno.test('group aggregate commands retain update and director envelopes', () =>
         displayName: 'Renamed',
         actorPrincipalId: 'forged-actor',
         actorSessionId: 'forged-session',
-        requestId: 'update-body',
+        requestId: 'group-route-update-body',
       },
     }),
     toGroupStateCommand({
@@ -187,11 +219,52 @@ Deno.test('group aggregate commands retain update and director envelopes', () =>
         heartbeatTtlMs: 20,
         actorPrincipalId: 'forged-actor',
         actorSessionId: 'forged-session',
-        requestId: 'appoint-body',
+        requestId: 'group-route-appoint-body',
       },
     }),
   ];
   assert.deepEqual(commands, EXPECTED_AGGREGATE_COMMANDS);
+});
+Deno.test('group AppInbox keys isolate operation, caller, and complete GroupRef', () => {
+  const requestId = 'group-route-isolation-request';
+  const alice = createGroupStateRouteAuthSession('alice');
+  const renewedAlice = { ...alice, sessionId: 'alice-renewed-session' };
+  const toUpdate = (
+    authSession: typeof alice,
+    scope = TEST_GROUP_SCOPE,
+    groupId = 'room-1',
+  ) =>
+    toGroupStateCommand({
+      operation: 'update-group',
+      authSession,
+      scope,
+      groupId,
+      request: { displayName: 'Same intent', requestId },
+    });
+  const original = toUpdate(alice);
+  const renewed = toUpdate(renewedAlice);
+  const variants = [
+    original,
+    toUpdate(createGroupStateRouteAuthSession('bob')),
+    toUpdate(alice, { ...TEST_GROUP_SCOPE, applicationId: 'app-2' }),
+    toUpdate(alice, { ...TEST_GROUP_SCOPE, workspaceId: 'workspace-2' }),
+    toUpdate(alice, TEST_GROUP_SCOPE, 'room-2'),
+    toGroupStateCommand({
+      operation: 'appoint-group-director',
+      authSession: alice,
+      scope: TEST_GROUP_SCOPE,
+      groupId: 'room-1',
+      request: { requestId },
+    }),
+  ];
+
+  assert.equal(renewed.contextId, original.contextId);
+  assert.notEqual(renewed.data.request.actorSessionId, original.data.request.actorSessionId);
+  assert.deepEqual(variants.map((command) => command.resourceId), Array(6).fill(requestId));
+  assert.equal(
+    new Set(variants.map((command) => `${command.topicId}:${command.contextId}`)).size,
+    variants.length,
+  );
 });
 Deno.test('group mutation response retains snapshot identity and durable error text', () => {
   const snapshot = createGroupStateRouteSnapshot('room-1');
@@ -224,19 +297,19 @@ Deno.test('group aggregate routes retain their AppInbox envelopes', async () => 
       createdByPrincipalId: 'forged-creator',
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
-      requestId: 'create-body',
+      requestId: 'group-route-create-body',
     }),
     await putGroupStateMutation(runtime.app, `${API_BASE}/room-2`, {
       displayName: 'Renamed',
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
-      requestId: 'update-body',
+      requestId: 'group-route-update-body',
     }),
     await postGroupStateMutation(runtime.app, `${API_BASE}/room-3/director/appoint`, {
       heartbeatTtlMs: 20,
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
-      requestId: 'appoint-body',
+      requestId: 'group-route-appoint-body',
     }),
   ];
   assert.equal(responses[0].status, 201);
@@ -245,102 +318,54 @@ Deno.test('group aggregate routes retain their AppInbox envelopes', async () => 
   assert.deepEqual(enqueued, [EXPECTED_CREATE_COMMAND, ...EXPECTED_AGGREGATE_COMMANDS]);
 });
 Deno.test(
-  'group aggregate routes preserve body, header, then one generated request ID',
+  'group aggregate routes reject legacy identities and expose only the strict path',
   async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const runtime = createGroupStateRouteTestRuntime({
       processGroupAppInbox: captureGroupStateRouteWrite(enqueued, snapshot),
     });
-    await withRandomUuid('generated-request', async (readRandomCallCount) => {
-      const bodyResponse = await postGroupStateMutationWithHeaders(runtime.app, API_BASE, {
-        body: {
-          groupId: 'body-id-group',
-          displayName: 'Body',
-          kind: 'room',
-          requestId: 'body-request',
-        },
-        headers: { 'Idempotency-Key': 'header-request' },
-      });
-      const headerResponse = await postGroupStateMutationWithHeaders(runtime.app, API_BASE, {
-        body: {
-          groupId: 'header-id-group',
-          displayName: 'Header',
-          kind: 'room',
-        },
-        headers: { 'Idempotency-Key': 'header-request' },
-      });
-      const generatedResponse = await postGroupStateMutation(runtime.app, API_BASE, {
-        groupId: 'generated-id-group',
-        displayName: 'Generated',
+    const strictPath = `${API_BASE}/requests/group-route-strict-request`;
+    const bodyIdentity = await runtime.app.request(strictPath, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        groupId: 'body-id-group',
+        displayName: 'Body',
         kind: 'room',
-      });
-      assert.equal(bodyResponse.status, 201);
-      assert.equal(headerResponse.status, 201);
-      assert.equal(generatedResponse.status, 201);
-      assert.equal(readRandomCallCount(), 1);
+        requestId: 'body-request-000001',
+      }),
     });
-    assert.deepEqual(
-      enqueued.map((entry) => ({ resourceId: entry.resourceId, data: entry.data })),
-      [
-        {
-          resourceId: 'body-request',
-          data: {
-            scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
-            request: {
-              groupId: 'body-id-group',
-              displayName: 'Body',
-              kind: 'room',
-              requestId: 'body-request',
-              createdByPrincipalId: 'alice',
-              actorPrincipalId: 'alice',
-              actorSessionId: 'alice-session',
-            },
-          },
-        },
-        {
-          resourceId: 'header-request',
-          data: {
-            scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
-            request: {
-              groupId: 'header-id-group',
-              displayName: 'Header',
-              kind: 'room',
-              requestId: 'header-request',
-              createdByPrincipalId: 'alice',
-              actorPrincipalId: 'alice',
-              actorSessionId: 'alice-session',
-            },
-          },
-        },
-        {
-          resourceId: 'generated-request',
-          data: {
-            scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
-            request: {
-              groupId: 'generated-id-group',
-              displayName: 'Generated',
-              kind: 'room',
-              requestId: 'generated-request',
-              createdByPrincipalId: 'alice',
-              actorPrincipalId: 'alice',
-              actorSessionId: 'alice-session',
-            },
-          },
-        },
-      ],
-    );
-  },
-);
-Deno.test(
-  'group aggregate request ID UUID stub restores crypto randomUUID observable shape',
-  () => {
-    assert.deepEqual(
-      Object.getOwnPropertyDescriptor(crypto, 'randomUUID'),
-      randomUuidDescriptor,
-    );
-    assert.equal(crypto.randomUUID, randomUuidAtModuleLoad);
-    assert.notEqual(crypto.randomUUID(), 'generated-request');
+    const headerIdentity = await runtime.app.request(strictPath, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'Idempotency-Key': 'header-request-0001',
+      },
+      body: JSON.stringify({ groupId: 'header-id-group', displayName: 'Header', kind: 'room' }),
+    });
+    const oldRoute = await runtime.app.request(API_BASE, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ groupId: 'old-id-group', displayName: 'Old', kind: 'room' }),
+    });
+    const valid = await postGroupStateMutation(runtime.app, API_BASE, {
+      groupId: 'strict-id-group',
+      displayName: 'Strict',
+      kind: 'room',
+      requestId: 'group-route-strict-request',
+    });
+
+    assert.equal(bodyIdentity.status, 400);
+    assert.equal(headerIdentity.status, 400);
+    assert.equal(oldRoute.status, 404);
+    assert.equal(valid.status, 201);
+    for (const response of [bodyIdentity, headerIdentity]) {
+      assert.ok(decodeApiMutationFailure(await response.json()));
+    }
+    assert.deepEqual(enqueued.map((entry) => entry.resourceId), [
+      'group-route-strict-request',
+    ]);
   },
 );
 Deno.test(
@@ -360,7 +385,7 @@ Deno.test(
       groupId: 'room-1',
       displayName: 'Room',
       kind: 'room',
-      requestId: 'await-completion',
+      requestId: 'group-route-await-completion',
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(enqueued, 1);
@@ -377,7 +402,8 @@ Deno.test(
     let enqueued = 0;
     const runtime = createGroupStateRouteTestRuntime({
       installStateAuthentication: false,
-      requireApiAuthSession: () => Promise.reject(new Error('route authentication failed')),
+      requireApiAuthSession: () =>
+        Promise.reject(authenticationRequired('Unauthorized: route authentication failed')),
       processGroupAppInbox: () => {
         enqueued += 1;
         return Promise.reject(new Error('Unexpected AppInbox call after authentication failure'));
@@ -388,8 +414,21 @@ Deno.test(
       displayName: 'Room',
       kind: 'room',
     });
-    assert.equal(response.status, 400);
-    assert.deepEqual(await response.json(), { error: 'route authentication failed' });
+    assert.equal(response.status, 401);
+    assert.deepEqual(decodeApiMutationFailure(await response.json()), {
+      type: 'api-mutation-failure',
+      version: 'canonical.v1',
+      code: 'authentication-required',
+      status: 401,
+      message: 'Unauthorized: route authentication failed',
+      issues: null,
+      denial: {
+        code: 'authentication-required',
+        message: 'Unauthorized: route authentication failed',
+        details: null,
+      },
+      retry: null,
+    });
     assert.equal(enqueued, 0);
   },
 );
@@ -410,35 +449,18 @@ Deno.test(
       kind: 'room',
     });
     assert.equal(response.status, 409);
-    assert.equal(
-      JSON.stringify(await response.json()),
-      '{"error":"group command rejected","code":"group-command-rejected"}',
-    );
+    assert.deepEqual(await response.json(), {
+      type: 'api-mutation-failure',
+      version: 'canonical.v1',
+      code: 'group-command-rejected',
+      status: 409,
+      message: 'group command rejected',
+      issues: null,
+      denial: null,
+      retry: null,
+    });
   },
 );
-async function withRandomUuid(
-  value: string,
-  action: (readCallCount: () => number) => Promise<void>,
-): Promise<void> {
-  const descriptor = Object.getOwnPropertyDescriptor(crypto, 'randomUUID');
-  let callCount = 0;
-  Object.defineProperty(crypto, 'randomUUID', {
-    configurable: true,
-    value: () => {
-      callCount += 1;
-      return value;
-    },
-  });
-  try {
-    await action(() => callCount);
-  } finally {
-    if (descriptor) {
-      Object.defineProperty(crypto, 'randomUUID', descriptor);
-    } else {
-      Reflect.deleteProperty(crypto, 'randomUUID');
-    }
-  }
-}
 Deno.test(
   'all non-presence group REST mutations reject malformed bodies before inbox ' +
     'enqueue',
@@ -459,17 +481,20 @@ Deno.test(
         return Promise.reject(new Error('Malformed request reached group inbox'));
       },
     });
-    for (const testCase of MALFORMED_NON_PRESENCE_ROUTE_CASES) {
-      const response = await app.request(testCase.path, {
-        method: testCase.method,
-        headers: {
-          authorization: 'Bearer token',
-          'content-type': 'application/json',
+    for (const [index, testCase] of MALFORMED_NON_PRESENCE_ROUTE_CASES.entries()) {
+      const response = await app.request(
+        `${testCase.path}/requests/group-route-malformed-${index}`,
+        {
+          method: testCase.method,
+          headers: {
+            authorization: 'Bearer token',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify(testCase.body),
         },
-        body: JSON.stringify(testCase.body),
-      });
+      );
       assert.equal(response.status, 400, `${testCase.method} ${testCase.path}`);
-      assert.match((await response.json()).error, /Group|group/);
+      assert.ok(decodeApiMutationFailure(await response.json()));
     }
     assert.equal(processCalls.length, 0);
   },

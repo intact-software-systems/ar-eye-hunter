@@ -15,7 +15,9 @@ import {
   type GroupMutationWriteInput,
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-result.ts';
 import type {
+  GroupMutationAuthority,
   GroupMutationDescriptor,
+  GroupMutationPreparation,
   GroupStateMutationService,
   GroupStateService,
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
@@ -52,6 +54,14 @@ type ExpectedHandlerDependencies = {
   readonly transactionWriter: AppInboxMutationTransactionWriter;
   readonly wakeQueue?: () => void;
   readonly formationMetrics?: GroupFormationGroupMutationSink;
+  readonly prepareMutation: (
+    descriptor: GroupMutationDescriptor,
+    authority: GroupMutationAuthority,
+  ) => Promise<GroupMutationPreparation>;
+  readonly persistPreparation: (
+    context: AppInboxMessageContext,
+    preparation: GroupMutationPreparation,
+  ) => Promise<void>;
 };
 type ExpectedComputedWrite = (input: GroupMutationWriteInput) => GroupMutationComputed;
 

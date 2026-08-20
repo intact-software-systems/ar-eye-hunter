@@ -35,9 +35,12 @@ import {
   requireStateWorkflowResult,
   tolerateStateWorkflowNotFound,
   toApiMutationWorkflowRequestId,
-  toStateWorkflowRequestId,
 } from '@shared-web/browser/state-workflow-support.ts';
-import type { StateGroupWorkflowValue } from '@shared-web/browser/rooms/room-group-state-workflows.ts';
+// prettier-ignore
+import type {
+  StateGroupWorkflowValue,
+} from '@shared-web/browser/rooms/room-group-state-workflows.ts';
+// prettier-ignore
 import {
   refreshCompleteStateSnapshotCollections,
 } from '@shared-web/browser/state-read/collection-refresh.ts';
@@ -113,8 +116,7 @@ export async function appointStateGroupDirector(
   scope: StateScope = defaultStateScope(),
   policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
 ): Promise<GroupStateSnapshot> {
-  const requestId =
-    request.requestId ?? toStateWorkflowRequestId('group-director-appoint', groupId, sessionId);
+  const requestId = request.requestId ?? toApiMutationWorkflowRequestId();
   const commandOptions = (policies.command ?? {}) as CommandOptions<GroupStateSnapshot>;
 
   return await new Command<GroupStateSnapshot>(
@@ -125,10 +127,9 @@ export async function appointStateGroupDirector(
           ...request,
           actorPrincipalId: principalId,
           actorSessionId: sessionId,
-          requestId,
         },
+        { requestId, signal },
         scope,
-        { signal },
       ),
     commandOptions,
   ).run();
@@ -143,9 +144,7 @@ export async function revokeStateGroupInvite(
   scope: StateScope = defaultStateScope(),
   policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
 ): Promise<GroupStateSnapshot> {
-  const requestId =
-    request.requestId ??
-    toStateWorkflowRequestId('group-invite-revoke', groupId, targetPrincipalId);
+  const requestId = request.requestId ?? toApiMutationWorkflowRequestId();
   const commandOptions = (policies.command ?? {}) as CommandOptions<GroupStateSnapshot>;
 
   return await new Command<GroupStateSnapshot>(
@@ -157,10 +156,9 @@ export async function revokeStateGroupInvite(
           ...request,
           actorPrincipalId: principalId,
           actorSessionId: sessionId,
-          requestId,
         },
+        { requestId, signal },
         scope,
-        { signal },
       ),
     commandOptions,
   ).run();
@@ -174,8 +172,7 @@ export async function rotateStateGroupJoinCode(
   scope: StateScope = defaultStateScope(),
   policies: CommandsOrchestratorPolicies<GroupJoinCodeResponse> = {},
 ): Promise<GroupJoinCodeResponse> {
-  const requestId =
-    request.requestId ?? toStateWorkflowRequestId('group-join-code-rotate', groupId, principalId);
+  const requestId = request.requestId ?? toApiMutationWorkflowRequestId();
   const commandOptions = (policies.command ?? {}) as CommandOptions<GroupJoinCodeResponse>;
 
   return await new Command<GroupJoinCodeResponse>(
@@ -186,10 +183,9 @@ export async function rotateStateGroupJoinCode(
           ...request,
           actorPrincipalId: principalId,
           actorSessionId: sessionId,
-          requestId,
         },
+        { requestId, signal },
         scope,
-        { signal },
       ),
     commandOptions,
   ).run();
@@ -225,8 +221,8 @@ export async function refreshStateHeartbeat(
               presenceState: 'online',
               lastHeartbeatAtEpochMs: heartbeatAtEpochMs,
               expiresAtEpochMs,
-              requestId: clientHeartbeatRequestId,
             },
+            requestId: clientHeartbeatRequestId,
             scope,
             repairRequestId: clientPresenceRepairRequestId,
             options: {
@@ -243,11 +239,7 @@ export async function refreshStateHeartbeat(
     )
     .parallel(
       ...joinedGroups.map((snapshot) => {
-        const groupHeartbeatRequestId = toStateWorkflowRequestId(
-          'group-presence-heartbeat',
-          snapshot.group.groupId,
-          clientData.sessionId,
-        );
+        const groupHeartbeatRequestId = toApiMutationWorkflowRequestId();
         const groupSessionGenerationId =
           snapshot.activeSessions.find((session) => session.sessionId === clientData.sessionId)
             ?.generationId ?? options.generationId;
@@ -265,13 +257,13 @@ export async function refreshStateHeartbeat(
                 actorSessionId: clientData.sessionId,
                 lastHeartbeatAtEpochMs: heartbeatAtEpochMs,
                 expiresAtEpochMs,
-                requestId: groupHeartbeatRequestId,
               },
-              scope,
               {
+                requestId: groupHeartbeatRequestId,
                 signal,
                 authSession: options.authSession,
               },
+              scope,
             ),
           {
             errorOnNull: false,
@@ -310,23 +302,24 @@ export async function refreshStateHeartbeat(
 interface HeartbeatStateClientSessionWithPresenceRepairInput {
   readonly clientData: ClientInfo;
   readonly request: Parameters<typeof heartbeatStateClientSession>[3];
+  readonly requestId: string;
   readonly scope: StateScope;
   readonly repairRequestId: string;
-  readonly options: Parameters<typeof heartbeatStateClientSession>[5];
+  readonly options: Omit<Parameters<typeof heartbeatStateClientSession>[4], 'requestId'>;
 }
 
 async function heartbeatStateClientSessionWithPresenceRepair(
   input: HeartbeatStateClientSessionWithPresenceRepairInput,
 ): Promise<ClientStateSnapshot> {
-  const { clientData, options, repairRequestId, request, scope } = input;
+  const { clientData, options, repairRequestId, request, requestId, scope } = input;
   try {
     return await heartbeatStateClientSession(
       clientData.clientId,
       clientData.clientId,
       clientData.sessionId,
       request,
+      { ...options, requestId },
       scope,
-      options,
     );
   } catch (error) {
     if (!isStateWorkflowNotFoundError(error)) {
@@ -348,10 +341,9 @@ async function heartbeatStateClientSessionWithPresenceRepair(
       connectedAtEpochMs: request.lastHeartbeatAtEpochMs,
       lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs,
       expiresAtEpochMs: request.expiresAtEpochMs,
-      requestId: repairRequestId,
     },
+    { ...options, requestId: repairRequestId },
     scope,
-    options,
   );
 }
 

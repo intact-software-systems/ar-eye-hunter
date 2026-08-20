@@ -1,33 +1,19 @@
 import { isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
-import type { AppInboxFailure } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import type {
+  ApiMutationFailure,
+  ApiMutationFailureIssue,
+} from '@shared/api/mutation/api-mutation-failure.ts';
 
-export class TopologyAppInboxFailureError extends Error {
-  readonly status: number;
-
-  readonly failure: AppInboxFailure;
-
-  constructor(failure: AppInboxFailure) {
-    super(failure.message);
-    this.failure = failure;
-    this.name = 'TopologyAppInboxFailureError';
-    this.status = failure.status;
-  }
-}
+import {
+  createApiMutationFailure,
+  toApiMutationFailureJsonObject,
+  toApiMutationFailureResponse,
+} from './api-mutation-route-failure.ts';
 
 export function toGraphTopologyErrorResponse(
   c: { json(value: unknown, status?: number): Response },
   error: unknown,
 ): Response {
-  if (error instanceof TopologyAppInboxFailureError) {
-    return c.json({
-      error: error.failure.message,
-      code: error.failure.code,
-      message: error.failure.message,
-      issues: error.failure.issues,
-      denial: error.failure.denial,
-      retry: error.failure.retry,
-    }, error.failure.status);
-  }
   if (isGroupPolicyDeniedError(error)) {
     return c.json(
       {
@@ -69,9 +55,82 @@ export function toGraphTopologyErrorResponse(
   return c.json({ error: message }, status);
 }
 
+interface GraphTopologyMutationFailureResponseWriter {
+  json(value: ApiMutationFailure, status?: number): Response;
+}
+
+export function toGraphTopologyMutationErrorResponse<Failure>(
+  context: GraphTopologyMutationFailureResponseWriter,
+  error: Failure,
+): Response {
+  if (isGroupPolicyDeniedError(error)) {
+    const failure = createApiMutationFailure({
+      code: error.denial.code,
+      status: error.status,
+      message: error.denial.message,
+      denial: {
+        code: error.denial.code,
+        message: error.denial.message,
+        details: toApiMutationFailureJsonObject(error.denial.details),
+      },
+    });
+    return context.json(failure, failure.status);
+  }
+  if (isStatusError(error) && error.issues !== undefined) {
+    const failure = createApiMutationFailure({
+      code: error.code ?? 'topology-mutation-failed',
+      status: error.status,
+      message: error.message,
+      issues: error.issues.map((issue) => toApiMutationFailureIssue(issue, error.message)),
+    });
+    return context.json(failure, failure.status);
+  }
+  return toApiMutationFailureResponse(
+    context,
+    error instanceof Error ? error : new Error(String(error)),
+  );
+}
+
 function isStatusError(
   error: unknown,
-): error is Error & { status: number; code?: string; issues?: unknown } {
+): error is Error & {
+  status: number;
+  code?: string;
+  issues?: readonly unknown[];
+} {
   return error instanceof Error &&
-    typeof (error as { status?: unknown }).status === 'number';
+    'status' in error &&
+    typeof error.status === 'number' &&
+    (!('issues' in error) ||
+      error.issues === undefined ||
+      Array.isArray(error.issues));
+}
+
+function toApiMutationFailureIssue(
+  value: unknown,
+  fallbackMessage: string,
+): ApiMutationFailureIssue {
+  const issue = isUnknownRecord(value) ? value : {};
+  return {
+    code: typeof issue.code === 'string' && issue.code.length > 0
+      ? issue.code
+      : 'topology-mutation-validation-failed',
+    path: isApiMutationFailurePath(issue.path) ? issue.path : null,
+    message: typeof issue.message === 'string' && issue.message.length > 0
+      ? issue.message
+      : fallbackMessage,
+    details: isUnknownRecord(issue.details) ? toApiMutationFailureJsonObject(issue.details) : null,
+  };
+}
+
+function isApiMutationFailurePath(value: unknown): value is readonly (string | number)[] | null {
+  return value === null ||
+    (Array.isArray(value) &&
+      value.every((part) =>
+        typeof part === 'string' || (typeof part === 'number' && Number.isFinite(part))
+      ));
+}
+
+function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

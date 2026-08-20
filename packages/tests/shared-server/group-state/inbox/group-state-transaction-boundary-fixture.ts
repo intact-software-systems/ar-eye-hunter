@@ -90,6 +90,10 @@ export async function createGroupStateTransactionBoundaryHarness(
   const formationMutationEvents: Array<Readonly<{ operation: string; outcome: string }>> = [];
   const handler = new GroupStateInboxHandler({
     mutationService: groupState.service,
+    prepareMutation: groupState.service.prepareMutation,
+    persistPreparation: async () => {
+      throw new Error('A reserved transaction-boundary command must already be prepared.');
+    },
     sessionGenerationLifecycle: groupState.service.sessionGenerationLifecycle,
     snapshotObserver: groupState.service,
     transactionWriter,

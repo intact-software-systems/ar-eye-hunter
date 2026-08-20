@@ -90,6 +90,12 @@ describe('group-state AppInbox transaction result boundary', () => {
       throw new Error('Inactive presence must not enter the active mutation transaction');
     });
     const handler = new GroupStateInboxHandler({
+      prepareMutation: async () => {
+        throw new Error('Inactive presence fixture must already be prepared.');
+      },
+      persistPreparation: async () => {
+        throw new Error('Inactive presence fixture must not persist preparation.');
+      },
       mutationService: {
         read: async () => {
           throw new Error('Inactive presence must not read group mutation state');
@@ -210,6 +216,12 @@ async function createCommittedSnapshotObservationFixture(): Promise<CommittedSna
     return result;
   });
   const handler = new UncachedGroupStateInboxHandler({
+    prepareMutation: async () => {
+      throw new Error('Committed-snapshot fixture must already be prepared.');
+    },
+    persistPreparation: async () => {
+      throw new Error('Committed-snapshot fixture must not persist preparation.');
+    },
     mutationService: {
       read: async () => ({}),
       compute: () => ({ outcome: 'write', receipt: {} }),

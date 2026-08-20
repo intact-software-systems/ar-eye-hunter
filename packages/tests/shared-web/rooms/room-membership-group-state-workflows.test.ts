@@ -9,6 +9,7 @@ import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 interface FetchCall {
   readonly url: string;
+  readonly requestId?: string;
   readonly method: string;
   readonly rawBody?: string;
   readonly body?: Record<string, unknown>;
@@ -41,7 +42,7 @@ describe.each(workflowPaths)(
     });
 
     it('creates and revokes room invitations with exact request literals', async () => {
-      stubUuids('invite-request', 'revoke-request');
+      stubUuids('invite-request-0000001', 'revoke-request-0000001');
       stubSuccessfulFetch(fetchCalls);
 
       await workflows.createStateGroupInvite(
@@ -66,38 +67,35 @@ describe.each(workflowPaths)(
       expect(fetchCalls).toEqual([
         {
           url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/invites/member-1',
+          requestId: 'invite-request-0000001',
           method: 'POST',
           rawBody:
             '{"invitationExpiresAtEpochMs":2000,"reason":"join us",' +
             '"traceId":"invite-trace","actorPrincipalId":"owner-1",' +
-            '"actorSessionId":"owner-session",' +
-            '"requestId":"group-invite-create:group-1:member-1:invite-request"}',
+            '"actorSessionId":"owner-session"}',
           body: {
             invitationExpiresAtEpochMs: 2_000,
             reason: 'join us',
             traceId: 'invite-trace',
             actorPrincipalId: 'owner-1',
             actorSessionId: 'owner-session',
-            requestId: 'group-invite-create:group-1:member-1:invite-request',
           },
         },
         {
           url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/invites/member-1/revoke',
+          requestId: 'revoke-request-0000001',
           method: 'POST',
-          rawBody:
-            '{"actorPrincipalId":"owner-1","actorSessionId":"owner-session",' +
-            '"requestId":"group-invite-revoke:group-1:member-1:revoke-request"}',
+          rawBody: '{"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
           body: {
             actorPrincipalId: 'owner-1',
             actorSessionId: 'owner-session',
-            requestId: 'group-invite-revoke:group-1:member-1:revoke-request',
           },
         },
       ]);
     });
 
     it('accepts a room invitation before connecting member presence', async () => {
-      stubUuids('accept-request', 'presence-request');
+      stubUuids('accept-request-0000001', 'presence-request-000001');
       stubSuccessfulFetch(fetchCalls);
 
       await workflows.acceptStateGroupInvite(
@@ -110,36 +108,39 @@ describe.each(workflowPaths)(
       expect(fetchCalls).toEqual([
         {
           url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/invites/accept',
+          requestId: 'accept-request-0000001',
           method: 'POST',
-          rawBody:
-            '{"actorPrincipalId":"member-1","actorSessionId":"member-session",' +
-            '"requestId":"group-invite-accept:group-1:member-1:accept-request"}',
+          rawBody: '{"actorPrincipalId":"member-1","actorSessionId":"member-session"}',
           body: {
             actorPrincipalId: 'member-1',
             actorSessionId: 'member-session',
-            requestId: 'group-invite-accept:group-1:member-1:accept-request',
           },
         },
         {
           url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/sessions/member-session',
+          requestId: 'presence-request-000001',
           method: 'PUT',
           rawBody:
             '{"principalId":"member-1","generationId":"generation-1",' +
-            '"actorPrincipalId":"member-1","actorSessionId":"member-session",' +
-            '"requestId":"group-presence-connect:group-1:member-session:presence-request"}',
+            '"actorPrincipalId":"member-1","actorSessionId":"member-session"}',
           body: {
             principalId: 'member-1',
             generationId: 'generation-1',
             actorPrincipalId: 'member-1',
             actorSessionId: 'member-session',
-            requestId: 'group-presence-connect:group-1:member-session:presence-request',
           },
         },
       ]);
     });
 
     it('runs room membership governance in order with operation-specific requests', async () => {
-      stubUuids('remove-request', 'ban-request', 'unban-request', 'role-request', 'owner-request');
+      stubUuids(
+        'remove-request-0000001',
+        'ban-request-0000000001',
+        'unban-request-00000001',
+        'role-request-000000001',
+        'owner-request-00000001',
+      );
       stubSuccessfulFetch(fetchCalls);
 
       await runMembershipGovernanceWorkflows(workflows);
@@ -147,80 +148,75 @@ describe.each(workflowPaths)(
       expect(fetchCalls).toEqual([
         {
           url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/remove',
+          requestId: 'remove-request-0000001',
           method: 'POST',
           rawBody:
             '{"reason":"remove","traceId":"remove-trace",' +
-            '"actorPrincipalId":"owner-1","actorSessionId":"owner-session",' +
-            '"requestId":"group-member-remove:group-1:member-1:remove-request"}',
+            '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
           body: {
             reason: 'remove',
             traceId: 'remove-trace',
             actorPrincipalId: 'owner-1',
             actorSessionId: 'owner-session',
-            requestId: 'group-member-remove:group-1:member-1:remove-request',
           },
         },
         {
           url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/ban',
+          requestId: 'ban-request-0000000001',
           method: 'POST',
           rawBody:
             '{"reason":"ban","traceId":"ban-trace",' +
-            '"actorPrincipalId":"owner-1","actorSessionId":"owner-session",' +
-            '"requestId":"group-member-ban:group-1:member-1:ban-request"}',
+            '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
           body: {
             reason: 'ban',
             traceId: 'ban-trace',
             actorPrincipalId: 'owner-1',
             actorSessionId: 'owner-session',
-            requestId: 'group-member-ban:group-1:member-1:ban-request',
           },
         },
         {
           url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/unban',
+          requestId: 'unban-request-00000001',
           method: 'POST',
           rawBody:
             '{"reason":"unban","traceId":"unban-trace",' +
-            '"actorPrincipalId":"owner-1","actorSessionId":"owner-session",' +
-            '"requestId":"group-member-unban:group-1:member-1:unban-request"}',
+            '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
           body: {
             reason: 'unban',
             traceId: 'unban-trace',
             actorPrincipalId: 'owner-1',
             actorSessionId: 'owner-session',
-            requestId: 'group-member-unban:group-1:member-1:unban-request',
           },
         },
         {
           url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/role',
+          requestId: 'role-request-000000001',
           method: 'PUT',
           rawBody:
             '{"role":"admin","reason":"promote","traceId":"role-trace",' +
-            '"actorPrincipalId":"owner-1","actorSessionId":"owner-session",' +
-            '"requestId":"group-member-role:group-1:member-1:role-request"}',
+            '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
           body: {
             role: 'admin',
             reason: 'promote',
             traceId: 'role-trace',
             actorPrincipalId: 'owner-1',
             actorSessionId: 'owner-session',
-            requestId: 'group-member-role:group-1:member-1:role-request',
           },
         },
         {
           url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/owner/transfer',
+          requestId: 'owner-request-00000001',
           method: 'POST',
           rawBody:
             '{"newOwnerPrincipalId":"member-1","reason":"handoff",' +
             '"traceId":"owner-trace","actorPrincipalId":"owner-1",' +
-            '"actorSessionId":"owner-session",' +
-            '"requestId":"group-ownership-transfer:group-1:member-1:owner-request"}',
+            '"actorSessionId":"owner-session"}',
           body: {
             newOwnerPrincipalId: 'member-1',
             reason: 'handoff',
             traceId: 'owner-trace',
             actorPrincipalId: 'owner-1',
             actorSessionId: 'owner-session',
-            requestId: 'group-ownership-transfer:group-1:member-1:owner-request',
           },
         },
       ]);
@@ -276,9 +272,11 @@ function stubUuids(...values: string[]): void {
 
 function stubSuccessfulFetch(fetchCalls: FetchCall[]): void {
   vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+    const physicalUrl = String(input);
     const rawBody = init?.body ? String(init.body) : undefined;
     const call = {
-      url: String(input),
+      url: withoutMutationRequestPath(physicalUrl),
+      requestId: readMutationRequestId(physicalUrl),
       method: init?.method ?? 'GET',
       rawBody,
       body: rawBody ? JSON.parse(rawBody) : undefined,
@@ -286,6 +284,14 @@ function stubSuccessfulFetch(fetchCalls: FetchCall[]): void {
     fetchCalls.push(call);
     return Promise.resolve(jsonResponse(roomSnapshot('group-1')));
   });
+}
+
+function withoutMutationRequestPath(url: string): string {
+  return url.replace(/\/requests\/[A-Za-z0-9_-]+$/u, '');
+}
+
+function readMutationRequestId(url: string): string | undefined {
+  return url.match(/\/requests\/([A-Za-z0-9_-]+)$/u)?.[1];
 }
 
 function roomSnapshot(groupId: string): GroupSnapshot {

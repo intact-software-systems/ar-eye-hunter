@@ -36,10 +36,6 @@ export function isStateWorkflowNotFoundError(error: unknown): boolean {
   return message.includes('404');
 }
 
-export function toStateWorkflowRequestId(operation: string, ...parts: readonly string[]): string {
-  return [operation, ...parts, crypto.randomUUID()].join(':');
-}
-
 export function toApiMutationWorkflowRequestId(): string {
   return crypto.randomUUID();
 }
