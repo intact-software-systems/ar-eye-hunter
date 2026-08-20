@@ -11,7 +11,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type {
   JsonWireValue,
 } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
@@ -22,28 +22,26 @@ import {
 // prettier-ignore
 import {
   ADMIN_PRUNE_AGGREGATE_TOPIC,
+  toAdminPruneAggregateKey,
 } from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
 import {
   AppInboxIdempotencyConflictError,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
-// prettier-ignore
-import {
-  hashCanonicalCommand,
-} from '@shared-server/rallar-system/services/canonical-command-hash.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import {
-  ADMIN_APP_INBOX_TOPIC,
+  LEGACY_ADMIN_APP_INBOX_TOPIC,
   AppAdminInboxService,
+  createAdminPruneIdempotencyIdentity,
   type AdminPruneEnqueueResult,
 } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
-import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
+import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import {
   createResilience,
   TestResourceInbox,
   TestResourceInboxResults,
   waitForQueueEntry,
-} from '../../group-state/inbox/group-state-inbox-test-runtime.ts';
+} from './group-state/inbox/group-state-inbox-test-runtime.ts';
 
 const INITIAL_TIME_EPOCH_MS = 1_800_000_000_000;
 const RETRY_EXPIRY_OFFSET_MS = 900_000;
@@ -59,14 +57,18 @@ interface CreateAdminInboxHarnessOptions {
 interface AdminPruneConflictCase {
   readonly name: string;
   readonly session: AuthSession;
-  readonly request: AdminPruneExpiredRequest;
+  readonly request: AdminPruneRequestFixture;
 }
 
 interface AdminPruneUnavailableCase {
   readonly name: string;
   readonly options: CreateAdminInboxHarnessOptions;
-  readonly request: AdminPruneExpiredRequest;
+  readonly request: AdminPruneRequestFixture;
   readonly expectedCode: string;
+}
+
+interface AdminPruneRequestFixture extends AdminPruneExpiredRequest {
+  readonly requestId: string;
 }
 
 describe('AppAdminInboxService initial prune command', () => {
@@ -74,6 +76,7 @@ describe('AppAdminInboxService initial prune command', () => {
     const harness = createAdminInboxHarness();
     const pending = harness.service.pruneExpired({
       adminSession: createAdminSession('admin', 'admin-session'),
+      requestId: 'default-prune-request',
       request: {},
     });
 
@@ -92,10 +95,9 @@ describe('AppAdminInboxService initial prune command', () => {
       pageSize: 25,
     });
     expect(command.jobId.length).toBeGreaterThan(0);
-    expect(harness.events.slice(0, 5)).toEqual([
+    expect(harness.events.slice(0, 4)).toEqual([
       'semantic-identity-completed',
       'phase:semantic-identity',
-      'phase:durable-command-read',
       'now-callback',
       'retry-expiry-callback',
     ]);
@@ -106,7 +108,7 @@ describe('AppAdminInboxService initial prune command', () => {
       harness.events.indexOf('retry-expiry-callback'),
     );
     expect(harness.createAdminPruneIdempotencyIdentity).toHaveBeenCalledExactlyOnceWith({
-      requestId: command.jobId,
+      requestId: 'default-prune-request',
       requestedBy: 'admin',
       requestedSessionId: 'admin-session',
       categories: defaultAdminPruneCategories(),
@@ -128,10 +130,11 @@ describe('AppAdminInboxService initial prune command', () => {
     );
     expect(harness.readAuthority).not.toHaveBeenCalled();
     expect(harness.pruner.countExpired).not.toHaveBeenCalled();
-    expect(harness.wakeQueueEngine).toHaveBeenCalledOnce();
+    expect(harness.wakeQueueEngine).not.toHaveBeenCalled();
 
     await dequeueInitialCommand(harness);
     await expect(pending).resolves.toMatchObject({ right: { status: 'dry-run' } });
+    expect(harness.wakeQueueEngine).toHaveBeenCalledOnce();
   });
 
   it('rejects app-data without a namespace before volatile or mutation work', async () => {
@@ -140,6 +143,7 @@ describe('AppAdminInboxService initial prune command', () => {
     await expect(
       harness.service.pruneExpired({
         adminSession: createAdminSession('admin', 'admin-session'),
+        requestId: 'invalid-app-data-request',
         request: { categories: ['app-data'] },
       }),
     ).rejects.toThrow('appData.namespace is required');
@@ -172,12 +176,63 @@ describe('AppAdminInboxService initial prune command', () => {
     await expect(
       harness.service.pruneExpired({
         adminSession: createAdminSession('admin', 'admin-session'),
-        request,
+        ...toPruneInput(request),
       }),
     ).resolves.toEqual(first);
 
     expect(await readOnlyCommand(harness.queue, 'matching-replay', 'admin')).toEqual(firstCommand);
     expect(harness.readWorkCounts()).toEqual(beforeReplay);
+  });
+
+  it('reuses a same-client request after credential-session renewal', async () => {
+    const harness = createAdminInboxHarness();
+    const request = {
+      requestId: 'renewed-session-replay',
+      categories: ['runtime-state'] as const,
+      dryRun: true,
+    };
+    const first = await completePrune(
+      harness,
+      createAdminSession('admin', 'first-session'),
+      request,
+    );
+    const beforeReplay = harness.readWorkCounts();
+
+    await expect(
+      harness.service.pruneExpired({
+        adminSession: createAdminSession('admin', 'renewed-session'),
+        ...toPruneInput(request),
+      }),
+    ).resolves.toEqual(first);
+
+    expect(harness.readWorkCounts()).toEqual(beforeReplay);
+  });
+
+  it('materializes volatile command facts only for the equal concurrent winner', async () => {
+    const harness = createAdminInboxHarness();
+    const request = {
+      requestId: 'equal-concurrent-prune',
+      categories: ['runtime-state'] as const,
+      dryRun: true,
+    };
+    const first = harness.service.pruneExpired({
+      adminSession: createAdminSession('admin', 'admin-session'),
+      ...toPruneInput(request),
+    });
+    const contender = harness.service.pruneExpired({
+      adminSession: createAdminSession('admin', 'admin-session'),
+      ...toPruneInput(request),
+    });
+
+    await waitForQueueEntry(harness.queue);
+    expect(harness.computeRetryExpiryAtEpochMs).toHaveBeenCalledOnce();
+    expect(harness.nowEpochMs).toHaveBeenCalledOnce();
+    await dequeueInitialCommand(harness);
+    await expect(Promise.all([first, contender])).resolves.toHaveLength(2);
+
+    expect(harness.computeRetryExpiryAtEpochMs).toHaveBeenCalledOnce();
+    expect(harness.pruner.countExpired).toHaveBeenCalledOnce();
+    expect(harness.transactionCount()).toBe(1);
   });
 
   it('preserves first-occurrence category order for fresh command and result facts', async () => {
@@ -198,32 +253,18 @@ describe('AppAdminInboxService initial prune command', () => {
 
   it('replays predecessor category order for the same reordered set', async () => {
     const harness = createAdminInboxHarness();
-    const predecessorCommand = await createAdminPruneCommand({
-      jobId: 'predecessor-order-replay',
-      requestedBy: 'admin',
-      requestedSessionId: 'admin-session',
-      capturedAtEpochMs: INITIAL_TIME_EPOCH_MS,
-      expireAtEpochMs: INITIAL_TIME_EPOCH_MS + RETRY_EXPIRY_OFFSET_MS,
-      dryRun: true,
+    const requestId = 'predecessor-order-replay';
+    await completePrune(harness, createAdminSession('admin', 'admin-session'), {
+      requestId,
       categories: ['resource-inbox-results', 'runtime-state'],
-      appData: null,
-      pageSize: 25,
+      dryRun: true,
     });
-    await harness.service.enqueue({
-      type: AppInboxType.ADMIN_PRUNE_EXPIRED,
-      topicId: ADMIN_APP_INBOX_TOPIC,
-      resourceId: predecessorCommand.jobId,
-      contextId: predecessorCommand.requestedBy,
-      senderId: predecessorCommand.requestedSessionId,
-      data: predecessorCommand,
-    });
-    await dequeueInitialCommand(harness);
     const beforeReplay = harness.readWorkCounts();
 
     const replay = await harness.service.pruneExpired({
       adminSession: createAdminSession('admin', 'admin-session'),
+      requestId,
       request: {
-        requestId: predecessorCommand.jobId,
         categories: ['runtime-state', 'resource-inbox-results'],
         dryRun: true,
       },
@@ -236,26 +277,40 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.readWorkCounts()).toEqual(beforeReplay);
   });
 
+  it('processes an already queued legacy command under its historical key', async () => {
+    const harness = createAdminInboxHarness();
+    const command = await createAdminPruneCommand({
+      jobId: 'legacy-active-prune-job',
+      requestedBy: 'admin',
+      requestedSessionId: 'legacy-session',
+      capturedAtEpochMs: INITIAL_TIME_EPOCH_MS,
+      expireAtEpochMs: INITIAL_TIME_EPOCH_MS + RETRY_EXPIRY_OFFSET_MS,
+      dryRun: true,
+      categories: ['runtime-state'],
+      appData: null,
+      pageSize: 25,
+    });
+    const entry = await harness.service.enqueue({
+      type: AppInboxType.ADMIN_PRUNE_EXPIRED,
+      topicId: LEGACY_ADMIN_APP_INBOX_TOPIC,
+      resourceId: command.jobId,
+      contextId: command.requestedBy,
+      senderId: command.requestedSessionId,
+      data: command,
+    });
+
+    await dequeueInitialCommand(harness);
+
+    expect(await harness.queue.getItem(entry.key)).toMatchObject({
+      status: EntityStatus.COMPLETED,
+    });
+  });
+
   it.each<AdminPruneConflictCase>([
-    {
-      name: 'authenticated session',
-      session: createAdminSession('admin', 'other-session'),
-      request: { requestId: 'same-client-conflict', categories: ['runtime-state'], dryRun: true },
-    },
     {
       name: 'categories',
       session: createAdminSession('admin', 'admin-session'),
       request: { requestId: 'same-client-conflict', categories: ['resource-inbox'], dryRun: true },
-    },
-    {
-      name: 'app-data scope',
-      session: createAdminSession('admin', 'admin-session'),
-      request: {
-        requestId: 'same-client-conflict',
-        categories: ['app-data'],
-        appData: { namespace: 'other-namespace' },
-        dryRun: true,
-      },
     },
     {
       name: 'dry-run semantics',
@@ -285,6 +340,108 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.pruner.countExpired).toHaveBeenCalledTimes(2);
   });
 
+  it(
+    'isolates non-dry-run page and aggregate identities for two admins ' + 'sharing a request ID',
+    async () => {
+      const harness = createAdminInboxHarness({ waitForResult: false });
+      const request = {
+        requestId: 'cross-admin-page-isolation',
+        categories: ['runtime-state'] as const,
+        dryRun: false,
+      };
+      const first = harness.service.pruneExpired({
+        adminSession: createAdminSession('admin-a', 'admin-a-session'),
+        ...toPruneInput(request),
+      });
+      const second = harness.service.pruneExpired({
+        adminSession: createAdminSession('admin-b', 'admin-b-session'),
+        ...toPruneInput(request),
+      });
+
+      await waitForQueueEntry(harness.queue);
+      await dequeueInitialCommand(harness);
+      await Promise.all([first, second]);
+
+      const commands = await listCommands(harness.queue, request.requestId);
+      expect(commands).toHaveLength(2);
+      expect(new Set(commands.map((command) => command.jobId)).size).toBe(2);
+      expect(harness.database.outboxEntries.size).toBe(2);
+      expect(
+        new Set([...harness.database.outboxEntries.values()].map((entry) => entry.key.contextId))
+          .size,
+      ).toBe(2);
+    },
+  );
+
+  it('isolates jobs for one admin sharing a request ID across app-data targets', async () => {
+    const harness = createAdminInboxHarness({ waitForResult: false });
+    const adminSession = createAdminSession('admin', 'admin-session');
+    const requestId = 'cross-target-page-isolation';
+    const first = harness.service.pruneExpired({
+      adminSession,
+      requestId,
+      request: {
+        categories: ['app-data'],
+        appData: { namespace: 'tenant-a', storeName: 'cache' },
+        dryRun: false,
+      },
+    });
+    const second = harness.service.pruneExpired({
+      adminSession,
+      requestId,
+      request: {
+        categories: ['app-data'],
+        appData: { namespace: 'tenant-b', storeName: 'cache' },
+        dryRun: false,
+      },
+    });
+
+    await waitForQueueEntry(harness.queue);
+    await dequeueInitialCommand(harness);
+    await Promise.all([first, second]);
+
+    const commands = await listCommands(harness.queue, requestId);
+    expect(commands).toHaveLength(2);
+    expect(new Set(commands.map((command) => command.jobId)).size).toBe(2);
+    expect(harness.database.outboxEntries.size).toBe(2);
+    expect(
+      new Set([...harness.database.outboxEntries.values()].map((entry) => entry.key.contextId))
+        .size,
+    ).toBe(2);
+  });
+
+  it('bounds downstream identities for a maximum request ID and long scoped target', async () => {
+    const harness = createAdminInboxHarness({ waitForResult: false });
+    const requestId = 'r'.repeat(128);
+    const pending = harness.service.pruneExpired({
+      adminSession: createAdminSession(`admin-${'a'.repeat(96)}`, 'admin-session'),
+      requestId,
+      request: {
+        categories: ['app-data'],
+        appData: {
+          namespace: `namespace-${'n'.repeat(96)}`,
+          storeName: `store-${'s'.repeat(96)}`,
+        },
+        dryRun: false,
+      },
+    });
+
+    await waitForQueueEntry(harness.queue);
+    await dequeueInitialCommand(harness);
+    await pending;
+
+    const command = (await listCommands(harness.queue, requestId))[0];
+    if (command === undefined) {
+      throw new Error('Maximum-length prune command was not persisted');
+    }
+    expect(command.jobId.length).toBeLessThanOrEqual(128);
+    expect(toAdminPruneAggregateKey(command.jobId).resourceId.length).toBeLessThanOrEqual(128);
+    for (const entry of harness.database.outboxEntries.values()) {
+      expect(entry.key.resourceId.length).toBeLessThanOrEqual(128);
+      expect(entry.key.contextId.length).toBeLessThanOrEqual(128);
+    }
+  });
+
   it('runs dry-run reads and one commit without post-commit wake', async () => {
     const harness = createAdminInboxHarness();
 
@@ -297,7 +454,6 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.events).toEqual([
       'semantic-identity-completed',
       'phase:semantic-identity',
-      'phase:durable-command-read',
       'now-callback',
       'retry-expiry-callback',
       'queue-wake',
@@ -327,7 +483,6 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.events).toEqual([
       'semantic-identity-completed',
       'phase:semantic-identity',
-      'phase:durable-command-read',
       'now-callback',
       'retry-expiry-callback',
       'queue-wake',
@@ -356,8 +511,8 @@ describe('AppAdminInboxService initial prune command', () => {
     await expect(
       harness.service.pruneExpired({
         adminSession: createAdminSession('admin', 'admin-session'),
+        requestId: 'initial-outbox-collision',
         request: {
-          requestId: 'initial-outbox-collision',
           categories: ['runtime-state'],
           dryRun: false,
         },
@@ -393,7 +548,6 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.events).toEqual([
       'semantic-identity-completed',
       'phase:semantic-identity',
-      'phase:durable-command-read',
       'now-callback',
       'retry-expiry-callback',
       'queue-wake',
@@ -437,7 +591,7 @@ describe('AppAdminInboxService initial prune command', () => {
 
       const pending = harness.service.pruneExpired({
         adminSession: createAdminSession('admin', 'admin-session'),
-        request,
+        ...toPruneInput(request),
       });
       await waitForQueueEntry(harness.queue);
       if (options.retryExpiryOffsetMs !== undefined) harness.advanceTime(2);
@@ -450,13 +604,42 @@ describe('AppAdminInboxService initial prune command', () => {
     },
   );
 
+  it('replays the exact durable current-authority failure without mutation work', async () => {
+    const harness = createAdminInboxHarness({ allowCurrentAuthority: false });
+    const request = {
+      requestId: 'denied-prune-replay',
+      categories: ['runtime-state'] as const,
+      dryRun: true,
+    };
+    const first = await completePrune(
+      harness,
+      createAdminSession('admin', 'first-session'),
+      request,
+    );
+    const beforeReplay = harness.readWorkCounts();
+
+    const replay = await harness.service.pruneExpired({
+      adminSession: createAdminSession('admin', 'renewed-session'),
+      ...toPruneInput(request),
+    });
+
+    expect(replay).toEqual(first);
+    expect(replay.left).toMatchObject({
+      type: 'app-inbox-failure',
+      code: 'admin-prune-authority-denied',
+      status: 403,
+    });
+    expect(harness.readWorkCounts()).toEqual(beforeReplay);
+  });
+
   it('returns the existing unavailable failure when the initial result wait exhausts', async () => {
     const harness = createAdminInboxHarness({ waitForResult: false });
 
     await expect(
       harness.service.pruneExpired({
         adminSession: createAdminSession('admin', 'admin-session'),
-        request: { requestId: 'wait-exhaustion', categories: ['runtime-state'], dryRun: true },
+        requestId: 'wait-exhaustion',
+        request: { categories: ['runtime-state'], dryRun: true },
       }),
     ).resolves.toMatchObject({ left: { code: 'app-inbox-unavailable' } });
 
@@ -477,7 +660,10 @@ async function rejectsChangedAdminPruneRequest({
     dryRun: true,
   });
   const beforeConflict = harness.readWorkCounts();
-  const conflict = harness.service.pruneExpired({ adminSession: session, request });
+  const conflict = harness.service.pruneExpired({
+    adminSession: session,
+    ...toPruneInput(request),
+  });
   await expect(conflict).rejects.toBeInstanceOf(AppInboxIdempotencyConflictError);
   await expect(conflict).rejects.toMatchObject({
     code: 'app-inbox-idempotency-conflict',
@@ -498,6 +684,13 @@ async function rejectsChangedAdminPruneRequest({
 
 function defaultAdminPruneCategories(): readonly AdminPruneExpiredCategory[] {
   return ADMIN_PRUNE_EXPIRED_CATEGORIES.filter(isNotAppDataCategory);
+}
+
+function toPruneInput(
+  fixture: AdminPruneRequestFixture,
+): Readonly<{ requestId: string; request: AdminPruneExpiredRequest }> {
+  const { requestId, ...request } = fixture;
+  return { requestId, request };
 }
 
 function isNotAppDataCategory(category: AdminPruneExpiredCategory): boolean {
@@ -563,15 +756,11 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
     events.push('retry-expiry-callback');
     return capturedAtEpochMs + (options.retryExpiryOffsetMs ?? RETRY_EXPIRY_OFFSET_MS);
   });
-  const createAdminPruneIdempotencyIdentity = vi.fn(
+  const createAdminPruneIdentity = vi.fn(
     async (input: AdminPruneIdempotencyIdentityInput): Promise<AdminPruneIdempotencyIdentity> => {
-      const semanticHash = await hashCanonicalCommand(input);
+      const identity = await createAdminPruneIdempotencyIdentity(input);
       events.push('semantic-identity-completed');
-      return {
-        version: 1,
-        ...input,
-        semanticHash,
-      };
+      return identity;
     },
   );
   const readAuthority = vi.fn(async () => {
@@ -632,7 +821,7 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
       readAuthority,
       wakeQueueEngine,
       computeRetryExpiryAtEpochMs,
-      createAdminPruneIdempotencyIdentity,
+      createAdminPruneIdempotencyIdentity: createAdminPruneIdentity,
     },
     {
       serviceId: 'admin-inbox-test-server',
@@ -656,7 +845,7 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
     timingEvents,
     nowEpochMs,
     computeRetryExpiryAtEpochMs,
-    createAdminPruneIdempotencyIdentity,
+    createAdminPruneIdempotencyIdentity: createAdminPruneIdentity,
     readAuthority,
     pruner,
     wakeQueueEngine,
@@ -689,6 +878,8 @@ interface AdminPruneIdempotencyIdentityInput {
 
 interface AdminPruneIdempotencyIdentity extends AdminPruneIdempotencyIdentityInput {
   readonly version: 1;
+  readonly contextId: string;
+  readonly jobId: string;
   readonly semanticHash: string;
 }
 
@@ -770,7 +961,7 @@ function createAdminSession(clientId: string, sessionId: string): AuthSession {
 async function completePrune(
   harness: AdminInboxHarness,
   adminSession: AuthSession,
-  request: AdminPruneExpiredRequest,
+  request: AdminPruneRequestFixture,
 ) {
   return await completePruneAttempts({ harness, adminSession, request, dequeueAttempts: 1 });
 }
@@ -778,7 +969,7 @@ async function completePrune(
 interface CompletePruneAttemptsInput {
   readonly harness: AdminInboxHarness;
   readonly adminSession: AuthSession;
-  readonly request: AdminPruneExpiredRequest;
+  readonly request: AdminPruneRequestFixture;
   readonly dequeueAttempts: number;
 }
 
@@ -788,7 +979,7 @@ async function completePruneAttempts({
   request,
   dequeueAttempts,
 }: CompletePruneAttemptsInput) {
-  const pending = harness.service.pruneExpired({ adminSession, request });
+  const pending = harness.service.pruneExpired({ adminSession, ...toPruneInput(request) });
   for (let attempt = 0; attempt < dequeueAttempts; attempt += 1) {
     if (attempt === 0) {
       await waitForQueueEntry(harness.queue);
@@ -825,11 +1016,12 @@ async function listCommands(
   const entries = await Promise.all((await queue.getAllKeys()).map((key) => queue.getItem(key)));
   return entries
     .filter((entry): entry is ResourceEntry => entry !== undefined)
-    .filter((entry) => requestId === undefined || entry.key.resourceId === requestId)
-    .filter((entry) => clientId === undefined || entry.key.contextId === clientId)
     .map((entry) => {
       const message: ALMessage = JSON.parse(entry.resource);
       const enqueue: { data: JsonWireValue } = JSON.parse(message.payload.resource);
-      return decodeAdminPruneCommand(enqueue.data);
-    });
+      return { entry, command: decodeAdminPruneCommand(enqueue.data) };
+    })
+    .filter(({ entry }) => requestId === undefined || entry.key.resourceId === requestId)
+    .filter(({ command }) => clientId === undefined || command.requestedBy === clientId)
+    .map(({ command }) => command);
 }

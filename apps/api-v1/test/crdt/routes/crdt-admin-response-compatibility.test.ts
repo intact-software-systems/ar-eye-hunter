@@ -33,6 +33,10 @@ import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mut
 crdt-mutation-command-codec.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import type {
+  JsonWireObject,
+  JsonWireValue,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 
 import { toResilienceDto } from '../../../src/middleware-resilience.ts';
 import { createCrdtAdminMutations } from '../../../src/crdt/create-crdt-admin-mutations.ts';
@@ -40,6 +44,15 @@ import * as routes from '../../../src/crdt/register-crdt-admin-routes.ts';
 import { waitForPGliteQueueRow, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
+  applicationId: 'app-1',
+  workspaceId: 'workspace-1',
+  scope: 'room',
+  documentType: 'checklist',
+  documentId: 'document-1',
+  roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
+};
+
+const DOCUMENT_WIRE: JsonWireObject = {
   applicationId: 'app-1',
   workspaceId: 'workspace-1',
   scope: 'room',
@@ -59,9 +72,16 @@ interface MutationCountsRow {
   readonly outbox: string | number;
 }
 
+interface AppInboxPersistenceRow {
+  readonly inbox_count: string | number;
+  readonly inbox_status: string | null;
+  readonly result_count: string | number;
+  readonly result_status: string | null;
+}
+
 interface PostAndProcessRawResult {
   readonly response: Response;
-  readonly body: Record<string, unknown>;
+  readonly body: JsonWireObject;
 }
 
 Deno.test(
@@ -76,7 +96,18 @@ interface CrdtAdminRouteHarness {
   readonly inbox: InboxQueueReader;
   readonly outbox: OutboxQueueReader;
   readonly readAuditAttempts: () => number;
+  readonly readMaterializationCounts: () => Readonly<{ clocks: number; ids: number }>;
   readonly sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0];
+  readonly appForSession: (session: IssuedAdminSession) => Hono;
+}
+
+interface IssuedAdminSession {
+  readonly clientId: string;
+  readonly username: string;
+  readonly sessionId: string;
+  readonly accessToken: string;
+  readonly issuedAtEpochMs: number;
+  readonly expiresAtEpochMs: number;
 }
 
 interface CreateAdminAppCrdtInput {
@@ -98,6 +129,7 @@ async function verifyCrdtAdminResponseCompatibility(
   const harness = await createCrdtAdminRouteHarness(sql);
   await verifyMissingDocumentResponse(harness);
   await verifyQuotaRejectionResponse(harness);
+  await verifyStrictCrdtHttpIdempotency(harness);
   await verifyCompactResponse(harness);
   await verifyLifecycleResponse(harness);
   await verifyEraseResponseAndAuditDelivery(harness);
@@ -116,6 +148,16 @@ async function createCrdtAdminRouteHarness(
   const documentKey = await seedCrdtAdminDocument(sql, mutationService, now);
   const audit: RallarCrdtAuditEvent[] = [];
   let auditAttempts = 0;
+  let materializedClocks = 0;
+  let materializedIds = 0;
+  const nowEpochMs = () => {
+    materializedClocks += 1;
+    return now + 1;
+  };
+  const createId = () => {
+    materializedIds += 1;
+    return crypto.randomUUID();
+  };
   const appCrdt = createAdminAppCrdt({
     audit,
     inbox,
@@ -131,12 +173,15 @@ async function createCrdtAdminRouteHarness(
     sql,
   });
   return {
-    app: createCrdtAdminApp(sql, appCrdt, now),
+    app: createCrdtAdminApp(sql, appCrdt, now, nowEpochMs, createId),
+    appForSession: (session) =>
+      createCrdtAdminApp(sql, appCrdt, now, nowEpochMs, createId, session),
     audit,
     documentKey,
     inbox,
     outbox,
     readAuditAttempts: () => auditAttempts,
+    readMaterializationCounts: () => ({ clocks: materializedClocks, ids: materializedIds }),
     sql,
   };
 }
@@ -236,26 +281,28 @@ function createCrdtAdminApp(
   sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
   appCrdt: AppCrdtInboxService,
   now: number,
+  nowEpochMs: () => number,
+  createId: () => string,
+  session: IssuedAdminSession = {
+    clientId: 'admin',
+    username: 'admin',
+    sessionId: 'admin-session',
+    accessToken: 'token',
+    issuedAtEpochMs: now,
+    expiresAtEpochMs: now + 60_000,
+  },
 ): Hono {
   const app = new Hono();
   routes.registerCrdtAdminRoutes(app, {
     repository: new PSqlCrdtLogRepository(sql),
     crdtAdminMutations: createCrdtAdminMutations({
       appCrdtInboxService: appCrdt,
-      nowEpochMs: () => now + 1,
-      createId: () => crypto.randomUUID(),
+      nowEpochMs,
+      createId,
       serviceId: 'server-1',
     }),
     requireAuth: false,
-    requireApiAdminSession: () =>
-      Promise.resolve({
-        clientId: 'admin',
-        username: 'admin',
-        sessionId: 'admin-session',
-        accessToken: 'token',
-        issuedAtEpochMs: now,
-        expiresAtEpochMs: now + 60_000,
-      }),
+    requireApiAdminSession: () => Promise.resolve(session),
     requireApiUserSession: () => Promise.reject(new Error('unused')),
   });
   return app;
@@ -264,15 +311,15 @@ function createCrdtAdminApp(
 async function verifyMissingDocumentResponse(harness: CrdtAdminRouteHarness): Promise<void> {
   const missing = await postAndProcessRaw({
     ...harness,
-    path: '/api/crdt/admin/documents/compact',
+    path: '/api/crdt/admin/documents/compact/requests/missing-route-request',
     body: {
-      requestId: 'missing-route',
-      document: { ...DOCUMENT, documentId: 'missing-document' },
+      document: { ...DOCUMENT_WIRE, documentId: 'missing-document' },
       reason: 'missing-route',
     },
   });
   assert.equal(missing.response.status, 404);
-  assert.equal(missing.body.ok, false);
+  assert.equal(missing.body.type, 'api-mutation-failure');
+  assert.equal(missing.body.version, 'canonical.v1');
 }
 
 async function verifyQuotaRejectionResponse(harness: CrdtAdminRouteHarness): Promise<void> {
@@ -282,18 +329,46 @@ async function verifyQuotaRejectionResponse(harness: CrdtAdminRouteHarness): Pro
     where document_key = ${harness.documentKey}
   `;
   const before = await mutationCounts(harness.sql, harness.documentKey);
+  const path = '/api/crdt/admin/documents/compact/requests/quota-rejected-route';
+  const request = {
+    document: DOCUMENT_WIRE,
+    reason: 'quota-rejected-route',
+  };
   const rejected = await postAndProcessRaw({
     ...harness,
-    path: '/api/crdt/admin/documents/compact',
-    body: {
-      requestId: 'quota-rejected-route',
-      document: DOCUMENT,
-      reason: 'quota-rejected-route',
-    },
+    path,
+    body: request,
   });
   assert.equal(rejected.response.status, 409);
-  assert.equal(rejected.body.ok, false);
+  assert.equal(rejected.body.type, 'api-mutation-failure');
+  assert.equal(rejected.body.version, 'canonical.v1');
   assert.deepEqual(await mutationCounts(harness.sql, harness.documentKey), before);
+  assert.deepEqual(await readStrictAppInboxPersistence(harness.sql, 'quota-rejected-route'), {
+    inboxCount: 1,
+    inboxStatus: 'FAILED',
+    resultCount: 1,
+    resultStatus: 'FAILED',
+  });
+
+  const beforeReplay = await mutationCounts(harness.sql, harness.documentKey);
+  const replay = await postJson(harness.app, path, request);
+  assert.equal(replay.response.status, 409);
+  assert.deepEqual(replay.body, rejected.body);
+  assert.deepEqual(await mutationCounts(harness.sql, harness.documentKey), beforeReplay);
+  assert.deepEqual(await readStrictAppInboxPersistence(harness.sql, 'quota-rejected-route'), {
+    inboxCount: 1,
+    inboxStatus: 'FAILED',
+    resultCount: 1,
+    resultStatus: 'FAILED',
+  });
+
+  const conflict = await postJson(harness.app, path, {
+    document: DOCUMENT_WIRE,
+    reason: 'quota-rejected-changed-intent',
+  });
+  assert.equal(conflict.response.status, 409);
+  assert.equal(conflict.body.code, 'app-inbox-idempotency-conflict');
+  assert.deepEqual(await mutationCounts(harness.sql, harness.documentKey), beforeReplay);
   await harness.sql`
     update crdt_documents
     set quota_policy = ${JSON.stringify({ maxDocumentBytes: 100000 })}
@@ -301,20 +376,188 @@ async function verifyQuotaRejectionResponse(harness: CrdtAdminRouteHarness): Pro
   `;
 }
 
+async function verifyStrictCrdtHttpIdempotency(
+  harness: CrdtAdminRouteHarness,
+): Promise<void> {
+  await verifyEqualStrictCrdtHttpContenders(harness);
+
+  const requestId = 'strict-crdt-request-0001';
+  const compactPath = `/api/crdt/admin/documents/compact/requests/${requestId}`;
+  const first = await postAndProcess({
+    ...harness,
+    path: compactPath,
+    body: { document: DOCUMENT_WIRE, reason: 'strict-replay' },
+  });
+  const afterFirst = await mutationCounts(harness.sql, harness.documentKey);
+  const replay = await postJson(harness.app, compactPath, {
+    reason: 'strict-replay',
+    document: {
+      documentId: 'document-1',
+      documentType: 'checklist',
+      scope: 'room',
+      workspaceId: 'workspace-1',
+      applicationId: 'app-1',
+      roomRef: { groupId: 'group-1', workspaceId: 'workspace-1', applicationId: 'app-1' },
+    },
+  });
+  assert.equal(replay.response.status, 200);
+  assert.deepEqual(replay.body, first);
+  assert.deepEqual(await mutationCounts(harness.sql, harness.documentKey), afterFirst);
+
+  const conflict = await postJson(harness.app, compactPath, {
+    document: DOCUMENT_WIRE,
+    reason: 'changed-intent',
+  });
+  assert.equal(conflict.response.status, 409);
+  assert.equal(conflict.body.type, 'api-mutation-failure');
+  assert.equal(conflict.body.code, 'app-inbox-idempotency-conflict');
+  assert.deepEqual(await mutationCounts(harness.sql, harness.documentKey), afterFirst);
+
+  const operation = await postAndProcess({
+    ...harness,
+    path: `/api/crdt/admin/documents/rebuild-projection/requests/${requestId}`,
+    body: { document: DOCUMENT_WIRE, projectionId: 'strict-projection' },
+  });
+  assert.equal(operation.ok, true);
+
+  const otherAdmin = harness.appForSession({
+    clientId: 'other-admin',
+    username: 'other-admin',
+    sessionId: 'other-admin-session',
+    accessToken: 'other-token',
+    issuedAtEpochMs: Date.now(),
+    expiresAtEpochMs: Date.now() + 60_000,
+  });
+  const actor = await postAndProcess({
+    ...harness,
+    app: otherAdmin,
+    path: compactPath,
+    body: { document: DOCUMENT_WIRE, reason: 'strict-replay' },
+  });
+  assert.equal(actor.ok, true);
+
+  const missingRequestId = 'strict-missing-document-0001';
+  for (const documentId of ['missing-a', 'missing-b']) {
+    const missing = await postAndProcessRaw({
+      ...harness,
+      path: `/api/crdt/admin/documents/compact/requests/${missingRequestId}`,
+      body: { document: { ...DOCUMENT_WIRE, documentId }, reason: 'document-isolation' },
+    });
+    assert.equal(missing.response.status, 404);
+  }
+
+  const scoped = await harness.sql<Readonly<{
+    ri_topic_id: string;
+    ri_resource_id: string;
+    context_id: string;
+  }>[]>`
+    select ri_topic_id, ri_resource_id, fk_ext_bank_id as context_id
+    from resource_inbox
+    where ri_type_id = 'APP_INBOX' and ri_resource_id = ${requestId}
+    order by ri_topic_id, context_id
+  `;
+  assert.equal(scoped.length, 3);
+  assert.ok(scoped.every((row) => row.ri_resource_id === requestId));
+  assert.deepEqual(scoped.map((row) => row.ri_topic_id), [
+    'CRDT_PROJECTION_REBUILD',
+    'CRDT_SNAPSHOT_COMPACT',
+    'CRDT_SNAPSHOT_COMPACT',
+  ]);
+  assert.equal(new Set(scoped.map((row) => row.context_id)).size, 2);
+
+  const documents = await harness.sql<Readonly<{ context_id: string }>[]>`
+    select fk_ext_bank_id as context_id from resource_inbox
+    where ri_type_id = 'APP_INBOX' and ri_resource_id = ${missingRequestId}
+  `;
+  assert.equal(documents.length, 2);
+  assert.equal(new Set(documents.map((row) => row.context_id)).size, 2);
+
+  await verifyMalformedStrictCrdtDurableResult(harness);
+}
+
+async function verifyEqualStrictCrdtHttpContenders(
+  harness: CrdtAdminRouteHarness,
+): Promise<void> {
+  const requestId = 'strict-crdt-concurrent-request';
+  const path = `/api/crdt/admin/documents/rebuild-projection/requests/${requestId}`;
+  const request = { document: DOCUMENT_WIRE, projectionId: 'equal-concurrent' };
+  const beforeEffects = await mutationCounts(harness.sql, harness.documentKey);
+  const beforeFacts = harness.readMaterializationCounts();
+  const firstPending = postJson(harness.app, path, request);
+  const contenderPending = postJson(harness.app, path, request);
+
+  await waitForPGliteQueueRow(harness.sql, 'APP_INBOX', 'NEW');
+  assert.deepEqual(harness.readMaterializationCounts(), {
+    clocks: beforeFacts.clocks + 1,
+    ids: beforeFacts.ids + 1,
+  });
+  await harness.inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+  const [first, contender] = await Promise.all([firstPending, contenderPending]);
+
+  assert.equal(first.response.status, 200);
+  assert.equal(contender.response.status, 200);
+  assert.deepEqual(contender.body, first.body);
+  assert.deepEqual(harness.readMaterializationCounts(), {
+    clocks: beforeFacts.clocks + 1,
+    ids: beforeFacts.ids + 1,
+  });
+  const afterEffects = await mutationCounts(harness.sql, harness.documentKey);
+  assert.deepEqual(afterEffects, {
+    revision: beforeEffects.revision + 1,
+    snapshots: beforeEffects.snapshots,
+    updates: beforeEffects.updates,
+    outbox: beforeEffects.outbox,
+  });
+  assert.deepEqual(await readStrictAppInboxPersistence(harness.sql, requestId), {
+    inboxCount: 1,
+    inboxStatus: 'COMPLETED',
+    resultCount: 1,
+    resultStatus: 'COMPLETED',
+  });
+}
+
+async function verifyMalformedStrictCrdtDurableResult(
+  harness: CrdtAdminRouteHarness,
+): Promise<void> {
+  const requestId = 'strict-crdt-malformed-result';
+  const path = `/api/crdt/admin/documents/compact/requests/${requestId}`;
+  const request = { document: DOCUMENT_WIRE, reason: 'malformed-result' };
+  await postAndProcess({ ...harness, path, body: request });
+  const beforeReplay = await mutationCounts(harness.sql, harness.documentKey);
+  const corrupted = await harness.sql<Readonly<{ ris_resource_id: string }>[]>`
+    update resource_inbox_results
+    set ris_resource = ${JSON.stringify({ version: 1, operation: 'compact' })}
+    where ris_resource_id = ${requestId} and ris_topic_id = 'CRDT_SNAPSHOT_COMPACT'
+    returning ris_resource_id
+  `;
+  assert.equal(corrupted.length, 1);
+
+  const replay = await postJson(harness.app, path, request);
+  assert.equal(replay.response.status, 400);
+  assert.equal(replay.body.type, 'api-mutation-failure');
+  assert.equal(replay.body.version, 'canonical.v1');
+  assert.deepEqual(await mutationCounts(harness.sql, harness.documentKey), beforeReplay);
+  assert.deepEqual(await readStrictAppInboxPersistence(harness.sql, requestId), {
+    inboxCount: 1,
+    inboxStatus: 'COMPLETED',
+    resultCount: 1,
+    resultStatus: 'COMPLETED',
+  });
+}
+
 async function verifyCompactResponse(harness: CrdtAdminRouteHarness): Promise<void> {
   const compact = await postAndProcess({
     ...harness,
-    path: '/api/crdt/admin/documents/compact',
+    path: '/api/crdt/admin/documents/compact/requests/compact-route-request',
     body: {
-      requestId: 'compact-route',
-      document: DOCUMENT,
+      document: DOCUMENT_WIRE,
       reason: 'compact-route',
     },
   });
   assert.equal(compact.ok, true);
-  const result = requireRecord(compact.result, 'compact result');
-  const snapshot = requireRecord(result.snapshot, 'compact snapshot');
-  const document = requireRecord(snapshot.document, 'compact snapshot document');
+  const result = requireJsonWireObject(compact.result, 'compact result');
+  const snapshot = requireJsonWireObject(result.snapshot, 'compact snapshot');
+  const document = requireJsonWireObject(snapshot.document, 'compact snapshot document');
   assert.equal(result.appendSequence, 1);
   assert.equal(document.documentId, DOCUMENT.documentId);
 }
@@ -322,19 +565,22 @@ async function verifyCompactResponse(harness: CrdtAdminRouteHarness): Promise<vo
 async function verifyLifecycleResponse(harness: CrdtAdminRouteHarness): Promise<void> {
   const lifecycle = await postAndProcess({
     ...harness,
-    path: '/api/crdt/admin/documents/lifecycle',
+    path: '/api/crdt/admin/documents/lifecycle/requests/lifecycle-route-request',
     body: {
-      requestId: 'lifecycle-route',
-      document: DOCUMENT,
+      document: DOCUMENT_WIRE,
       lifecycle: 'archived',
     },
   });
-  const result = requireRecord(lifecycle.result, 'lifecycle result');
+  const result = requireJsonWireObject(lifecycle.result, 'lifecycle result');
   assert.equal(result.lifecycle, 'archived');
   assert.equal(result.documentKey, harness.documentKey);
   assert.deepEqual(result.retention, { mode: 'retain', reason: 'existing' });
   assert.deepEqual(result.quota, { maxDocumentBytes: 100000 });
-  assert.deepEqual(result.projectionIds, ['existing-projection']);
+  assert.deepEqual(result.projectionIds, [
+    'existing-projection',
+    'equal-concurrent',
+    'strict-projection',
+  ]);
 }
 
 async function verifyEraseResponseAndAuditDelivery(
@@ -342,18 +588,20 @@ async function verifyEraseResponseAndAuditDelivery(
 ): Promise<void> {
   const erase = await postAndProcess({
     ...harness,
-    path: '/api/crdt/admin/documents/erase',
+    path: '/api/crdt/admin/documents/erase/requests/erase-route-request-id',
     body: {
-      requestId: 'erase-route',
-      document: DOCUMENT,
+      document: DOCUMENT_WIRE,
       mode: 'destroy-document',
       reason: 'privacy',
     },
   });
-  const result = requireRecord(erase.result, 'erase result');
-  assert.equal(requireRecord(result.request, 'erase request').mode, 'destroy-document');
-  assert.equal(requireRecord(result.auditEvent, 'erase audit event').kind, 'erase');
-  assert.equal(requireRecord(result.metadata, 'erase metadata').lifecycle, 'destroyed');
+  const result = requireJsonWireObject(erase.result, 'erase result');
+  assert.equal(
+    requireJsonWireObject(result.request, 'erase request').mode,
+    'destroy-document',
+  );
+  assert.equal(requireJsonWireObject(result.auditEvent, 'erase audit event').kind, 'erase');
+  assert.equal(requireJsonWireObject(result.metadata, 'erase metadata').lifecycle, 'destroyed');
   assert.equal(harness.audit.length, 0);
   assert.equal(await readAuditCount(harness.sql, "ri_status = 'NEW'"), 1);
   await waitForPGliteQueueRow(harness.sql, 'APP_OUTBOX', 'NEW');
@@ -398,15 +646,18 @@ Deno.test('actual CRDT admin Hono routes preserve 401 and 403 denials', async ()
     requireApiUserSession: () => Promise.reject(new Error('unused')),
   });
   const unauthorizedResponse = await unauthorized.request(
-    '/api/crdt/admin/documents/compact',
+    '/api/crdt/admin/documents/compact/requests/unauthorized-request',
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ document: DOCUMENT }),
+      body: JSON.stringify({ document: DOCUMENT_WIRE }),
     },
   );
   assert.equal(unauthorizedResponse.status, 401);
-  assert.equal((await readJsonRecord(unauthorizedResponse)).ok, false);
+  assert.equal(
+    (await readJsonRecord(unauthorizedResponse)).type,
+    'api-mutation-failure',
+  );
 
   const forbidden = new Hono();
   routes.registerCrdtAdminRoutes(forbidden, {
@@ -430,15 +681,18 @@ Deno.test('actual CRDT admin Hono routes preserve 401 and 403 denials', async ()
     authorizeAdmin: () => false,
   });
   const forbiddenResponse = await forbidden.request(
-    '/api/crdt/admin/documents/compact',
+    '/api/crdt/admin/documents/compact/requests/forbidden-request-id',
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ document: DOCUMENT }),
+      body: JSON.stringify({ document: DOCUMENT_WIRE }),
     },
   );
   assert.equal(forbiddenResponse.status, 403);
-  assert.equal((await readJsonRecord(forbiddenResponse)).ok, false);
+  assert.equal(
+    (await readJsonRecord(forbiddenResponse)).type,
+    'api-mutation-failure',
+  );
 });
 
 function createUnusedCrdtReadRepository(): RallarCrdtAdminReadRepository {
@@ -480,17 +734,50 @@ async function mutationCounts(
   };
 }
 
+async function readStrictAppInboxPersistence(
+  sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
+  requestId: string,
+): Promise<
+  Readonly<{
+    inboxCount: number;
+    inboxStatus: string | null;
+    resultCount: number;
+    resultStatus: string | null;
+  }>
+> {
+  const [persistence] = await sql<AppInboxPersistenceRow[]>`
+    select
+      (select count(*) from resource_inbox where ri_resource_id = ${requestId})
+        as inbox_count,
+      (select ri_status from resource_inbox where ri_resource_id = ${requestId} limit 1)
+        as inbox_status,
+      (select count(*) from resource_inbox_results where ris_resource_id = ${requestId})
+        as result_count,
+      (select ris_status from resource_inbox_results where ris_resource_id = ${requestId} limit 1)
+        as result_status
+  `;
+  if (!persistence) {
+    throw new Error('CRDT AppInbox persistence counts are missing');
+  }
+  return {
+    inboxCount: Number(persistence.inbox_count),
+    inboxStatus: persistence.inbox_status,
+    resultCount: Number(persistence.result_count),
+    resultStatus: persistence.result_status,
+  };
+}
+
 interface PostAndProcessInput {
   readonly app: Hono;
   readonly inbox: InboxQueueReader;
   readonly sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0];
   readonly path: string;
-  readonly body: unknown;
+  readonly body: JsonWireValue;
 }
 
 async function postAndProcess(
   input: PostAndProcessInput,
-): Promise<Record<string, unknown>> {
+): Promise<JsonWireObject> {
   const { app, inbox, sql, path, body } = input;
   const responsePending = app.request(path, {
     method: 'POST',
@@ -517,16 +804,53 @@ async function postAndProcessRaw(
   return { response, body: await readJsonRecord(response) };
 }
 
-async function readJsonRecord(response: Response): Promise<Record<string, unknown>> {
-  const value: unknown = await response.json();
-  return requireRecord(value, 'CRDT admin response');
+async function postJson(
+  app: Hono,
+  path: string,
+  body: JsonWireValue,
+): Promise<PostAndProcessRawResult> {
+  const response = await app.request(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return { response, body: await readJsonRecord(response) };
 }
 
-function requireRecord(value: unknown, label: string): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+async function readJsonRecord(response: Response): Promise<JsonWireObject> {
+  const value: unknown = await response.json();
+  return requireJsonWireObject(value, 'CRDT admin response');
+}
+
+function requireJsonWireObject(value: unknown, label: string): JsonWireObject {
+  if (!isJsonWireObject(value)) {
     throw new TypeError(`${label} must be an object`);
   }
-  return Object.fromEntries(Object.entries(value));
+  return value;
+}
+
+function isJsonWireObject(value: unknown): value is JsonWireObject {
+  return value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.values(value).every(isJsonWireValue);
+}
+
+function isJsonWireValue(value: unknown): value is JsonWireValue {
+  if (
+    value === null ||
+    typeof value === 'boolean' ||
+    typeof value === 'string'
+  ) {
+    return true;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value);
+  }
+  if (Array.isArray(value)) {
+    return value.every(isJsonWireValue);
+  }
+  return isJsonWireObject(value);
 }
 
 function update(now: number): RallarCrdtUpdateEnvelope {

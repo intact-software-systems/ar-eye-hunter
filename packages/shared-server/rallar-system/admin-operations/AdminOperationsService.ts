@@ -60,6 +60,11 @@ export interface AdminOperationsWriteInput<TRequest> {
   readonly adminSession: AuthSession;
   readonly request: TRequest;
 }
+export interface AdminOperationsMutationWriteInput<
+  TRequest,
+> extends AdminOperationsWriteInput<TRequest> {
+  readonly requestId: string;
+}
 export interface AdminOperationsStatsReader {
   readonly readQueues: (input: AdminOperationsReadInput) => Promise<AdminOperationsQueuesResponse>;
   readonly readState: (input: AdminOperationsReadInput) => Promise<AdminOperationsStateResponse>;
@@ -242,13 +247,13 @@ export class AdminOperationsService {
   }
 
   async recomputeTopology(
-    input: AdminOperationsWriteInput<AdminTopologyRecomputeRequest>,
+    input: AdminOperationsMutationWriteInput<AdminTopologyRecomputeRequest>,
   ): Promise<TopologyReconfigureInboxResult> {
     return await this.options.mutationGateway.recomputeTopology(input);
   }
 
   async pruneExpired(
-    input: AdminOperationsWriteInput<AdminPruneExpiredRequest>,
+    input: AdminOperationsMutationWriteInput<AdminPruneExpiredRequest>,
   ): Promise<AdminPruneEnqueueResult> {
     return await this.options.mutationGateway.pruneExpired(input);
   }
@@ -283,17 +288,21 @@ export class AdminOperationsService {
     });
   }
 
-  async compactCrdt(input: AdminOperationsWriteInput<unknown>): Promise<CrdtAdminCompactResult> {
+  async compactCrdt(
+    input: AdminOperationsMutationWriteInput<unknown>,
+  ): Promise<CrdtAdminCompactResult> {
     return await this.options.mutationGateway.compactCrdt(input);
   }
 
   async updateCrdtLifecycle(
-    input: AdminOperationsWriteInput<RallarCrdtLifecycleInput>,
+    input: AdminOperationsMutationWriteInput<RallarCrdtLifecycleInput>,
   ): Promise<RallarCrdtDocumentMetadata> {
     return await this.options.mutationGateway.updateCrdtLifecycle(input);
   }
 
-  async eraseCrdt(input: AdminOperationsWriteInput<unknown>): Promise<CrdtAdminEraseResult> {
+  async eraseCrdt(
+    input: AdminOperationsMutationWriteInput<unknown>,
+  ): Promise<CrdtAdminEraseResult> {
     return await this.options.mutationGateway.eraseCrdt(input);
   }
 

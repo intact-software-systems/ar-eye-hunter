@@ -34,6 +34,7 @@ import {
 import {
   toTopologyAppInboxCommand,
   toTopologyConfigMutationCommand,
+  toTopologyHttpMutationSemanticHash,
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import {
   TopologyAppInboxHandler,
@@ -47,6 +48,7 @@ import {
   waitForQueueEntry,
   type AuthorityHarness,
 } from './group-state/inbox/group-state-inbox-test-runtime.ts';
+import { authSession } from './group-state/group-state-test-runtime.ts';
 
 const GROUP_REF: GroupRef = {
   ...SCOPE,
@@ -108,6 +110,187 @@ describe('topology AppInbox transaction and idempotency', () => {
     ).rejects.toMatchObject({ code: 'app-inbox-idempotency-conflict' });
     await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
     await expect(first).resolves.toMatchObject({ right: expect.any(Object) });
+  });
+
+  it('validates equal concurrent HTTP config contenders and materializes one winner', async () => {
+    const harness = await createAuthorityHarness(['owner']);
+    await createRoom(harness, GROUP_REF.groupId, 'Topology room');
+    configureTopology(harness);
+    const readSession = vi.spyOn(harness.groupStateService, 'readIssuedAuthSession');
+    const firstMaterialize = vi.fn(async () => await topologyCommand('reserved-config-request', 4));
+    const renewed = authSession({
+      clientId: 'owner',
+      sessionId: 'owner-concurrent-session',
+      accessToken: 'owner-concurrent-token',
+      nowEpochMs: harness.nowEpochMs,
+    });
+    await harness.authSessions.putSession(renewed);
+    const secondMaterialize = vi.fn(
+      async () =>
+        await topologyCommand('reserved-config-request', 4, {
+          principalId: renewed.clientId,
+          sessionId: renewed.sessionId,
+          capturedAtEpochMs: 2_000,
+        }),
+    );
+    const first = harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+      await configReservation('owner', 'reserved-config-request', 4, firstMaterialize),
+      harness.sessions.owner,
+    );
+    const second = harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+      await configReservation('owner', 'reserved-config-request', 4, secondMaterialize),
+      renewed,
+    );
+    await waitForQueueEntry(harness.queue);
+    await vi.waitFor(() => {
+      expect(readSession).toHaveBeenCalledTimes(2);
+      expect(firstMaterialize.mock.calls.length + secondMaterialize.mock.calls.length).toBe(1);
+    });
+    await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    expect(secondResult).toEqual(firstResult);
+    expect(firstMaterialize.mock.calls.length + secondMaterialize.mock.calls.length).toBe(1);
+  });
+
+  it('replays strict HTTP graph config through renewed credentials', async () => {
+    const harness = await createAuthorityHarness(['owner']);
+    await createRoom(harness, GROUP_REF.groupId, 'Topology room');
+    configureTopology(harness);
+    const materialize = vi.fn(async () => await topologyCommand('renewed-config-request', 4));
+    const first = harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+      await configReservation('owner', 'renewed-config-request', 4, materialize),
+      harness.sessions.owner,
+    );
+    await waitForQueueEntry(harness.queue);
+    await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+    const firstResult = await first;
+
+    const renewed = authSession({
+      clientId: 'owner',
+      sessionId: 'owner-reserved-session',
+      accessToken: 'owner-reserved-token',
+      nowEpochMs: harness.nowEpochMs,
+    });
+    await harness.authSessions.putSession(renewed);
+    const replayMaterialize = vi.fn(
+      async () =>
+        await topologyCommand('renewed-config-request', 4, {
+          principalId: renewed.clientId,
+          sessionId: renewed.sessionId,
+          capturedAtEpochMs: 2_000,
+        }),
+    );
+    await expect(
+      harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+        await configReservation('owner', 'renewed-config-request', 4, replayMaterialize),
+        renewed,
+      ),
+    ).resolves.toEqual(firstResult);
+    expect(materialize).toHaveBeenCalledOnce();
+    expect(replayMaterialize).not.toHaveBeenCalled();
+  });
+
+  it('isolates graph topology queue identity by stable principal', async () => {
+    const harness = await createAuthorityHarness(['owner', 'other']);
+    await createRoom(harness, GROUP_REF.groupId, 'Topology room');
+    configureTopology(harness);
+    const owner = harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+      await configReservation(
+        'owner',
+        'shared-graph-request',
+        4,
+        async () => await topologyCommand('shared-graph-request', 4),
+      ),
+      harness.sessions.owner,
+    );
+    const other = harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+      await configReservation(
+        'other',
+        'shared-graph-request',
+        4,
+        async () =>
+          await topologyCommand('shared-graph-request', 4, {
+            principalId: 'other',
+            sessionId: 'other-session',
+            capturedAtEpochMs: 1_000,
+          }),
+      ),
+      harness.sessions.other,
+    );
+    await vi.waitFor(async () => {
+      const entries = (await harness.queueEntries()).filter(
+        (entry) => entry.key.resourceId === 'shared-graph-request',
+      );
+      expect(entries).toHaveLength(2);
+      expect(new Set(entries.map((entry) => entry.key.contextId)).size).toBe(2);
+    });
+    await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+    const settled = await Promise.allSettled([owner, other]);
+    expect(settled).not.toContainEqual(
+      expect.objectContaining({
+        reason: expect.objectContaining({ code: 'app-inbox-idempotency-conflict' }),
+      }),
+    );
+  });
+
+  it('materializes admin recompute facts once and isolates different principals', async () => {
+    const harness = await createAuthorityHarness(['owner', 'other']);
+    await createRoom(harness, GROUP_REF.groupId, 'Topology room');
+    configureTopology(harness);
+    const materialize = vi.fn(
+      async () => await reconfigureCommand('shared-admin-request', 'owner', 'owner-session', 1_000),
+    );
+    const first = harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+      await adminReconfigureReservation('owner', materialize),
+      harness.sessions.owner,
+    );
+    await waitForQueueEntry(harness.queue);
+    await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+    const firstResult = await first;
+
+    const renewed = authSession({
+      clientId: 'owner',
+      sessionId: 'owner-renewed-session',
+      accessToken: 'owner-renewed-token',
+      nowEpochMs: harness.nowEpochMs,
+    });
+    await harness.authSessions.putSession(renewed);
+    const replayMaterialize = vi.fn(
+      async () =>
+        await reconfigureCommand(
+          'shared-admin-request',
+          renewed.clientId,
+          renewed.sessionId,
+          2_000,
+        ),
+    );
+    await expect(
+      harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+        await adminReconfigureReservation('owner', replayMaterialize),
+        renewed,
+      ),
+    ).resolves.toEqual(firstResult);
+    expect(materialize).toHaveBeenCalledOnce();
+    expect(replayMaterialize).not.toHaveBeenCalled();
+
+    const otherMaterialize = vi.fn(
+      async () => await reconfigureCommand('shared-admin-request', 'other', 'other-session', 3_000),
+    );
+    const other = harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+      await adminReconfigureReservation('other', otherMaterialize),
+      harness.sessions.other,
+    );
+    await vi.waitFor(async () => {
+      const entries = (await harness.queueEntries()).filter(
+        (entry) => entry.key.resourceId === 'shared-admin-request',
+      );
+      expect(entries).toHaveLength(2);
+      expect(new Set(entries.map((entry) => entry.key.contextId)).size).toBe(2);
+    });
+    await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+    await Promise.allSettled([other]);
+    expect(otherMaterialize).toHaveBeenCalledOnce();
   });
 
   it('rolls back topology state when the RTC APP_OUTBOX write collides', async () => {
@@ -192,6 +375,8 @@ function topologyManagement(
     groupStateRepository: harness.repository,
     configRepository: repository,
     topologyService: new RallarRtcTopologyService(),
+    processRttReader: () => [],
+    adminPrincipalIds: new Set(['owner', 'other']),
     now: () => harness.nowEpochMs,
     serviceId: 'server-12345678',
   });
@@ -209,20 +394,89 @@ function topologyMutationOwners(
   };
 }
 
-async function topologyCommand(requestId: string, degreeLimit: number) {
+interface TopologyCommandFacts {
+  readonly principalId: string;
+  readonly sessionId: string;
+  readonly capturedAtEpochMs: number;
+}
+
+async function topologyCommand(
+  requestId: string,
+  degreeLimit: number,
+  facts: TopologyCommandFacts = {
+    principalId: 'owner',
+    sessionId: 'owner-session',
+    capturedAtEpochMs: 1_000,
+  },
+) {
   return await toTopologyAppInboxCommand({
     actor: {
-      principalId: 'owner',
-      sessionId: 'owner-session',
+      principalId: facts.principalId,
+      sessionId: facts.sessionId,
     },
     groupRef: GROUP_REF,
     requestId,
-    capturedAtEpochMs: 1_000,
+    capturedAtEpochMs: facts.capturedAtEpochMs,
     payload: {
       operation: 'putConfig',
       config: { topologyKind: 'tree', degreeLimit },
     },
   });
+}
+
+async function reconfigureCommand(
+  requestId: string,
+  principalId: string,
+  sessionId: string,
+  capturedAtEpochMs: number,
+) {
+  return await toTopologyAppInboxCommand({
+    actor: { principalId, sessionId },
+    groupRef: GROUP_REF,
+    requestId,
+    capturedAtEpochMs,
+    payload: { operation: 'reconfigureTopology', requestOptions: {}, publish: true },
+  });
+}
+
+async function adminReconfigureReservation(
+  callerId: string,
+  materialize: () => ReturnType<typeof reconfigureCommand>,
+) {
+  return {
+    operation: 'reconfigureTopology' as const,
+    requestId: 'shared-admin-request',
+    callerId,
+    groupRef: GROUP_REF,
+    semanticHash: await toTopologyHttpMutationSemanticHash({
+      principalId: callerId,
+      groupRef: GROUP_REF,
+      requestId: 'shared-admin-request',
+      payload: { operation: 'reconfigureTopology', requestOptions: {}, publish: true },
+    }),
+    materialize,
+  };
+}
+
+async function configReservation(
+  callerId: string,
+  requestId: string,
+  degreeLimit: number,
+  materialize: () => ReturnType<typeof topologyCommand>,
+) {
+  return {
+    operation: 'putConfig' as const,
+    requestId,
+    callerId,
+    groupRef: GROUP_REF,
+    semanticHash: await toTopologyHttpMutationSemanticHash({
+      principalId: callerId,
+      groupRef: GROUP_REF,
+      requestId,
+      payload: { operation: 'putConfig', config: { topologyKind: 'tree', degreeLimit } },
+    }),
+    materialize,
+  };
 }
 
 function topologyEnqueue(command: Awaited<ReturnType<typeof topologyCommand>>) {

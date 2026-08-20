@@ -10,10 +10,9 @@ import {
   AppInboxType,
   type GroupMemberUpsertAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import {
-  SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
-  SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
-} from '@shared-server/rallar-system/services/AppInboxService.ts';
+// prettier-ignore
+import { SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/services/\
+AppInboxService.ts';
 // prettier-ignore
 import {
   ClientMutationIdempotencyConflictError,
@@ -23,6 +22,7 @@ import type {
   JsonWireObject,
   JsonWireValue,
 } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
@@ -56,6 +56,99 @@ describe('AppInboxType', () => {
 });
 
 describe('AppInboxService', () => {
+  it('uses the configured legacy topic when an enqueue omits topicId', async () => {
+    const queue = new TestResourceInbox();
+    const results = new TestResourceInboxResults();
+    const service = new AppInboxService(
+      {
+        inboxQueueReader: new InboxQueueReader(queue),
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
+        database: createAppInboxTestDatabase(queue, results),
+      },
+      {
+        serviceId: 'server-12345678',
+        defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+      },
+    );
+
+    const entry = await service.enqueue({
+      type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+      resourceId: 'legacy-default-topic',
+      contextId: 'client-1',
+      data: { requestId: 'legacy-default-topic' },
+    });
+
+    expect(entry.key.topicId).toBe(SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC);
+  });
+
+  it('wakes only the strict reservation winner and never creates a legacy duplicate', async () => {
+    const queue = new TestResourceInbox();
+    const reader = new InboxQueueReader(queue);
+    const results = new TestResourceInboxResults();
+    const wakeOwningQueue = vi.fn();
+    const service = new MaterializedTestAppInboxService(
+      {
+        inboxQueueReader: reader,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
+        database: createAppInboxTestDatabase(queue, results),
+      },
+      {
+        serviceId: 'server-12345678',
+        wakeOwningQueue,
+        options: {
+          waitMaxElapsedMsecs: 5_000,
+          waitRetryIntervalMsecs: 1,
+          waitMaxRetryIntervalMsecs: 1,
+          waitJitterRatio: 0,
+        },
+      },
+    );
+    service.onStateMessage(AppInboxType.CRDT_SNAPSHOT_COMPACT, async (data) => data);
+    const requestId = `strict-request-${'r'.repeat(113)}`;
+    const contextId = `strict-context-${'c'.repeat(113)}`;
+    const materialize = vi.fn(async () => ({
+      type: AppInboxType.CRDT_SNAPSHOT_COMPACT,
+      topicId: AppInboxType.CRDT_SNAPSHOT_COMPACT,
+      resourceId: requestId,
+      contextId,
+      senderId: 'admin',
+      data: { status: 'winner' },
+    }));
+    const placeholder = {
+      type: AppInboxType.CRDT_SNAPSHOT_COMPACT,
+      topicId: AppInboxType.CRDT_SNAPSHOT_COMPACT,
+      resourceId: requestId,
+      contextId,
+      senderId: 'admin',
+      data: null,
+    } as const;
+
+    const winner = await service.beginMaterializedReservation({ placeholder, materialize });
+    const loser = await service.beginMaterializedReservation({ placeholder, materialize });
+
+    expect(winner.winner).toBe(true);
+    expect(loser.winner).toBe(false);
+    expect(materialize).toHaveBeenCalledOnce();
+    expect(wakeOwningQueue).toHaveBeenCalledOnce();
+    expect(await queue.getAllKeys()).toEqual([
+      {
+        topicId: AppInboxType.CRDT_SNAPSHOT_COMPACT,
+        resourceId: requestId,
+        contextId,
+      },
+    ]);
+
+    await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+
+    await expect(Promise.all([winner.result, loser.result])).resolves.toEqual([
+      Either.ofRight({ status: 'winner' }),
+      Either.ofRight({ status: 'winner' }),
+    ]);
+    expect(await queue.getAllKeys()).toHaveLength(1);
+  });
+
   it('decodes a completed persisted result exactly once at the AppInbox boundary', async () => {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
@@ -190,7 +283,7 @@ describe('AppInboxService', () => {
       },
       {
         serviceId: 'server-12345678',
-        defaultTopicId: SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
+        defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
         options: {
           waitMaxElapsedMsecs: 5_000,
           waitRetryIntervalMsecs: 1,
@@ -199,9 +292,9 @@ describe('AppInboxService', () => {
         },
       },
     );
-    service.onStateMessage(AppInboxType.GROUP_MEMBER_UPSERT, handler);
+    service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
     const sparse = {
-      type: AppInboxType.GROUP_MEMBER_UPSERT,
+      type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
       resourceId: 'sparse-member-upsert',
       contextId: 'ar-eye-hunter:default:group-1',
       senderId: 'alice',
@@ -640,10 +733,64 @@ describe('AppInboxService', () => {
   });
 });
 
+interface BeginMaterializedReservationInput {
+  readonly placeholder: AppInboxEnqueueInput<null>;
+  readonly materialize: () => Promise<AppInboxEnqueueInput<JsonWireValue>>;
+}
+
+interface MaterializedTestReservation {
+  readonly winner: boolean;
+  readonly result: Promise<Either<AppInboxFailure, JsonWireValue>>;
+}
+
+class MaterializedTestAppInboxService extends AppInboxService {
+  async beginMaterializedReservation(
+    input: BeginMaterializedReservationInput,
+  ): Promise<MaterializedTestReservation> {
+    const reservation = await this.reserveMaterializedEntry(input.placeholder, input.materialize);
+    return {
+      winner: reservation.winner,
+      result: this.waitForReservedEntryResult(
+        reservation.enqueue,
+        (value) => value,
+        reservation.winner,
+      ),
+    };
+  }
+}
+
 class TestResourceInbox extends InMemoryQueueBox {
+  private readonly materializations = new Map<string, Promise<ResourceEntry>>();
+
   async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
     const entry = await this.getItem(key);
     return entry !== undefined && statuses.includes(entry.status);
+  }
+
+  async writeMaterializedIfAbsentOrReplaceExpired(
+    placeholder: ResourceEntry,
+    materialize: () => Promise<ResourceEntry>,
+  ): Promise<ResourceEntry> {
+    const key = toKeyAsString(placeholder.key);
+    const active = this.materializations.get(key);
+    if (active) return await active;
+    const pending = this.materializeEntry(placeholder, materialize);
+    this.materializations.set(key, pending);
+    try {
+      return await pending;
+    } finally {
+      this.materializations.delete(key);
+    }
+  }
+
+  private async materializeEntry(
+    placeholder: ResourceEntry,
+    materialize: () => Promise<ResourceEntry>,
+  ): Promise<ResourceEntry> {
+    const existing = await this.getItem(placeholder.key);
+    if (existing !== undefined && !isExpiredResourceEntry(existing)) return existing;
+    const materialized = await materialize();
+    return await this.enqueueIfAbsent({ ...placeholder, resource: materialized.resource });
   }
 }
 

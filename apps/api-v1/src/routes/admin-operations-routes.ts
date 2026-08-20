@@ -1,10 +1,16 @@
 import { type Context, Hono } from 'jsr:@hono/hono@4.11.9';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { ApiMutationFailureJsonValue } from '@shared/api/mutation/api-mutation-failure.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+// deno-fmt-ignore
+import { decodeJsonWireValue } from '@shared-server/rallar-system/services/\
+mutation-command-identity.ts';
 import {
   type ApiAdminAuthDependencies,
   requireApiAdminSession as defaultRequireApiAdminSession,
 } from '../services/admin-auth-service.ts';
+import { toApiMutationFailureResponse } from './api-mutation-route-failure.ts';
+import { readApiMutationRouteRequestId } from './api-mutation-route-ingress.ts';
 
 export type AdminOperationReadInput = Readonly<{
   adminSession: AuthSession;
@@ -16,6 +22,12 @@ export type AdminOperationWriteInput<TRequest> = Readonly<{
   request: TRequest;
 }>;
 
+export interface AdminOperationMutationWriteInput<TRequest> {
+  readonly adminSession: AuthSession;
+  readonly requestId: string;
+  readonly request: TRequest;
+}
+
 export type AdminOperationsServiceLike = Readonly<{
   readOverview(input: AdminOperationReadInput): Promise<unknown>;
   readQueues(input: AdminOperationReadInput): Promise<unknown>;
@@ -24,13 +36,23 @@ export type AdminOperationsServiceLike = Readonly<{
   readCrdt(input: AdminOperationReadInput): Promise<unknown>;
   readSystem(input: AdminOperationReadInput): Promise<unknown>;
   resetMetrics(input: AdminOperationWriteInput<unknown>): Promise<unknown>;
-  recomputeTopology(input: AdminOperationWriteInput<unknown>): Promise<unknown>;
-  pruneExpired(input: AdminOperationWriteInput<unknown>): Promise<unknown>;
+  recomputeTopology(
+    input: AdminOperationMutationWriteInput<ApiMutationFailureJsonValue>,
+  ): Promise<unknown>;
+  pruneExpired(
+    input: AdminOperationMutationWriteInput<ApiMutationFailureJsonValue>,
+  ): Promise<unknown>;
   verifyCrdtIntegrity(input: AdminOperationWriteInput<unknown>): Promise<unknown>;
   exportCrdtDebug(input: AdminOperationWriteInput<unknown>): Promise<unknown>;
-  compactCrdt(input: AdminOperationWriteInput<unknown>): Promise<unknown>;
-  updateCrdtLifecycle(input: AdminOperationWriteInput<unknown>): Promise<unknown>;
-  eraseCrdt(input: AdminOperationWriteInput<unknown>): Promise<unknown>;
+  compactCrdt(
+    input: AdminOperationMutationWriteInput<ApiMutationFailureJsonValue>,
+  ): Promise<unknown>;
+  updateCrdtLifecycle(
+    input: AdminOperationMutationWriteInput<ApiMutationFailureJsonValue>,
+  ): Promise<unknown>;
+  eraseCrdt(
+    input: AdminOperationMutationWriteInput<ApiMutationFailureJsonValue>,
+  ): Promise<unknown>;
 }>;
 
 export type AdminOperationsRouteDependencies = Readonly<
@@ -111,22 +133,24 @@ export function init(
   );
 
   app.post(
-    '/api/admin/operations/topology/recompute',
+    '/api/admin/operations/topology/recompute/requests/:requestId',
     (c) =>
-      withAdminJson(
+      withAdminMutationJson(
         c,
         deps,
-        (adminSession, request) => deps.operations.recomputeTopology({ adminSession, request }),
+        (adminSession, requestId, request) =>
+          deps.operations.recomputeTopology({ adminSession, requestId, request }),
       ),
   );
 
   app.post(
-    '/api/admin/operations/maintenance/prune-expired',
+    '/api/admin/operations/maintenance/prune-expired/requests/:requestId',
     (c) =>
-      withAdminJson(
+      withAdminMutationJson(
         c,
         deps,
-        (adminSession, request) => deps.operations.pruneExpired({ adminSession, request }),
+        (adminSession, requestId, request) =>
+          deps.operations.pruneExpired({ adminSession, requestId, request }),
       ),
   );
 
@@ -151,32 +175,35 @@ export function init(
   );
 
   app.post(
-    '/api/admin/operations/crdt/compact',
+    '/api/admin/operations/crdt/compact/requests/:requestId',
     (c) =>
-      withAdminJson(
+      withAdminMutationJson(
         c,
         deps,
-        (adminSession, request) => deps.operations.compactCrdt({ adminSession, request }),
+        (adminSession, requestId, request) =>
+          deps.operations.compactCrdt({ adminSession, requestId, request }),
       ),
   );
 
   app.post(
-    '/api/admin/operations/crdt/lifecycle',
+    '/api/admin/operations/crdt/lifecycle/requests/:requestId',
     (c) =>
-      withAdminJson(
+      withAdminMutationJson(
         c,
         deps,
-        (adminSession, request) => deps.operations.updateCrdtLifecycle({ adminSession, request }),
+        (adminSession, requestId, request) =>
+          deps.operations.updateCrdtLifecycle({ adminSession, requestId, request }),
       ),
   );
 
   app.post(
-    '/api/admin/operations/crdt/erase',
+    '/api/admin/operations/crdt/erase/requests/:requestId',
     (c) =>
-      withAdminJson(
+      withAdminMutationJson(
         c,
         deps,
-        (adminSession, request) => deps.operations.eraseCrdt({ adminSession, request }),
+        (adminSession, requestId, request) =>
+          deps.operations.eraseCrdt({ adminSession, requestId, request }),
       ),
   );
 }
@@ -197,13 +224,39 @@ async function withAdmin(
 async function withAdminJson(
   c: Context,
   deps: AdminOperationsRouteDependencies,
-  execute: (session: AuthSession, request: unknown) => Promise<unknown>,
+  execute: (session: AuthSession, request: ApiMutationFailureJsonValue) => Promise<unknown>,
 ): Promise<Response> {
   return await withAdmin(
     c,
     deps,
     async (adminSession) => await execute(adminSession, await readOptionalJsonBody(c)),
   );
+}
+
+async function withAdminMutationJson<TResult>(
+  context: Context,
+  dependencies: AdminOperationsRouteDependencies,
+  execute: (
+    session: AuthSession,
+    requestId: string,
+    request: ApiMutationFailureJsonValue,
+  ) => Promise<TResult>,
+): Promise<Response> {
+  try {
+    const adminSession = await requireAdminSession(context, dependencies);
+    const request = await readOptionalJsonBody(context);
+    const requestId = readApiMutationRouteRequestId({
+      requestId: context.req.param('requestId'),
+      idempotencyKey: context.req.header('idempotency-key'),
+      mutationBody: request,
+    });
+    return context.json(await execute(adminSession, requestId, request));
+  } catch (error) {
+    return toApiMutationFailureResponse(
+      context,
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
 }
 
 async function requireAdminSession(
@@ -219,14 +272,14 @@ async function requireAdminSession(
   );
 }
 
-async function readOptionalJsonBody(c: Context): Promise<unknown> {
+async function readOptionalJsonBody(c: Context): Promise<ApiMutationFailureJsonValue> {
   const contentType = c.req.header('content-type') ?? '';
   if (!contentType.toLowerCase().includes('application/json')) {
     return {};
   }
 
   try {
-    return await c.req.json();
+    return decodeJsonWireValue(await c.req.json(), 'Admin operation request');
   } catch {
     const error = new Error('Malformed JSON request body') as Error & { status: number };
     error.status = 400;

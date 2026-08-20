@@ -4,7 +4,7 @@ import {
   type AdminPruneExpiredCategory,
   type AdminPruneExpiredRequest,
 } from '@shared/api/admin-operations-types.ts';
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
@@ -34,21 +34,11 @@ import {
   toAdminPruneCompletedResult,
 } from '../admin-prune-progress.ts';
 import type { AppInboxFailure } from '../../services/app-inbox-failure.ts';
-import {
-  readPersistedAppInboxFailure,
-  toUnavailableAppInboxFailure,
-} from '../../services/app-inbox-failure.ts';
-import {
-  AppInboxIdempotencyConflictError,
-  AppInboxService,
-  type AppInboxServiceOptions,
-} from '../../services/AppInboxService.ts';
+import { toUnavailableAppInboxFailure } from '../../services/app-inbox-failure.ts';
+import { AppInboxService, type AppInboxServiceOptions } from '../../services/AppInboxService.ts';
 // prettier-ignore
 import { type AppInboxMessageContext, AppInboxType } from '../../services/app-inbox-contracts.ts';
 // prettier-ignore
-import {
-  validatePersistedAppInboxCommandIdentity,
-} from '../../services/app-inbox-command-identity.ts';
 import {
   type RallarTimingSink,
   recordRallarTiming,
@@ -78,6 +68,7 @@ import {
 export type { AdminPruneEnqueueResult } from './admin-prune-inbox-codec.ts';
 export {
   ADMIN_APP_INBOX_TOPIC,
+  LEGACY_ADMIN_APP_INBOX_TOPIC,
   createAdminPruneIdempotencyIdentity,
 } from './admin-prune-inbox-identity.ts';
 export type {
@@ -139,7 +130,6 @@ export class AppAdminInboxService extends AppInboxService {
   private readonly dependencies: AppAdminInboxServiceDependencies;
   private readonly config: AppAdminInboxServiceConfig;
   private readonly aggregateWaitPolicy: TryWithPolicy;
-  private readonly resultWaitPolicy: TryWithPolicy;
 
   constructor(dependencies: AppAdminInboxServiceDependencies, config: AppAdminInboxServiceConfig) {
     super(
@@ -160,7 +150,6 @@ export class AppAdminInboxService extends AppInboxService {
     this.dependencies = dependencies;
     this.config = config;
     this.aggregateWaitPolicy = createWaitPolicy('app-inbox:admin-prune-aggregate', config.appInbox);
-    this.resultWaitPolicy = createWaitPolicy('app-inbox:admin-prune-result', config.appInbox);
     this.onStateMessage<AdminPruneCommand>(
       AppInboxType.ADMIN_PRUNE_EXPIRED,
       async (value, context) => await this.processCommand(value, context),
@@ -168,11 +157,15 @@ export class AppAdminInboxService extends AppInboxService {
   }
 
   async pruneExpired(
-    input: Readonly<{ adminSession: AuthSession; request: AdminPruneExpiredRequest }>,
+    input: Readonly<{
+      adminSession: AuthSession;
+      requestId: string;
+      request: AdminPruneExpiredRequest;
+    }>,
   ): Promise<Either<AppInboxFailure, AdminPruneEnqueueResult>> {
     const normalizedRequest = decodeAdminPruneRequest(input.request);
     const identity = await this.dependencies.createAdminPruneIdempotencyIdentity({
-      requestId: normalizedRequest.requestId,
+      requestId: input.requestId,
       requestedBy: input.adminSession.clientId,
       requestedSessionId: input.adminSession.sessionId,
       categories: normalizedRequest.categories,
@@ -184,56 +177,46 @@ export class AppAdminInboxService extends AppInboxService {
     });
 
     const key = toAdminPruneQueueKey(identity);
-    const durableCommand = await this.timeAdminPrunePhase(
-      'durable-command-read',
-      identity,
-      async () => await this.readDurableCommand(key),
-    );
-    if (durableCommand !== undefined) {
-      assertMatchingAdminPruneIdentity(identity, durableCommand);
-      return await this.readDurableCommandResult(durableCommand, key);
-    }
-
-    const capturedAtEpochMs = this.nowEpochMs();
-    const command = await createAdminPruneCommand({
-      jobId: identity.requestId,
-      requestedBy: identity.requestedBy,
-      requestedSessionId: identity.requestedSessionId,
-      capturedAtEpochMs,
-      expireAtEpochMs: this.dependencies.computeRetryExpiryAtEpochMs(capturedAtEpochMs),
-      dryRun: identity.dryRun,
-      categories: identity.categories,
-      appData: identity.appData,
-      pageSize: this.config.pageSize,
-    });
-
-    try {
-      const enqueued = await this.processEntryUntilCompletionResult<
-        AdminPruneCommand,
-        AdminPruneEnqueueResult
-      >(
-        {
+    const reservation = await this.reserveMaterializedEntry(
+      {
+        type: AppInboxType.ADMIN_PRUNE_EXPIRED,
+        topicId: key.topicId,
+        resourceId: key.resourceId,
+        contextId: key.contextId,
+        senderId: identity.requestedBy,
+        data: null,
+      },
+      async () => {
+        const capturedAtEpochMs = this.nowEpochMs();
+        const command = await createAdminPruneCommand({
+          jobId: identity.jobId,
+          requestedBy: identity.requestedBy,
+          requestedSessionId: identity.requestedSessionId,
+          capturedAtEpochMs,
+          expireAtEpochMs: this.dependencies.computeRetryExpiryAtEpochMs(capturedAtEpochMs),
+          dryRun: identity.dryRun,
+          categories: identity.categories,
+          appData: identity.appData,
+          pageSize: this.config.pageSize,
+        });
+        return {
           type: AppInboxType.ADMIN_PRUNE_EXPIRED,
-          topicId: ADMIN_APP_INBOX_TOPIC,
-          resourceId: command.jobId,
-          contextId: command.requestedBy,
+          topicId: key.topicId,
+          resourceId: key.resourceId,
+          contextId: key.contextId,
           senderId: command.requestedSessionId,
           data: command,
-        },
-        decodeAdminPruneEnqueueResult,
-      );
-      return await this.toCallerResult(command, enqueued);
-    } catch (error) {
-      if (!(error instanceof AppInboxIdempotencyConflictError)) {
-        throw error;
-      }
-      const winner = await this.readDurableCommand(key);
-      if (winner === undefined) {
-        throw error;
-      }
-      assertMatchingAdminPruneIdentity(identity, winner);
-      return await this.readDurableCommandResult(winner, key);
-    }
+        };
+      },
+    );
+    const command = decodeAdminPruneCommand(reservation.enqueue.data);
+    await assertAdminPruneStoredIdentity(key, reservation.enqueue, command);
+    assertMatchingAdminPruneIdentity(identity, command);
+    const enqueued = await this.waitForReservedEntryResult<
+      AdminPruneCommand,
+      AdminPruneEnqueueResult
+    >(reservation.enqueue, decodeAdminPruneEnqueueResult, reservation.winner);
+    return await this.toCallerResult(command, enqueued);
   }
 
   private async processCommand(
@@ -241,7 +224,7 @@ export class AppAdminInboxService extends AppInboxService {
     context: AppInboxMessageContext,
   ): Promise<AdminPruneEnqueueResult> {
     const command = decodeAdminPruneCommand(value);
-    assertAdminPruneQueueIdentity(command, context);
+    await assertAdminPruneQueueIdentity(command, context);
 
     const read = await this.timeAdminPrunePhase(
       'read',
@@ -375,63 +358,6 @@ export class AppAdminInboxService extends AppInboxService {
       });
     }
     return issues;
-  }
-
-  private async readDurableCommand(key: Key): Promise<AdminPruneCommand | undefined> {
-    const entry = await this.inbox.inbox.getItem(key);
-    if (entry === undefined) {
-      return undefined;
-    }
-    const validation = validatePersistedAppInboxCommandIdentity({
-      topicId: entry.key.topicId,
-      resource: entry.resource,
-    });
-    if (!validation.valid || validation.identity.operation !== AppInboxType.ADMIN_PRUNE_EXPIRED) {
-      throw new AppInboxIdempotencyConflictError(
-        key.resourceId,
-        'invalid-existing-command',
-        'invalid-received-command',
-      );
-    }
-    const command = decodeAdminPruneCommand(validation.command.data);
-    assertAdminPruneStoredIdentity(key, validation.command, command);
-    return command;
-  }
-
-  private async readDurableCommandResult(
-    command: AdminPruneCommand,
-    key: Key,
-  ): Promise<Either<AppInboxFailure, AdminPruneEnqueueResult>> {
-    try {
-      await tryWithPolicy(async () => {
-        if (
-          !(await this.resourceInbox.isEntryWithStatus(key, [
-            EntityStatus.COMPLETED,
-            EntityStatus.FAILED,
-          ]))
-        ) {
-          throw new Error('Admin prune AppInbox result is pending');
-        }
-      }, this.resultWaitPolicy);
-    } catch (error) {
-      if (error instanceof TryWithExhaustedError) {
-        return Either.ofLeft(toUnavailableAppInboxFailure());
-      }
-      throw error;
-    }
-
-    const resultEntry = await this.resourceInboxResults.findByKey(key);
-    if (resultEntry === undefined) {
-      return Either.ofLeft(toUnavailableAppInboxFailure());
-    }
-    if (resultEntry.status === EntityStatus.FAILED) {
-      return Either.ofLeft(readPersistedAppInboxFailure(resultEntry.resource));
-    }
-    if (resultEntry.status !== EntityStatus.COMPLETED) {
-      return Either.ofLeft(toUnavailableAppInboxFailure());
-    }
-    const result = decodeAdminPruneEnqueueResult(JSON.parse(resultEntry.resource));
-    return await this.toCallerResult(command, Either.ofRight(result));
   }
 
   private async toCallerResult(

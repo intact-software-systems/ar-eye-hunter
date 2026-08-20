@@ -24,7 +24,6 @@ export interface AdminPruneEnqueueResult {
 }
 
 export interface AdminPruneNormalizedRequest {
-  readonly requestId: string;
   readonly categories: readonly AdminPruneExpiredCategory[];
   readonly appData: AdminPruneAppData | null;
   readonly dryRun: boolean;
@@ -42,7 +41,6 @@ export function decodeAdminPruneRequest(
     throw new TypeError('appData.namespace is required for app-data pruning');
   }
   return {
-    requestId: readNonEmptyString(request.requestId) ?? crypto.randomUUID(),
     categories,
     appData,
     dryRun: request.dryRun === undefined ? true : requireBoolean(request.dryRun),

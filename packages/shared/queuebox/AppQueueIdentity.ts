@@ -3,6 +3,8 @@ import type { Key } from './ResourceEntry.ts';
 const RESOURCE_INBOX_TOPIC_ID_MAX_LENGTH = 36;
 const RESOURCE_INBOX_RESOURCE_ID_MAX_LENGTH = 36;
 const RESOURCE_INBOX_CONTEXT_ID_MAX_LENGTH = 35;
+const STRICT_APP_INBOX_RESOURCE_ID_MAX_LENGTH = 128;
+const STRICT_APP_INBOX_CONTEXT_ID_MAX_LENGTH = 128;
 const RESOURCE_INBOX_CREATED_BY_MAX_LENGTH = 16;
 
 export function toAppQueueKey(key: Key): Key {
@@ -15,6 +17,14 @@ export function toAppQueueKey(key: Key): Key {
 
 export function toAppQueueCreatedBy(value: string): string {
   return toQueueKeyPart(value, RESOURCE_INBOX_CREATED_BY_MAX_LENGTH);
+}
+
+export function toStrictAppInboxQueueKey(key: Key): Key {
+  return {
+    topicId: toQueueKeyPart(key.topicId, RESOURCE_INBOX_TOPIC_ID_MAX_LENGTH),
+    resourceId: toQueueKeyPart(key.resourceId, STRICT_APP_INBOX_RESOURCE_ID_MAX_LENGTH),
+    contextId: toQueueKeyPart(key.contextId, STRICT_APP_INBOX_CONTEXT_ID_MAX_LENGTH),
+  };
 }
 
 function toQueueKeyPart(value: string, maxLength: number): string {

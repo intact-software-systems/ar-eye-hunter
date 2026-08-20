@@ -5,23 +5,31 @@ import {
   RALLAR_CRDT_PROTOCOL_VERSION,
   type RallarCrdtAdminReadRepository,
   type RallarCrdtCatchUpResponseEnvelope,
-  type RallarCrdtDocumentLifecycleState,
   type RallarCrdtDocumentRef,
-  type RallarCrdtDocumentScope,
-  type RallarCrdtListDocumentsInput,
 } from '@shared/crdt/mod.ts';
 import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import {
-  decodeExactDocumentRef,
-} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
+  decodeJsonWireValue,
+  type JsonWireObject,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 
 import { toAuthErrorResponse, toAuthSession } from '../services/request-auth-service.ts';
+import { toApiMutationFailureResponse } from '../routes/api-mutation-route-failure.ts';
+import { readApiMutationRouteRequestId } from '../routes/api-mutation-route-ingress.ts';
 import type {
   CrdtAdminMutationOperation,
   CrdtAdminMutations,
 } from './create-crdt-admin-mutations.ts';
+import {
+  type CrdtCatchUpRouteRequest,
+  decodeCrdtAdminJsonObject,
+  decodeCrdtCatchUpRequest,
+  decodeCrdtDebugExportRequest,
+  decodeCrdtDocumentRequest,
+  decodeCrdtListDocumentsInput,
+} from './crdt-admin-route-request-codec.ts';
 
 export interface RallarCrdtAdminAuthorizationInput {
   readonly session: AuthSession;
@@ -54,36 +62,27 @@ export interface CrdtAdminRouteDependencies {
 }
 
 interface ProcessCrdtAdminMutationInput {
-  readonly context: Context;
+  readonly adminSession: AuthSession;
   readonly dependencies: CrdtAdminRouteDependencies;
   readonly operation: CrdtAdminMutationOperation;
-  readonly request: JsonObject;
+  readonly requestId: string;
+  readonly request: JsonWireObject;
 }
 
-type JsonScalar = boolean | null | number | string;
-type JsonValue = JsonScalar | JsonObject | JsonValue[];
-
-interface JsonObject {
-  readonly [key: string]: JsonValue;
+interface CrdtAdminMutationRoute {
+  readonly operation: CrdtAdminMutationOperation;
+  readonly path: string;
 }
 
-interface CrdtAdminDebugExportRequest {
-  readonly document: RallarCrdtDocumentRef;
-  readonly reason?: string;
-  readonly redactPayloads?: boolean;
-}
-
-interface CrdtCatchUpRouteRequest {
-  readonly protocolVersion?: number;
-  readonly requestId?: string;
-  readonly document: RallarCrdtDocumentRef;
-  readonly replicaId?: string;
-  readonly createdAtEpochMs?: number;
-  readonly afterSequence?: number;
-  readonly afterCursor?: string;
-  readonly maxUpdateCount?: number;
-  readonly includeSnapshot?: boolean;
-}
+const CRDT_ADMIN_MUTATION_ROUTES: readonly CrdtAdminMutationRoute[] = [
+  {
+    operation: 'rebuild-projection',
+    path: '/api/crdt/admin/documents/rebuild-projection',
+  },
+  { operation: 'compact', path: '/api/crdt/admin/documents/compact' },
+  { operation: 'lifecycle', path: '/api/crdt/admin/documents/lifecycle' },
+  { operation: 'erase', path: '/api/crdt/admin/documents/erase' },
+];
 
 export function registerCrdtAdminRoutes(
   app: Hono,
@@ -105,6 +104,10 @@ function registerCrdtAdminAuthorization(
     return;
   }
   app.use('/api/crdt/admin/*', async (context, next) => {
+    if (isCrdtAdminMutationPath(context.req.path)) {
+      await next();
+      return;
+    }
     try {
       await requireCrdtAdminSession(context, dependencies);
       await next();
@@ -171,45 +174,29 @@ function registerCrdtAdminMutationRoutes(
   app: Hono,
   dependencies: CrdtAdminRouteDependencies,
 ): void {
-  app.post(
-    '/api/crdt/admin/documents/rebuild-projection',
-    (context) =>
-      withAdminError(context, async () => {
-        return await processCrdtAdminMutation({
-          context,
-          dependencies,
-          operation: 'rebuild-projection',
-          request: await readJson(context),
+  for (const route of CRDT_ADMIN_MUTATION_ROUTES) {
+    app.post(`${route.path}/requests/:requestId`, async (context) => {
+      try {
+        const adminSession = await requireCrdtAdminSession(context, dependencies);
+        const request = await readMutationJson(context);
+        const requestId = readApiMutationRouteRequestId({
+          requestId: context.req.param('requestId'),
+          idempotencyKey: context.req.header('idempotency-key'),
+          mutationBody: request,
         });
-      }),
-  );
-  app.post('/api/crdt/admin/documents/compact', (context) =>
-    withAdminError(context, async () => {
-      return await processCrdtAdminMutation({
-        context,
-        dependencies,
-        operation: 'compact',
-        request: await readJson(context),
-      });
-    }));
-  app.post('/api/crdt/admin/documents/lifecycle', (context) =>
-    withAdminError(context, async () => {
-      return await processCrdtAdminMutation({
-        context,
-        dependencies,
-        operation: 'lifecycle',
-        request: await readJson(context),
-      });
-    }));
-  app.post('/api/crdt/admin/documents/erase', (context) =>
-    withAdminError(context, async () => {
-      return await processCrdtAdminMutation({
-        context,
-        dependencies,
-        operation: 'erase',
-        request: await readJson(context),
-      });
-    }));
+        const result = await processCrdtAdminMutation({
+          adminSession,
+          dependencies,
+          operation: route.operation,
+          requestId,
+          request,
+        });
+        return context.json({ ok: true, result });
+      } catch (error) {
+        return toApiMutationFailureResponse(context, toError(error));
+      }
+    });
+  }
 }
 
 async function exportCrdtDebugBundle(
@@ -229,12 +216,18 @@ async function exportCrdtDebugBundle(
 async function processCrdtAdminMutation(
   input: ProcessCrdtAdminMutationInput,
 ) {
-  const adminSession = await requireCrdtAdminSession(input.context, input.dependencies);
   return await input.dependencies.crdtAdminMutations.writeCrdtAdminMutation({
     operation: input.operation,
-    adminSession,
+    adminSession: input.adminSession,
+    requestId: input.requestId,
     request: input.request,
   });
+}
+
+function isCrdtAdminMutationPath(path: string): boolean {
+  return CRDT_ADMIN_MUTATION_ROUTES.some((route) =>
+    path === route.path || path.startsWith(`${route.path}/requests/`)
+  );
 }
 
 async function readCrdtCatchUpSession(
@@ -328,10 +321,10 @@ function readErrorStatus(error: unknown): 400 | 401 | 403 | 404 | 409 | 429 | 50
   }
 }
 
-async function readJson(context: Context): Promise<JsonObject> {
+async function readJson(context: Context): Promise<JsonWireObject> {
   try {
-    return requireRecord(
-      decodeJsonValue(await context.req.json()),
+    return decodeCrdtAdminJsonObject(
+      decodeJsonWireValue(await context.req.json(), 'JSON request body'),
       'JSON request body',
     );
   } catch {
@@ -339,104 +332,15 @@ async function readJson(context: Context): Promise<JsonObject> {
   }
 }
 
-function decodeCrdtDocumentRequest(input: JsonObject): RallarCrdtDocumentRef {
-  const request = requireRecord(input, 'CRDT admin request');
-  return decodeExactDocumentRef(
-    'document' in request ? request.document : request,
-    'CRDT admin request document',
+async function readMutationJson(context: Context): Promise<JsonWireObject> {
+  return decodeCrdtAdminJsonObject(
+    decodeJsonWireValue(await context.req.json(), 'CRDT admin mutation request'),
+    'CRDT admin mutation request',
   );
 }
 
-function decodeCrdtDebugExportRequest(input: JsonObject): CrdtAdminDebugExportRequest {
-  const request = requireRecord(input, 'CRDT debug export request');
-  requireExactKeys(
-    request,
-    ['document', 'reason', 'redactPayloads'],
-    'CRDT debug export request',
-  );
-  return {
-    document: decodeExactDocumentRef(request.document, 'CRDT debug export document'),
-    reason: readOptionalString(request.reason, 'CRDT debug export reason'),
-    redactPayloads: readOptionalBoolean(
-      request.redactPayloads,
-      'CRDT debug export redactPayloads',
-    ),
-  };
-}
-
-function decodeCrdtListDocumentsInput(input: JsonObject): RallarCrdtListDocumentsInput {
-  const request = requireRecord(input, 'CRDT document list request');
-  requireExactKeys(
-    request,
-    [
-      'applicationId',
-      'workspaceId',
-      'scope',
-      'documentType',
-      'lifecycle',
-      'limit',
-      'cursor',
-    ],
-    'CRDT document list request',
-  );
-  return {
-    applicationId: readOptionalString(request.applicationId, 'CRDT applicationId'),
-    workspaceId: readOptionalString(request.workspaceId, 'CRDT workspaceId'),
-    scope: readOptionalDocumentScope(request.scope),
-    documentType: readOptionalString(request.documentType, 'CRDT documentType'),
-    lifecycle: readOptionalDocumentLifecycle(request.lifecycle),
-    limit: readOptionalNonNegativeInteger(request.limit, 'CRDT list limit'),
-    cursor: readOptionalString(request.cursor, 'CRDT list cursor'),
-  };
-}
-
-function decodeCrdtCatchUpRequest(input: JsonObject): CrdtCatchUpRouteRequest {
-  const request = requireRecord(input, 'CRDT catch-up request');
-  requireExactKeys(
-    request,
-    [
-      'protocolVersion',
-      'requestId',
-      'document',
-      'replicaId',
-      'createdAtEpochMs',
-      'afterSequence',
-      'afterCursor',
-      'maxUpdateCount',
-      'includeSnapshot',
-    ],
-    'CRDT catch-up request',
-  );
-  const protocolVersion = readOptionalNonNegativeInteger(
-    request.protocolVersion,
-    'CRDT protocolVersion',
-  );
-  if (protocolVersion !== undefined && protocolVersion !== RALLAR_CRDT_PROTOCOL_VERSION) {
-    throw new TypeError('CRDT catch-up protocolVersion is unsupported');
-  }
-  return {
-    protocolVersion,
-    requestId: readOptionalString(request.requestId, 'CRDT catch-up requestId'),
-    document: decodeExactDocumentRef(request.document, 'CRDT catch-up document'),
-    replicaId: readOptionalString(request.replicaId, 'CRDT catch-up replicaId'),
-    createdAtEpochMs: readOptionalNonNegativeInteger(
-      request.createdAtEpochMs,
-      'CRDT catch-up createdAtEpochMs',
-    ),
-    afterSequence: readOptionalNonNegativeInteger(
-      request.afterSequence,
-      'CRDT catch-up afterSequence',
-    ),
-    afterCursor: readOptionalString(request.afterCursor, 'CRDT catch-up afterCursor'),
-    maxUpdateCount: readOptionalNonNegativeInteger(
-      request.maxUpdateCount,
-      'CRDT catch-up maxUpdateCount',
-    ),
-    includeSnapshot: readOptionalBoolean(
-      request.includeSnapshot,
-      'CRDT catch-up includeSnapshot',
-    ),
-  };
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 async function readCrdtCatchUpResponse(
@@ -460,106 +364,4 @@ async function readCrdtCatchUpResponse(
     snapshot,
     page,
   };
-}
-
-function decodeJsonValue(value: unknown): JsonValue {
-  if (
-    value === null ||
-    typeof value === 'boolean' ||
-    typeof value === 'number' ||
-    typeof value === 'string'
-  ) {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    return value.map(decodeJsonValue);
-  }
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [key, decodeJsonValue(entry)]),
-    );
-  }
-  throw new TypeError('JSON request body contains a non-JSON value');
-}
-
-function requireRecord(value: JsonValue, label: string): JsonObject {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new TypeError(`${label} must be an object`);
-  }
-  return value;
-}
-
-function requireExactKeys(
-  value: JsonObject,
-  allowedKeys: readonly string[],
-  label: string,
-): void {
-  const unexpectedKey = Object.keys(value).find((key) => !allowedKeys.includes(key));
-  if (unexpectedKey) {
-    throw new TypeError(`${label} contains unexpected field ${unexpectedKey}`);
-  }
-}
-
-function readOptionalString(value: JsonValue | undefined, label: string): string | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new TypeError(`${label} must be a non-empty string`);
-  }
-  return value;
-}
-
-function readOptionalBoolean(value: JsonValue | undefined, label: string): boolean | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (typeof value !== 'boolean') {
-    throw new TypeError(`${label} must be a boolean`);
-  }
-  return value;
-}
-
-function readOptionalNonNegativeInteger(
-  value: JsonValue | undefined,
-  label: string,
-): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (!Number.isInteger(value) || Number(value) < 0) {
-    throw new TypeError(`${label} must be a non-negative integer`);
-  }
-  return Number(value);
-}
-
-function readOptionalDocumentScope(
-  value: JsonValue | undefined,
-): RallarCrdtDocumentScope | undefined {
-  switch (value) {
-    case undefined:
-      return undefined;
-    case 'app':
-    case 'room':
-    case 'principal':
-    case 'custom':
-      return value;
-    default:
-      throw new TypeError('CRDT document scope is invalid');
-  }
-}
-
-function readOptionalDocumentLifecycle(
-  value: JsonValue | undefined,
-): RallarCrdtDocumentLifecycleState | undefined {
-  switch (value) {
-    case undefined:
-      return undefined;
-    case 'active':
-    case 'archived':
-    case 'destroyed':
-      return value;
-    default:
-      throw new TypeError('CRDT document lifecycle is invalid');
-  }
 }

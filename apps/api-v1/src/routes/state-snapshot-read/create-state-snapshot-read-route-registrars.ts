@@ -38,6 +38,7 @@ export interface ApiV1StateSnapshotRouteRuntime {
     ApiV1Runtime['appGroupInboxService'],
     | 'processAuthenticatedGroupEntryUntilCompletionResult'
     | 'processAuthenticatedTopologyEntryUntilCompletionResult'
+    | 'processAuthenticatedHttpTopologyEntryUntilCompletionResult'
   >;
   readonly clientStateService: Pick<
     ApiV1Runtime['clientStateService'],

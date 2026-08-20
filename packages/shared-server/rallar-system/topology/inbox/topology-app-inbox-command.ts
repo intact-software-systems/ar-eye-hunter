@@ -62,9 +62,61 @@ export async function toTopologyAppInboxCommand(
   } as TopologyAppInboxCommand;
 }
 
+export async function toTopologyHttpMutationSemanticHash(
+  input: Readonly<{
+    principalId: string;
+    groupRef: TopologyAppInboxCommand['groupRef'];
+    requestId: string;
+    payload: TopologyAppInboxRequestPayload;
+  }>,
+): Promise<string> {
+  return await hashTopologyHttpMutationSemantic({
+    ...input,
+    payload: toCanonicalTopologyAppInboxPayload(input.payload),
+  });
+}
+
+export async function toPersistedTopologyHttpMutationSemanticHash(
+  command: TopologyAppInboxCommand,
+): Promise<string> {
+  return await hashTopologyHttpMutationSemantic({
+    principalId: command.actor.principalId,
+    groupRef: command.groupRef,
+    requestId: command.requestId,
+    payload: command.payload,
+  });
+}
+
+async function hashTopologyHttpMutationSemantic(
+  input: Readonly<{
+    principalId: string;
+    groupRef: TopologyAppInboxCommand['groupRef'];
+    requestId: string;
+    payload: TopologyAppInboxPayload;
+  }>,
+): Promise<string> {
+  return await hashCanonicalCommand({
+    operation: input.payload.operation,
+    requestId: input.requestId,
+    callerId: input.principalId,
+    groupRef: input.groupRef,
+    payload: input.payload,
+  });
+}
+
 export async function readAuthenticatedTopologyCommand<V>(
   enqueue: AppInboxEnqueueInput<V>,
   authority: IssuedAuthSession,
+): Promise<TopologyAppInboxCommand> {
+  return await readTopologyCommandForValidatedSession(enqueue, {
+    principalId: authority.clientId,
+    sessionId: authority.sessionId,
+  });
+}
+
+export async function readTopologyCommandForValidatedSession<V>(
+  enqueue: AppInboxEnqueueInput<V>,
+  expectedActor: Readonly<{ principalId: string; sessionId: string }>,
 ): Promise<TopologyAppInboxCommand> {
   const command = enqueue.data as TopologyAppInboxCommand;
   if (
@@ -79,9 +131,9 @@ export async function readAuthenticatedTopologyCommand<V>(
     typeof command.operation !== 'string' ||
     !isTopologyAppInboxPayload(command.payload) ||
     command.payload.operation !== command.operation ||
-    command.actor.principalId !== authority.clientId ||
-    command.actor.sessionId !== authority.sessionId ||
-    topologyInboxTypeForOperation(command.operation) !== enqueue.type
+    command.actor.principalId !== expectedActor.principalId ||
+    command.actor.sessionId !== expectedActor.sessionId ||
+    toTopologyAppInboxType(command.operation) !== enqueue.type
   ) {
     throw new GroupMutationAuthorizationError(
       'Topology AppInbox command does not match authenticated authority.',
@@ -98,6 +150,20 @@ export async function readAuthenticatedTopologyCommand<V>(
     throw new GroupMutationAuthorizationError('Topology AppInbox command hash is invalid.');
   }
   return command;
+}
+
+export function toTopologyHttpMutationContextId(
+  groupRef: TopologyAppInboxCommand['groupRef'],
+  callerId: string,
+): string {
+  return [
+    ['application', groupRef.applicationId],
+    ['workspace', groupRef.workspaceId],
+    ['group', groupRef.groupId],
+    ['caller', callerId],
+  ]
+    .map(([name, value]) => `${name}=${encodeURIComponent(value)}`)
+    .join(':');
 }
 
 export function readDurableTopologyAppInboxCommand(value: unknown): TopologyAppInboxCommand {
@@ -270,7 +336,7 @@ function toCanonicalTopologyAppInboxPayload(
   }
 }
 
-function topologyInboxTypeForOperation(
+export function toTopologyAppInboxType(
   operation: TopologyAppInboxCommand['operation'],
 ): AppInboxType {
   switch (operation) {

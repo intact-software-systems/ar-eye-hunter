@@ -13,6 +13,7 @@ import {
   isTopologyRecord,
   readAuthenticatedTopologyCommand,
   readDurableTopologyAppInboxCommand,
+  readTopologyCommandForValidatedSession,
   requireExactTopologyKeys,
 } from './topology-app-inbox-command.ts';
 import type {
@@ -33,17 +34,43 @@ export interface VerifyTopologyAppInboxAuthorityInput {
   readonly nowEpochMs: () => number;
 }
 
+export interface ValidateCurrentTopologySessionInput {
+  readonly principalId: string;
+  readonly claimedAuthority: IssuedAuthSession;
+  readonly groupStateService: Pick<GroupStateService, 'readIssuedAuthSession'>;
+  readonly nowEpochMs: () => number;
+}
+
 export async function createAuthenticatedTopologyEnqueue<V>(
   input: CreateAuthenticatedTopologyEnqueueInput<V>,
 ): Promise<AppInboxEnqueueInput<V>> {
   const command = await readAuthenticatedTopologyCommand(input.enqueue, input.claimedAuthority);
-  const currentSession = await readCurrentTopologySession({
-    command,
+  const currentSession = await validateCurrentTopologySession({
+    principalId: command.actor.principalId,
     claimedAuthority: input.claimedAuthority,
     groupStateService: input.groupStateService,
     nowEpochMs: input.nowEpochMs,
   });
-  const proof = await createTopologyMutationAuthorityProof(currentSession, command.commandHash);
+  return await createAuthenticatedTopologyEnqueueFromValidatedSession({
+    enqueue: input.enqueue,
+    currentSession,
+  });
+}
+
+export async function createAuthenticatedTopologyEnqueueFromValidatedSession<V>(
+  input: Readonly<{
+    enqueue: AppInboxEnqueueInput<V>;
+    currentSession: PersistedAuthSession;
+  }>,
+): Promise<AppInboxEnqueueInput<V>> {
+  const command = await readTopologyCommandForValidatedSession(input.enqueue, {
+    principalId: input.currentSession.clientId,
+    sessionId: input.currentSession.sessionId,
+  });
+  const proof = await createTopologyMutationAuthorityProof(
+    input.currentSession,
+    command.commandHash,
+  );
   const authority: TopologyAppInboxAuthority =
     command.operation === 'reconfigureTopology'
       ? { kind: 'topology-reconfigure', proof, command }
@@ -137,23 +164,15 @@ export function constantTimeTopologyProofEqual(left: string, right: string): boo
   return difference === 0;
 }
 
-interface ReadCurrentTopologySessionInput {
-  readonly command: TopologyAppInboxCommand;
-  readonly claimedAuthority: IssuedAuthSession;
-  readonly groupStateService: Pick<GroupStateService, 'readIssuedAuthSession'>;
-  readonly nowEpochMs: () => number;
-}
-
-async function readCurrentTopologySession(
-  input: ReadCurrentTopologySessionInput,
+export async function validateCurrentTopologySession(
+  input: ValidateCurrentTopologySessionInput,
 ): Promise<PersistedAuthSession> {
   const session = await input.groupStateService.readIssuedAuthSession(
-    input.command.actor.sessionId,
+    input.claimedAuthority.sessionId,
   );
   if (
     !session ||
-    session.clientId !== input.command.actor.principalId ||
-    session.sessionId !== input.command.actor.sessionId ||
+    session.clientId !== input.principalId ||
     session.clientId !== input.claimedAuthority.clientId ||
     session.sessionId !== input.claimedAuthority.sessionId ||
     session.issuedAtEpochMs !== input.claimedAuthority.issuedAtEpochMs ||

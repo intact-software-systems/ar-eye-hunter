@@ -13,6 +13,7 @@ import {
 import { Either } from '@shared/resilience/Either.ts';
 import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
   type RallarTimingDetails,
@@ -20,7 +21,11 @@ import {
   recordRallarTiming,
   timeRallarAsync,
 } from './timing.ts';
-import { toAppInboxQueueCreatedBy, toAppInboxQueueKey } from './app-inbox-queue-key.ts';
+import {
+  toAppInboxQueueCreatedBy,
+  toAppInboxQueueKey,
+  toStrictAppInboxQueueKey,
+} from './app-inbox-queue-key.ts';
 import {
   type AppInboxEnqueueInput,
   AppInboxIdempotencyConflictError,
@@ -121,6 +126,18 @@ export namespace AppInboxService {
     readonly options?: AppInboxServiceOptions;
     readonly wakeOwningQueue?: () => void;
   }
+}
+
+interface MaterializedAppInboxRepository {
+  writeMaterializedIfAbsentOrReplaceExpired(
+    placeholder: ResourceEntry,
+    materialize: () => Promise<ResourceEntry>,
+  ): Promise<ResourceEntry>;
+}
+
+interface MaterializedAppInboxReservation<V> {
+  readonly enqueue: AppInboxEnqueueInput<V>;
+  readonly winner: boolean;
 }
 
 export class AppInboxService {
@@ -225,6 +242,51 @@ export class AppInboxService {
     if (result.action !== 'updated') {
       throw new AppInboxReservationConflictError(context.entry.key);
     }
+  }
+
+  protected async reserveMaterializedEntry<V>(
+    placeholder: AppInboxEnqueueInput<null>,
+    materialize: () => Promise<AppInboxEnqueueInput<V>>,
+  ): Promise<MaterializedAppInboxReservation<V>> {
+    if (!isMaterializedAppInboxRepository(this.resourceInbox)) {
+      throw new Error('App inbox repository does not support atomic fact materialization');
+    }
+    let winner = false;
+    const entry = await this.resourceInbox.writeMaterializedIfAbsentOrReplaceExpired(
+      toAppInboxResourceEntry(placeholder, `${this.serviceId}:fact-reservation`),
+      async () => {
+        winner = true;
+        return toAppInboxResourceEntry(await materialize(), this.serviceId);
+      },
+    );
+    const validation = validateAppInboxCommandIdentity(entry);
+    if (!validation.valid) {
+      throw new AppInboxIdempotencyConflictError(
+        entry.key.resourceId,
+        'invalid-existing-command',
+        'invalid-received-command',
+      );
+    }
+    return {
+      enqueue: validation.command as AppInboxEnqueueInput<V>,
+      winner,
+    };
+  }
+
+  protected async waitForReservedEntryResult<V, R>(
+    enqueue: AppInboxEnqueueInput<V>,
+    decodeResult: AppInboxResultDecoder<R>,
+    wakeOwningQueue: boolean,
+  ): Promise<Either<AppInboxFailure, R>> {
+    if (wakeOwningQueue) this.wakeOwningQueue?.();
+    return await this.processEntryUntilCompletionInternal(
+      enqueue,
+      true,
+      false,
+      () => Promise.resolve(undefined),
+      decodeResult,
+      true,
+    );
   }
 
   public processEntryNoWaiting<V>(enqueue: AppInboxEnqueueInput<V>): void {
@@ -392,9 +454,10 @@ export class AppInboxService {
       wireEnqueue: AppInboxEnqueueInput<V>,
     ) => Promise<ResourceEntry | undefined>,
     decodeResult: AppInboxResultDecoder<R>,
+    strictQueueIdentity = false,
   ): Promise<Either<AppInboxFailure, R>> {
     const wireEnqueue = toJsonWireAppInboxEnqueue(enqueue);
-    const key: Key = this.toKey(wireEnqueue);
+    const key: Key = this.toKey(wireEnqueue, strictQueueIdentity);
     const receivedCommandIdentity = enforceCommandIdentity
       ? serializeCanonicalJsonWire(toLogicalAppInboxCommand(wireEnqueue))
       : undefined;
@@ -754,17 +817,61 @@ export class AppInboxService {
     return this.optionsInput.timingNowEpochMs?.() ?? Date.now();
   }
 
-  private toKey<V>(enqueue: AppInboxEnqueueInput<V>): Key {
-    return toAppInboxQueueKey({
-      topicId: enqueue.topicId ?? this.defaultTopicId,
-      resourceId: enqueue.resourceId ?? crypto.randomUUID().toString(),
-      contextId: enqueue.contextId ?? enqueue.senderId ?? 'rallar-server',
-    });
+  private toKey<V>(enqueue: AppInboxEnqueueInput<V>, strictQueueIdentity = false): Key {
+    return toPhysicalAppInboxQueueKey(enqueue, this.defaultTopicId, strictQueueIdentity);
   }
 }
 
 function toNonNegativeFiniteNumber(value: number | undefined, fallback: number): number {
   return value === undefined || !Number.isFinite(value) || value < 0 ? fallback : value;
+}
+
+function isMaterializedAppInboxRepository(
+  repository: AppInboxService.InboxRepository,
+): repository is AppInboxService.InboxRepository & MaterializedAppInboxRepository {
+  return (
+    'writeMaterializedIfAbsentOrReplaceExpired' in repository &&
+    typeof Reflect.get(repository, 'writeMaterializedIfAbsentOrReplaceExpired') === 'function'
+  );
+}
+
+function toAppInboxResourceEntry<V>(
+  enqueue: AppInboxEnqueueInput<V>,
+  serviceId: string,
+): ResourceEntry {
+  const wire = toJsonWireAppInboxEnqueue(enqueue);
+  const key = toPhysicalAppInboxQueueKey(
+    {
+      ...wire,
+      topicId: wire.topicId ?? '',
+      resourceId: wire.resourceId ?? '',
+      contextId: wire.contextId ?? '',
+    },
+    '',
+    true,
+  );
+  return QueueBoxUtilities.toResourceEntryFromMsg(
+    newALUntargetedMessage(
+      toAppInboxQueueCreatedBy(serviceId),
+      newALRoute(key.topicId, key.contextId, key.resourceId),
+      wire.type,
+      wire,
+    ),
+    'APP_INBOX',
+  );
+}
+
+function toPhysicalAppInboxQueueKey<V>(
+  enqueue: AppInboxEnqueueInput<V>,
+  defaultTopicId = '',
+  strictQueueIdentity = false,
+): Key {
+  const key = {
+    topicId: enqueue.topicId ?? defaultTopicId,
+    resourceId: enqueue.resourceId ?? crypto.randomUUID().toString(),
+    contextId: enqueue.contextId ?? enqueue.senderId ?? 'rallar-server',
+  };
+  return strictQueueIdentity ? toStrictAppInboxQueueKey(key) : toAppInboxQueueKey(key);
 }
 
 function decodeJsonWireResult(value: JsonWireValue): JsonWireValue {
