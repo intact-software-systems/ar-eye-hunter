@@ -12,7 +12,10 @@ import {
     getWeaponStats,
 } from './game/simulation.ts';
 import { GAME_ROOM_NAME, type ArenaMatchState } from './game/types.ts';
-import { useRallarArena, type ArenaConnection } from './game/useRallarArena.ts';
+import {
+    useRallarArena,
+    type ArenaConnection,
+} from './game/arena-runtime/use-rallar-arena.ts';
 
 type AuthMode = 'login' | 'register';
 

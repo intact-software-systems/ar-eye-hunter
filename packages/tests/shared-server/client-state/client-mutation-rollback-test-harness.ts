@@ -1,6 +1,7 @@
 import { expect } from 'vitest';
 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 // prettier-ignore
 import type {
@@ -10,6 +11,10 @@ import type {
 import {
   AppClientInboxService,
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+// prettier-ignore
+import {
+  toAuthenticatedClientMutationContextId,
+} from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 // prettier-ignore
 import {
   ClientStateRepository,
@@ -44,11 +49,16 @@ export async function createRollbackHarness() {
   const runtimeRepository = new FakeRuntimeStateRepository();
   const eventStore = new InMemoryClientStateEventStore();
   const repository = new ClientStateRepository(runtimeRepository, { events: eventStore });
-  const key = {
-    topicId: 'app-inbox.client-state',
+  const key = toAppQueueKey({
+    topicId: AppInboxType.CLIENT_SESSION_CONNECT,
     resourceId: 'connect-client-rollback',
-    contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
-  };
+    contextId: toAuthenticatedClientMutationContextId({
+      scope: SCOPE,
+      principalId: 'alice',
+      callerClientId: 'alice',
+      callerSessionId: 'alice-session',
+    }),
+  });
   let failOutbox = true;
   let rollbackAssertions = 0;
   const rollbackContext: {

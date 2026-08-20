@@ -17,8 +17,12 @@ import {
   isGroupStateRouteSnapshotReadable,
 } from './group-state-route-authorization.ts';
 import { toGroupStateErrorResponse } from './group-state-route-errors.ts';
-import { readGroupSnapshotPointQuery } from '../routes/state-snapshot-read-query.ts';
-import { writeGroupSnapshotHeaders } from '../routes/state-snapshot-read-response.ts';
+import {
+  readGroupSnapshotPointQuery,
+} from '../routes/state-snapshot-read/state-snapshot-read-query.ts';
+import {
+  writeGroupSnapshotHeaders,
+} from '../routes/state-snapshot-read/state-snapshot-read-response.ts';
 
 const GROUPS_PATH = '/api/state/apps/:applicationId/workspaces/:workspaceId/groups';
 const GROUP_PATH = `${GROUPS_PATH}/:groupId`;

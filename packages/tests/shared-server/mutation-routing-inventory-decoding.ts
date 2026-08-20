@@ -17,6 +17,8 @@ const PATHS = {
   gc: 'apps/api-v1/src/group-state/to-group-state-command.ts',
   t: 'apps/api-v1/src/routes/graph-topology-routes.ts',
   a: 'apps/api-v1/src/routes/config-route.ts',
+  ac: 'apps/api-v1/src/routes/auth/register-auth-credential-mutation-routes.ts',
+  au: 'apps/api-v1/src/routes/auth/register-auth-user-mutation-routes.ts',
   w: 'apps/api-v1/src/routes/ws-routes.ts',
   ad: 'apps/api-v1/src/routes/admin-operations-routes.ts',
   cr: 'apps/api-v1/src/crdt/register-crdt-admin-routes.ts',

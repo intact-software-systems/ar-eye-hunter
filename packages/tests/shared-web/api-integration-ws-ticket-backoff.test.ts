@@ -7,7 +7,12 @@ import {
     createWebSocketTicket,
     readWebSocketTicketBackoffState,
     resetWebSocketTicketBackoff,
-} from '@shared-web/browser/api-integration.ts';
+} from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
+
+const SERVER_UNAVAILABLE_ERROR = new RegExp(
+    'API POST /api/auth/ws-ticket/requests/[A-Za-z0-9_-]+ ' +
+        'failed: 503 server unavailable',
+);
 
 describe('createWebSocketTicket backoff', () => {
     beforeEach(() => {
@@ -48,7 +53,7 @@ describe('createWebSocketTicket backoff', () => {
         vi.stubGlobal('fetch', fetchMock);
 
         await expect(createWebSocketTicket({ authSession: null })).rejects.toThrow(
-            'API POST /api/auth/ws-ticket failed: 429 too many',
+            /API POST \/api\/auth\/ws-ticket\/requests\/[A-Za-z0-9_-]+ failed: 429 too many/,
         );
 
         expect(readWebSocketTicketBackoffState()).toMatchObject({
@@ -64,14 +69,17 @@ describe('createWebSocketTicket backoff', () => {
 
         await vi.advanceTimersByTimeAsync(4_001);
         fetchMock.mockResolvedValueOnce(
-            new Response(JSON.stringify({
-                ticket: 'ticket-1',
-                sessionId: 'session-1',
-                expiresAtEpochMs: 10_000,
-            }), {
-                status: 200,
-                headers: { 'content-type': 'application/json' },
-            }),
+            new Response(
+                JSON.stringify({
+                    ticket: 'ticket-1',
+                    sessionId: 'session-1',
+                    expiresAtEpochMs: 10_000,
+                }),
+                {
+                    status: 200,
+                    headers: { 'content-type': 'application/json' },
+                },
+            ),
         );
 
         await expect(createWebSocketTicket({ authSession: null })).resolves.toMatchObject({
@@ -87,14 +95,17 @@ describe('createWebSocketTicket backoff', () => {
     it('locally suppresses ticket storms before hitting the API', async () => {
         configureWebSocketTicketLocalRateLimit({ windowMs: 60_000, maxRequests: 1 });
         const fetchMock = vi.fn(async () =>
-            new Response(JSON.stringify({
-                ticket: 'ticket-1',
-                sessionId: 'session-1',
-                expiresAtEpochMs: 10_000,
-            }), {
-                status: 200,
-                headers: { 'content-type': 'application/json' },
-            })
+            new Response(
+                JSON.stringify({
+                    ticket: 'ticket-1',
+                    sessionId: 'session-1',
+                    expiresAtEpochMs: 10_000,
+                }),
+                {
+                    status: 200,
+                    headers: { 'content-type': 'application/json' },
+                },
+            )
         );
         vi.stubGlobal('fetch', fetchMock);
 
@@ -136,13 +147,11 @@ describe('createWebSocketTicket backoff', () => {
             halfOpenTimeoutMs: 10_000,
             slidingWindowMs: 60_000,
         });
-        const fetchMock = vi.fn(async () =>
-            new Response('server unavailable', { status: 503 })
-        );
+        const fetchMock = vi.fn(async () => new Response('server unavailable', { status: 503 }));
         vi.stubGlobal('fetch', fetchMock);
 
         await expect(createWebSocketTicket({ authSession: null })).rejects.toThrow(
-            'API POST /api/auth/ws-ticket failed: 503 server unavailable',
+            SERVER_UNAVAILABLE_ERROR,
         );
 
         await expect(createWebSocketTicket({ authSession: null })).rejects.toThrow(
@@ -171,19 +180,22 @@ describe('createWebSocketTicket backoff', () => {
         vi.stubGlobal('fetch', fetchMock);
 
         await expect(createWebSocketTicket({ authSession: null })).rejects.toThrow(
-            'API POST /api/auth/ws-ticket failed: 429 too many',
+            /API POST \/api\/auth\/ws-ticket\/requests\/[A-Za-z0-9_-]+ failed: 429 too many/,
         );
 
         await vi.advanceTimersByTimeAsync(1_001);
         fetchMock.mockResolvedValueOnce(
-            new Response(JSON.stringify({
-                ticket: 'ticket-2',
-                sessionId: 'session-2',
-                expiresAtEpochMs: 10_000,
-            }), {
-                status: 200,
-                headers: { 'content-type': 'application/json' },
-            }),
+            new Response(
+                JSON.stringify({
+                    ticket: 'ticket-2',
+                    sessionId: 'session-2',
+                    expiresAtEpochMs: 10_000,
+                }),
+                {
+                    status: 200,
+                    headers: { 'content-type': 'application/json' },
+                },
+            ),
         );
 
         await expect(createWebSocketTicket({ authSession: null })).resolves.toMatchObject({
@@ -204,13 +216,11 @@ describe('createWebSocketTicket backoff', () => {
             halfOpenTimeoutMs: 10_000,
             slidingWindowMs: 60_000,
         });
-        const fetchMock = vi.fn(async () =>
-            new Response('server unavailable', { status: 503 })
-        );
+        const fetchMock = vi.fn(async () => new Response('server unavailable', { status: 503 }));
         vi.stubGlobal('fetch', fetchMock);
 
         await expect(createWebSocketTicket({ authSession: null })).rejects.toThrow(
-            'API POST /api/auth/ws-ticket failed: 503 server unavailable',
+            SERVER_UNAVAILABLE_ERROR,
         );
 
         await expect(createWebSocketTicket({ authSession: null })).rejects.toThrow(

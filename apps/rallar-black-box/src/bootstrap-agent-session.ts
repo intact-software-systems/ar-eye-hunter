@@ -1,16 +1,20 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { consumeAgentSessionTicketAt } from '@shared-web/browser/api-integration.ts';
+import {
+    consumeAgentSessionTicketAt,
+} from '@shared-web/browser/auth/agent-session-ticket-http-api.ts';
 
 const BOOTSTRAP_FRAGMENT_SECRET_FIELDS = [
     'agentSessionTicket',
     'controlToken',
 ] as const;
 
-let pendingAgentSessionTicketConsume: Readonly<{
-    ticket: string;
-    apiBaseUrl: string;
-    promise: Promise<AuthSession>;
-}> | undefined;
+let pendingAgentSessionTicketConsume:
+    | Readonly<{
+        ticket: string;
+        apiBaseUrl: string;
+        promise: Promise<AuthSession>;
+    }>
+    | undefined;
 
 export function scrubBrowserAgentBootstrapSecretsFromUrl(): void {
     if (typeof window === 'undefined') return;

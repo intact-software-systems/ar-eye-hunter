@@ -6,10 +6,7 @@ import {
     createActiveGroupPresenceSessionFixture,
     createGroupSnapshotFixture,
 } from './authoritative-group-fixtures.ts';
-import {
-    newALRoute,
-    newALUnicastMessage,
-} from '@shared/al-contracts/al-contract.ts';
+import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import type { QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import type {
@@ -19,6 +16,7 @@ import type {
     RtcRawMessageCallback,
 } from '@shared/webrtc/QRtcDataChannel.ts';
 import type * as ApiIntegrationModule from '@shared-web/browser/api-integration.ts';
+import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
 import type * as ApiWorkflowsModule from '@shared-web/browser/api-workflows.ts';
 import type * as AppContextModule from '@shared-web/browser/app-context.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
@@ -74,9 +72,7 @@ const mocks = await vi.hoisted(async () => {
         hydrateStateCaches: vi.fn<typeof DataCachesModule.hydrateStateCaches>(
             () => Promise.resolve(),
         ),
-        initMiddleware: vi.fn<typeof AppContextModule.initMiddleware>(() =>
-            Promise.resolve(ctx)
-        ),
+        initMiddleware: vi.fn<typeof AppContextModule.initMiddleware>(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn<typeof AppContextModule.isMiddlewareReady>(
             () => false,
         ),
@@ -98,10 +94,8 @@ const mocks = await vi.hoisted(async () => {
         listStateGroupEvents: vi.fn<
             typeof ApiIntegrationModule.listStateGroupEvents
         >(() => Promise.reject(new Error('group events not mocked'))),
-        loginToApi: vi.fn<typeof ApiIntegrationModule.loginToApi>(() =>
-            Promise.resolve(session)
-        ),
-        logoutFromApi: vi.fn<typeof ApiIntegrationModule.logoutFromApi>(() =>
+        loginToApi: vi.fn<typeof AuthApiModule.loginToApi>(() => Promise.resolve(session)),
+        logoutFromApi: vi.fn<typeof AuthApiModule.logoutFromApi>(() =>
             Promise.resolve({ loggedOut: true })
         ),
         onStateCacheChange: vi.fn<typeof DataCachesModule.onStateCacheChange>(
@@ -111,7 +105,7 @@ const mocks = await vi.hoisted(async () => {
         refreshStateSnapshots: vi.fn<
             typeof ApiWorkflowsModule.refreshStateSnapshots
         >(() => Promise.resolve({ clients: [], groups: [] })),
-        registerWithApi: vi.fn<typeof ApiIntegrationModule.registerWithApi>(
+        registerWithApi: vi.fn<typeof AuthApiModule.registerWithApi>(
             () =>
                 Promise.resolve({
                     clientId: 'client-new',
@@ -157,6 +151,12 @@ vi.mock(
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
         listStateGroupEvents: mocks.listStateGroupEvents,
+    }),
+);
+
+vi.mock(
+    import('@shared-web/browser/auth/session-http-api.ts'),
+    (): Partial<typeof AuthApiModule> => ({
         loginToApi: mocks.loginToApi,
         logoutFromApi: mocks.logoutFromApi,
         registerWithApi: mocks.registerWithApi,
@@ -195,8 +195,7 @@ vi.mock(
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<typeof ClientStateSnapshotsRepositoryModule> => ({
-        findClientStateSnapshotByPrincipalId:
-            mocks.findClientStateSnapshotByPrincipalId,
+        findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
         getAllClientStateSnapshots: mocks.getAllClientStateSnapshots,
     }),
 );
@@ -320,7 +319,7 @@ describe('Rallar realtime send and listen compatibility', () => {
     it('sends realtime JSON over the requested peer lane', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const sendResult: RtcDataChannelSendResult = {
             status: 'sent',
             bufferedAmount: 0,
@@ -376,7 +375,7 @@ describe('Rallar realtime send and listen compatibility', () => {
     it('does not send realtime JSON before the requested lane opens', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const realtimeChannel = createRtcDataChannelTestDouble({
             sendJson: vi.fn(),
         });
@@ -422,7 +421,7 @@ describe('Rallar realtime send and listen compatibility', () => {
     it('sends realtime binary over the requested peer lane', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const bytes = new Uint8Array([1, 2, 3]);
         const sendResult: RtcDataChannelSendResult = {
             status: 'sent',
@@ -468,7 +467,7 @@ describe('Rallar realtime send and listen compatibility', () => {
     it('returns a closed realtime send result when the peer has no requested lane', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValueOnce({
             status: 'no-lane',
             peerId: 'peer-1',
@@ -508,7 +507,7 @@ describe('Rallar realtime send and listen compatibility', () => {
     it('registers realtime JSON listeners on connected peers', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const rawCallbacks = new Map<string, RtcRawMessageCallback>();
         const realtimeChannel: QRtcDataChannel = createRtcDataChannelTestDouble({
             onRawMessageDo: vi.fn((id, callback) => {
@@ -562,7 +561,7 @@ describe('Rallar realtime send and listen compatibility', () => {
     it('registers realtime binary listeners and normalizes typed arrays to ArrayBuffer', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const rawCallbacks = new Map<string, RtcRawMessageCallback>();
         const realtimeChannel: QRtcDataChannel = createRtcDataChannelTestDouble({
             onRawMessageDo: vi.fn((id, callback) => {
@@ -603,7 +602,7 @@ describe('Rallar realtime send and listen compatibility', () => {
     it('exposes realtime lane health for active peers', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const health: RtcDataChannelHealth = {
             peerId: 'peer-1',
             label: 'rtc-realtime',
@@ -660,14 +659,12 @@ describe('Rallar realtime send and listen compatibility', () => {
     });
 });
 
-
 function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
     return webSocketQueueBox
         .onAnyInboxMessageDo.mock.calls
         .filter(([callbackId]) => callbackId === 'rallar:ws:any-message')
         .at(-1)?.[1];
 }
-
 // QRtcDataChannel and QRtcPeerDto wrap live RTCDataChannel/RTCPeerConnection state that a unit test
 // cannot construct, so these builders assert the completeness of the double while leaving the shape
 // of every supplied member checked against the production signature.
@@ -902,11 +899,7 @@ function createMediaStream(
         id,
         active: tracks.some((track) => track.readyState !== 'ended'),
         getTracks: vi.fn(() => [...tracks]),
-        getAudioTracks: vi.fn(() =>
-            tracks.filter((track) => track.kind === 'audio')
-        ),
-        getVideoTracks: vi.fn(() =>
-            tracks.filter((track) => track.kind === 'video')
-        ),
+        getAudioTracks: vi.fn(() => tracks.filter((track) => track.kind === 'audio')),
+        getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video')),
     } as unknown as MediaStream;
 }

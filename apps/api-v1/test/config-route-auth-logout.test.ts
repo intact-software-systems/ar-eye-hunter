@@ -11,6 +11,7 @@ const SESSION = {
   issuedAtEpochMs: 1_000,
   expiresAtEpochMs: 61_000,
 } as const;
+const REQUEST_ID = 'LogoutMutationRequest_012345';
 
 Deno.test('logout routes the session mutation through AppAuthInbox', async () => {
   const calls: unknown[] = [];
@@ -32,11 +33,14 @@ Deno.test('logout routes the session mutation through AppAuthInbox', async () =>
     adminClientIds: new Set(),
   });
 
-  const response = await app.request('/api/auth/logout', { method: 'POST' });
+  const response = await app.request(`/api/auth/logout/requests/${REQUEST_ID}`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { loggedOut: true });
   assert.deepEqual(calls, [{
-    requestId: 'logout-request-1',
+    requestId: REQUEST_ID,
     capturedAtEpochMs: 2_000,
     session: SESSION,
   }]);
@@ -52,8 +56,18 @@ Deno.test('logout returns the durable AppInbox failure status', async () => {
     appAuthInbox: ({
       logoutSession: () =>
         Promise.resolve(Either.ofLeft({
+          type: 'app-inbox-failure',
+          version: 'canonical.v2',
+          code: 'auth-logout-authority-differs',
           message: 'Auth logout authority differs',
           status: 403,
+          issues: null,
+          denial: {
+            code: 'auth-logout-authority-differs',
+            message: 'Auth logout authority differs',
+            details: null,
+          },
+          retry: null,
         })),
     }) as never,
     authUserRepository: {} as never,
@@ -62,9 +76,23 @@ Deno.test('logout returns the durable AppInbox failure status', async () => {
     adminClientIds: new Set(),
   });
 
-  const response = await app.request('/api/auth/logout', { method: 'POST' });
+  const response = await app.request(`/api/auth/logout/requests/${REQUEST_ID}`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), {
-    error: 'Auth logout authority differs',
+    type: 'api-mutation-failure',
+    version: 'canonical.v1',
+    code: 'auth-logout-authority-differs',
+    status: 403,
+    message: 'Auth logout authority differs',
+    issues: null,
+    denial: {
+      code: 'auth-logout-authority-differs',
+      message: 'Auth logout authority differs',
+      details: null,
+    },
+    retry: null,
   });
 });

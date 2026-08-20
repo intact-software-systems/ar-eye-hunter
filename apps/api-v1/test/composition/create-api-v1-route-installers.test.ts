@@ -77,6 +77,7 @@ function createInput(): CreateApiV1RouteInstallersInput<
         registerUser: rejectUnusedOperation,
         issueSession: rejectUnusedOperation,
         logoutSession: rejectUnusedOperation,
+        replayLogoutSessionWithCredentialProof: rejectUnusedOperation,
         issueWebSocketTicket: rejectUnusedOperation,
         issueAgentSessionTickets: rejectUnusedOperation,
         consumeAgentSessionTicket: rejectUnusedOperation,

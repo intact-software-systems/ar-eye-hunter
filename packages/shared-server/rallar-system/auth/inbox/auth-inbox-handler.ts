@@ -7,11 +7,7 @@ import { decodeAuthMutationCommand } from '../mutation/decode-auth-mutation-comm
 import { captureAuthMutationFacts } from '../mutation/read/capture-auth-mutation-facts.ts';
 import type { AppInboxMessageContext } from '../../services/app-inbox-contracts.ts';
 import { toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
-import {
-  AUTH_STATE_APP_INBOX_TOPIC,
-  toAuthAppInboxType,
-  toAuthCommandContextId,
-} from './auth-app-inbox-routing.ts';
+import { toAuthAppInboxType, toAuthCommandContextId } from './auth-app-inbox-routing.ts';
 
 export interface AuthInboxHandlerDependencies {
   readonly mutationService: AuthMutationService;
@@ -32,12 +28,13 @@ export class AuthInboxHandler {
   ): Promise<AuthMutationResult> {
     const command = decodeAuthMutationCommand(commandCandidate);
     const expectedKey = toAppQueueKey({
-      topicId: AUTH_STATE_APP_INBOX_TOPIC,
+      topicId: toAuthAppInboxType(command),
       resourceId: command.requestId,
       contextId: toAuthCommandContextId(command),
     });
     if (
       toAuthAppInboxType(command) !== context.enqueue.type ||
+      expectedKey.topicId !== context.entry.key.topicId ||
       expectedKey.resourceId !== context.entry.key.resourceId ||
       expectedKey.contextId !== context.entry.key.contextId
     ) {

@@ -145,6 +145,8 @@ function mutationBoundaryFiles(): readonly string[] {
     .map((name) => path.join('apps/api-v1/src/routes', name));
   return [
     ...routeFiles,
+    'apps/api-v1/src/routes/auth/register-auth-credential-mutation-routes.ts',
+    'apps/api-v1/src/routes/auth/register-auth-user-mutation-routes.ts',
     'apps/api-v1/src/services/create-api-admin-mutation-gateway.ts',
     'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts',
     'packages/shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts',

@@ -83,7 +83,7 @@ describe('browser heartbeat', () => {
             if (
                 method === 'POST' &&
                 url.includes('/clients/principal-1/') &&
-                url.endsWith('/sessions/session-1/heartbeat')
+                url.includes('/sessions/session-1/heartbeat/requests/')
             ) {
                 return jsonResponse(clientSnapshot('principal-1'));
             }
@@ -116,10 +116,16 @@ describe('browser heartbeat', () => {
         handle.stop();
         await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
 
-        expect(fetchCalls.map((call) => call.url)).toEqual([
-            '/api/state/apps/ar-eye-hunter/workspaces/default/clients/principal-1/instances/principal-1/sessions/session-1/heartbeat',
+        const clientHeartbeatRequestPath = [
+            '/api/state/apps/ar-eye-hunter/workspaces/default',
+            '/clients/principal-1/instances/principal-1',
+            '/sessions/session-1/heartbeat/requests/',
+        ].join('');
+        expect(fetchCalls[0]?.url.startsWith(clientHeartbeatRequestPath)).toBe(true);
+        expect(fetchCalls[0]?.url.slice(clientHeartbeatRequestPath.length)).toMatch(/^[^/]+$/);
+        expect(fetchCalls[1]?.url).toBe(
             '/api/state/apps/ar-eye-hunter/workspaces/default/groups/stale-room/sessions/session-1/heartbeat',
-        ]);
+        );
         expect(handle.generationId).toBeTruthy();
         expect(fetchCalls[0]?.body).toMatchObject({
             generationId: handle.generationId,
@@ -179,7 +185,7 @@ describe('browser heartbeat', () => {
             if (
                 method === 'POST' &&
                 url.includes('/clients/principal-1/') &&
-                url.endsWith('/sessions/session-1/heartbeat')
+                url.includes('/sessions/session-1/heartbeat/requests/')
             ) {
                 return textResponse('Unauthorized', 401);
             }
@@ -213,7 +219,7 @@ describe('browser heartbeat', () => {
             if (
                 method === 'POST' &&
                 url.includes('/clients/principal-1/') &&
-                url.endsWith('/sessions/session-1/heartbeat')
+                url.includes('/sessions/session-1/heartbeat/requests/')
             ) {
                 return jsonResponse(clientSnapshot('principal-1'));
             }

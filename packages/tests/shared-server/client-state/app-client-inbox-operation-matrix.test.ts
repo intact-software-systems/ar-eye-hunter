@@ -22,6 +22,7 @@ import {
   AppInboxService,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
@@ -137,7 +138,11 @@ describe('AppClientInbox mutation processing', () => {
         },
       });
 
-      expect(result.left).toBe('Client principal update failed');
+      expect(result.left).toMatchObject({
+        code: 'app-inbox-non-retryable',
+        status: 400,
+        message: 'Client principal update failed',
+      });
     },
   );
 });
@@ -281,11 +286,11 @@ function disconnectSession(harness: MutationProcessingHarness) {
 }
 
 interface MutationProcessingResults {
-  readonly principal: Either<string, ClientStateWritten>;
-  readonly instance: Either<string, ClientStateWritten>;
-  readonly connected: Either<string, ClientStateWritten>;
-  readonly heartbeat: Either<string, ClientStateWritten>;
-  readonly disconnected: Either<string, ClientStateWritten>;
+  readonly principal: Either<AppInboxFailure, ClientStateWritten>;
+  readonly instance: Either<AppInboxFailure, ClientStateWritten>;
+  readonly connected: Either<AppInboxFailure, ClientStateWritten>;
+  readonly heartbeat: Either<AppInboxFailure, ClientStateWritten>;
+  readonly disconnected: Either<AppInboxFailure, ClientStateWritten>;
 }
 
 function expectMutationProcessingResults(

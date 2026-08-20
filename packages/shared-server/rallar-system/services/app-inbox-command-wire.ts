@@ -3,9 +3,11 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { readCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import { validateRtcRttMeasurement } from '../rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
 import { hashCanonicalCommand } from './canonical-command-hash.ts';
+import { decodeAuthMutationCommand } from '../auth/mutation/decode-auth-mutation-command.ts';
+import { toAuthAppInboxType } from '../auth/inbox/auth-app-inbox-routing.ts';
 import {
-  serializeCanonicalMutationCommand,
   type JsonWireValue,
+  serializeCanonicalMutationCommand,
 } from './mutation-command-identity.ts';
 import {
   type AppInboxEnqueueInput,
@@ -57,6 +59,14 @@ export function toLogicalAppInboxCommand(enqueue: AppInboxEnqueueInput<unknown>)
   authority: unknown;
   data: unknown;
 }> {
+  const stableAuth = toStableAuthCommand(enqueue.type, enqueue.data as JsonWireValue);
+  if (stableAuth) {
+    return {
+      type: enqueue.type,
+      authority: null,
+      data: stableAuth,
+    };
+  }
   const stable = toStableTopologyCommand(enqueue.type, enqueue.data);
   if (stable) {
     return {
@@ -70,6 +80,105 @@ export function toLogicalAppInboxCommand(enqueue: AppInboxEnqueueInput<unknown>)
     authority: enqueue.authority ?? null,
     data: enqueue.data,
   };
+}
+
+function toStableAuthCommand(
+  type: AppInboxType,
+  value: JsonWireValue,
+): JsonWireValue | undefined {
+  if (!type.startsWith('AUTH_')) {
+    return undefined;
+  }
+  try {
+    const command = decodeAuthMutationCommand(
+      JSON.parse(JSON.stringify(value)) as JsonWireValue,
+    );
+    if (toAuthAppInboxType(command) !== type) {
+      return undefined;
+    }
+    switch (command.kind) {
+      case 'register-user':
+        return {
+          kind: command.kind,
+          requestId: command.requestId,
+          user: {
+            clientId: command.user.clientId,
+            username: command.user.username,
+            normalizedUsername: command.user.normalizedUsername,
+            displayName: command.user.displayName,
+            passwordHash: command.user.passwordHash,
+            passwordSalt: command.user.passwordSalt,
+            passwordAlgorithm: command.user.passwordAlgorithm,
+            passwordIterations: command.user.passwordIterations,
+            roles: command.user.roles,
+            status: command.user.status,
+          },
+        };
+      case 'issue-session':
+        return {
+          kind: command.kind,
+          requestId: command.requestId,
+          authority: command.authority,
+          session: {
+            clientId: command.session.clientId,
+            username: command.session.username,
+            sessionId: command.session.sessionId,
+            accessTokenDigest: command.session.accessTokenDigest,
+            ttlMs: command.session.expiresAtEpochMs - command.session.issuedAtEpochMs,
+          },
+        };
+      case 'logout-session':
+        return {
+          kind: command.kind,
+          requestId: command.requestId,
+          expected: command.expected,
+        };
+      case 'issue-ws-ticket':
+        return {
+          kind: command.kind,
+          requestId: command.requestId,
+          ticketRecord: {
+            ticketDigest: command.ticketRecord.ticketDigest,
+            accessTokenDigest: command.ticketRecord.accessTokenDigest,
+            sessionId: command.ticketRecord.sessionId,
+            clientId: command.ticketRecord.clientId,
+            ttlMs: command.ticketRecord.expiresAtEpochMs -
+              command.ticketRecord.issuedAtEpochMs,
+          },
+        };
+      case 'consume-ws-ticket':
+        return {
+          kind: command.kind,
+          requestId: command.requestId,
+          ticketDigest: command.ticketDigest,
+          expectedSessionId: command.expectedSessionId,
+        };
+      case 'issue-agent-tickets':
+        return {
+          kind: command.kind,
+          requestId: command.requestId,
+          authority: command.authority,
+          tickets: command.tickets.map((ticket) => ({
+            agentId: ticket.agentId,
+            sessionId: ticket.sessionId,
+            accessTokenDigest: ticket.accessTokenDigest,
+            ticketDigest: ticket.ticketDigest,
+            clientId: ticket.clientId,
+            username: ticket.username,
+            sessionTtlMs: ticket.sessionExpiresAtEpochMs - ticket.issuedAtEpochMs,
+            ticketTtlMs: ticket.ticketExpiresAtEpochMs - ticket.issuedAtEpochMs,
+          })),
+        };
+      case 'consume-agent-ticket':
+        return {
+          kind: command.kind,
+          requestId: command.requestId,
+          ticketDigest: command.ticketDigest,
+        };
+    }
+  } catch {
+    return undefined;
+  }
 }
 
 function toStableTopologyCommand(type: AppInboxType, value: unknown): unknown | undefined {
@@ -214,7 +323,9 @@ function requireRecord(value: unknown): Record<string, unknown> {
 }
 
 function requireExactKeys(record: Record<string, unknown>, expected: readonly string[]): void {
-  if (JSON.stringify(Object.keys(record).toSorted()) !== JSON.stringify([...expected].toSorted())) {
+  if (
+    JSON.stringify(Object.keys(record).toSorted()) !== JSON.stringify([...expected].toSorted())
+  ) {
     throw new TypeError('Unexpected durable command fields');
   }
 }

@@ -12,8 +12,8 @@ import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import {
     QRtcPeerDto,
     type RtcDataChannelLaneConfig,
-    type WebRtcInboundPeerCreationDecision,
     WebRtcConnectionService,
+    type WebRtcInboundPeerCreationDecision,
 } from '@shared/services/WebRtcConnectionService.ts';
 import {
     DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
@@ -26,9 +26,7 @@ import { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMu
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
-import {
-    resolveBootstrapDegree,
-} from '@shared/rtc/bootstrap-peer-selection.ts';
+import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
 import {
     resolveRtcGroupFormationMode,
     type RtcGroupFormationMode,
@@ -39,7 +37,12 @@ import { pairKey } from '@shared/repository/rtt-repository.ts';
 
 import { readSession } from '@shared/api/auth.ts';
 
-import { createWebSocketTicket, defaultStateScope, readApiConfig, readIceCandidates, } from '@shared-web/browser/api-integration.ts';
+import {
+    defaultStateScope,
+    readApiConfig,
+    readIceCandidates,
+} from '@shared-web/browser/api-integration.ts';
+import { createWebSocketTicket } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
 import { refreshStateSnapshots } from '@shared-web/browser/api-workflows.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import { initGroupStateResyncOnReopen } from '@shared-web/browser/state-read/group-state-resync-on-reopen.ts';
@@ -140,12 +143,10 @@ export function toBrowserRttHeartbeatMessage(
 export function toBrowserRtcInboundPeerCreationDecision(
     isPeerOwnedByAnyGroup: boolean,
 ): WebRtcInboundPeerCreationDecision {
-    return isPeerOwnedByAnyGroup
-        ? { decision: 'allow' }
-        : {
-            decision: 'tentative',
-            reason: 'group-state-eventually-consistent',
-        };
+    return isPeerOwnedByAnyGroup ? { decision: 'allow' } : {
+        decision: 'tentative',
+        reason: 'group-state-eventually-consistent',
+    };
 }
 
 export async function initialiseMiddleware(
@@ -242,8 +243,8 @@ export async function initialiseMiddleware(
         {
             onHeartbeat: (rtt: RttMeasurementInfo): Promise<void> => {
                 void webSocketQueueBox.enqueueOutboxIfAbsent(
-                        toBrowserRttHeartbeatMessage(clientData.sessionId, rtt),
-                    )
+                    toBrowserRttHeartbeatMessage(clientData.sessionId, rtt),
+                )
                     .then((result) => {
                         if (result.status === 'enqueued' || result.status === 'duplicate') {
                             qboxEngine.wake();

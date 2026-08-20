@@ -8,22 +8,18 @@ import {
     type QRtcPeerDto,
 } from '@shared/services/WebRtcConnectionService.ts';
 import type { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
-import type {
-    QRtcDataChannel,
-    RtcDataChannelHealth,
-} from '@shared/webrtc/QRtcDataChannel.ts';
+import type { QRtcDataChannel, RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
 
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
+type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
-type ClientStateSnapshotsRepositoryModule = typeof import(
-    '@shared/repository/client-state-snapshots-repository.ts'
-);
-type GroupStateSnapshotsRepositoryModule = typeof import(
-    '@shared/repository/group-state-snapshots-repository.ts'
-);
+type ClientStateSnapshotsRepositoryModule =
+    typeof import('@shared/repository/client-state-snapshots-repository.ts');
+type GroupStateSnapshotsRepositoryModule =
+    typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
 const CLIENT_REPOSITORY_MISSING_MESSAGE =
     'Repository not found: shared.repository.client-state-snapshots';
@@ -50,12 +46,8 @@ const mocks = await vi.hoisted(async () => {
         webSocketClient: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
         clearSession: vi.fn<AuthModule['clearSession']>(),
         clearMiddleware: vi.fn<AppContextModule['clearMiddleware']>(),
-        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() =>
-            Promise.resolve()
-        ),
-        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() =>
-            Promise.resolve(ctx)
-        ),
+        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
+        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn<AppContextModule['isMiddlewareReady']>(() => false),
         createAndJoinStateGroup: vi.fn<ApiWorkflowsModule['createAndJoinStateGroup']>(
             () => Promise.reject(new Error('create not mocked')),
@@ -69,9 +61,7 @@ const mocks = await vi.hoisted(async () => {
         updateStateGroupMetadata: vi.fn<ApiWorkflowsModule['updateStateGroupMetadata']>(
             () => Promise.reject(new Error('metadata update not mocked')),
         ),
-        loginToApi: vi.fn<ApiIntegrationModule['loginToApi']>(() =>
-            Promise.resolve(ctx.session)
-        ),
+        loginToApi: vi.fn<AuthApiModule['loginToApi']>(() => Promise.resolve(ctx.session)),
         listStateClientEvents: vi.fn<ApiIntegrationModule['listStateClientEvents']>(() =>
             Promise.reject(new Error('client events not mocked'))
         ),
@@ -84,10 +74,10 @@ const mocks = await vi.hoisted(async () => {
         listStateGroupEventPage: vi.fn<ApiIntegrationModule['listStateGroupEventPage']>(
             () => Promise.reject(new Error('group event page not mocked')),
         ),
-        logoutFromApi: vi.fn<ApiIntegrationModule['logoutFromApi']>(() =>
+        logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() =>
             Promise.resolve({ loggedOut: true })
         ),
-        registerWithApi: vi.fn<ApiIntegrationModule['registerWithApi']>(() =>
+        registerWithApi: vi.fn<AuthApiModule['registerWithApi']>(() =>
             Promise.resolve({
                 clientId: 'client-new',
                 username: 'new-user',
@@ -138,11 +128,14 @@ vi.mock(
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
         listStateGroupEvents: mocks.listStateGroupEvents,
-        loginToApi: mocks.loginToApi,
-        logoutFromApi: mocks.logoutFromApi,
-        registerWithApi: mocks.registerWithApi,
     }),
 );
+
+vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<AuthApiModule> => ({
+    loginToApi: mocks.loginToApi,
+    logoutFromApi: mocks.logoutFromApi,
+    registerWithApi: mocks.registerWithApi,
+}));
 
 vi.mock(
     import('@shared-web/browser/api-workflows.ts'),
@@ -280,7 +273,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('waits for the default RTC lane to open', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         let readyState: RTCDataChannelState = 'connecting';
         let state = 'Opening';
         const channel = {
@@ -323,7 +316,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('does not connect an RTC peer when wait is observe-only', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const facade = createRallarFacade();
 
         await facade.connect();
@@ -346,7 +339,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('returns aborted for an already-aborted RTC lane wait', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const controller = new AbortController();
         controller.abort();
         const facade = createRallarFacade();
@@ -379,7 +372,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('returns no-lane when an RTC peer lacks the requested lane', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const peer = createPeerTestDouble('peer-1', []);
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
@@ -400,7 +393,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('returns closed when an RTC lane is already closed', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const channel = {
             readHealth: vi.fn(() =>
                 createChannelHealth({
@@ -436,7 +429,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('returns aborted when RTC lane wait is aborted while pending', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const deferred = createDeferred<boolean>();
         const channel = {
             readHealth: vi.fn(() =>
@@ -480,7 +473,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('returns failed when opt-in RTC peer connection throws', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mocks.webRtcConnectionService.ensurePeerLaneOpen
             .mockRejectedValueOnce(new Error('signaling failed'));
         const facade = createRallarFacade();
@@ -516,7 +509,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('can opt into connecting an RTC peer before waiting for a lane', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const channel = {
             readHealth: vi.fn(() =>
                 createChannelHealth({
@@ -570,7 +563,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('waits for a room RTC lane and separates ready peers from not-ready peers', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(
             createGroupSnapshot('room-1', [
                 'session-1',
@@ -660,7 +653,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('waits for local room presence with min one for solo rooms', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1']));
         const facade = createRallarFacade();
 
@@ -684,7 +677,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('resolves room presence waits when later cache updates satisfy expectations', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         let onCacheChange: StateCacheChangeListener | undefined;
         mocks.onStateCacheChange.mockImplementation((listener) => {
             onCacheChange = listener;
@@ -714,7 +707,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('rechecks room presence after subscribing to avoid missing a ready cache update', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1']));
         mocks.onStateCacheChange.mockImplementation(() => {
             mockGroupSnapshot(createGroupSnapshot('room-1', [
@@ -745,7 +738,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('returns timeout when exact expected room RTC peers do not all open', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(
             createGroupSnapshot('room-1', [
                 'session-1',
@@ -785,7 +778,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('maps exhausted RTC lane attempts to failed with a stable reason', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-a']));
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValue({
             status: 'exhausted',
@@ -817,7 +810,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('reports over-capacity for strict expected room RTC peer ids', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(
             createGroupSnapshot('room-1', [
                 'session-1',
@@ -858,7 +851,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('returns empty for a room RTC lane when the current session is not in the room', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(
             createGroupSnapshot('room-1', [
                 'peer-ready',
@@ -897,7 +890,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('reports room RTC transport status without opening lanes', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(
             createGroupSnapshot('room-1', [
                 'session-1',
@@ -944,7 +937,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('opens a room RTC transport when mode is warm', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(
             createGroupSnapshot('room-1', [
                 'session-1',
@@ -983,7 +976,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('waits for room RTC transport readiness with connect by default', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValue({
             status: 'open',
@@ -1014,7 +1007,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('returns empty for a room RTC lane when the room has no remote peers', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1']));
         const facade = createRallarFacade();
 
@@ -1048,7 +1041,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('returns not-connected room RTC lane results before Rallar is connected', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mockGroupSnapshot(
             createGroupSnapshot('room-1', [
                 'session-1',
@@ -1091,7 +1084,7 @@ describe('Rallar RTC wait compatibility', () => {
     it('uses roomRef scope for room RTC lane waits', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const workspaceA = createGroupSnapshot(
             'shared-room',
             ['session-1', 'peer-a'],
@@ -1134,14 +1127,11 @@ describe('Rallar RTC wait compatibility', () => {
                 }),
             );
     });
-
 });
-
 
 function toTestDouble<TValue>(members: Partial<TValue>): TValue {
     return members as TValue;
 }
-
 function createPeerTestDouble(
     peerId: string,
     channels: readonly (readonly [string, Partial<QRtcDataChannel>])[],

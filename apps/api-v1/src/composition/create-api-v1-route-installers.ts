@@ -25,7 +25,7 @@ import * as crdtAdminRoutes from '../crdt/register-crdt-admin-routes.ts';
 import {
   type ApiV1StateSnapshotRouteRuntime,
   createStateSnapshotReadRouteRegistrars,
-} from '../routes/create-state-snapshot-read-route-registrars.ts';
+} from '../routes/state-snapshot-read/create-state-snapshot-read-route-registrars.ts';
 import * as graphTopologyRoutes from '../routes/graph-topology-routes.ts';
 import * as iceRoutes from '../routes/ice-route.ts';
 import * as spaStatisticsRoutes from '../routes/spa-statistics-routes.ts';

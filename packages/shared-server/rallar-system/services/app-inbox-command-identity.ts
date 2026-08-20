@@ -1,8 +1,5 @@
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import {
-  AppInboxType,
-  type AppInboxEnqueueInput,
-} from './app-inbox-contracts.ts';
+import { type AppInboxEnqueueInput, AppInboxType } from './app-inbox-contracts.ts';
 
 interface ValidAppInboxCommandIdentity {
   readonly valid: true;
@@ -22,7 +19,8 @@ interface InvalidAppInboxCommandIdentity {
 }
 
 export type AppInboxCommandIdentityValidation =
-  ValidAppInboxCommandIdentity | InvalidAppInboxCommandIdentity;
+  | ValidAppInboxCommandIdentity
+  | InvalidAppInboxCommandIdentity;
 
 type AppInboxUnavailableOperation =
   | 'APP_INBOX_CLIENT_OPERATION_UNAVAILABLE'
@@ -149,12 +147,11 @@ function toInvalidIdentity(
   topicId: string,
   operationSource: 'corrupt' | 'unavailable',
 ): InvalidAppInboxCommandIdentity {
-  const operation =
-    topicId === APP_INBOX_GROUP_TOPIC
-      ? 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE'
-      : topicId === APP_INBOX_CLIENT_TOPIC
-        ? 'APP_INBOX_CLIENT_OPERATION_UNAVAILABLE'
-        : 'APP_INBOX_OPERATION_UNAVAILABLE';
+  const operation = topicId === APP_INBOX_GROUP_TOPIC
+    ? 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE'
+    : topicId === APP_INBOX_CLIENT_TOPIC
+    ? 'APP_INBOX_CLIENT_OPERATION_UNAVAILABLE'
+    : 'APP_INBOX_OPERATION_UNAVAILABLE';
   return {
     valid: false,
     identity: { operation, operationSource },
@@ -165,6 +162,9 @@ function isOperationForTopic(
   operation: AppInboxType,
   topicId: string,
 ): boolean {
+  if (operation === topicId) {
+    return true;
+  }
   if (APP_INBOX_OPERATION_SPECIFIC_TOPIC_BY_OPERATION[operation] === topicId) {
     return true;
   }
@@ -173,13 +173,15 @@ function isOperationForTopic(
     : topicId === APP_INBOX_CLIENT_TOPIC && operation.startsWith('CLIENT_');
 }
 
-function isAppInboxEnqueueShape(value: unknown): value is Record<
-  string,
-  unknown
-> & {
-  type: string;
-  data: unknown;
-} {
+function isAppInboxEnqueueShape(value: unknown): value is
+  & Record<
+    string,
+    unknown
+  >
+  & {
+    type: string;
+    data: unknown;
+  } {
   return (
     isRecord(value) &&
     typeof value.type === 'string' &&

@@ -1,6 +1,6 @@
 import type { RegisterRequest } from '@shared/api/api-config.ts';
 
-import { normalizeUsername, type AuthUser } from '../persistence/auth-user-repository.ts';
+import { type AuthUser, normalizeUsername } from '../persistence/auth-user-repository.ts';
 import type { LoginClientData } from './authenticate-auth-user.ts';
 
 const PASSWORD_ALGORITHM = 'pbkdf2-sha256' as const;
@@ -14,6 +14,7 @@ export async function prepareAuthUserRegistration(
   facts: Readonly<{
     clientId: string;
     capturedAtEpochMs: number;
+    passwordSaltSeed?: string;
   }>,
   staticClients: readonly LoginClientData[] = [],
 ): Promise<AuthUser> {
@@ -21,9 +22,12 @@ export async function prepareAuthUserRegistration(
   const normalizedUsername = normalizeUsername(username);
   validatePassword(request.password);
   if (staticClients.some((client) => normalizeUsername(client.username) === normalizedUsername)) {
-    throw new Error(`Auth user already exists: ${username}`);
+    throw Object.assign(new Error(`Auth user already exists: ${username}`), {
+      code: 'auth-user-exists',
+      status: 409,
+    });
   }
-  const password = await hashPassword(request.password);
+  const password = await hashPassword(request.password, facts.passwordSaltSeed);
   return {
     clientId: facts.clientId,
     username,
@@ -43,23 +47,25 @@ export async function prepareAuthUserRegistration(
 function validateUsername(username: string): string {
   const trimmed = username?.trim();
   if (!trimmed) {
-    throw new Error('Username is required');
+    throw new TypeError('Username is required');
   }
   if (trimmed.length > 64) {
-    throw new Error('Username must be 64 characters or fewer');
+    throw new TypeError('Username must be 64 characters or fewer');
   }
   if (!USERNAME_PATTERN.test(trimmed)) {
-    throw new Error('Username may only contain letters, numbers, dots, underscores, and dashes');
+    throw new TypeError(
+      'Username may only contain letters, numbers, dots, underscores, and dashes',
+    );
   }
   return trimmed;
 }
 
 function validatePassword(password: string): void {
   if (!password || password.length === 0) {
-    throw new Error('Password is required');
+    throw new TypeError('Password is required');
   }
   if (password.length > 1024) {
-    throw new Error('Password must be 1024 characters or fewer');
+    throw new TypeError('Password must be 1024 characters or fewer');
   }
 }
 
@@ -69,13 +75,21 @@ function validateDisplayName(displayName: string | undefined): string | undefine
     return undefined;
   }
   if (trimmed.length > 128) {
-    throw new Error('Display name must be 128 characters or fewer');
+    throw new TypeError('Display name must be 128 characters or fewer');
   }
   return trimmed;
 }
 
-async function hashPassword(password: string): Promise<{ hash: string; salt: string }> {
-  const salt = crypto.getRandomValues(new Uint8Array(PASSWORD_SALT_BYTES));
+async function hashPassword(
+  password: string,
+  saltSeed?: string,
+): Promise<{ hash: string; salt: string }> {
+  const salt = saltSeed === undefined
+    ? crypto.getRandomValues(new Uint8Array(PASSWORD_SALT_BYTES))
+    : new Uint8Array(
+      (await crypto.subtle.digest('SHA-256', new TextEncoder().encode(saltSeed)))
+        .slice(0, PASSWORD_SALT_BYTES),
+    );
   const hash = await derivePasswordHash(password, salt, PASSWORD_ITERATIONS);
   return {
     hash: toBase64(hash),

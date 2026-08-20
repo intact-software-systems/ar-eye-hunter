@@ -14,6 +14,7 @@ export interface RegisterInput {
   readonly staticClients: readonly LoginClientData[];
   readonly capturedAtEpochMs: number;
   readonly clientId: string;
+  readonly passwordSaltSeed?: string;
 }
 
 export interface LoginInput {
@@ -34,6 +35,7 @@ export async function register(
     {
       clientId: input.clientId,
       capturedAtEpochMs: input.capturedAtEpochMs,
+      passwordSaltSeed: input.passwordSaltSeed,
     },
     input.staticClients,
   );

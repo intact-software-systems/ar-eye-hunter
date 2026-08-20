@@ -6,22 +6,18 @@ import {
 } from '@shared/services/WebRtcConnectionService.ts';
 import type { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
 import type { QRtcClientCallbacks } from '@shared/webrtc/QRtcClientCallbacks.ts';
-import type {
-    QRtcDataChannel,
-    RtcDataChannelHealth,
-} from '@shared/webrtc/QRtcDataChannel.ts';
+import type { QRtcDataChannel, RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
 
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
+type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
-type ClientStateSnapshotsRepositoryModule = typeof import(
-    '@shared/repository/client-state-snapshots-repository.ts'
-);
-type GroupStateSnapshotsRepositoryModule = typeof import(
-    '@shared/repository/group-state-snapshots-repository.ts'
-);
+type ClientStateSnapshotsRepositoryModule =
+    typeof import('@shared/repository/client-state-snapshots-repository.ts');
+type GroupStateSnapshotsRepositoryModule =
+    typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
 const CLIENT_REPOSITORY_MISSING_MESSAGE =
     'Repository not found: shared.repository.client-state-snapshots';
@@ -48,12 +44,8 @@ const mocks = await vi.hoisted(async () => {
         webSocketClient: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
         clearSession: vi.fn<AuthModule['clearSession']>(),
         clearMiddleware: vi.fn<AppContextModule['clearMiddleware']>(),
-        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() =>
-            Promise.resolve()
-        ),
-        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() =>
-            Promise.resolve(ctx)
-        ),
+        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
+        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn<AppContextModule['isMiddlewareReady']>(() => false),
         createAndJoinStateGroup: vi.fn<ApiWorkflowsModule['createAndJoinStateGroup']>(
             () => Promise.reject(new Error('create not mocked')),
@@ -67,9 +59,7 @@ const mocks = await vi.hoisted(async () => {
         updateStateGroupMetadata: vi.fn<ApiWorkflowsModule['updateStateGroupMetadata']>(
             () => Promise.reject(new Error('metadata update not mocked')),
         ),
-        loginToApi: vi.fn<ApiIntegrationModule['loginToApi']>(() =>
-            Promise.resolve(ctx.session)
-        ),
+        loginToApi: vi.fn<AuthApiModule['loginToApi']>(() => Promise.resolve(ctx.session)),
         listStateClientEvents: vi.fn<ApiIntegrationModule['listStateClientEvents']>(() =>
             Promise.reject(new Error('client events not mocked'))
         ),
@@ -82,10 +72,10 @@ const mocks = await vi.hoisted(async () => {
         listStateGroupEventPage: vi.fn<ApiIntegrationModule['listStateGroupEventPage']>(
             () => Promise.reject(new Error('group event page not mocked')),
         ),
-        logoutFromApi: vi.fn<ApiIntegrationModule['logoutFromApi']>(() =>
+        logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() =>
             Promise.resolve({ loggedOut: true })
         ),
-        registerWithApi: vi.fn<ApiIntegrationModule['registerWithApi']>(() =>
+        registerWithApi: vi.fn<AuthApiModule['registerWithApi']>(() =>
             Promise.resolve({
                 clientId: 'client-new',
                 username: 'new-user',
@@ -136,11 +126,14 @@ vi.mock(
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
         listStateGroupEvents: mocks.listStateGroupEvents,
-        loginToApi: mocks.loginToApi,
-        logoutFromApi: mocks.logoutFromApi,
-        registerWithApi: mocks.registerWithApi,
     }),
 );
+
+vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<AuthApiModule> => ({
+    loginToApi: mocks.loginToApi,
+    logoutFromApi: mocks.logoutFromApi,
+    registerWithApi: mocks.registerWithApi,
+}));
 
 vi.mock(
     import('@shared-web/browser/api-workflows.ts'),
@@ -277,7 +270,7 @@ describe('Rallar RTC recovery compatibility', () => {
     it('restarts ICE for an active RTC peer when supported', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const restartIce = vi.fn();
         const peer = createPeerTestDouble({
             peerId: 'peer-1',
@@ -310,7 +303,7 @@ describe('Rallar RTC recovery compatibility', () => {
     it('reconnects an RTC peer and waits for the requested lane', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValue({
             status: 'open',
             peerId: 'peer-1',
@@ -344,7 +337,7 @@ describe('Rallar RTC recovery compatibility', () => {
     it('marks RTC routeability from the requested lane readiness', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const reliableHealth = createChannelHealth({
             peerId: 'peer-1',
             label: 'rtc-data-channel',
@@ -400,7 +393,7 @@ describe('Rallar RTC recovery compatibility', () => {
     it('notifies public RTC status and lifecycle subscribers', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const health = createChannelHealth({
             peerId: 'peer-1',
             label: 'rtc-realtime',
@@ -529,7 +522,7 @@ describe('Rallar RTC recovery compatibility', () => {
     it('emits RTC peer lifecycle removal after service deletion completes', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const onRtcCallbacksDo = vi.fn((): QRtcDataChannel => realtimeChannel);
         const realtimeChannel = toTestDouble<QRtcDataChannel>({
             readHealth: vi.fn(() =>
@@ -605,7 +598,7 @@ describe('Rallar RTC recovery compatibility', () => {
     it('emits RTC peer timeout lifecycle events from the connection service', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const peer = createPeerTestDouble({
             peerId: 'peer-1',
             status: {
@@ -661,14 +654,11 @@ describe('Rallar RTC recovery compatibility', () => {
             },
         });
     });
-
 });
-
 
 function toTestDouble<TValue>(members: Partial<TValue>): TValue {
     return members as TValue;
 }
-
 function createPeerTestDouble(
     input: Readonly<{
         peerId: string;

@@ -6,13 +6,11 @@ import {
     createActiveGroupPresenceSessionFixture,
     createGroupSnapshotFixture,
 } from './authoritative-group-fixtures.ts';
-import {
-    newALRoute,
-    newALUnicastMessage,
-} from '@shared/al-contracts/al-contract.ts';
+import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import type { WebSocketClientCallbacks } from '@shared/websocket/JsonWebSocketClient.ts';
 import type * as ApiIntegrationModule from '@shared-web/browser/api-integration.ts';
+import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
 import type * as ApiWorkflowsModule from '@shared-web/browser/api-workflows.ts';
 import type * as AppContextModule from '@shared-web/browser/app-context.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
@@ -68,9 +66,7 @@ const mocks = await vi.hoisted(async () => {
         hydrateStateCaches: vi.fn<typeof DataCachesModule.hydrateStateCaches>(
             () => Promise.resolve(),
         ),
-        initMiddleware: vi.fn<typeof AppContextModule.initMiddleware>(() =>
-            Promise.resolve(ctx)
-        ),
+        initMiddleware: vi.fn<typeof AppContextModule.initMiddleware>(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn<typeof AppContextModule.isMiddlewareReady>(
             () => false,
         ),
@@ -92,10 +88,8 @@ const mocks = await vi.hoisted(async () => {
         listStateGroupEvents: vi.fn<
             typeof ApiIntegrationModule.listStateGroupEvents
         >(() => Promise.reject(new Error('group events not mocked'))),
-        loginToApi: vi.fn<typeof ApiIntegrationModule.loginToApi>(() =>
-            Promise.resolve(session)
-        ),
-        logoutFromApi: vi.fn<typeof ApiIntegrationModule.logoutFromApi>(() =>
+        loginToApi: vi.fn<typeof AuthApiModule.loginToApi>(() => Promise.resolve(session)),
+        logoutFromApi: vi.fn<typeof AuthApiModule.logoutFromApi>(() =>
             Promise.resolve({ loggedOut: true })
         ),
         onStateCacheChange: vi.fn<typeof DataCachesModule.onStateCacheChange>(
@@ -105,7 +99,7 @@ const mocks = await vi.hoisted(async () => {
         refreshStateSnapshots: vi.fn<
             typeof ApiWorkflowsModule.refreshStateSnapshots
         >(() => Promise.resolve({ clients: [], groups: [] })),
-        registerWithApi: vi.fn<typeof ApiIntegrationModule.registerWithApi>(
+        registerWithApi: vi.fn<typeof AuthApiModule.registerWithApi>(
             () =>
                 Promise.resolve({
                     clientId: 'client-new',
@@ -151,6 +145,12 @@ vi.mock(
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
         listStateGroupEvents: mocks.listStateGroupEvents,
+    }),
+);
+
+vi.mock(
+    import('@shared-web/browser/auth/session-http-api.ts'),
+    (): Partial<typeof AuthApiModule> => ({
         loginToApi: mocks.loginToApi,
         logoutFromApi: mocks.logoutFromApi,
         registerWithApi: mocks.registerWithApi,
@@ -189,8 +189,7 @@ vi.mock(
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<typeof ClientStateSnapshotsRepositoryModule> => ({
-        findClientStateSnapshotByPrincipalId:
-            mocks.findClientStateSnapshotByPrincipalId,
+        findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
         getAllClientStateSnapshots: mocks.getAllClientStateSnapshots,
     }),
 );
@@ -349,7 +348,7 @@ describe('Rallar WS lifecycle compatibility', () => {
     it('notifies public WS status and lifecycle subscribers', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         let callbacks: WebSocketClientCallbacks | undefined;
         webSocketClient.onWebsocketCallbacksDo.mockImplementation((_id, next) => {
             callbacks = next;
@@ -452,20 +451,24 @@ describe('Rallar WS lifecycle compatibility', () => {
         });
 
         unsubscribeStatus();
-        expect(webSocketClient
-            .removeWebsocketCallbackById)
+        expect(
+            webSocketClient
+                .removeWebsocketCallbackById,
+        )
             .not.toHaveBeenCalled();
 
         unsubscribeLifecycle();
-        expect(webSocketClient
-            .removeWebsocketCallbackById)
+        expect(
+            webSocketClient
+                .removeWebsocketCallbackById,
+        )
             .toHaveBeenCalledWith('rallar:ws:status');
     });
 
     it('waits for WS open without implicitly connecting', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const facade = createRallarFacade();
 
         await expect(facade.ws.waitForOpen({ timeoutMs: 1 })).resolves
@@ -483,7 +486,7 @@ describe('Rallar WS lifecycle compatibility', () => {
     it('returns aborted for an already-aborted WS wait', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const controller = new AbortController();
         controller.abort();
 
@@ -501,7 +504,7 @@ describe('Rallar WS lifecycle compatibility', () => {
     it('resolves WS wait immediately when the socket is already open', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         webSocketQueueBox.readHealth.mockReturnValue({
             sessionId: 'session-1',
             url: 'ws://localhost/ws',
@@ -532,7 +535,7 @@ describe('Rallar WS lifecycle compatibility', () => {
         vi.useFakeTimers();
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         webSocketQueueBox.readHealth.mockReturnValue({
             sessionId: 'session-1',
             url: 'ws://localhost/ws',
@@ -567,7 +570,7 @@ describe('Rallar WS lifecycle compatibility', () => {
     it('resolves WS wait when the socket opens after waiting starts', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         let callbacks: WebSocketClientCallbacks | undefined;
         webSocketClient.onWebsocketCallbacksDo.mockImplementation((_id, next) => {
             callbacks = next;
@@ -616,7 +619,7 @@ describe('Rallar WS lifecycle compatibility', () => {
     it('returns closed for terminal closed WS status', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         webSocketQueueBox.readHealth.mockReturnValue({
             sessionId: 'session-1',
             url: 'ws://localhost/ws',
@@ -648,7 +651,7 @@ describe('Rallar WS lifecycle compatibility', () => {
         vi.useFakeTimers();
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         webSocketQueueBox.readHealth.mockReturnValue({
             sessionId: 'session-1',
             url: 'ws://localhost/ws',
@@ -677,9 +680,7 @@ describe('Rallar WS lifecycle compatibility', () => {
             status: 'aborted',
         });
     });
-
 });
-
 
 function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
     return webSocketQueueBox
@@ -687,7 +688,6 @@ function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
         .filter(([callbackId]) => callbackId === 'rallar:ws:any-message')
         .at(-1)?.[1];
 }
-
 function createChannelHealth(
     input: Readonly<{
         peerId: string;
@@ -909,11 +909,7 @@ function createMediaStream(
         id,
         active: tracks.some((track) => track.readyState !== 'ended'),
         getTracks: vi.fn(() => [...tracks]),
-        getAudioTracks: vi.fn(() =>
-            tracks.filter((track) => track.kind === 'audio')
-        ),
-        getVideoTracks: vi.fn(() =>
-            tracks.filter((track) => track.kind === 'video')
-        ),
+        getAudioTracks: vi.fn(() => tracks.filter((track) => track.kind === 'audio')),
+        getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video')),
     } as unknown as MediaStream;
 }

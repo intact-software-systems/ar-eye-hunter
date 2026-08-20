@@ -3,7 +3,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { OverlayRevisionConflictError } from '@shared/repository/overlays-repository.ts';
 import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 
-import type { ApiRequestOptions } from '../api-integration.ts';
+import type { ApiRequestOptions } from '../api/http-request.ts';
 import { readStateGroupTopology } from '../api-integration.ts';
 import { acceptServerOverlayTopology } from '../data-caches.ts';
 import { emitBrowserStateReadDiagnostic } from './diagnostics.ts';
@@ -31,7 +31,7 @@ export async function hydrateGroupTopologyOverlays(
   input: HydrateGroupTopologyOverlaysInput,
 ): Promise<readonly GroupTopologyReadThrough[]> {
   const joinedGroups = input.groupSnapshots.filter((snapshot) =>
-    snapshot.activeSessions.some((session) => session.sessionId === input.sessionId),
+    snapshot.activeSessions.some((session) => session.sessionId === input.sessionId)
   );
   return await Promise.all(
     joinedGroups.map((snapshot) => readThroughGroupTopology(snapshot.group.groupId, input)),

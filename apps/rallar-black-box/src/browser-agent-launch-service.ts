@@ -3,14 +3,14 @@ import type {
     AgentSessionTicketResponse,
     AuthSession,
 } from '@shared/api/api-config.ts';
-import type { RallarBlackBoxProviderMode } from
-    '@shared-test/rallar-bb-test/client-defaults.ts';
-import type { ControlRunToken } from
-    '@shared-test/rallar-bb-test/control-snapshots.ts';
-import type { RallarBlackBoxDistributedGroupRef } from
-    '@shared-test/rallar-bb-test/distributed-run.ts';
-import { issueAgentSessionTicketsAt } from
-    '@shared-web/browser/api-integration.ts';
+import type { RallarBlackBoxProviderMode } from '@shared-test/rallar-bb-test/client-defaults.ts';
+import type { ControlRunToken } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type {
+    RallarBlackBoxDistributedGroupRef,
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
+import {
+    issueAgentSessionTicketsAt,
+} from '@shared-web/browser/auth/agent-session-ticket-http-api.ts';
 import { createRunnerAgentLaunchUrl } from './runner-agent-launch.ts';
 
 export type BrowserAgentLaunchRequest = Readonly<{
@@ -35,11 +35,13 @@ export type BrowserAgentLaunchService = Readonly<{
     prepare(input: BrowserAgentLaunchRequest): Promise<PreparedBrowserAgentCohort>;
 }>;
 
-type IssueRunToken = (input: Readonly<{
-    runId: string;
-    agentId: string;
-    signal?: AbortSignal;
-}>) => Promise<ControlRunToken>;
+type IssueRunToken = (
+    input: Readonly<{
+        runId: string;
+        agentId: string;
+        signal?: AbortSignal;
+    }>,
+) => Promise<ControlRunToken>;
 
 type IssueAgentTickets = (
     apiBaseUrl: string,
@@ -47,25 +49,27 @@ type IssueAgentTickets = (
     options: Readonly<{ authSession: AuthSession; signal?: AbortSignal }>,
 ) => Promise<AgentSessionTicketResponse>;
 
-export function createBrowserAgentLaunchService(config: Readonly<{
-    origin: string;
-    providerMode: RallarBlackBoxProviderMode;
-    controlWsUrl: string;
-    apiBaseUrl: string;
-    authSession?: AuthSession;
-    issueAgentSessions?: boolean;
-    allowAnonymousControlToken?: boolean;
-    allowSharedControlToken?: boolean;
-    issueRunToken: IssueRunToken;
-    issueAgentTickets?: IssueAgentTickets;
-}>): BrowserAgentLaunchService {
+export function createBrowserAgentLaunchService(
+    config: Readonly<{
+        origin: string;
+        providerMode: RallarBlackBoxProviderMode;
+        controlWsUrl: string;
+        apiBaseUrl: string;
+        authSession?: AuthSession;
+        issueAgentSessions?: boolean;
+        allowAnonymousControlToken?: boolean;
+        allowSharedControlToken?: boolean;
+        issueRunToken: IssueRunToken;
+        issueAgentTickets?: IssueAgentTickets;
+    }>,
+): BrowserAgentLaunchService {
     return {
         async prepare(input) {
             const runId = requiredId(input.runId, 'Control run ID');
             const agentIds = validatedAgentIds(input.agentIds);
             const group = validatedGroup(input.group);
             const tickets = await issueTickets(config, agentIds, input.signal);
-            const tokens = await Promise.all(agentIds.map(async agentId => {
+            const tokens = await Promise.all(agentIds.map(async (agentId) => {
                 const token = await config.issueRunToken({
                     runId,
                     agentId,
@@ -81,7 +85,7 @@ export function createBrowserAgentLaunchService(config: Readonly<{
             }));
             if (!config.allowSharedControlToken) {
                 assertUniqueAuthority(
-                    tokens.map(token => token.token).filter(Boolean),
+                    tokens.map((token) => token.token).filter(Boolean),
                     'Control tokens',
                 );
             }
@@ -107,12 +111,8 @@ export function createBrowserAgentLaunchService(config: Readonly<{
                             workspaceId: group.workspaceId,
                             restoreSession: ticket !== undefined,
                             authStorage: ticket ? 'session' : undefined,
-                            actor: ticket
-                                ? config.authSession?.username
-                                : agentId,
-                            sessionId: ticket
-                                ? ticket.sessionId
-                                : `${agentId}-session`,
+                            actor: ticket ? config.authSession?.username : agentId,
+                            sessionId: ticket ? ticket.sessionId : `${agentId}-session`,
                             controlToken: token.token,
                             agentSessionTicket: ticket?.ticket,
                         }),
@@ -149,10 +149,12 @@ async function issueTickets(
         { authSession: config.authSession, signal },
     );
     const tickets = new Map(
-        response.tickets.map(ticket => [ticket.agentId, ticket] as const),
+        response.tickets.map((ticket) => [ticket.agentId, ticket] as const),
     );
     if (response.tickets.length !== agentIds.length || tickets.size !== agentIds.length) {
-        throw new Error('Agent session ticket response must contain one unique ticket per requested agent.');
+        throw new Error(
+            'Agent session ticket response must contain one unique ticket per requested agent.',
+        );
     }
     for (const agentId of agentIds) {
         const ticket = tickets.get(agentId);
@@ -167,15 +169,17 @@ async function issueTickets(
     }
     for (const ticket of response.tickets) {
         if (!agentIds.includes(ticket.agentId)) {
-            throw new Error(`Agent session ticket response contains unexpected agent ${ticket.agentId}.`);
+            throw new Error(
+                `Agent session ticket response contains unexpected agent ${ticket.agentId}.`,
+            );
         }
     }
     assertUniqueAuthority(
-        response.tickets.map(ticket => ticket.ticket),
+        response.tickets.map((ticket) => ticket.ticket),
         'Agent session tickets',
     );
     assertUniqueAuthority(
-        response.tickets.map(ticket => ticket.sessionId),
+        response.tickets.map((ticket) => ticket.sessionId),
         'Agent session IDs',
     );
     return tickets;
@@ -191,7 +195,7 @@ function validatedAgentIds(values: readonly string[]): readonly string[] {
     if (values.length < 1 || values.length > 6) {
         throw new Error('Browser-agent count must be between 1 and 6.');
     }
-    const agentIds = values.map(value => requiredId(value, 'Agent ID'));
+    const agentIds = values.map((value) => requiredId(value, 'Agent ID'));
     if (new Set(agentIds).size !== agentIds.length) {
         throw new Error('Browser-agent IDs must be unique.');
     }

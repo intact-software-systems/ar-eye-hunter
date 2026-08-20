@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { Either } from '@shared/resilience/Either.ts';
-import { EntityStatus, type Key, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import {
@@ -15,7 +15,7 @@ import {
     rowsToMap,
     toDomain,
     toPgTimestamp,
-    toSystemDate
+    toSystemDate,
 } from './repository-utils.ts';
 import { requeueObservedResourceInboxDeliveryFailure } from './resource-inbox-delivery-failure.ts';
 export {
@@ -58,7 +58,7 @@ export class ResourceInboxRepository {
         const newVar = await this.sql.begin<T>(
             async (sql: PSqlTransactionSql) => {
                 return await fn(new ResourceInboxRepository(sql));
-            }
+            },
         );
 
         return newVar as T;
@@ -97,7 +97,9 @@ export class ResourceInboxRepository {
                     ${entry.audit.createdBy},
                     ${toPgTimestamp(entry.audit.createdTs)},
                     ${toPgTimestamp(entry.audit.expiryTs)},
-                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
+                    ${
+            entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null
+        },
                     ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
                     ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
                     ${entry.dequeueAudit.attempts ?? 0})
@@ -137,7 +139,9 @@ export class ResourceInboxRepository {
                     ${entry.audit.createdBy},
                     ${toPgTimestamp(entry.audit.createdTs)},
                     ${toPgTimestamp(entry.audit.expiryTs)},
-                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
+                    ${
+            entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null
+        },
                     ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
                     ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
                     ${entry.dequeueAudit.attempts ?? 0})
@@ -252,9 +256,9 @@ export class ResourceInboxRepository {
             update resource_inbox
             set ri_resource = ${next.resource},
                 ri_status = ${next.status},
-                next_ts = ${next.dequeueAudit.nextTs
-                    ? toPgTimestamp(next.dequeueAudit.nextTs)
-                    : null}
+                next_ts = ${
+            next.dequeueAudit.nextTs ? toPgTimestamp(next.dequeueAudit.nextTs) : null
+        }
             where ri_topic_id = ${expected.key.topicId}
               and ri_resource_id = ${expected.key.resourceId}
               and fk_ext_bank_id = ${expected.key.contextId}
@@ -320,7 +324,9 @@ export class ResourceInboxRepository {
                     ${entry.audit.createdBy},
                     ${toPgTimestamp(entry.audit.createdTs)},
                     ${toPgTimestamp(entry.audit.expiryTs)},
-                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
+                    ${
+            entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null
+        },
                     ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
                     ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
                     ${entry.dequeueAudit.attempts ?? 0})
@@ -371,7 +377,9 @@ export class ResourceInboxRepository {
                     ${entry.audit.createdBy},
                     ${toPgTimestamp(entry.audit.createdTs)},
                     ${toPgTimestamp(entry.audit.expiryTs)},
-                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
+                    ${
+            entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null
+        },
                     ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
                     ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
                     ${entry.dequeueAudit.attempts ?? 0})
@@ -400,7 +408,9 @@ export class ResourceInboxRepository {
             return existing;
         }
 
-        throw new Error('Write-if-absent failed: conflicting row was not returned and no active row exists');
+        throw new Error(
+            'Write-if-absent failed: conflicting row was not returned and no active row exists',
+        );
     }
 
     async findByKey(key: Key): Promise<ResourceEntry | null> {
@@ -431,16 +441,33 @@ export class ResourceInboxRepository {
         return rows.length === 0 ? null : toDomain(rows[0]);
     }
 
+    async findAllByTopicAndResourceId(
+        topicId: string,
+        resourceId: string,
+    ): Promise<readonly ResourceEntry[]> {
+        const rows = await this.sql<ResourceInboxRow[]>`
+            select *
+            from resource_inbox
+            where ri_topic_id = ${topicId}
+              and ri_resource_id = ${resourceId}
+              and expire_ts > (now() at time zone 'UTC')
+            order by ri_row_id
+        `;
+        return rows.map(toDomain);
+    }
+
     async findAllKeys(): Promise<Key[]> {
         const now = new Date();
-        const rows = await this.sql<Pick<ResourceInboxRow, 'ri_topic_id' | 'ri_resource_id' | 'fk_ext_bank_id'>[]>`
+        const rows = await this.sql<
+            Pick<ResourceInboxRow, 'ri_topic_id' | 'ri_resource_id' | 'fk_ext_bank_id'>[]
+        >`
             select ri_topic_id, ri_resource_id, fk_ext_bank_id
             from resource_inbox
             where expire_ts > ${now}
             order by ri_row_id
         `;
 
-        return rows.map(row => ({
+        return rows.map((row) => ({
             topicId: row.ri_topic_id,
             resourceId: row.ri_resource_id,
             contextId: row.fk_ext_bank_id,
@@ -549,7 +576,9 @@ export class ResourceInboxRepository {
         reservationInput: ResourceInboxReservationInput,
     ): Promise<Map<string, ResourceEntry>> {
         if (!Number.isSafeInteger(timeSinceStartMs) || timeSinceStartMs < 0) {
-            throw new Error('Reserved-entry timeout must be a non-negative safe integer in milliseconds');
+            throw new Error(
+                'Reserved-entry timeout must be a non-negative safe integer in milliseconds',
+            );
         }
         if (typeIds.size === 0) {
             return new Map();
@@ -674,15 +703,15 @@ export class ResourceInboxRepository {
 
         const timeoutMs = timeSinceStartTs.total({ unit: 'milliseconds' });
         if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0) {
-            throw new Error('Reserved-entry timeout must be a non-negative safe integer in milliseconds');
+            throw new Error(
+                'Reserved-entry timeout must be a non-negative safe integer in milliseconds',
+            );
         }
         if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1) {
             throw new Error('maxAttempts must be a positive safe integer');
         }
 
-        const rows =
-            await this.sql<{ one: number }[]>
-                `
+        const rows = await this.sql<{ one: number }[]>`
                     select 1 as one
                     from resource_inbox
                     where ri_type_id in ${this.sql([...typeIds])}
@@ -945,7 +974,9 @@ export class ResourceInboxRepository {
                     ${entry.audit.createdBy},
                     ${toPgTimestamp(entry.audit.createdTs)},
                     ${toPgTimestamp(entry.audit.expiryTs)},
-                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
+                    ${
+            entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null
+        },
                     ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
                     ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
                     ${entry.dequeueAudit.attempts ?? 0})

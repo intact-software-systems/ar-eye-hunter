@@ -4,7 +4,11 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { AuditStamp, ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import type { ClientStateWritten } from '@shared-server/rallar-system/services/client-state-service.ts';
+import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
+import type {
+  ClientStateWritten,
+} from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 
 import type { GroupStateRouteAuthSession } from '../../src/group-state/group-state-route-contracts.ts';
 import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
@@ -42,9 +46,10 @@ export function createClientRouteDeps(
     hydrateStateSyncSnapshotCaches?: clientStateRoutes.ClientStateRouteDependencies[
       'hydrateStateSyncSnapshotCaches'
     ];
-    processClientAppInbox?: clientStateRoutes.ClientStateRouteDependencies[
-      'processClientAppInbox'
-    ];
+    processClientAppInbox?: <V>(
+      enqueue: AppInboxEnqueueInput<V>,
+      authority: Parameters<clientStateRoutes.ProcessClientAppInbox>[1],
+    ) => Promise<Either<AppInboxFailure, ClientStateWritten> | ClientStateWritten>;
     readClientSnapshot?: clientStateRoutes.ClientStateRouteDependencies[
       'readClientSnapshot'
     ];
@@ -68,8 +73,15 @@ export function createClientRouteDeps(
       authCalls += 1;
       return Promise.resolve(input.session);
     },
-    processClientAppInbox: input.processClientAppInbox ??
-      (() => Promise.reject(new Error('Unexpected client mutation route call'))),
+    processClientAppInbox: input.processClientAppInbox
+      ? async (enqueue, authority) => {
+        const result = await input.processClientAppInbox?.(enqueue, authority);
+        if (result === undefined) {
+          throw new Error('Client mutation test result is unavailable');
+        }
+        return result instanceof Either ? result : Either.ofRight(result);
+      }
+      : () => Promise.reject(new Error('Unexpected client mutation route call')),
     hydrateStateSyncSnapshotCaches: input.hydrateStateSyncSnapshotCaches ??
       (() => Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 0 })),
     readClientSnapshot: input.readClientSnapshot ?? (async (ref) => {

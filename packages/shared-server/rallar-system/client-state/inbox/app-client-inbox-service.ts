@@ -13,6 +13,7 @@ import {
   SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
 } from '../../services/AppInboxService.ts';
 import { toLegacyAppInboxFailure } from '../../services/app-inbox-legacy-failure.ts';
+import type { AppInboxFailure } from '../../services/app-inbox-failure.ts';
 import type { JsonWireValue } from '../../services/mutation-command-identity.ts';
 import type { RallarTimingSink } from '../../services/timing.ts';
 import {
@@ -132,7 +133,7 @@ export class AppClientInboxService extends AppInboxService {
   public async processAuthenticatedEntryUntilCompletion<V>(
     enqueue: AppInboxEnqueueInput<V>,
     authority: IssuedAuthSession,
-  ): Promise<Either<string, ClientStateWritten>> {
+  ): Promise<Either<AppInboxFailure, ClientStateWritten>> {
     const ingress = readAuthenticatedClientMutationIngress(enqueue);
     validateIssuedClientMutationIngress(authority, ingress);
     const result = await super.processEntryUntilCompletionResult(
@@ -146,7 +147,7 @@ export class AppClientInboxService extends AppInboxService {
       },
       decodeClientStateWritten,
     );
-    return result.mapLeft(toLegacyAppInboxFailure);
+    return result;
   }
 
   public async processAuthorisedWsClientConnect(

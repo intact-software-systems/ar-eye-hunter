@@ -1,16 +1,14 @@
 import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
-import {
-  ApiHttpError,
-  readStateGroupSnapshot,
-} from '@shared-web/browser/api-integration.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import { readStateGroupSnapshot } from '@shared-web/browser/api-integration.ts';
 import type { StateGroupSnapshotRead } from '@shared-web/browser/api-integration.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarRefreshOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarMessagesFacade } from '@shared-web/browser/rallar-messages-facade.ts';
 import {
+  type RallarOperationOptions,
   toRallarCommandOptions,
   toRallarWorkflowPolicies,
-  type RallarOperationOptions,
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { throwRallarValidationIssue } from '@shared-web/browser/rallar-runtime/validation.ts';
@@ -23,8 +21,11 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { Command } from '@shared/cache/Command.ts';
-import * as groupStateSnapshotsRepository
-  from '@shared/repository/group-state-snapshots-repository.ts';
+import {
+  findGroupStateSnapshotByRef,
+  removeGroupStateSnapshotIfUnchanged,
+  waitForGroupStateSnapshotChangesIdle,
+} from '@shared/repository/group-state-snapshots-repository.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
 
 import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.ts';
@@ -155,9 +156,19 @@ function createRoomEntryOperations(
     create: async (room) => await createAndJoinRoom({ ...input.rooms, room }),
     createAndSwitch: async (room) => await createAndSwitchRoom({ ...input.rooms, room, leaveRoom }),
     join: async (room, options = {}) =>
-      await joinRoom({ ...input.rooms, room, options, createRoomSession: input.createSession }),
+      await joinRoom({
+        ...input.rooms,
+        room,
+        options,
+        createRoomSession: input.createSession,
+      }),
     enter: async (room, options = {}) =>
-      await enterRoom({ ...input.rooms, room, options, createRoomSession: input.createSession }),
+      await enterRoom({
+        ...input.rooms,
+        room,
+        options,
+        createRoomSession: input.createSession,
+      }),
     session: (room) =>
       input.createSession(resolveRoomSessionRef(input.rooms, room, input.resolveRoomRef)),
     leave: async (leaveInput) => await leaveRoom({ ...input.rooms, input: leaveInput }),
@@ -244,19 +255,20 @@ async function refreshRoom(
       scope,
     });
     const context = await input.connect(operationOptions);
-    const observed = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(roomRef);
+    const observed = findGroupStateSnapshotByRef(roomRef);
     try {
       const response = await new Command<StateGroupSnapshotRead>(
-        (signal) => readStateGroupSnapshot(roomRef.groupId, scope, {
-          signal,
-          authSession: input.requireSession(),
-        }),
+        (signal) =>
+          readStateGroupSnapshot(roomRef.groupId, scope, {
+            signal,
+            authSession: input.requireSession(),
+          }),
         toRallarCommandOptions(operationOptions),
       ).run();
       await input.acceptSnapshots(context, [], [response.snapshot], scope);
     } catch (error) {
       if (error instanceof ApiHttpError && error.status === 404 && observed) {
-        const removed = groupStateSnapshotsRepository.removeGroupStateSnapshotIfUnchanged(
+        const removed = removeGroupStateSnapshotIfUnchanged(
           roomRef,
           observed,
         );
@@ -267,7 +279,7 @@ async function refreshRoom(
           result: removed ? 'removed' : 'preserved',
           durationMs: 0,
         });
-        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+        await waitForGroupStateSnapshotChangesIdle();
       }
       throw error;
     }
@@ -279,8 +291,7 @@ function resolveRoomSessionRef(
   room: string | GroupRef | undefined,
   resolveRoomRef: (room: string | GroupRef, scope?: StateScope) => GroupRef | undefined,
 ): GroupRef {
-  const target =
-    room ??
+  const target = room ??
     input.resolveDefaultRoomRef() ??
     input.stateStore.resolveCurrentRoomRef() ??
     input.resolveDefaultRoom();

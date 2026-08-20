@@ -15,6 +15,7 @@ import {
 
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
+type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
@@ -85,7 +86,7 @@ const mocks = await vi.hoisted(async () => {
                 _policies?: unknown,
             ) => Promise.reject(new Error('metadata update not mocked')),
         ),
-        loginToApi: vi.fn((_request?: unknown, _options?: unknown) =>
+        loginToApi: vi.fn<AuthApiModule['loginToApi']>(() =>
             Promise.resolve(ctx.session)
         ),
         listStateClientEvents: vi.fn((_principalId?: unknown, _scope?: unknown, _options?: unknown) =>
@@ -100,10 +101,10 @@ const mocks = await vi.hoisted(async () => {
         listStateGroupEventPage: vi.fn((_groupId?: unknown, _scope?: unknown, _options?: unknown) =>
             Promise.reject(new Error('group event page not mocked'))
         ),
-        logoutFromApi: vi.fn((_options?: unknown) =>
+        logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() =>
             Promise.resolve({ loggedOut: true })
         ),
-        registerWithApi: vi.fn((_request?: unknown, _options?: unknown) =>
+        registerWithApi: vi.fn<AuthApiModule['registerWithApi']>(() =>
             Promise.resolve({
                 clientId: 'client-new',
                 username: 'new-user',
@@ -151,11 +152,14 @@ vi.mock(
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
         listStateGroupEvents: mocks.listStateGroupEvents,
-        loginToApi: mocks.loginToApi,
-        logoutFromApi: mocks.logoutFromApi,
-        registerWithApi: mocks.registerWithApi,
     }),
 );
+
+vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<AuthApiModule> => ({
+    loginToApi: mocks.loginToApi,
+    logoutFromApi: mocks.logoutFromApi,
+    registerWithApi: mocks.registerWithApi,
+}));
 
 vi.mock(import('@shared-web/browser/api-workflows.ts'), (): Partial<ApiWorkflowsModule> => ({
     createAndJoinStateGroup: mocks.createAndJoinStateGroup,

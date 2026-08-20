@@ -21,32 +21,38 @@ const session = {
 } as const;
 
 const routingFixtures = [
-  [{ kind: 'register-user', user }, AppInboxType.AUTH_USER_REGISTER, 'alice', 'client-register'],
+  [
+    { kind: 'register-user', user },
+    AppInboxType.AUTH_USER_REGISTER,
+    'operation=register-user:username=alice',
+    'client-register',
+  ],
   [
     {
       kind: 'issue-session',
+      authority: { normalizedUsername: 'alice' },
       session,
     },
     AppInboxType.AUTH_SESSION_ISSUE,
-    'session-1',
+    'operation=issue-session:username=alice',
     'client-session',
   ],
   [
     { kind: 'logout-session', expected: session },
     AppInboxType.AUTH_SESSION_LOGOUT,
-    'session-1',
+    'client=client-session:session=session-1',
     'client-session',
   ],
   [
     { kind: 'issue-ws-ticket', ticketRecord: session },
     AppInboxType.AUTH_WS_TICKET_ISSUE,
-    'session-1',
+    'client=client-session:session=session-1',
     'client-session',
   ],
   [
     { kind: 'consume-ws-ticket', ticketDigest: 'ws-digest', expectedSessionId: 'session-1' },
     AppInboxType.AUTH_WS_TICKET_CONSUME,
-    'session-1',
+    'credential=ws-digest',
     'ws-digest',
   ],
   [
@@ -56,13 +62,13 @@ const routingFixtures = [
       tickets: [{ sessionId: 'agent-session-1' }, { sessionId: 'agent-session-2' }],
     },
     AppInboxType.AUTH_AGENT_SESSION_TICKETS_ISSUE,
-    'agent-session-1,agent-session-2',
+    'client=client-session:session=session-1',
     'client-session',
   ],
   [
     { kind: 'consume-agent-ticket', ticketDigest: 'agent-digest' },
     AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME,
-    'agent-digest',
+    'credential=agent-digest',
     'agent-digest',
   ],
 ] as const;

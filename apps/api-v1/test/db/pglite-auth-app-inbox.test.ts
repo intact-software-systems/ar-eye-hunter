@@ -146,6 +146,28 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
       0,
     );
 
+    const logoutPending = appAuth.logoutSession({
+      requestId: 'pglite-logout-request',
+      capturedAtEpochMs: nowEpochMs + 3,
+      session,
+    });
+    await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    await inboxReader.dequeueInbox(
+      InboxQueueReader.INBOX_DEQUEUE_TYPES,
+      toResilienceDto(),
+    );
+    assert.deepEqual((await logoutPending).right, { loggedOut: true });
+    assert.equal(
+      await new AuthSessionRepository(runtime).findBySessionId(session.sessionId),
+      undefined,
+    );
+    const logoutReplay = await appAuth.replayLogoutSessionWithCredentialProof({
+      requestId: 'pglite-logout-request',
+      clientId: session.clientId,
+      accessToken: session.accessToken,
+    });
+    assert.deepEqual(logoutReplay?.right, { loggedOut: true });
+
     const durableRows = await sql<{ resource: unknown }[]>`
       select store_key || ':' || store_value as resource
       from runtime_state_store

@@ -1,29 +1,14 @@
-import { Temporal } from '@js-temporal/polyfill';
 import { readApiBaseUrl } from './api-client-config.ts';
-import { ApiHttpError, type ApiHttpMethod } from './api/http-error.ts';
+import { type ApiRequestOptions, executeHttpRequest } from './api/http-request.ts';
 import { readStateGroupSnapshot } from './state-read/point-read.ts';
-import { readSession } from '@shared/api/auth.ts';
+import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation.ts';
 import {
     validateAuthoritativeClientEventList,
     validateAuthoritativeClientEventPage,
     validateAuthoritativeGroupEventList,
     validateAuthoritativeGroupEventPage,
 } from '@shared/api/authoritative-state-validation.ts';
-import {
-    AgentSessionTicketRequest,
-    AgentSessionTicketResponse,
-    ApiConfig,
-    type AuthSession,
-    ConsumeAgentSessionTicketRequest,
-    ConsumeAgentSessionTicketResponse,
-    IceConfig,
-    LoginRequest,
-    LoginResponse,
-    LogoutResponse,
-    RegisterRequest,
-    RegisterResponse,
-    WebSocketTicketResponse,
-} from '@shared/api/api-config.ts';
+import { ApiConfig, IceConfig } from '@shared/api/api-config.ts';
 import type {
     ClientEvent,
     ClientEventType,
@@ -42,13 +27,13 @@ import type {
 import type {
     GraphDiagnosticReadOptions,
     GraphDiagnosticReadResponse,
-    GroupTopologyConfigView,
     GroupTopologyConfigMutationReceipt,
+    GroupTopologyConfigView,
     GroupTopologyManagementView,
     PutGroupTopologyConfigRequest,
     PutGroupTopologyOverrideRequest,
-    ReconfigureGroupTopologyRequest,
     QueuedGroupTopologyReconfigureResponse,
+    ReconfigureGroupTopologyRequest,
     StoredGroupTopologyConfig,
     StoredGroupTopologyOverride,
 } from '@shared/api/graph-topology-management-types.ts';
@@ -63,6 +48,7 @@ import {
     DEFAULT_STATE_APPLICATION_ID,
     DEFAULT_STATE_WORKSPACE_ID,
     type DisconnectGroupPresenceSessionRequest,
+    type GroupJoinCodeResponse,
     type HeartbeatClientSessionRequest,
     type HeartbeatGroupPresenceSessionRequest,
     type JoinGroupRequest,
@@ -75,30 +61,13 @@ import {
     type UnbanGroupMemberRequest,
     type UpdateGroupRequest,
     type UpsertGroupMemberRequest,
-    type GroupJoinCodeResponse,
 } from '@shared/api/state-types.ts';
-import type {
-    StateEventCursor,
-    StateEventPage,
-} from '@shared/api/state-event-types.ts';
+import type { StateEventCursor, StateEventPage } from '@shared/api/state-event-types.ts';
 import type {
     RallarCrdtCatchUpRequestEnvelope,
     RallarCrdtCatchUpResponseEnvelope,
 } from '@shared/crdt/mod.ts';
-import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { RateLimiter } from '@shared/resilience/Resilience.ts';
-
-export type ApiRequestOptions = Readonly<{
-    signal?: AbortSignal;
-    authSession?: AuthSession | null;
-}>;
-
-export { ApiHttpError, readApiPolicyError } from './api/http-error.ts';
-export type { ApiHttpMethod } from './api/http-error.ts';
-export {
-    readStateClientSnapshot,
-    readStateGroupSnapshot,
-} from './state-read/point-read.ts';
+export { readStateClientSnapshot, readStateGroupSnapshot } from './state-read/point-read.ts';
 export type {
     ReadStateClientSnapshotOptions,
     ReadStateGroupSnapshotOptions,
@@ -109,18 +78,20 @@ export type {
 export type StateEventListRequestOptions<TEventType extends string> =
     & ApiRequestOptions
     & Readonly<{
-    eventTypes?: readonly TEventType[];
-    limit?: number;
-    after?: StateEventCursor;
-}>;
+        eventTypes?: readonly TEventType[];
+        limit?: number;
+        after?: StateEventCursor;
+    }>;
 
 export type StateGraphDiagnosticReadOptions =
     & ApiRequestOptions
     & GraphDiagnosticReadOptions;
 
-export type StateGroupTopologyDeleteOptions = ApiRequestOptions & Readonly<{
-    requestId: string;
-}>;
+export type StateGroupTopologyDeleteOptions =
+    & ApiRequestOptions
+    & Readonly<{
+        requestId: string;
+    }>;
 
 export type PutStateGroupTopologyConfigResponse = Readonly<{
     config: StoredGroupTopologyConfig;
@@ -137,323 +108,9 @@ export type DeleteStateGroupTopologyConfigResponse = Readonly<{
     receipt: GroupTopologyConfigMutationReceipt;
 }>;
 
-export type GroupStateEventListRequestOptions =
-    StateEventListRequestOptions<GroupEventType>;
+export type GroupStateEventListRequestOptions = StateEventListRequestOptions<GroupEventType>;
 
-export type ClientStateEventListRequestOptions =
-    StateEventListRequestOptions<ClientEventType>;
-
-export type WebSocketTicketBackoffState = Readonly<
-    | {
-        status: 'idle';
-        lastStatus?: number;
-        lastFailureAtEpochMs?: number;
-    }
-    | {
-        status: 'cooldown';
-        retryAtEpochMs: number;
-        lastStatus: number;
-        lastFailureAtEpochMs: number;
-        reason: string;
-    }
-    | {
-        status: 'local-rate-limited';
-        lastStatus: number;
-        lastFailureAtEpochMs: number;
-        reason: string;
-    }
-    | {
-        status: 'circuit-open';
-        lastStatus: number;
-        lastFailureAtEpochMs: number;
-        reason: string;
-    }
->;
-
-export type WebSocketTicketLocalRateLimitConfig = Readonly<{
-    windowMs: number;
-    maxRequests: number;
-}>;
-
-export type WebSocketTicketCircuitBreakerConfig = Readonly<{
-    maxConsecutiveFailures: number;
-    resetTimeoutMs: number;
-    halfOpenTimeoutMs: number;
-    slidingWindowMs: number;
-}>;
-
-const DEFAULT_WS_TICKET_429_BACKOFF_MS = 5_000;
-const DEFAULT_WS_TICKET_LOCAL_RATE_LIMIT: WebSocketTicketLocalRateLimitConfig = {
-    windowMs: 60_000,
-    maxRequests: 30,
-};
-const DEFAULT_WS_TICKET_CIRCUIT_BREAKER: WebSocketTicketCircuitBreakerConfig = {
-    maxConsecutiveFailures: 2,
-    resetTimeoutMs: 10_000,
-    halfOpenTimeoutMs: 10_000,
-    slidingWindowMs: 10_000,
-};
-const WS_TICKET_LOCAL_RATE_LIMIT_REASON =
-    'WebSocket ticket request suppressed by local client rate limiter.';
-const WS_TICKET_CIRCUIT_OPEN_REASON =
-    'WebSocket ticket request suppressed by local circuit breaker.';
-
-let webSocketTicketBackoffState: WebSocketTicketBackoffState = {
-    status: 'idle',
-};
-let webSocketTicketLocalRateLimitConfig = DEFAULT_WS_TICKET_LOCAL_RATE_LIMIT;
-const webSocketTicketLocalLimiters = new Map<string, RateLimiter>();
-let webSocketTicketCircuitBreakerConfig = DEFAULT_WS_TICKET_CIRCUIT_BREAKER;
-let webSocketTicketCircuitBreaker = createWebSocketTicketCircuitBreaker(
-    webSocketTicketCircuitBreakerConfig,
-);
-
-type WebSocketTicketAttempt = Readonly<
-    | {
-        kind: 'ok';
-        ticket: WebSocketTicketResponse;
-    }
-    | {
-        kind: 'http-error';
-        error: ApiHttpError;
-    }
-    | {
-        kind: 'error';
-        error: Error;
-    }
->;
-
-export function readWebSocketTicketBackoffState(): WebSocketTicketBackoffState {
-    return webSocketTicketBackoffState;
-}
-
-export function resetWebSocketTicketBackoff(): void {
-    webSocketTicketBackoffState = { status: 'idle' };
-    webSocketTicketLocalLimiters.clear();
-    webSocketTicketCircuitBreaker = createWebSocketTicketCircuitBreaker(
-        webSocketTicketCircuitBreakerConfig,
-    );
-}
-
-export function configureWebSocketTicketLocalRateLimit(
-    config: WebSocketTicketLocalRateLimitConfig,
-): void {
-    webSocketTicketLocalRateLimitConfig = config;
-    webSocketTicketLocalLimiters.clear();
-}
-
-export function configureWebSocketTicketCircuitBreaker(
-    config: WebSocketTicketCircuitBreakerConfig,
-): void {
-    webSocketTicketCircuitBreakerConfig = config;
-    webSocketTicketCircuitBreaker = createWebSocketTicketCircuitBreaker(config);
-}
-
-function createWebSocketTicketCircuitBreaker(
-    config: WebSocketTicketCircuitBreakerConfig,
-): CircuitBreaker {
-    return CircuitBreaker.create(new CircuitBreakerPolicy(
-        config.maxConsecutiveFailures,
-        Temporal.Duration.from({ milliseconds: config.resetTimeoutMs }),
-        Temporal.Duration.from({ milliseconds: config.halfOpenTimeoutMs }),
-        Temporal.Duration.from({ milliseconds: config.slidingWindowMs }),
-    ));
-}
-
-function readWebSocketTicketLocalLimiter(sessionId: string): RateLimiter {
-    const existing = webSocketTicketLocalLimiters.get(sessionId);
-    if (existing) {
-        return existing;
-    }
-
-    const limiter = RateLimiter.init(
-        webSocketTicketLocalRateLimitConfig.windowMs,
-        webSocketTicketLocalRateLimitConfig.maxRequests,
-    );
-    webSocketTicketLocalLimiters.set(sessionId, limiter);
-    return limiter;
-}
-
-function readRetryAfterMs(headers: Headers | undefined, nowMs: number): number {
-    const raw = headers?.get('retry-after');
-    if (!raw) {
-        return DEFAULT_WS_TICKET_429_BACKOFF_MS;
-    }
-
-    const seconds = Number(raw);
-    if (Number.isFinite(seconds) && seconds >= 0) {
-        return Math.max(0, seconds * 1_000);
-    }
-
-    const retryAt = Date.parse(raw);
-    if (Number.isFinite(retryAt)) {
-        return Math.max(0, retryAt - nowMs);
-    }
-
-    return DEFAULT_WS_TICKET_429_BACKOFF_MS;
-}
-
-async function executeWebSocketTicketAttempt(
-    options?: ApiRequestOptions,
-): Promise<WebSocketTicketAttempt> {
-    try {
-        return {
-            kind: 'ok',
-            ticket: await executeHttpRequest<
-                Record<string, never>,
-                WebSocketTicketResponse
-            >(
-                readApiBaseUrl(),
-                '/api/auth/ws-ticket',
-                'POST',
-                {},
-                options,
-            ),
-        };
-    } catch (error) {
-        if (error instanceof ApiHttpError) {
-            return { kind: 'http-error', error };
-        }
-        return {
-            kind: 'error',
-            error: error instanceof Error ? error : new Error(String(error)),
-        };
-    }
-}
-
-function isSuccessfulWebSocketTicketAttempt(
-    attempt: WebSocketTicketAttempt,
-): boolean {
-    if (attempt.kind === 'ok') {
-        return true;
-    }
-    if (attempt.kind === 'http-error') {
-        return attempt.error.status < 500;
-    }
-    return attempt.error.name === 'AbortError';
-}
-
-function throwWebSocketTicketAttempt(attempt: WebSocketTicketAttempt): never {
-    if (attempt.kind === 'ok') {
-        throw new Error('Cannot throw a successful WebSocket ticket attempt.');
-    }
-    throw attempt.error;
-}
-
-function readWebSocketTicketAttemptStatus(attempt: WebSocketTicketAttempt): number {
-    return attempt.kind === 'http-error' ? attempt.error.status : 503;
-}
-
-function markWebSocketTicketCircuitOpen(lastStatus: number = 503): void {
-    webSocketTicketBackoffState = {
-        status: 'circuit-open',
-        lastStatus,
-        lastFailureAtEpochMs: Date.now(),
-        reason: WS_TICKET_CIRCUIT_OPEN_REASON,
-    };
-}
-
-async function rejectWebSocketTicketLocalRateLimit(): Promise<WebSocketTicketResponse> {
-    webSocketTicketBackoffState = {
-        status: 'local-rate-limited',
-        lastStatus: 429,
-        lastFailureAtEpochMs: Date.now(),
-        reason: WS_TICKET_LOCAL_RATE_LIMIT_REASON,
-    };
-    throw new ApiHttpError(
-        'POST',
-        '/api/auth/ws-ticket',
-        429,
-        WS_TICKET_LOCAL_RATE_LIMIT_REASON,
-    );
-}
-
-async function createWebSocketTicketThroughCircuitBreaker(
-    options?: ApiRequestOptions,
-): Promise<WebSocketTicketResponse> {
-    const result = await CircuitBreaker.tryToExecute<WebSocketTicketAttempt>(
-        webSocketTicketCircuitBreaker,
-        () => executeWebSocketTicketAttempt(options),
-        isSuccessfulWebSocketTicketAttempt,
-    );
-
-    return result.fold(
-        () => {
-            markWebSocketTicketCircuitOpen();
-            throw new ApiHttpError(
-                'POST',
-                '/api/auth/ws-ticket',
-                503,
-                WS_TICKET_CIRCUIT_OPEN_REASON,
-            );
-        },
-        (attempt) => {
-            if (attempt.kind === 'ok') {
-                return attempt.ticket;
-            }
-            if (
-                !isSuccessfulWebSocketTicketAttempt(attempt) &&
-                webSocketTicketCircuitBreaker.isOpen()
-            ) {
-                markWebSocketTicketCircuitOpen(
-                    readWebSocketTicketAttemptStatus(attempt),
-                );
-            }
-            throwWebSocketTicketAttempt(attempt);
-        },
-    );
-}
-
-async function executeHttpRequest<TReq, TRes>(
-    baseUrl: string,
-    path: string,
-    method: ApiHttpMethod,
-    body: TReq | undefined,
-    options: ApiRequestOptions = {},
-    requestHeaders: Readonly<Record<string, string>> = {},
-): Promise<TRes> {
-    const init: RequestInit = {
-        method,
-        headers: { 'content-type': 'application/json', ...requestHeaders },
-        signal: options.signal,
-    };
-    const session = options.authSession === undefined
-        ? readSession()
-        : options.authSession;
-    if (session) {
-        const headers = new Headers(init.headers);
-        headers.set('authorization', `Bearer ${session.accessToken}`);
-        headers.set('x-client-id', session.clientId);
-        init.headers = headers;
-    }
-    if (method === 'POST' || method === 'PUT') {
-        if (body === undefined) {
-            throw new Error(`${method} ${path} requires a body`);
-        }
-        init.body = JSON.stringify(body);
-    } else if (method === 'DELETE' && body !== undefined) {
-        init.body = JSON.stringify(body);
-    }
-    const response = await fetch(`${baseUrl}${path}`, init);
-    if (!response.ok) {
-        throw new ApiHttpError(
-            method,
-            path,
-            response.status,
-            await readErrorBody(response),
-            response.headers,
-        );
-    }
-    return (await response.json()) as TRes;
-}
-
-async function readErrorBody(response: Response): Promise<string> {
-    try {
-        return await response.text();
-    } catch {
-        return '';
-    }
-}
+export type ClientStateEventListRequestOptions = StateEventListRequestOptions<ClientEventType>;
 
 export async function readApiConfig(
     options?: ApiRequestOptions,
@@ -465,146 +122,6 @@ export async function readApiConfig(
         undefined,
         options,
     );
-}
-
-export async function loginToApi(
-    req: LoginRequest,
-    options?: ApiRequestOptions,
-): Promise<LoginResponse> {
-    return await executeHttpRequest<LoginRequest, LoginResponse>(
-        readApiBaseUrl(),
-        '/api/auth/login',
-        'POST',
-        req,
-        options,
-    );
-}
-
-export async function registerWithApi(
-    req: RegisterRequest,
-    options?: ApiRequestOptions,
-): Promise<RegisterResponse> {
-    return await executeHttpRequest<RegisterRequest, RegisterResponse>(
-        readApiBaseUrl(),
-        '/api/auth/register',
-        'POST',
-        req,
-        options,
-    );
-}
-
-export async function logoutFromApi(
-    options?: ApiRequestOptions,
-): Promise<LogoutResponse> {
-    return await executeHttpRequest<Record<string, never>, LogoutResponse>(
-        readApiBaseUrl(),
-        '/api/auth/logout',
-        'POST',
-        {},
-        options,
-    );
-}
-
-export async function issueAgentSessionTickets(
-    request: AgentSessionTicketRequest,
-    options?: ApiRequestOptions,
-): Promise<AgentSessionTicketResponse> {
-    return await issueAgentSessionTicketsAt(readApiBaseUrl(), request, options);
-}
-
-export async function issueAgentSessionTicketsAt(
-    apiBaseUrl: string,
-    request: AgentSessionTicketRequest,
-    options?: ApiRequestOptions,
-): Promise<AgentSessionTicketResponse> {
-    return await executeHttpRequest<AgentSessionTicketRequest, AgentSessionTicketResponse>(
-        normalizedExplicitApiBaseUrl(apiBaseUrl),
-        '/api/auth/agent-session-tickets',
-        'POST',
-        request,
-        options,
-    );
-}
-
-export async function consumeAgentSessionTicket(
-    request: ConsumeAgentSessionTicketRequest,
-    options?: ApiRequestOptions,
-): Promise<ConsumeAgentSessionTicketResponse> {
-    return await consumeAgentSessionTicketAt(readApiBaseUrl(), request, options);
-}
-
-export async function consumeAgentSessionTicketAt(
-    apiBaseUrl: string,
-    request: ConsumeAgentSessionTicketRequest,
-    options?: ApiRequestOptions,
-): Promise<ConsumeAgentSessionTicketResponse> {
-    return await executeHttpRequest<ConsumeAgentSessionTicketRequest, ConsumeAgentSessionTicketResponse>(
-        normalizedExplicitApiBaseUrl(apiBaseUrl),
-        '/api/auth/agent-session-tickets/consume',
-        'POST',
-        request,
-        options,
-    );
-}
-
-function normalizedExplicitApiBaseUrl(value: string): string {
-    return value.trim().replace(/\/+$/, '');
-}
-
-export async function createWebSocketTicket(
-    options?: ApiRequestOptions,
-): Promise<WebSocketTicketResponse> {
-    const now = Date.now();
-    if (
-        webSocketTicketBackoffState.status === 'cooldown' &&
-        webSocketTicketBackoffState.retryAtEpochMs > now
-    ) {
-        throw new ApiHttpError(
-            'POST',
-            '/api/auth/ws-ticket',
-            429,
-            'WebSocket ticket request suppressed until cooldown expires.',
-        );
-    }
-    if (!webSocketTicketCircuitBreaker.isAllowedThrough()) {
-        markWebSocketTicketCircuitOpen();
-        throw new ApiHttpError(
-            'POST',
-            '/api/auth/ws-ticket',
-            503,
-            WS_TICKET_CIRCUIT_OPEN_REASON,
-        );
-    }
-
-    try {
-        const session = options?.authSession === undefined
-            ? readSession()
-            : options.authSession;
-        const limiterKey = session?.sessionId ?? 'anonymous';
-        const ticket = await RateLimiter.tryToExecuteOrElse<WebSocketTicketResponse>(
-            readWebSocketTicketLocalLimiter(limiterKey),
-            () => createWebSocketTicketThroughCircuitBreaker(options),
-            rejectWebSocketTicketLocalRateLimit,
-        );
-        webSocketTicketBackoffState = { status: 'idle' };
-        return ticket;
-    } catch (error) {
-        if (
-            error instanceof ApiHttpError &&
-            error.status === 429 &&
-            error.bodyText !== WS_TICKET_LOCAL_RATE_LIMIT_REASON
-        ) {
-            const failedAt = Date.now();
-            webSocketTicketBackoffState = {
-                status: 'cooldown',
-                retryAtEpochMs: failedAt + readRetryAfterMs(error.headers, failedAt),
-                lastStatus: 429,
-                lastFailureAtEpochMs: failedAt,
-                reason: error.bodyText,
-            };
-        }
-        throw error;
-    }
 }
 
 export async function readIceCandidates(
@@ -644,13 +161,13 @@ export function defaultStateScope(): StateScope {
 
 type ApiResultEnvelope<T> =
     | Readonly<{
-          ok: true;
-          result: T;
-      }>
+        ok: true;
+        result: T;
+    }>
     | Readonly<{
-          ok: false;
-          error: string;
-      }>;
+        ok: false;
+        error: string;
+    }>;
 
 export async function listStateClients(
     scope: StateScope = defaultStateScope(),
@@ -1018,9 +535,7 @@ export async function appointStateGroupDirector(
 ): Promise<GroupStateSnapshot> {
     return await executeHttpRequest<AppointGroupDirectorRequest, GroupStateSnapshot>(
         readApiBaseUrl(),
-        `${toStateScopePath(scope)}/groups/${
-            encodeURIComponent(groupId)
-        }/director/appoint`,
+        `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}/director/appoint`,
         'POST',
         request,
         options,
@@ -1101,9 +616,7 @@ export async function rotateStateGroupJoinCode(
 ): Promise<GroupJoinCodeResponse> {
     return await executeHttpRequest<RotateGroupJoinCodeRequest, GroupJoinCodeResponse>(
         readApiBaseUrl(),
-        `${toStateScopePath(scope)}/groups/${
-            encodeURIComponent(groupId)
-        }/join-code/rotate`,
+        `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}/join-code/rotate`,
         'POST',
         request,
         options,
@@ -1190,9 +703,7 @@ export async function transferStateGroupOwnership(
 ): Promise<GroupStateSnapshot> {
     return await executeHttpRequest<TransferGroupOwnershipRequest, GroupStateSnapshot>(
         readApiBaseUrl(),
-        `${toStateScopePath(scope)}/groups/${
-            encodeURIComponent(groupId)
-        }/owner/transfer`,
+        `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}/owner/transfer`,
         'POST',
         request,
         options,
@@ -1246,16 +757,20 @@ export async function connectStateClientSession(
     scope: StateScope = defaultStateScope(),
     options?: ApiRequestOptions,
 ): Promise<ClientStateSnapshot> {
-    return await executeHttpRequest<
-        ConnectClientSessionRequest,
-        ClientStateSnapshot
-    >(
-        readApiBaseUrl(),
+    const mutation = toApiMutationRequest(
         `${toStateScopePath(scope)}/clients/${encodeURIComponent(principalId)}/instances/${
             encodeURIComponent(clientInstanceId)
         }/sessions/${encodeURIComponent(sessionId)}`,
-        'PUT',
         request,
+    );
+    return await executeHttpRequest<
+        Omit<ConnectClientSessionRequest, 'requestId'>,
+        ClientStateSnapshot
+    >(
+        readApiBaseUrl(),
+        mutation.path,
+        'PUT',
+        mutation.body,
         options,
     );
 }
@@ -1268,16 +783,20 @@ export async function heartbeatStateClientSession(
     scope: StateScope = defaultStateScope(),
     options?: ApiRequestOptions,
 ): Promise<ClientStateSnapshot> {
-    return await executeHttpRequest<
-        HeartbeatClientSessionRequest,
-        ClientStateSnapshot
-    >(
-        readApiBaseUrl(),
+    const mutation = toApiMutationRequest(
         `${toStateScopePath(scope)}/clients/${encodeURIComponent(principalId)}/instances/${
             encodeURIComponent(clientInstanceId)
         }/sessions/${encodeURIComponent(sessionId)}/heartbeat`,
-        'POST',
         request,
+    );
+    return await executeHttpRequest<
+        Omit<HeartbeatClientSessionRequest, 'requestId'>,
+        ClientStateSnapshot
+    >(
+        readApiBaseUrl(),
+        mutation.path,
+        'POST',
+        mutation.body,
         options,
     );
 }
@@ -1328,6 +847,21 @@ function toStateScopePath(scope: StateScope): string {
     return `/api/state/apps/${encodeURIComponent(scope.applicationId)}/workspaces/${
         encodeURIComponent(scope.workspaceId)
     }`;
+}
+
+function toApiMutationRequest<Request extends Readonly<{ requestId?: string }>>(
+    path: string,
+    request: Request,
+): Readonly<{
+    path: string;
+    body: Omit<Request, 'requestId'>;
+}> {
+    const { requestId: candidate, ...body } = request;
+    const requestId = candidate ?? crypto.randomUUID();
+    return {
+        path: toApiMutationRequestPath(path, requestId),
+        body,
+    };
 }
 
 function toStateGroupPath(scope: StateScope, groupId: string): string {

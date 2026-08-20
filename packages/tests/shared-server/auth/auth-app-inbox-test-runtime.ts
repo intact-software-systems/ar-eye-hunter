@@ -60,6 +60,18 @@ export class TestResourceInbox extends InMemoryQueueBox {
     const entry = await this.getItem(key);
     return entry !== undefined && statuses.includes(entry.status);
   }
+
+  async findAllByTopicAndResourceId(
+    topicId: string,
+    resourceId: string,
+  ): Promise<readonly ResourceEntry[]> {
+    return (await readEntries(this)).filter(
+      (entry) =>
+        !isExpiredResourceEntry(entry) &&
+        entry.key.topicId === topicId &&
+        entry.key.resourceId === resourceId,
+    );
+  }
 }
 
 export class TestResourceInboxResults {
@@ -164,7 +176,10 @@ export async function runAuthInboxCommand<
   minimumEntries = 1,
 }: RunAuthInboxCommandInput<Result, P>): Promise<Awaited<P>> {
   await waitForAuthInboxEntry(queue, minimumEntries);
-  await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAuthInboxTestResilience());
+  await reader.dequeueInbox(
+    InboxQueueReader.INBOX_DEQUEUE_TYPES,
+    createAuthInboxTestResilience(),
+  );
   return await pending;
 }
 

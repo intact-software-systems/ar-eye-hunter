@@ -11,7 +11,7 @@ import { logDatabasePubSubConfig } from './db/database-pubsub-config.ts';
 import { assertApiV1ProductionEnv } from '@shared-server/http/production-env-hardening.ts';
 import {
   STATE_SNAPSHOT_READ_EXPOSED_HEADERS,
-} from './routes/state-snapshot-read-exposed-headers.ts';
+} from './routes/state-snapshot-read/state-snapshot-read-exposed-headers.ts';
 import {
   stopApiOnRtcTopologyDeliveryHealthFailure,
 } from './runtime/rtc-topology/rtc-topology-delivery-health-shutdown.ts';

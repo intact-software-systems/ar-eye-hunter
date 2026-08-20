@@ -12,7 +12,10 @@ import {
     createInitialVitalsState,
     toArenaSnapshot,
 } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
-import { useRallarArena, type ArenaConnection } from '../../../apps/ar-eye-hunter-v1/src/game/useRallarArena.ts';
+import {
+    type ArenaConnection,
+    useRallarArena,
+} from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts';
 import type { ArenaRallarGameMatchHandle } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
 import type { RallarGameMatchStatus, RallarGamePeerReadiness } from '@shared-web/game/mod.ts';
 
@@ -135,15 +138,22 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
 }));
 
 vi.mock('@shared-web/browser/api-integration.ts', () => ({
-    readApiConfig: vi.fn(() => Promise.resolve({
-        apiBaseUrl: 'https://api.test',
-        wsBaseUrl: 'wss://api.test',
-    })),
-    readIceCandidates: vi.fn(() => Promise.resolve({
-        iceServers: [
-            { urls: 'stun:stun.test' },
-        ],
-    })),
+    readApiConfig: vi.fn(() =>
+        Promise.resolve({
+            apiBaseUrl: 'https://api.test',
+            wsBaseUrl: 'wss://api.test',
+        })
+    ),
+    readIceCandidates: vi.fn(() =>
+        Promise.resolve({
+            iceServers: [
+                { urls: 'stun:stun.test' },
+            ],
+        })
+    ),
+}));
+
+vi.mock('@shared-web/browser/auth/websocket-ticket-http-api.ts', () => ({
     readWebSocketTicketBackoffState: vi.fn(() => ({ status: 'idle' })),
 }));
 
@@ -153,13 +163,16 @@ vi.mock('@shared-web/browser/rallar-ai.ts', () => ({
     }),
 }));
 
-vi.mock('../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts', async (importOriginal) => {
-    const actual = await importOriginal<object>();
-    return {
-        ...actual,
-        createArenaRallarGameMatch: vi.fn(() => mockMatch),
-    };
-});
+vi.mock(
+    '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts',
+    async (importOriginal) => {
+        const actual = await importOriginal<object>();
+        return {
+            ...actual,
+            createArenaRallarGameMatch: vi.fn(() => mockMatch),
+        };
+    },
+);
 
 describe('useRallarArena auth lifecycle', () => {
     let root: Root | undefined;
@@ -207,14 +220,16 @@ describe('useRallarArena auth lifecycle', () => {
         });
         mockRallar.realtime.onJson.mockReturnValue(vi.fn());
         mockRallar.realtime.room.mockReturnValue({
-            send: vi.fn(() => Promise.resolve({
-                status: 'sent',
-                peerIds: ['peer-b'],
-                desiredPeerIds: ['peer-b'],
-                results: [],
-                transport: 'rtc',
-                laneId: 'combat',
-            })),
+            send: vi.fn(() =>
+                Promise.resolve({
+                    status: 'sent',
+                    peerIds: ['peer-b'],
+                    desiredPeerIds: ['peer-b'],
+                    results: [],
+                    transport: 'rtc',
+                    laneId: 'combat',
+                })
+            ),
         });
         mockRallar.realtime.health.mockReturnValue([]);
         mockRallar.rooms.onChange.mockReturnValue(vi.fn());
@@ -509,7 +524,9 @@ describe('useRallarArena auth lifecycle', () => {
                 currentRoomRef?: undefined;
             }) => void
         >();
-        const appointment = createDeferred<Awaited<ReturnType<typeof mockMatch.appointIfElected>>>();
+        const appointment = createDeferred<
+            Awaited<ReturnType<typeof mockMatch.appointIfElected>>
+        >();
         mockRallar.rooms.onChange.mockImplementation((listener) => {
             roomChangeListeners.add(listener as never);
             return () => roomChangeListeners.delete(listener as never);
@@ -929,18 +946,21 @@ describe('useRallarArena auth lifecycle', () => {
                 sessionId: session.sessionId,
             }),
         }));
-        expect(mockMatch.sendPresence).toHaveBeenCalledWith(expect.objectContaining({
-            kind: 'player-pose',
-            pose: expect.objectContaining({
-                sessionId: session.sessionId,
-                position: [1, 2, 3],
+        expect(mockMatch.sendPresence).toHaveBeenCalledWith(
+            expect.objectContaining({
+                kind: 'player-pose',
+                pose: expect.objectContaining({
+                    sessionId: session.sessionId,
+                    position: [1, 2, 3],
+                }),
             }),
-        }), expect.objectContaining({
-            laneId: 'motion',
-            key: `pose:${session.sessionId}`,
-            maxAgeMs: 250,
-            openTimeoutMs: 1500,
-        }));
+            expect.objectContaining({
+                laneId: 'motion',
+                key: `pose:${session.sessionId}`,
+                maxAgeMs: 250,
+                openTimeoutMs: 1500,
+            }),
+        );
         expect(mockRallar.realtime.sendJson).not.toHaveBeenCalledWith(expect.objectContaining({
             laneId: 'motion',
             key: `pose:${session.sessionId}`,

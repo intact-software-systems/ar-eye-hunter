@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 // prettier-ignore
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/\
@@ -15,8 +16,7 @@ import type { JsonWireValue } from '@shared-server/rallar-system/services/mutati
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/\
 app-auth-inbox-service.ts';
 // prettier-ignore
-import { AUTH_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/auth/inbox/\
-auth-app-inbox-routing.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 // prettier-ignore
 import type { IssueAuthSessionCommand } from '@shared-server/rallar-system/auth/mutation/\
 auth-mutation-contracts.ts';
@@ -166,6 +166,7 @@ async function putLegacyTickets(input: PutLegacyTicketsInput): Promise<void> {
 }
 
 async function consumeLegacyWebSocketTicket(fixture: LegacyTicketFixture): Promise<void> {
+  const ticketDigest = await hashAuthSecret(fixture.legacyWsTicket);
   const pending = fixture.auth.service.consumeWebSocketTicket({
     requestId: 'legacy-ws-consume',
     capturedAtEpochMs: Date.now(),
@@ -182,11 +183,11 @@ async function consumeLegacyWebSocketTicket(fixture: LegacyTicketFixture): Promi
     })),
   ).toEqual([
     {
-      key: {
-        topicId: AUTH_STATE_APP_INBOX_TOPIC,
+      key: toAppQueueKey({
+        topicId: AppInboxType.AUTH_WS_TICKET_CONSUME,
         resourceId: 'legacy-ws-consume',
-        contextId: fixture.session.sessionId,
-      },
+        contextId: `credential=${encodeURIComponent(ticketDigest)}`,
+      }),
       status: EntityStatus.COMPLETED,
       next: undefined,
     },
@@ -243,7 +244,9 @@ async function failsReplayAfterSecretRotation(): Promise<void> {
   await dequeue(auth);
   expect((await firstPending).right).toBeDefined();
 
-  const rotatedIssuer = createHmacAuthCredentialIssuer('second-auth-secret-0123456789abcdef-extra');
+  const rotatedIssuer = createHmacAuthCredentialIssuer(
+    'second-auth-secret-0123456789abcdef-extra',
+  );
   const rotatedService = createServiceWithIssuer(auth, runtimeRepository, rotatedIssuer);
   await expect(rotatedService.processAuthCommandUntilCompletion(command)).rejects.toThrow(
     /digest differs/u,

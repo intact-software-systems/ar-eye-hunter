@@ -1,5 +1,10 @@
 import { type Context, Hono } from 'jsr:@hono/hono@4.11.9';
+import type {
+  ApiMutationFailureJsonObject,
+  ApiMutationFailureJsonValue,
+} from '@shared/api/mutation/api-mutation.ts';
 import type { StateScope, UpsertClientInstanceRequest } from '@shared/api/state-types.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 import type { ClientEvent, ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
 import type {
   ClientStateService,
@@ -15,7 +20,11 @@ import {
 } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import type {
   ClientStateWritten,
-} from '@shared-server/rallar-system/services/client-state-service.ts';
+} from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
+import {
+  toAuthenticatedClientMutationContextId,
+} from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import {
   filterStateEventsForList,
   readStateEventListQuery,
@@ -32,6 +41,11 @@ import {
   ClientMutationRejectedError,
   validateClientMutationRequest,
 } from '@shared-server/rallar-system/services/client-state-mutations.ts';
+import { readApiMutationRouteRequestId } from './api-mutation-route-ingress.ts';
+import {
+  toApiMutationFailureResponse,
+  toApiMutationRouteFailure,
+} from './api-mutation-route-failure.ts';
 import {
   type ClientStatePointRead,
   readCurrentClientSnapshot,
@@ -61,7 +75,7 @@ export type ClientStateRouteService =
 export type ProcessClientAppInbox = <V>(
   enqueue: AppInboxEnqueueInput<V>,
   authority: IssuedAuthSession,
-) => Promise<ClientStateWritten>;
+) => Promise<Either<AppInboxFailure, ClientStateWritten>>;
 
 export type ClientStateRouteDependencies = Readonly<{
   clientStateService: ClientStateRouteService;
@@ -200,27 +214,27 @@ export function registerClientStateRoutes(
   );
 
   app.put(
-    `${CLIENT_PRINCIPAL_PATH}/principal`,
+    `${CLIENT_PRINCIPAL_PATH}/principal/requests/:requestId`,
     (context) => handleClientPrincipalUpsert(context, deps),
   );
 
   app.put(
-    CLIENT_INSTANCE_PATH,
+    `${CLIENT_INSTANCE_PATH}/requests/:requestId`,
     (context) => handleClientInstanceUpsert(context, deps),
   );
 
   app.put(
-    CLIENT_SESSION_PATH,
+    `${CLIENT_SESSION_PATH}/requests/:requestId`,
     (context) => handleClientSessionConnect(context, deps),
   );
 
   app.post(
-    `${CLIENT_SESSION_PATH}/heartbeat`,
+    `${CLIENT_SESSION_PATH}/heartbeat/requests/:requestId`,
     (context) => handleClientSessionHeartbeat(context, deps),
   );
 
   app.post(
-    `${CLIENT_SESSION_PATH}/disconnect`,
+    `${CLIENT_SESSION_PATH}/disconnect/requests/:requestId`,
     (context) => handleClientSessionDisconnect(context, deps),
   );
 }
@@ -241,8 +255,14 @@ async function handleClientPrincipalUpsert(
       dependencies,
       {
         type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+        topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
         resourceId: request.requestId,
-        contextId: toClientAppInboxContextId(scope, principalId),
+        contextId: toAuthenticatedClientMutationContextId({
+          scope,
+          principalId,
+          callerClientId: authSession.clientId,
+          callerSessionId: authSession.sessionId,
+        }),
         senderId: authSession.clientId,
         data: { scope, principalId, request },
       },
@@ -250,7 +270,7 @@ async function handleClientPrincipalUpsert(
     );
     return context.json(snapshot);
   } catch (error) {
-    return toClientStateRouteErrorResponse(
+    return toApiMutationFailureResponse(
       context,
       error instanceof Error ? error : new Error(String(error)),
     );
@@ -277,8 +297,14 @@ async function handleClientInstanceUpsert(
       dependencies,
       {
         type: AppInboxType.CLIENT_INSTANCE_UPSERT,
+        topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
         resourceId: request.requestId,
-        contextId: toClientAppInboxContextId(scope, principalId),
+        contextId: toAuthenticatedClientMutationContextId({
+          scope,
+          principalId,
+          callerClientId: authSession.clientId,
+          callerSessionId: authSession.sessionId,
+        }),
         senderId: authSession.clientId,
         data: { scope, principalId, clientInstanceId, request },
       },
@@ -286,7 +312,7 @@ async function handleClientInstanceUpsert(
     );
     return context.json(snapshot);
   } catch (error) {
-    return toClientStateRouteErrorResponse(
+    return toApiMutationFailureResponse(
       context,
       error instanceof Error ? error : new Error(String(error)),
     );
@@ -308,8 +334,14 @@ async function handleClientSessionConnect(
       dependencies,
       {
         type: AppInboxType.CLIENT_SESSION_CONNECT,
+        topicId: AppInboxType.CLIENT_SESSION_CONNECT,
         resourceId: request.requestId,
-        contextId: toClientAppInboxContextId(scope, principalId),
+        contextId: toAuthenticatedClientMutationContextId({
+          scope,
+          principalId,
+          callerClientId: authSession.clientId,
+          callerSessionId: authSession.sessionId,
+        }),
         senderId: authSession.clientId,
         data: { scope, principalId, clientInstanceId, sessionId, request },
       },
@@ -317,7 +349,7 @@ async function handleClientSessionConnect(
     );
     return context.json(snapshot);
   } catch (error) {
-    return toClientStateRouteErrorResponse(
+    return toApiMutationFailureResponse(
       context,
       error instanceof Error ? error : new Error(String(error)),
     );
@@ -339,8 +371,14 @@ async function handleClientSessionHeartbeat(
       dependencies,
       {
         type: AppInboxType.CLIENT_SESSION_HEARTBEAT,
+        topicId: AppInboxType.CLIENT_SESSION_HEARTBEAT,
         resourceId: request.requestId,
-        contextId: toClientAppInboxContextId(scope, principalId),
+        contextId: toAuthenticatedClientMutationContextId({
+          scope,
+          principalId,
+          callerClientId: authSession.clientId,
+          callerSessionId: authSession.sessionId,
+        }),
         senderId: authSession.clientId,
         data: { scope, principalId, clientInstanceId, sessionId, request },
       },
@@ -348,7 +386,7 @@ async function handleClientSessionHeartbeat(
     );
     return context.json(snapshot);
   } catch (error) {
-    return toClientStateRouteErrorResponse(
+    return toApiMutationFailureResponse(
       context,
       error instanceof Error ? error : new Error(String(error)),
     );
@@ -370,8 +408,14 @@ async function handleClientSessionDisconnect(
       dependencies,
       {
         type: AppInboxType.CLIENT_SESSION_DISCONNECT,
+        topicId: AppInboxType.CLIENT_SESSION_DISCONNECT,
         resourceId: request.requestId,
-        contextId: toClientAppInboxContextId(scope, principalId),
+        contextId: toAuthenticatedClientMutationContextId({
+          scope,
+          principalId,
+          callerClientId: authSession.clientId,
+          callerSessionId: authSession.sessionId,
+        }),
         senderId: authSession.clientId,
         data: { scope, principalId, clientInstanceId, sessionId, request },
       },
@@ -379,7 +423,7 @@ async function handleClientSessionDisconnect(
     );
     return context.json(snapshot);
   } catch (error) {
-    return toClientStateRouteErrorResponse(
+    return toApiMutationFailureResponse(
       context,
       error instanceof Error ? error : new Error(String(error)),
     );
@@ -468,14 +512,17 @@ async function processClientAppInbox<V>(
   enqueue: AppInboxEnqueueInput<V>,
   authority: IssuedAuthSession,
 ): Promise<ClientSnapshot> {
-  const written = await deps.processClientAppInbox(enqueue, authority);
+  const result = await deps.processClientAppInbox(enqueue, authority);
+  if (result.left !== undefined) {
+    throw toApiMutationRouteFailure(result.left);
+  }
+  const written = result.right;
+  if (written === undefined) {
+    throw new Error('Client AppInbox mutation result is unavailable');
+  }
   const snapshot = requireClientStateWrittenSnapshot(written);
   await hydrateClientMutationSnapshot(deps, snapshot);
   return snapshot;
-}
-
-export function toClientAppInboxError(failure: string): Error {
-  return new Error(failure);
 }
 
 async function hydrateClientMutationSnapshot(
@@ -504,6 +551,7 @@ async function readRequestWithRequestId(c: {
   req: {
     json(): Promise<unknown>;
     header(name: string): string | undefined;
+    param(name: string): string;
   };
 }): Promise<Record<string, unknown> & { requestId: string }> {
   const requestBody = await c.req.json();
@@ -513,29 +561,17 @@ async function readRequestWithRequestId(c: {
   ) {
     throw new ClientMutationRejectedError('Client request must be a plain object');
   }
-  const body = requestBody as Record<string, unknown>;
-  if (
-    body.requestId !== undefined &&
-    (typeof body.requestId !== 'string' || body.requestId.trim().length === 0)
-  ) {
-    throw new ClientMutationRejectedError(
-      'Client request requestId must be a non-empty string',
-    );
-  }
-  const requestId = body.requestId ??
-    c.req.header('Idempotency-Key') ??
-    crypto.randomUUID();
+  const body = requestBody as Record<string, unknown> & ApiMutationFailureJsonObject;
+  const requestId = readApiMutationRouteRequestId({
+    requestId: c.req.param('requestId'),
+    idempotencyKey: c.req.header('idempotency-key'),
+    mutationBody: body as ApiMutationFailureJsonValue,
+  });
 
   return {
     ...body,
     requestId: String(requestId),
   };
-}
-
-function toClientAppInboxContextId(scope: StateScope, principalId: string): string {
-  return [scope.applicationId, scope.workspaceId, principalId]
-    .map(encodeURIComponent)
-    .join(':');
 }
 
 function toScope(c: {
