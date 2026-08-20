@@ -4,12 +4,12 @@ import type {
   GroupCreateAppInboxPayload,
   GroupUpdateAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import {
-  type AppInboxEnqueueInput,
-  AppInboxType,
-} from '@shared-server/rallar-system/services/AppInboxService.ts';
+// prettier-ignore
+import type {
+  AuthenticatedGroupMutationEnqueue,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
-import type { ProcessGroupAppInbox } from '../../src/group-state/group-state-route-contracts.ts';
 import {
   readGroupStateRouteRequest,
 } from '../../src/group-state/read-group-state-route-request.ts';
@@ -207,7 +207,7 @@ Deno.test('group aggregate routes retain their AppInbox envelopes', async () => 
 Deno.test(
   'group aggregate routes preserve body, header, then one generated request ID',
   async () => {
-    const enqueued: unknown[] = [];
+    const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const runtime = createGroupStateRouteTestRuntime({
       processGroupAppInbox: captureGroupStateRouteWrite(enqueued, snapshot),
@@ -241,10 +241,7 @@ Deno.test(
       assert.equal(readRandomCallCount(), 1);
     });
     assert.equal(
-      JSON.stringify(enqueued.map((entry) => {
-        const envelope = entry as AppInboxEnqueueInput<unknown>;
-        return [envelope.resourceId, envelope.data];
-      })),
+      JSON.stringify(enqueued.map((entry) => [entry.resourceId, entry.data])),
       '[["body-request",{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"request":{"groupId":"body-id-group","displayName":"Body","kind":"room","requestId":"body-request","createdByPrincipalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session"}}],["header-request",{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"request":{"groupId":"header-id-group","displayName":"Header","kind":"room","requestId":"header-request","createdByPrincipalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session"}}],["generated-request",{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"request":{"groupId":"generated-id-group","displayName":"Generated","kind":"room","requestId":"generated-request","createdByPrincipalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session"}}]]',
     );
   },
@@ -267,13 +264,10 @@ Deno.test(
     let enqueued = 0;
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const runtime = createGroupStateRouteTestRuntime({
-      processGroupAppInbox: <V, R>(
-        _authority: Parameters<ProcessGroupAppInbox>[0],
-        _entry: AppInboxEnqueueInput<V>,
-      ): Promise<R> =>
+      processGroupAppInbox: (_authority, _entry) =>
         new Promise((resolve) => {
           enqueued += 1;
-          resolveCompletion = () => resolve(toGroupStateWritten(snapshot) as R);
+          resolveCompletion = () => resolve(toGroupStateWritten(snapshot));
         }),
     });
     const responsePromise = postGroupStateMutation(runtime.app, API_BASE, {
@@ -300,7 +294,7 @@ Deno.test(
       requireApiAuthSession: () => Promise.reject(new Error('route authentication failed')),
       processGroupAppInbox: () => {
         enqueued += 1;
-        return Promise.resolve(undefined as never);
+        return Promise.reject(new Error('Unexpected AppInbox call after authentication failure'));
       },
     });
     const response = await postGroupStateMutation(runtime.app, API_BASE, {

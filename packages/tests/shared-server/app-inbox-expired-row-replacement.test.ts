@@ -26,6 +26,10 @@ auth-state-mutations.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/\
 group-state-service.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import type {
+  JsonWireObject,
+  JsonWireValue,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import {
   createResilience,
@@ -89,8 +93,11 @@ describe('AppInbox expired row replacement', () => {
     await service.connectSession(SCOPE, 'alice', 'browser', 'session-1', replacement);
 
     const replaced = await runtime.findEntry('client-state:sessions', seeded.key);
-    expect(replaced).toMatchObject({ revision: expired!.revision + 1 });
-    expect(JSON.parse(replaced!.value)).toMatchObject({
+    if (!expired || !replaced) {
+      throw new Error('Expected expired client session replacement');
+    }
+    expect(replaced).toMatchObject({ revision: expired.revision + 1 });
+    expect(readJsonObject(replaced.value, 'Replaced client session')).toMatchObject({
       generationId: 'generation-2',
       generationVersion: 1,
     });
@@ -292,14 +299,7 @@ describe('AppInbox expired row replacement', () => {
       }
       const [staleWorkEntry] = database.outboxEntries.values();
       if (!staleWorkEntry) throw new Error('Expected seeded presence-summary work');
-      const staleMessage = JSON.parse(staleWorkEntry.resource) as Readonly<{
-        payload: Readonly<{ resource: string }>;
-      }>;
-      const staleWork = (
-        JSON.parse(staleMessage.payload.resource) as Readonly<{
-          data: Readonly<{ acceptedCausalRevision: Readonly<{ groupRevision: number }> }>;
-        }>
-      ).data;
+      const staleAcceptedGroupRevision = readStaleAcceptedGroupRevision(staleWorkEntry.resource);
       await runtime.upsert(
         'group-state:groups',
         groupBeforeExpiry.key,
@@ -345,10 +345,21 @@ describe('AppInbox expired row replacement', () => {
 
       const [replacedGroup] = await runtime.findAllEntries('group-state:groups');
       const [replacedSummary] = await runtime.findAllEntries('group-state:presence-summaries');
-      const groupValue = JSON.parse(replacedGroup!.value);
-      const summaryValue = JSON.parse(replacedSummary!.value);
+      if (!replacedGroup || !replacedSummary) {
+        throw new Error('Expected group and presence summary replacements');
+      }
+      const groupValue = readJsonObject(replacedGroup.value, 'Replaced group');
+      const summaryValue = readJsonObject(replacedSummary.value, 'Replaced presence summary');
+      const snapshotVersion = requireNonNegativeInteger(
+        groupValue.snapshotVersion,
+        'Replaced group snapshotVersion',
+      );
+      const summaryCausalRevision = requireJsonObject(
+        summaryValue.causalRevision,
+        'Replaced presence summary causalRevision',
+      );
       const replacementReceipt = (await runtime.findAllEntries('group-state:idempotent'))
-        .map((entry) => JSON.parse(entry.value))
+        .map((entry) => readJsonObject(entry.value, 'Group idempotency entry'))
         .find((entry) => entry.requestId === 'replace-group');
       expect(replacedGroup?.revision).toBe(expiredGroupRevision + 1);
       expect(replacedSummary?.revision).toBe(oldSummaryRevision + 1);
@@ -356,19 +367,19 @@ describe('AppInbox expired row replacement', () => {
       expect(summaryValue).toMatchObject({
         activePrincipalIds: [],
         activeSessionIds: [],
-        causalRevision: { groupRevision: groupValue.snapshotVersion },
+        causalRevision: { groupRevision: snapshotVersion },
       });
       expect(replacementReceipt).toMatchObject({
         requestId: 'replace-group',
         receipt: {
           attemptCount: 2,
           acceptedStorageRevision: expiredGroupRevision + 1,
-          causalRevision: summaryValue.causalRevision,
+          causalRevision: summaryCausalRevision,
         },
       });
       expect(database.groupEventStore.events.at(-1)).toMatchObject({
         requestId: 'replace-group',
-        causalRevision: summaryValue.causalRevision,
+        causalRevision: summaryCausalRevision,
       });
       expect(rollbackPreservedPredecessors).toBe(true);
       expect(database.groupEventStore.events).toHaveLength(2);
@@ -378,9 +389,44 @@ describe('AppInbox expired row replacement', () => {
           (entry) => entry.status === EntityStatus.COMPLETED && entry.dequeueAudit.attempts === 2,
         ),
       ).toBe(true);
-      expect(groupValue.snapshotVersion).toBeGreaterThan(
-        staleWork.acceptedCausalRevision.groupRevision,
-      );
+      expect(snapshotVersion).toBeGreaterThan(staleAcceptedGroupRevision);
     },
   );
 });
+
+function readStaleAcceptedGroupRevision(resource: string): number {
+  const message = readJsonObject(resource, 'Presence-summary outbox message');
+  const payload = requireJsonObject(message.payload, 'Presence-summary outbox payload');
+  if (typeof payload.resource !== 'string') {
+    throw new TypeError('Presence-summary outbox payload resource must be a string');
+  }
+  const work = readJsonObject(payload.resource, 'Presence-summary work');
+  const data = requireJsonObject(work.data, 'Presence-summary work data');
+  const acceptedCausalRevision = requireJsonObject(
+    data.acceptedCausalRevision,
+    'Presence-summary accepted causal revision',
+  );
+  return requireNonNegativeInteger(
+    acceptedCausalRevision.groupRevision,
+    'Presence-summary accepted group revision',
+  );
+}
+
+function readJsonObject(value: string, label: string): JsonWireObject {
+  const parsed: JsonWireValue = JSON.parse(value);
+  return requireJsonObject(parsed, label);
+}
+
+function requireJsonObject(value: JsonWireValue, label: string): JsonWireObject {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${label} must be an object`);
+  }
+  return value;
+}
+
+function requireNonNegativeInteger(value: JsonWireValue, label: string): number {
+  if (!Number.isSafeInteger(value) || Number(value) < 0) {
+    throw new TypeError(`${label} must be a non-negative safe integer`);
+  }
+  return Number(value);
+}

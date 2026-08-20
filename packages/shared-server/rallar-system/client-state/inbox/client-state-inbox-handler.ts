@@ -32,6 +32,10 @@ import type {
   ClientAuthorisedWsSessionConnectAppInboxPayload,
   ClientAuthorisedWsSessionDisconnectAppInboxPayload,
 } from './app-client-inbox-contracts.ts';
+import type {
+  AuthorisedWsClientMutationResult,
+  InactiveAuthorisedWsSessionResult,
+} from './client-state-inbox-result-codec.ts';
 
 export interface ClientStateInboxHandlerDependencies {
   readonly mutationService: ClientStateMutationService;
@@ -47,12 +51,6 @@ export interface ClientStateInboxAfterCommitResult {
   readonly committedSnapshots: readonly import('@shared/api/client-types.ts').ClientSnapshot[];
 }
 
-interface InactiveAuthorisedWsSession {
-  readonly status: 'inactive';
-  readonly sessionId: string;
-  readonly generationId: string;
-}
-
 interface WriteMissingSessionDisconnectInput {
   readonly context: AppInboxMessageContext;
   readonly disconnect: ClientAuthorisedWsSessionDisconnectAppInboxPayload;
@@ -60,8 +58,6 @@ interface WriteMissingSessionDisconnectInput {
   readonly read: Awaited<ReturnType<ClientStateMutationService['read']>>;
   readonly lifecycleComputed: WsSessionGenerationLifecycleComputed;
 }
-
-type AuthorisedWsClientMutationResult = ClientStateWritten | InactiveAuthorisedWsSession;
 
 export class ClientStateInboxHandler {
   private readonly dependencies: ClientStateInboxHandlerDependencies;
@@ -220,7 +216,7 @@ export class ClientStateInboxHandler {
   private async writeInactiveGeneration(
     context: AppInboxMessageContext,
     connection: ClientAuthorisedWsSessionConnectAppInboxPayload,
-  ): Promise<InactiveAuthorisedWsSession> {
+  ): Promise<InactiveAuthorisedWsSessionResult> {
     return await this.dependencies.transactionWriter.writeMutation(context, async () => ({
       status: 'inactive',
       sessionId: connection.authSession.sessionId,
@@ -253,7 +249,7 @@ export class ClientStateInboxHandler {
     command,
     read,
     lifecycleComputed,
-  }: WriteMissingSessionDisconnectInput): Promise<InactiveAuthorisedWsSession> {
+  }: WriteMissingSessionDisconnectInput): Promise<InactiveAuthorisedWsSessionResult> {
     validateClientMutationAuthorityPolicy(command, read);
     return await this.dependencies.transactionWriter.writeMutation(context, async (transaction) => {
       await this.dependencies.sessionGenerationLifecycle.write(transaction, lifecycleComputed);
