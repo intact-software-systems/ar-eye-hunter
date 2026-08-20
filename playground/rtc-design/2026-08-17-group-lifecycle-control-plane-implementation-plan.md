@@ -226,7 +226,7 @@ Recorded with their alternatives in `2026-08-19-pending-admission-representation
 | 5.11 | **The data gate reads lazily and fails closed.** The room authorizer resolves `preActivationAppData` only when the group is not `active` (active groups pay no policy read); an absent policy is `allowed` (main-parity), a corrupt one is `blocked-until-active`. The CRDT topics (`room.crdt`, `app.crdt`) are exempt: collaborative documents are lobby-phase workspace with their own authorization, not the competitive pre-match traffic the gate exists to hold back. |
 | 5.12 | **Zero planned edges is trivially ready (rate 1)** — planned edges skip self-hops, so a single-member group activates per its criterion without waiting on establishment. The recipes accommodate this: below-floor legs need two presence-connected members, and the approval recipe pins a parked `pending` member surviving two formation-epoch advances before grant binds at the current epoch. |
 
-### Slice 6 — Read surface and scenario matrix
+### Slice 6 — Read surface and scenario matrix — **delivered**
 
 Lifecycle state joins the group snapshot and read APIs beside the readiness derivation, so
 applications and tests read intent and observation side by side. *Largely delivered early: the
@@ -250,8 +250,27 @@ eight partial, one uncovered, with every missing pin named.
 | --- | --- |
 | 6.1 | **Preset-labeled recipes are the organizing principle.** Every recipe exercising lifecycle behaviour names the policy it tests. The formation-burst recipes gain `preset: 'optimistic'` at all three tiers — they *are* the optimistic-baseline scenario, now explicitly — and every preset gets at least one labeled recipe: `managed` already has several; `match` and `drop-in-social` gain composed-behaviour recipes (no recipe sends either today). The compatibility guarantee is pinned once, not per tier: a create that omits `lifecyclePolicy` resolves to exactly the optimistic default (absent ≡ explicit equivalence) — this is the acceptance property's pin. |
 | 6.2 | **The generic WS NACK is the contract.** The room authorizer maps every policy denial to the generic NACK reason; `group-data-blocked-until-active` and the admission codes are typed on the HTTP surface only. Recipes pin the generic NACK over WS and the typed code over HTTP. Surfacing typed codes in the NACK is deferred until an application needs to distinguish them. |
-| 6.3 | **Managed burst variants at N=20 and N=50.** These are runner-process WS clients, not browsers, so the cost is seconds. N=20 makes fractional readiness expressible (~190 planned mesh edges); N=50 exercises the quadratic planned-edge surface (~1,225) where a bookkeeping cliff would hide from 20. Gate placement is decided at implementation from the recipe matrix; the single-server-safe lifecycle recipes also join the memory profile so the fast loop runs them. |
+| 6.3 | **Managed burst variants at N=20 and N=50.** These are runner-process WS clients, not browsers, so the cost is seconds. N=20 makes fractional readiness expressible and N=50 doubles the session count. *Amended per decision 6.10: the planner's k-regular mesh keeps planned edges linear (37 at 20 sessions, 97 at 50) — the original "quadratic surface (~1,225)" rationale was wrong about the planner.* Gate placement is decided at implementation from the recipe matrix; the single-server-safe lifecycle recipes also join the memory profile so the fast loop runs them. |
 | 6.4 | **Delivered as 6a/6b/6c.** 6a: the per-scenario missing pins in existing recipes, the `strict-confirmation` negative, the absent ≡ optimistic equivalence pin, and the weak-pin repairs (the mis-aimed non-manager leg, body-code assertions, the `member-joined` event pin). 6b: preset labeling of the burst recipes plus the managed 20/50 variants and profile wiring. 6c: the `match` and `drop-in-social` composed-preset recipes. |
+
+#### Decisions taken during slice 6 execution (2026-08-20)
+
+The execution findings behind these live in `2026-08-20-scenario-matrix-gap-analysis.md`
+(§ 6b execution findings) and the PR records.
+
+| # | Decision |
+| --- | --- |
+| 6.5 | **Delivered as 6a (PR #305), member event payloads (PR #306), 6b (PR #307), and 6c (PR #308).** #306 was scope added by product-owner decision during 6a: member events name the member they are about — every `member-*` event carries `payload.principalId` of the affected member and `ownership-transferred` carries `fromPrincipalId`/`toPrincipalId`; the actor stays the command issuer. |
+| 6.6 | **Policy-validity rejections stay generic on the wire** (product-owner decision during 6a): the recipes pin `400 app-inbox-malformed-command` plus not-persisted read-backs; typing the HTTP validity surface is the recorded deferred item, the HTTP twin of decision 6.2. |
+| 6.7 | **RTT-report acceptance honours the per-group degree limit** (runtime fix the 6b scale tier exposed): both the durable and in-memory acceptance paths resolve the limit exactly as the read-side planning filter does — the group's effective topology config under the server reporting default, with an explicitly configured `rttReportingDegreeLimit` still winning. Without it, evidence a raised-limit plan needs was never stored and readiness could not converge. |
+| 6.8 | **Profile placement rules, learned the hard way.** Synthetic worst-case load recipes (the managed 20/50 bursts) live only in the opt-in `api-v1-black-box-formation-large` profile: on shared servers one contention-driven terminal mutation failure breaks unrelated recipes asserting the server-global `atomicCompletionFailures` counter. And a recipe may sit in only one of the profiles a single Postgres CI job runs — dual membership replays requestIds against the same servers under one runId and self-conflicts on idempotency. The lifecycle recipes therefore moved from the cluster profile into the memory profiles; profile overlap is zero. |
+| 6.9 | **Two scale-exposed limits recorded, not fixed**: threshold activation under bursty evidence waits for the deadline evaluation because the evidence-leg criterion petition rides the refinement gate's debounce; and an all-pairs RTT burst can exhaust the 20-attempt optimistic retry schedule under 19-writer endpoint contention. Real heartbeat-cadence reporting hits neither. |
+| 6.10 | **Planned mesh edges grow linearly, not quadratically** (`meshParamK` 2 with rendezvous fill — 37 edges at 20 sessions, 97 at 50), correcting the planner assumption in decision 6.3's rationale; the tiers still exercise planning, acceptance, and readiness at 20/50 sessions, and all-pairs *reporting* stays the coverage guarantee. |
+
+With slice 6 delivered, every row of the design document's ten-scenario matrix is closed as
+recipe pins, all four presets carry labeled recipes, and the whole-workstream acceptance
+property is pinned as the absent ≡ optimistic-default equivalence. The workstream is complete
+apart from the items under "Deferred, explicitly".
 
 ## Deferred, explicitly
 
@@ -259,6 +278,10 @@ eight partial, one uncovered, with every missing pin named.
   generic `400 app-inbox-malformed-command`; the issue codes (`strict-confirmation-unsupported`,
   `manager-initiator-without-manager`, …) never reach the response. Deferred at 6a until an
   application needs to distinguish them — the HTTP twin of the WS NACK opacity in decision 6.2.
+- **A threshold edge-trigger on the evidence leg.** The acceptance that moves readiness
+  across a group's threshold could petition the activation criterion directly, bypassing the
+  refinement gate's debounce for that one case, so bursty-evidence groups activate when the
+  threshold is crossed instead of at the next deadline evaluation (decision 6.9).
 - **Per-edge confirm-or-fail batch machinery** — the whole activation design. Gated behind
   `strictConfirmation: true`, which v1 rejects. The posture decision (observed convergence as
   default) is recorded product-owner decision 2 and is supported by the Phase 0–4 evidence in
