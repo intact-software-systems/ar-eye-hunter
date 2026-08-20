@@ -307,7 +307,9 @@ async function runClientMutation(
     { ...input.scope, principalId: input.principalId },
     requestId,
   );
-  if (stored) return compactClientReceipt(input.command, requestId, stored.receipt);
+  if (stored) {
+    return compactClientReceipt(input.command, requestId, stored.receipt);
+  }
   const mutation = written.result.right;
   if (!mutation || mutation.event !== null) {
     throw new Error(`Applied client mutation receipt not found: ${requestId}`);
@@ -401,8 +403,12 @@ function toClientWorkerCommandInput(
 }
 
 function toClientAppInboxType(command: ClientWorkerInput['command']): AppInboxType {
-  if (command === 'client-heartbeat') return AppInboxType.CLIENT_SESSION_HEARTBEAT;
-  if (command === 'client-disconnect') return AppInboxType.CLIENT_SESSION_DISCONNECT;
+  if (command === 'client-heartbeat') {
+    return AppInboxType.CLIENT_SESSION_HEARTBEAT;
+  }
+  if (command === 'client-disconnect') {
+    return AppInboxType.CLIENT_SESSION_DISCONNECT;
+  }
   return AppInboxType.CLIENT_SESSION_CONNECT;
 }
 
@@ -463,7 +469,9 @@ async function runGroupMutation(
         new PSqlRuntimeStateRepository(sql),
       ).findIdempotentGroupMutationReceipt({ ...input.scope, groupId: input.groupId }, requestId)
     )?.receipt;
-  if (!receipt) throw new Error(`Group mutation receipt not found: ${requestId}`);
+  if (!receipt) {
+    throw new Error(`Group mutation receipt not found: ${requestId}`);
+  }
   return compactGroupReceipt(input.command, requestId, receipt);
 }
 
@@ -562,7 +570,9 @@ async function runTopologyMutation(
       throw new Error(error);
     },
     (value) => {
-      if (!('receipt' in value)) throw new TypeError('Expected topology config result');
+      if (!('receipt' in value)) {
+        throw new TypeError('Expected topology config result');
+      }
       return value;
     },
   );
