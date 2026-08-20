@@ -88,6 +88,18 @@ Building the managed threshold bursts surfaced three facts the fixed-size recipe
   service). An explicitly configured `rttReportingDegreeLimit` still wins over any
   structural limit, which a first fix at the policy layer (overriding with the planned
   snapshot's stamped limit) got wrong and an existing topic test caught.
+- **The managed burst tiers are opt-in, like the optimistic large tier.** The first CI run
+  placed the medium tier in the `api-v1-black-box` profile, which the Release Gate also runs
+  against Postgres on shared servers. There the recipe exposed two limits: the formation
+  timer's deadline evaluation queues behind the RTT mutation backlog on a loaded runner
+  (activation never evaluated inside the poll window), and one RTT mutation exhausted its
+  20 optimistic-retry attempts under all-pairs endpoint contention — a single terminal
+  completion that broke the *unrelated* `api-v1-admin-operations` recipe asserting the
+  shared `atomicCompletionFailures` counter is zero. A synthetic worst-case burst cannot
+  share a server with recipes asserting a clean evidence counter, so both managed tiers
+  live in `api-v1-black-box-formation-large` (the opt-in profile that already holds
+  burst-large and churn-large). The attempt-20 exhaustion under 19-writer endpoint
+  contention is noted as an observed retry-schedule limit, not fixed here.
 - **Threshold activation between deadline checks rides the refinement gate.** The criterion
   is petitioned by RTT-triggered topology work, which the refinement gate debounces under
   burst traffic — so a group whose evidence crosses the threshold mid-burst can sit ready
