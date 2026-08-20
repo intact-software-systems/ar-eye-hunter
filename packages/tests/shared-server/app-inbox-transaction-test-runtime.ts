@@ -182,7 +182,9 @@ export async function waitForRegisteredHandlerEntry(
 ): Promise<ResourceEntry> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const entry = await queue.readLatest();
-    if (entry) return entry;
+    if (entry) {
+      return entry;
+    }
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   throw new Error('Expected registered handler entry');
@@ -253,7 +255,9 @@ class AtomicDatabase {
       const transaction = (async (strings: TemplateStringsArray, ...values: PSqlValues) => {
         const query = strings.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
         if (query.includes('insert into resource_inbox_results')) {
-          if (this.options.failResultWrite) throw new Error('result write failed');
+          if (this.options.failResultWrite) {
+            throw new Error('result write failed');
+          }
           const result = toAtomicResultEntry(values);
           this.requireWorking().results.set(toKeyAsString(result.key), result);
           return [toAtomicResultRow(result)];
@@ -267,7 +271,9 @@ class AtomicDatabase {
             string,
             number,
           ];
-          if (this.loseReservation) return [];
+          if (this.loseReservation) {
+            return [];
+          }
           const key = toKeyAsString({ topicId, resourceId, contextId });
           const stored = this.requireWorking().inbox.get(key);
           if (
@@ -316,7 +322,9 @@ class AtomicDatabase {
 
   reclaimFinalization(): ResourceEntry {
     const [key, entry] = [...this.state.inbox.entries()][0] ?? [];
-    if (!key || !entry) throw new Error('Missing finalization entry');
+    if (!key || !entry) {
+      throw new Error('Missing finalization entry');
+    }
     const reclaimed: ResourceEntry = {
       ...entry,
       dequeueAudit: {
@@ -331,7 +339,9 @@ class AtomicDatabase {
   }
 
   private requireWorking(): AtomicState {
-    if (!this.working) throw new Error('Write occurred without active transaction');
+    if (!this.working) {
+      throw new Error('Write occurred without active transaction');
+    }
     return this.working;
   }
 }

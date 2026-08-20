@@ -249,7 +249,9 @@ async function failsReplayAfterSecretRotation(): Promise<void> {
   await waitForAuthInboxEntry(auth.queue);
   await dequeue(auth);
   const first = await firstPending;
-  if (!first.right) throw new Error('Expected initial auth session');
+  if (!first.right) {
+    throw new Error('Expected initial auth session');
+  }
 
   // prettier-ignore
   const rotatedIssuer = createHmacAuthCredentialIssuer('second-auth-secret-0123456789abcdef-extra');

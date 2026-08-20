@@ -743,7 +743,9 @@ function recordAdminPrunePhase(
   timingEvents: RallarTimingEvent[],
   event: RallarTimingEvent,
 ): void {
-  if (event.component !== 'admin-prune-inbox') return;
+  if (event.component !== 'admin-prune-inbox') {
+    return;
+  }
   timingEvents.push(event);
   events.push(`phase:${event.operation}`);
 }
@@ -809,7 +811,9 @@ async function readOnlyCommand(
 ): Promise<AdminPruneCommand> {
   const commands = await listCommands(queue, requestId, clientId);
   const command = commands[0];
-  if (!command) throw new Error('Expected one admin prune command');
+  if (!command) {
+    throw new Error('Expected one admin prune command');
+  }
   return command;
 }
 
