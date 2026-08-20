@@ -1,0 +1,1097 @@
+{
+  "description": "Composed behaviour of the match preset: closed admission admits during FORMING and freezes the roster outside it, the deterministic election resolves the creator, blocked-until-active data NACKs in the lobby, full edge coverage activates at the all-or-nothing threshold and data then flows, and a group whose edges never confirm exhausts both formation attempts below the floor and honestly reopens as a lobby.",
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "applicationId": "match-preset-{runId}",
+    "workspaceId": "default-{runId}",
+    "lobbyGroupId": "match-lobby-room-{runId}",
+    "arenaGroupId": "match-arena-room-{runId}",
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "carolUsername": "carol-{runId}",
+    "carolPassword": {
+      "env": "RALLAR_CAROL_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "danUsername": "dan-{runId}",
+    "danPassword": {
+      "env": "RALLAR_DAN_PASSWORD",
+      "default": "secret",
+      "secret": true
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    },
+    "wsAlice": {
+      "type": "ws",
+      "timeoutMs": 10000
+    },
+    "wsBob": {
+      "type": "ws",
+      "timeoutMs": 10000
+    },
+    "wsCarol": {
+      "type": "ws",
+      "timeoutMs": 10000
+    },
+    "wsDan": {
+      "type": "ws",
+      "timeoutMs": 10000
+    }
+  },
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ],
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerCarol",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "{carolUsername}",
+          "password": "{carolPassword}",
+          "displayName": "Match preset carol {runId}"
+        }
+      },
+      "expect": {
+        "statusCode": [201, 409]
+      }
+    },
+    {
+      "name": "loginCarol",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{carolUsername}",
+          "password": "{carolPassword}"
+        },
+        "outputs": {
+          "carolClientId": "body.clientId",
+          "carolSessionId": "body.sessionId",
+          "carolAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveCarolAuthHeader",
+      "type": "set",
+      "output": "carolAuthHeader",
+      "secret": true,
+      "redactAs": "carolAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.carolAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerDan",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "{danUsername}",
+          "password": "{danPassword}",
+          "displayName": "Match preset dan {runId}"
+        }
+      },
+      "expect": {
+        "statusCode": [201, 409]
+      }
+    },
+    {
+      "name": "loginDan",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{danUsername}",
+          "password": "{danPassword}"
+        },
+        "outputs": {
+          "danClientId": "body.clientId",
+          "danSessionId": "body.sessionId",
+          "danAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveDanAuthHeader",
+      "type": "set",
+      "output": "danAuthHeader",
+      "secret": true,
+      "redactAs": "danAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.danAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createMatchLobbyGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "group-create-match-lobby-{runId}",
+          "groupId": "{lobbyGroupId}",
+          "displayName": "Match lobby {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "match"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{lobbyGroupId}",
+            "lifecycleState": "forming",
+            "formationEpoch": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "electionResolvesTheCreator",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "forming",
+          "managerPrincipalIds": ["{aliceClientId}"]
+        }
+      }
+    },
+    {
+      "name": "closedAdmitsBobWhileForming",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/join",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "join-match-lobby-bob-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "connectAliceLobbyPresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/sessions/{aliceSessionId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "presence-alice-lobby-{runId}",
+          "generationId": "generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectBobLobbyPresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/sessions/{bobSessionId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "presence-bob-lobby-{runId}",
+          "generationId": "generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "createAliceWsTicket",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "aliceWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceWsUrl",
+      "type": "set",
+      "output": "aliceWsUrl",
+      "secret": true,
+      "redactAs": "aliceWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.aliceSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.aliceWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openAliceWs",
+      "type": "ws.open",
+      "connection": "wsAlice",
+      "request": {
+        "url": "{aliceWsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "createBobWsTicket",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "bobWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobWsUrl",
+      "type": "set",
+      "output": "bobWsUrl",
+      "secret": true,
+      "redactAs": "bobWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.bobSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.bobWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openBobWs",
+      "type": "ws.open",
+      "connection": "wsBob",
+      "request": {
+        "url": "{bobWsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "blockedSendIsNackedWhileForming",
+      "type": "ws.send",
+      "connection": "wsBob",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "match-lobby-blocked-{runId}",
+            "ts": 0,
+            "senderId": "{bobSessionId}",
+            "sessionId": "{bobSessionId}"
+          },
+          "route": {
+            "topicId": "room.match",
+            "resourceId": "match-lobby-blocked-resource-{runId}",
+            "contextId": "{applicationId}:{workspaceId}"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "room",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{lobbyGroupId}"
+            }
+          },
+          "delivery": {
+            "reliability": "best-effort",
+            "ack": "none"
+          },
+          "payload": {
+            "typeId": "room.match.v1",
+            "contentType": "application/json",
+            "resource": "{\"move\":\"early\",\"runId\":\"{runId}\"}"
+          }
+        }
+      },
+      "expect": {
+        "connection": "wsBob",
+        "withinMs": 10000,
+        "message": {
+          "payload": {
+            "typeId": "al.control.nack.v1"
+          }
+        }
+      }
+    },
+    {
+      "name": "managerEstablishesTheLobby",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/lifecycle/establish",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "establish-match-lobby-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "establishing",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "closedFreezesTheRosterOutsideForming",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/join",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {
+          "requestId": "join-match-lobby-carol-denied-{runId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "group-admission-closed"
+        }
+      }
+    },
+    {
+      "name": "createMatchArenaGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {
+          "requestId": "group-create-match-arena-{runId}",
+          "groupId": "{arenaGroupId}",
+          "displayName": "Match arena {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{carolClientId}",
+          "lifecyclePolicy": {
+            "preset": "match"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{arenaGroupId}",
+            "lifecycleState": "forming",
+            "formationEpoch": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "closedAdmitsDanWhileForming",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/join",
+        "headers": {
+          "Authorization": "{danAuthHeader}",
+          "x-client-id": "{danClientId}"
+        },
+        "body": {
+          "requestId": "join-match-arena-dan-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{danClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "connectCarolArenaPresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/sessions/{carolSessionId}",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {
+          "requestId": "presence-carol-arena-{runId}",
+          "generationId": "generation-{runId}",
+          "principalId": "{carolClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectDanArenaPresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/sessions/{danSessionId}",
+        "headers": {
+          "Authorization": "{danAuthHeader}",
+          "x-client-id": "{danClientId}"
+        },
+        "body": {
+          "requestId": "presence-dan-arena-{runId}",
+          "generationId": "generation-{runId}",
+          "principalId": "{danClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "createCarolWsTicket",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "outputs": {
+          "carolWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveCarolWsUrl",
+      "type": "set",
+      "output": "carolWsUrl",
+      "secret": true,
+      "redactAs": "carolWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.carolSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.carolWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openCarolWs",
+      "type": "ws.open",
+      "connection": "wsCarol",
+      "request": {
+        "url": "{carolWsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "createDanWsTicket",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket",
+        "headers": {
+          "Authorization": "{danAuthHeader}",
+          "x-client-id": "{danClientId}"
+        },
+        "outputs": {
+          "danWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveDanWsUrl",
+      "type": "set",
+      "output": "danWsUrl",
+      "secret": true,
+      "redactAs": "danWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.danSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.danWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openDanWs",
+      "type": "ws.open",
+      "connection": "wsDan",
+      "request": {
+        "url": "{danWsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "electedManagerEstablishesTheArena",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/lifecycle/establish",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {
+          "requestId": "establish-match-arena-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "establishing",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "arenaPlansItsEdge",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/formation",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "poll": {
+          "maxAttempts": 25,
+          "maxDurationMs": 30000,
+          "backoffMs": 1500,
+          "backoffMultiplier": 1
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "establishing",
+          "readiness": {
+            "plannedEdgeCount": 1,
+            "observedEdgeCount": 0,
+            "observedRate": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "captureArenaRttReportedAt",
+      "type": "set",
+      "output": "arenaRttReportedAtEpochMs",
+      "transform": {
+        "timestamp": true
+      }
+    },
+    {
+      "name": "deriveArenaRttResource",
+      "type": "set",
+      "output": "arenaRttResource",
+      "transform": {
+        "concat": [
+          "{\"sessionIdFrom\":\"",
+          {
+            "path": "outputs.carolSessionId"
+          },
+          "\",\"sessionIdTo\":\"",
+          {
+            "path": "outputs.danSessionId"
+          },
+          "\",\"rttMs\":21,\"createdAtEpochMs\":",
+          {
+            "path": "outputs.arenaRttReportedAtEpochMs"
+          },
+          ",\"version\":1}"
+        ]
+      }
+    },
+    {
+      "name": "reportTheArenaEdge",
+      "type": "ws.send",
+      "connection": "wsCarol",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "match-arena-rtt-{runId}",
+            "ts": 0,
+            "senderId": "{carolSessionId}",
+            "sessionId": "{carolSessionId}"
+          },
+          "route": {
+            "topicId": "rtt",
+            "resourceId": "{carolSessionId} {danSessionId}",
+            "contextId": "1"
+          },
+          "delivery": {
+            "reliability": "best-effort",
+            "ack": "none"
+          },
+          "payload": {
+            "typeId": "rtt",
+            "contentType": "application/json",
+            "resource": "{arenaRttResource}"
+          }
+        }
+      }
+    },
+    {
+      "name": "fullCoverageActivatesTheArena",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/formation",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 45000,
+          "backoffMs": 1500,
+          "backoffMultiplier": 1
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "active",
+          "lastFormationOutcome": {
+            "outcome": "activated",
+            "observedRate": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "activatedSendReachesAcrossTheArena",
+      "type": "ws.send",
+      "connection": "wsDan",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "match-arena-live-{runId}",
+            "ts": 0,
+            "senderId": "{danSessionId}",
+            "sessionId": "{danSessionId}"
+          },
+          "route": {
+            "topicId": "room.match",
+            "resourceId": "match-arena-live-resource-{runId}",
+            "contextId": "{applicationId}:{workspaceId}"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "room",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{arenaGroupId}"
+            }
+          },
+          "delivery": {
+            "reliability": "best-effort",
+            "ack": "none"
+          },
+          "payload": {
+            "typeId": "room.match.v1",
+            "contentType": "application/json",
+            "resource": "{\"move\":\"rally\",\"runId\":\"{runId}\"}"
+          }
+        }
+      },
+      "expect": {
+        "connection": "wsCarol",
+        "withinMs": 10000,
+        "message": {
+          "id": {
+            "msgId": "match-arena-live-{runId}"
+          },
+          "route": {
+            "topicId": "room.match"
+          }
+        }
+      }
+    },
+    {
+      "name": "closedDeniesJoinsWhileActive",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/join",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "join-match-arena-bob-denied-{runId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "group-admission-closed"
+        }
+      }
+    },
+    {
+      "name": "allOrNothingFloorReturnsToForming",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 50,
+          "maxDurationMs": 75000,
+          "backoffMs": 1500,
+          "backoffMultiplier": 1
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "forming",
+          "formationAttemptCount": 2,
+          "lastFormationOutcome": {
+            "outcome": "below-floor",
+            "observedRate": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "honestFailureReopensTheClosedLobby",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/join",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {
+          "requestId": "join-match-lobby-carol-reopened-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{carolClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
