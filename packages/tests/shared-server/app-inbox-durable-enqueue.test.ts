@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import { type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import {
   AppInboxService,
@@ -18,9 +18,16 @@ const COMMAND = {
   data: { requestId: 'durable-command-1', principalId: 'principal' },
 } as const;
 
+class DurableEnqueueQueue extends InMemoryQueueBox {
+  async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
+    const entry = await this.getItem(key);
+    return entry !== undefined && statuses.includes(entry.status);
+  }
+}
+
 describe('AppInbox durable enqueue', () => {
   it('returns the exact persisted row without waiting for command completion', async () => {
-    const queue = new InMemoryQueueBox(new Map());
+    const queue = new DurableEnqueueQueue(new Map());
     const service = createService(queue);
 
     const entry = await service.enqueue(COMMAND);
@@ -47,7 +54,7 @@ describe('AppInbox durable enqueue', () => {
   });
 
   it('wakes the owning queue after durable enqueue and idempotent reuse', async () => {
-    const queue = new InMemoryQueueBox(new Map());
+    const queue = new DurableEnqueueQueue(new Map());
     const wakeQueue = vi.fn();
     const service = createService(queue, wakeQueue);
 
@@ -59,16 +66,17 @@ describe('AppInbox durable enqueue', () => {
   });
 });
 
-function createService(queue: InMemoryQueueBox, wakeQueue?: () => void): AppInboxService {
+function createService(queue: DurableEnqueueQueue, wakeQueue?: () => void): AppInboxService {
+  const results = {
+    replace: async (entry: ResourceEntry) => entry,
+    findByKey: (_key: Key) => Promise.resolve(undefined),
+  };
   return new AppInboxService(
     {
       inboxQueueReader: new InboxQueueReader(queue),
       resourceInboxRepository: queue,
-      resourceInboxResultsRepository: {
-        replace: async (entry) => entry,
-        findByKey: (_key: Key) => Promise.resolve(undefined),
-      },
-      database: createAppInboxTestDatabase().sql,
+      resourceInboxResultsRepository: results,
+      database: createAppInboxTestDatabase(queue, results),
     },
     {
       serviceId: 'server-12345678',
@@ -78,7 +86,7 @@ function createService(queue: InMemoryQueueBox, wakeQueue?: () => void): AppInbo
   );
 }
 
-class FailingQueueBox extends InMemoryQueueBox {
+class FailingQueueBox extends DurableEnqueueQueue {
   private readonly failure: Error;
 
   constructor(failure: Error) {

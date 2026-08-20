@@ -102,8 +102,8 @@ export type AdminPruneAuthorityReader = (
 
 export interface AppAdminInboxServiceDependencies {
   readonly inboxQueueReader: InboxQueueReader;
-  readonly resourceInboxRepository: ResourceInboxRepository;
-  readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
+  readonly resourceInboxRepository: AppInboxService.InboxRepository;
+  readonly resourceInboxResultsRepository: AppInboxService.ResultRepository;
   readonly database: PSqlSql;
   readonly pruner: Pick<AdminOperationsPruner, 'countExpired'>;
   readonly readAuthority: AdminPruneAuthorityReader;

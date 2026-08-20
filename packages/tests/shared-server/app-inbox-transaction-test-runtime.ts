@@ -33,7 +33,44 @@ const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
 
 type PSqlValues = Parameters<PSqlSql>[0];
 
-export class AtomicAppInboxService extends AppInboxService {
+interface RegisteredHandlerHarness {
+  readonly enqueue: AppInboxMessageContext['enqueue'];
+  readonly queue: RegisteredHandlerInbox;
+  readonly readEntry: () => Promise<ResourceEntry | undefined>;
+  readonly reader: InboxQueueReader;
+  readonly results: RegisteredHandlerResults;
+  readonly service: AtomicAppInboxService;
+}
+
+interface AtomicState {
+  mutations: Map<string, JsonWireValue>;
+  outbox: Map<string, JsonWireValue>;
+  inbox: Map<string, ResourceEntry>;
+  results: Map<string, ResourceEntry>;
+}
+
+interface AtomicHarness {
+  readonly context: AppInboxMessageContext;
+  readonly database: AtomicDatabase;
+  readonly entry: ResourceEntry;
+  readonly service: AtomicAppInboxService;
+}
+
+interface AtomicResultRow {
+  readonly ris_row_id: bigint;
+  readonly ris_resource_id: string;
+  readonly ris_topic_id: string;
+  readonly ris_resource: string;
+  readonly ris_type_id: string;
+  readonly ris_status: EntityStatus;
+  readonly fk_ext_bank_id: string;
+  readonly system_date: string;
+  readonly created_by: string;
+  readonly created_ts: string;
+  readonly expire_ts: string;
+}
+
+class AtomicAppInboxService extends AppInboxService {
   async commit<R>(
     context: AppInboxMessageContext,
     write: (transaction: PSqlTransactionSql) => Promise<R>,
@@ -46,7 +83,7 @@ export class AtomicAppInboxService extends AppInboxService {
   }
 }
 
-export class RegisteredHandlerInbox extends InMemoryQueueBox {
+class RegisteredHandlerInbox extends InMemoryQueueBox {
   private latestKey: Key | undefined;
 
   override async enqueue(entry: ResourceEntry): Promise<ResourceEntry | undefined> {
@@ -69,7 +106,7 @@ export class RegisteredHandlerInbox extends InMemoryQueueBox {
   }
 }
 
-export class RegisteredHandlerResults {
+class RegisteredHandlerResults {
   readonly entries = new Map<string, ResourceEntry>();
   replaceCalls = 0;
 
@@ -99,7 +136,7 @@ export function createRegisteredHandlerHarness(
     timing?: (event: RallarTimingEvent) => void;
     topicId?: string;
   }> = {},
-) {
+): RegisteredHandlerHarness {
   const queue = new RegisteredHandlerInbox();
   const results = new RegisteredHandlerResults(options.failResultWriteAfter);
   const reader = new InboxQueueReader(queue);
@@ -179,14 +216,7 @@ export function toRegisteredHandlerIdentityResource(
   return JSON.stringify(message);
 }
 
-export type AtomicState = {
-  mutations: Map<string, JsonWireValue>;
-  outbox: Map<string, JsonWireValue>;
-  inbox: Map<string, ResourceEntry>;
-  results: Map<string, ResourceEntry>;
-};
-
-export class AtomicDatabase {
+class AtomicDatabase {
   state: AtomicState;
   beginCalls = 0;
   activeTransaction: PSqlTransactionSql | undefined;
@@ -315,7 +345,7 @@ export function createAtomicHarness(
     loseReservation?: boolean;
     timing?: (event: RallarTimingEvent) => void;
   }> = {},
-) {
+): AtomicHarness {
   const baseEntry = createReservedEntry(options.attempts ?? 7);
   const entry = {
     ...baseEntry,
@@ -329,7 +359,7 @@ export function createAtomicHarness(
     failResultWrite: options.failResultWrite ?? false,
     loseReservation: options.loseReservation ?? false,
   });
-  const queue = new InMemoryQueueBox();
+  const queue = new RegisteredHandlerInbox();
   const reader = new InboxQueueReader(queue);
   const results = new RegisteredHandlerResults();
   const service = new AtomicAppInboxService(
@@ -368,7 +398,7 @@ export function createAtomicHarness(
   return { context, database, entry, service };
 }
 
-export function toAtomicResultEntry(values: PSqlValues): ResourceEntry {
+function toAtomicResultEntry(values: PSqlValues): ResourceEntry {
   const [
     resourceId,
     topicId,
@@ -400,7 +430,7 @@ export function toAtomicResultEntry(values: PSqlValues): ResourceEntry {
   };
 }
 
-export function toAtomicResultRow(entry: ResourceEntry) {
+function toAtomicResultRow(entry: ResourceEntry): AtomicResultRow {
   return {
     ris_row_id: 1n,
     ris_resource_id: entry.key.resourceId,
@@ -416,7 +446,7 @@ export function toAtomicResultRow(entry: ResourceEntry) {
   };
 }
 
-export function createReservedEntry(attempts: number): ResourceEntry {
+function createReservedEntry(attempts: number): ResourceEntry {
   const enqueue = {
     type: AppInboxType.GROUP_CREATE,
     resourceId: 'request-1',
@@ -506,7 +536,7 @@ export function toExhaustion(entry: ResourceEntry): ResourceInboxRetryExhaustion
   };
 }
 
-export function cloneState(state: AtomicState): AtomicState {
+function cloneState(state: AtomicState): AtomicState {
   return {
     mutations: new Map(state.mutations),
     outbox: new Map(state.outbox),
