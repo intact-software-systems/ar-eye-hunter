@@ -1096,7 +1096,6 @@
       "mode": "run",
       "tier": 1,
       "profiles": [
-        "api-v1-black-box-cluster",
         "api-v1-black-box",
         "api-v1-black-box-recipes"
       ],
@@ -1123,7 +1122,6 @@
       "mode": "run",
       "tier": 1,
       "profiles": [
-        "api-v1-black-box-cluster",
         "api-v1-black-box",
         "api-v1-black-box-recipes"
       ],
@@ -1150,7 +1148,6 @@
       "mode": "run",
       "tier": 1,
       "profiles": [
-        "api-v1-black-box-cluster",
         "api-v1-black-box",
         "api-v1-black-box-recipes"
       ],
@@ -1177,7 +1174,6 @@
       "mode": "run",
       "tier": 1,
       "profiles": [
-        "api-v1-black-box-cluster",
         "api-v1-black-box",
         "api-v1-black-box-recipes"
       ],
@@ -1204,7 +1200,6 @@
       "mode": "run",
       "tier": 1,
       "profiles": [
-        "api-v1-black-box-cluster",
         "api-v1-black-box",
         "api-v1-black-box-recipes"
       ],
@@ -1231,7 +1226,6 @@
       "mode": "run",
       "tier": 1,
       "profiles": [
-        "api-v1-black-box-cluster",
         "api-v1-black-box",
         "api-v1-black-box-recipes"
       ],
@@ -1258,7 +1252,6 @@
       "mode": "run",
       "tier": 1,
       "profiles": [
-        "api-v1-black-box-cluster",
         "api-v1-black-box",
         "api-v1-black-box-recipes"
       ],
