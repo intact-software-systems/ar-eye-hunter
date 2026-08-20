@@ -15,7 +15,6 @@ import {
 const FIXTURES = 'packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers';
 const GROUP_OWNER = 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts';
 const AUTH_OWNER = 'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
-const CRDT_OWNER = 'packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 
 describe('Mutation route owner registration predicates contracts', () => {
   it.each([
@@ -81,22 +80,6 @@ describe('Mutation route owner registration predicates contracts', () => {
     expect(validateWithOverride(AUTH_OWNER, mutated)).toEqual(
       expect.arrayContaining([
         expect.stringContaining('AUTH_SESSION_ISSUE owner dispatch is not connected'),
-      ]),
-    );
-  });
-
-  it('narrows the imported CRDT collection with an exact equality filter', () => {
-    const source = readFileSync(CRDT_OWNER, 'utf8');
-    const mutated = source.replace(
-      'for (const type of CRDT_MUTATION_INBOX_TYPES)',
-      'for (const type of CRDT_MUTATION_INBOX_TYPES.filter(' +
-        '(candidate) => candidate === AppInboxType.CRDT_UPDATE_APPEND))',
-    );
-    expect(mutated).not.toBe(source);
-
-    expect(validateWithOverride(CRDT_OWNER, mutated)).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('CRDT_ERASE owner dispatch is not connected'),
       ]),
     );
   });

@@ -51,6 +51,13 @@ import {
   type TopologyAppInboxResult,
   type TopologyAppInboxMutationOwners,
 } from '../topology/inbox/topology-app-inbox-handler.ts';
+import {
+  readDurableTopologyAppInboxCommand,
+  toPersistedTopologyHttpMutationSemanticHash,
+  toTopologyAppInboxType,
+  toTopologyHttpMutationContextId,
+} from '../topology/inbox/topology-app-inbox-command.ts';
+import type { TopologyAppInboxCommand } from '../topology/inbox/topology-app-inbox-contracts.ts';
 // prettier-ignore
 import type {
   GroupTopologyManagementService,
@@ -61,9 +68,11 @@ import {
   type AppInboxMessageContext,
   AppInboxService,
   type AppInboxServiceOptions,
+  AppInboxIdempotencyConflictError,
   AppInboxType,
   SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
 } from './AppInboxService.ts';
+import { toStrictAppInboxQueueKey } from './app-inbox-queue-key.ts';
 import { toLegacyAppInboxFailure } from './app-inbox-legacy-failure.ts';
 import type { RallarTimingSink } from './timing.ts';
 import type { JsonWireValue } from './mutation-command-identity.ts';
@@ -111,7 +120,10 @@ export type {
   TopologyAppInboxRequestPayload,
 } from '../topology/inbox/topology-app-inbox-contracts.ts';
 
-export { toTopologyAppInboxCommand } from '../topology/inbox/topology-app-inbox-command.ts';
+export {
+  toTopologyAppInboxCommand,
+  toTopologyHttpMutationSemanticHash,
+} from '../topology/inbox/topology-app-inbox-command.ts';
 
 export {
   decodeTopologyAppInboxResult,
@@ -154,6 +166,15 @@ export namespace AppGroupInboxService {
     readonly options?: AppInboxServiceOptions;
     readonly wakeOwningQueue?: () => void;
     readonly formationMetrics?: GroupFormationGroupMutationSink;
+  }
+
+  export interface HttpTopologyCommandReservation {
+    readonly operation: TopologyAppInboxCommand['operation'];
+    readonly requestId: string;
+    readonly callerId: string;
+    readonly groupRef: TopologyAppInboxCommand['groupRef'];
+    readonly semanticHash: string;
+    readonly materialize: () => Promise<TopologyAppInboxCommand>;
   }
 }
 
@@ -333,6 +354,64 @@ class AppGroupInboxService extends AppInboxService {
     );
   }
 
+  public async processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+    reservation: AppGroupInboxService.HttpTopologyCommandReservation,
+    authority: IssuedAuthSession,
+  ): Promise<Either<AppInboxFailure, TopologyAppInboxResult>> {
+    const currentSession = await this.topologyAppInboxHandler.validateCurrentSession(
+      reservation.callerId,
+      authority,
+    );
+    const type = toTopologyAppInboxType(reservation.operation);
+    const key = toStrictAppInboxQueueKey({
+      topicId: type,
+      resourceId: reservation.requestId,
+      contextId: toTopologyHttpMutationContextId(reservation.groupRef, reservation.callerId),
+    });
+    const reserved = await this.reserveMaterializedEntry(
+      {
+        type,
+        ...key,
+        senderId: reservation.callerId,
+        data: null,
+      },
+      async () =>
+        await this.topologyAppInboxHandler.createAuthenticatedEnqueueFromValidatedSession(
+          {
+            type,
+            ...key,
+            senderId: reservation.callerId,
+            data: await reservation.materialize(),
+          },
+          currentSession,
+        ),
+    );
+    const command = readDurableTopologyAppInboxCommand(reserved.enqueue.data);
+    if (
+      command.operation !== reservation.operation ||
+      command.requestId !== reservation.requestId ||
+      command.actor.principalId !== reservation.callerId ||
+      !sameGroupRef(command.groupRef, reservation.groupRef) ||
+      reserved.enqueue.type !== type ||
+      reserved.enqueue.topicId !== key.topicId ||
+      reserved.enqueue.resourceId !== key.resourceId ||
+      reserved.enqueue.contextId !== key.contextId ||
+      reserved.enqueue.senderId !== reservation.callerId ||
+      (await toPersistedTopologyHttpMutationSemanticHash(command)) !== reservation.semanticHash
+    ) {
+      throw new AppInboxIdempotencyConflictError(
+        reservation.requestId,
+        command.commandHash,
+        reservation.semanticHash,
+      );
+    }
+    return await this.waitForReservedEntryResult(
+      reserved.enqueue,
+      decodeTopologyAppInboxResult,
+      reserved.winner,
+    );
+  }
+
   setTopologyManagementService(service: GroupTopologyManagementService): void {
     if (this.topologyManagementService) {
       if (this.topologyManagementService !== service) {
@@ -423,6 +502,17 @@ class AppGroupInboxService extends AppInboxService {
         await this.rtcRttAppInboxHandler.processMutation(context, dependencies),
     );
   }
+}
+
+function sameGroupRef(
+  left: TopologyAppInboxCommand['groupRef'],
+  right: TopologyAppInboxCommand['groupRef'],
+): boolean {
+  return (
+    left.applicationId === right.applicationId &&
+    left.workspaceId === right.workspaceId &&
+    left.groupId === right.groupId
+  );
 }
 
 function requireTopologyAppInboxMutationOwners(

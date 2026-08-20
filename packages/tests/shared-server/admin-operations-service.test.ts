@@ -241,6 +241,7 @@ describe('AdminOperationsService', () => {
     const service = createService({ mutationGateway });
     const input = {
       adminSession: createAdminSession(),
+      requestId: 'prune-expired-request',
       request: {
         dryRun: false,
         categories: ['runtime-state', 'resource-inbox-results'] as const,
@@ -274,8 +275,8 @@ describe('AdminOperationsService', () => {
     const service = createService({ mutationGateway });
     const input = {
       adminSession: createAdminSession(),
+      requestId: 'topology-1',
       request: {
-        requestId: 'topology-1',
         groupRef: {
           applicationId: 'app-1',
           workspaceId: 'workspace-1',
@@ -302,12 +303,21 @@ describe('AdminOperationsService', () => {
     });
     const service = createService({ mutationGateway });
     const adminSession = createAdminSession();
-    const compact = { adminSession, request: { document: CRDT_DOCUMENT } };
+    const compact = {
+      adminSession,
+      requestId: 'compact-request',
+      request: { document: CRDT_DOCUMENT },
+    };
     const lifecycle = {
       adminSession,
+      requestId: 'lifecycle-request',
       request: { document: CRDT_DOCUMENT, lifecycle: 'archived' as const },
     };
-    const erase = { adminSession, request: { document: CRDT_DOCUMENT, mode: 'full' } };
+    const erase = {
+      adminSession,
+      requestId: 'erase-request',
+      request: { document: CRDT_DOCUMENT, mode: 'full' },
+    };
 
     await service.compactCrdt(compact);
     await service.updateCrdtLifecycle(lifecycle);

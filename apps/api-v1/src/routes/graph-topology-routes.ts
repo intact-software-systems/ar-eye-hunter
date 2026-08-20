@@ -27,16 +27,13 @@ import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import {
-  type TopologyAppInboxCommand,
+  type AppGroupInboxService,
   type TopologyAppInboxRequestPayload,
   type TopologyAppInboxResult,
   toTopologyAppInboxCommand,
+  toTopologyHttpMutationSemanticHash,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import {
-  type AppInboxEnqueueInput,
-  type AppInboxFailure,
-  AppInboxType,
-} from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { type AppInboxFailure } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
   toGraphTopologyErrorResponse as toErrorResponse,
   toGraphTopologyMutationErrorResponse as toMutationErrorResponse,
@@ -54,12 +51,12 @@ const GROUP_TOPOLOGY_PATH =
 
 export type ProcessTopologyAppInbox = (
   authority: IssuedAuthSession,
-  enqueue: AppInboxEnqueueInput<TopologyAppInboxCommand>,
+  reservation: AppGroupInboxService.HttpTopologyCommandReservation,
 ) => Promise<TopologyAppInboxResult>;
 
 export interface GraphTopologyAppInboxService {
-  processAuthenticatedTopologyEntryUntilCompletionResult<V>(
-    enqueue: AppInboxEnqueueInput<V>,
+  processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+    reservation: AppGroupInboxService.HttpTopologyCommandReservation,
     authority: IssuedAuthSession,
   ): Promise<Either<AppInboxFailure, TopologyAppInboxResult>>;
 }
@@ -210,8 +207,8 @@ export function registerGraphTopologyRoutes(
             dependencies: deps,
             authSession,
             groupRef,
-            requestId: requireRequestId(c, body),
-            payload: { operation: 'putConfig', config: body.config },
+            requestId: requireRequestId(c, body.raw),
+            payload: { operation: 'putConfig', config: body.value.config },
           }),
         );
       } catch (error) {
@@ -235,7 +232,7 @@ export function registerGraphTopologyRoutes(
             dependencies: deps,
             authSession,
             groupRef,
-            requestId: requireRequestId(c, body),
+            requestId: requireRequestId(c, body.raw),
             payload: { operation: 'deleteConfig', target: 'config' },
           }),
         );
@@ -279,7 +276,7 @@ export function registerGraphTopologyRoutes(
             dependencies: deps,
             authSession,
             groupRef,
-            requestId: requireRequestId(c, body),
+            requestId: requireRequestId(c, body.raw),
             payload: { operation: 'deleteOverride', target: 'override' },
           }),
         );
@@ -304,11 +301,11 @@ export function registerGraphTopologyRoutes(
             dependencies: deps,
             authSession,
             groupRef,
-            requestId: requireRequestId(c, body),
+            requestId: requireRequestId(c, body.raw),
             payload: {
               operation: 'reconfigureTopology',
-              requestOptions: body.options ?? {},
-              publish: body.publish ?? true,
+              requestOptions: body.value.options ?? {},
+              publish: body.value.publish ?? true,
             },
           }),
         );
@@ -335,12 +332,12 @@ async function handlePutTopologyOverride(
         dependencies,
         authSession,
         groupRef,
-        requestId: requireRequestId(context, body),
+        requestId: requireRequestId(context, body.raw),
         payload: {
           operation: 'putOverride',
-          config: body.config,
-          ttlMs: body.expiresAtEpochMs === undefined ? body.ttlMs ?? null : null,
-          expiresAtEpochMs: body.expiresAtEpochMs ?? null,
+          config: body.value.config,
+          ttlMs: body.value.expiresAtEpochMs === undefined ? body.value.ttlMs ?? null : null,
+          expiresAtEpochMs: body.value.expiresAtEpochMs ?? null,
         },
       }),
     );
@@ -447,12 +444,18 @@ function readBooleanQuery(value: string | undefined): boolean {
   return value?.trim().toLowerCase() === 'true' || value === '1';
 }
 
+interface DecodedJsonBody<T> {
+  readonly raw: JsonWireValue;
+  readonly value: T;
+}
+
 async function readJsonBody<T>(
   c: Context,
   decode: (value: JsonWireValue) => T,
-): Promise<T> {
+): Promise<DecodedJsonBody<T>> {
   try {
-    return decode(await c.req.json<JsonWireValue>());
+    const raw = await c.req.json<JsonWireValue>();
+    return { raw, value: decode(raw) };
   } catch {
     throw topologyRequestError('Malformed JSON request body');
   }
@@ -462,27 +465,27 @@ async function readOptionalJsonBody<T>(
   c: Context,
   fallback: T,
   decode: (value: JsonWireValue) => T,
-): Promise<T> {
+): Promise<DecodedJsonBody<T>> {
   try {
     const raw = await c.req.text();
     if (raw.trim().length === 0) {
-      return fallback;
+      return { raw: {}, value: fallback };
     }
     const parsed: JsonWireValue = JSON.parse(raw);
-    return decode(parsed);
+    return { raw: parsed, value: decode(parsed) };
   } catch {
     throw topologyRequestError('Malformed JSON request body');
   }
 }
 
-function requireRequestId<Body>(
+function requireRequestId(
   c: Context,
-  body: Body,
+  body: JsonWireValue,
 ): string {
   return readApiMutationRouteRequestId({
     requestId: c.req.param('requestId'),
     idempotencyKey: c.req.header('Idempotency-Key'),
-    mutationBody: JSON.parse(JSON.stringify(body)) as JsonWireValue,
+    mutationBody: body,
   });
 }
 
@@ -507,62 +510,39 @@ function topologyRequestError(message: string): Error & { status: number } {
 async function writeTopologyAppInboxCommand(
   input: WriteTopologyAppInboxCommandInput,
 ): Promise<TopologyAppInboxResult> {
-  const command = await toTopologyAppInboxCommand({
-    actor: {
-      principalId: input.authSession.clientId,
-      sessionId: input.authSession.sessionId,
-    },
+  const semanticHash = await toTopologyHttpMutationSemanticHash({
+    principalId: input.authSession.clientId,
     groupRef: input.groupRef,
     requestId: input.requestId,
-    capturedAtEpochMs: input.dependencies.now(),
     payload: input.payload,
   });
   return await input.dependencies.processTopologyAppInbox(input.authSession, {
-    type: toTopologyAppInboxType(command.operation),
-    topicId: toTopologyAppInboxType(command.operation),
-    resourceId: command.requestId,
-    contextId: toTopologyAppInboxContextId(input.groupRef, input.authSession),
-    senderId: command.actor.principalId,
-    data: command,
+    operation: input.payload.operation,
+    requestId: input.requestId,
+    callerId: input.authSession.clientId,
+    groupRef: input.groupRef,
+    semanticHash,
+    materialize: async () =>
+      await toTopologyAppInboxCommand({
+        actor: {
+          principalId: input.authSession.clientId,
+          sessionId: input.authSession.sessionId,
+        },
+        groupRef: input.groupRef,
+        requestId: input.requestId,
+        capturedAtEpochMs: input.dependencies.now(),
+        payload: input.payload,
+      }),
   });
-}
-
-function toTopologyAppInboxType(
-  operation: TopologyAppInboxCommand['operation'],
-): AppInboxType {
-  switch (operation) {
-    case 'putConfig':
-      return AppInboxType.TOPOLOGY_CONFIG_PUT;
-    case 'deleteConfig':
-      return AppInboxType.TOPOLOGY_CONFIG_DELETE;
-    case 'putOverride':
-      return AppInboxType.TOPOLOGY_OVERRIDE_PUT;
-    case 'deleteOverride':
-      return AppInboxType.TOPOLOGY_OVERRIDE_DELETE;
-    case 'reconfigureTopology':
-      return AppInboxType.TOPOLOGY_RECONFIGURE;
-  }
-}
-
-function toTopologyAppInboxContextId(
-  groupRef: GroupRef,
-  authSession: Pick<IssuedAuthSession, 'clientId'>,
-): string {
-  return [
-    ['application', groupRef.applicationId],
-    ['workspace', groupRef.workspaceId],
-    ['group', groupRef.groupId],
-    ['caller', authSession.clientId],
-  ].map(([name, value]) => `${name}=${encodeURIComponent(value)}`).join(':');
 }
 
 export async function processTopologyAppInbox(
   service: GraphTopologyAppInboxService,
   authority: IssuedAuthSession,
-  enqueue: AppInboxEnqueueInput<TopologyAppInboxCommand>,
+  reservation: AppGroupInboxService.HttpTopologyCommandReservation,
 ): Promise<TopologyAppInboxResult> {
-  const result = await service.processAuthenticatedTopologyEntryUntilCompletionResult(
-    enqueue,
+  const result = await service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+    reservation,
     authority,
   );
   return result.fold(

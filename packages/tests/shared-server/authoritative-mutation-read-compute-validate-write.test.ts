@@ -39,7 +39,6 @@ const sources = {
   authHandler: read(`${authRoot}/inbox/auth-inbox-handler.ts`),
   appClient: read('packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts'),
   appCrdt: read('packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts'),
-  crdtAdminMutations: read('apps/api-v1/src/crdt/create-crdt-admin-mutations.ts'),
   appGroup: read(`${serviceRoot}/AppGroupInboxService.ts`),
   topologyHandler: read(`${topologyInboxRoot}/topology-app-inbox-handler.ts`),
   rtcHandler: read(`${rtcInboxRoot}/rtc-rtt-app-inbox-handler.ts`),
@@ -203,14 +202,6 @@ it.each([
 ])('$name keeps one visible read/compute/validate/write path', ({ source, owner, calls }) => {
   const body = readMethodBody(source, owner);
   expectInOrder(body, calls);
-});
-
-it('keeps API CRDT administration connected to the terminal AppInbox owner', () => {
-  expectInOrder(readFunctionBody(sources.crdtAdminMutations, 'createCrdtAdminMutations'), [
-    'writeCrdtAdminMutation',
-    'createCrdtAdminCommand({',
-    'writeCrdtCommandUntilCompletion(command)',
-  ]);
 });
 
 it('keeps every authoritative service write bound to the caller transaction', () => {

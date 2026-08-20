@@ -28,6 +28,13 @@ import {
   decodeExactSnapshotEnvelope,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
+// deno-fmt-ignore
+import { hashCanonicalCommand } from '@shared-server/rallar-system/services/\
+canonical-command-hash.ts';
+import type {
+  JsonWireObject,
+  JsonWireValue,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 
 export type CrdtAdminMutationOperation =
   | 'rebuild-projection'
@@ -38,7 +45,8 @@ export type CrdtAdminMutationOperation =
 export interface CrdtAdminMutationInput {
   readonly operation: CrdtAdminMutationOperation;
   readonly adminSession: AuthSession;
-  readonly request: unknown;
+  readonly requestId: string;
+  readonly request: JsonWireValue;
 }
 
 export type CrdtAdminPublicResult =
@@ -52,8 +60,16 @@ export interface CrdtAdminMutations {
 }
 
 export interface CrdtAdminMutationInbox {
-  writeCrdtCommandUntilCompletion(
-    command: CrdtMutationCommand,
+  writeHttpAdminCommandUntilCompletion(
+    reservation: Readonly<{
+      operation: CrdtAdminMutationOperation;
+      requestId: string;
+      callerId: string;
+      documentKey: string;
+      semanticHash: string;
+      materialize: () => Promise<CrdtMutationCommand>;
+      matches: (command: CrdtMutationCommand) => boolean | Promise<boolean>;
+    }>,
   ): Promise<Either<AppInboxFailure, CrdtMutationResult>>;
 }
 
@@ -72,6 +88,7 @@ interface CreateCrdtAdminCommandInput extends CrdtAdminMutationInput {
 
 interface CreateCrdtAdminCommandCommon {
   readonly commandId: string;
+  readonly deliveryId: string;
   readonly actor: CrdtMutationActor;
   readonly capturedAtEpochMs: number;
   readonly expireAtEpochMs: number;
@@ -81,14 +98,19 @@ interface CreateCrdtAdminCommandCommon {
 
 interface ToCrdtAdminCommandCommonInput {
   readonly mutation: CreateCrdtAdminCommandInput;
-  readonly request: Record<string, unknown>;
+  readonly request: JsonWireObject;
   readonly capturedAtEpochMs: number;
 }
 
 interface ToLifecycleActionInput<T> {
-  readonly request: Record<string, unknown>;
+  readonly request: JsonWireObject;
   readonly key: 'retention' | 'quota' | 'projectionIds';
-  readonly decode: (value: unknown) => T;
+  readonly decode: (value: JsonWireValue) => T;
+}
+
+interface NormalizedCrdtAdminMutation {
+  readonly document: RallarCrdtDocumentRef;
+  readonly semantic: object;
 }
 
 export function createCrdtAdminMutations(
@@ -96,13 +118,24 @@ export function createCrdtAdminMutations(
 ): CrdtAdminMutations {
   return {
     writeCrdtAdminMutation: async (mutation) => {
-      const command = await createCrdtAdminCommand({
-        ...mutation,
-        nowEpochMs: input.nowEpochMs,
-        createId: input.createId,
-        serviceId: input.serviceId,
+      const normalized = normalizeCrdtAdminMutation(mutation);
+      const semanticHash = await hashCanonicalCommand(normalized.semantic);
+      const completed = await input.appCrdtInboxService.writeHttpAdminCommandUntilCompletion({
+        operation: mutation.operation,
+        requestId: mutation.requestId,
+        callerId: mutation.adminSession.clientId,
+        documentKey: toRallarCrdtDocumentKey(normalized.document),
+        semanticHash,
+        materialize: async () =>
+          await createCrdtAdminCommand({
+            ...mutation,
+            nowEpochMs: input.nowEpochMs,
+            createId: input.createId,
+            serviceId: input.serviceId,
+          }),
+        matches: async (command) =>
+          await hashCanonicalCommand(toCrdtAdminSemanticCommand(command)) === semanticHash,
       });
-      const completed = await input.appCrdtInboxService.writeCrdtCommandUntilCompletion(command);
       if (completed.left !== undefined) {
         throw Object.assign(new Error(completed.left.message), completed.left);
       }
@@ -119,6 +152,99 @@ export function createCrdtAdminMutations(
       return toAdminPublicResult(result);
     },
   };
+}
+
+function normalizeCrdtAdminMutation(
+  input: CrdtAdminMutationInput,
+): NormalizedCrdtAdminMutation {
+  const request = requireRecord(input.request);
+  if (input.operation === 'lifecycle') {
+    requireLifecycle(request.lifecycle);
+  }
+  const document = decodeExactDocumentRef(request.document, 'CRDT command document');
+  const common = {
+    version: 1,
+    operation: input.operation,
+    requestId: input.requestId,
+    callerId: input.adminSession.clientId,
+    document,
+  } as const;
+  switch (input.operation) {
+    case 'rebuild-projection':
+      return {
+        document,
+        semantic: { ...common, projectionId: readString(request.projectionId) ?? 'default' },
+      };
+    case 'compact':
+      return {
+        document,
+        semantic: {
+          ...common,
+          snapshot: readSnapshot(request.snapshot),
+          reason: readString(request.reason) ?? 'api-v1-admin-compaction',
+        },
+      };
+    case 'lifecycle':
+      return {
+        document,
+        semantic: {
+          ...common,
+          lifecycle: requireLifecycle(request.lifecycle),
+          retentionAction: toLifecycleAction({
+            request,
+            key: 'retention',
+            decode: decodeExactRetentionPolicy,
+          }),
+          quotaAction: toLifecycleAction({
+            request,
+            key: 'quota',
+            decode: decodeExactQuotaPolicy,
+          }),
+          projectionIdsAction: toLifecycleAction({
+            request,
+            key: 'projectionIds',
+            decode: decodeExactProjectionIds,
+          }),
+        },
+      };
+    case 'erase':
+      return {
+        document,
+        semantic: {
+          ...common,
+          mode: request.mode === 'redact-payloads' ? 'redact-payloads' : 'destroy-document',
+          reason: readString(request.reason) ?? 'api-v1-admin-erasure-workflow',
+        },
+      };
+  }
+}
+
+function toCrdtAdminSemanticCommand(command: CrdtMutationCommand): object {
+  const common = {
+    version: 1,
+    operation: command.operation,
+    requestId: command.deliveryId,
+    callerId: command.actor.actorId,
+    document: command.document,
+  } as const;
+  switch (command.operation) {
+    case 'append':
+      throw new TypeError('CRDT HTTP admin reservation contains an append command');
+    case 'rebuild-projection':
+      return { ...common, projectionId: command.projectionId };
+    case 'compact':
+      return { ...common, snapshot: command.snapshot, reason: command.reason };
+    case 'lifecycle':
+      return {
+        ...common,
+        lifecycle: command.lifecycle,
+        retentionAction: command.retentionAction,
+        quotaAction: command.quotaAction,
+        projectionIdsAction: command.projectionIdsAction,
+      };
+    case 'erase':
+      return { ...common, mode: command.mode, reason: command.reason };
+  }
 }
 
 async function createCrdtAdminCommand(
@@ -192,7 +318,8 @@ function toCrdtAdminCommandCommon(
 ): CreateCrdtAdminCommandCommon {
   const document = decodeExactDocumentRef(input.request.document, 'CRDT command document');
   return {
-    commandId: readString(input.request.requestId) ?? input.mutation.createId(),
+    commandId: input.mutation.createId(),
+    deliveryId: input.mutation.requestId,
     actor: {
       actorId: input.mutation.adminSession.clientId,
       principalId: input.mutation.adminSession.username,
@@ -240,26 +367,26 @@ function toAdminPublicResult(
   }
 }
 
-function requireRecord(value: unknown): Record<string, unknown> {
+function requireRecord(value: JsonWireValue): JsonWireObject {
   if (!isRecord(value)) {
     throw new TypeError('CRDT admin request must be an object');
   }
   return value;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: JsonWireValue): value is JsonWireObject {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function readString(value: unknown): string | null {
+function readString(value: JsonWireValue | undefined): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-function readSnapshot(value: unknown): RallarCrdtSnapshotEnvelope | null {
+function readSnapshot(value: JsonWireValue | undefined): RallarCrdtSnapshotEnvelope | null {
   return value === undefined || value === null ? null : decodeExactSnapshotEnvelope(value);
 }
 
-function readSnapshotId(value: unknown): string | null {
+function readSnapshotId(value: JsonWireValue | undefined): string | null {
   return value !== null && typeof value === 'object'
     ? readString(Reflect.get(value, 'snapshotId'))
     : null;
@@ -292,7 +419,7 @@ function toAdminMutationError(code: string | null): Error {
   });
 }
 
-function requireLifecycle(value: unknown): RallarCrdtDocumentLifecycleState {
+function requireLifecycle(value: JsonWireValue | undefined): RallarCrdtDocumentLifecycleState {
   switch (value) {
     case 'active':
     case 'archived':

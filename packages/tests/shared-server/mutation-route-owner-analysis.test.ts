@@ -95,12 +95,12 @@ describe('Mutation route owner analysis contracts', () => {
     }
   });
 
-  it('maps all 56 entrypoints and 52 types to real registrations and owners', () => {
+  it('maps all 42 source-inspected entrypoints and types to real owners', () => {
     const inventory = routingContract.MUTATION_ROUTE_INVENTORY;
     const validate = routingContract.validateMutationRouteInventory;
 
-    expect(inventory).toHaveLength(56);
-    expect(new Set(inventory.map((entry) => entry.type)).size).toBe(52);
+    expect(inventory).toHaveLength(42);
+    expect(new Set(inventory.map((entry) => entry.type)).size).toBe(42);
     expect(validate(inventory)).toEqual([]);
   });
 

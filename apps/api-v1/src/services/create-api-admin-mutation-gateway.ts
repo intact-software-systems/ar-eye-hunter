@@ -11,12 +11,15 @@ import type {
   CrdtAdminCompactResult,
   CrdtAdminEraseResult,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 import {
   type AppGroupInboxService,
   type TopologyReconfigureInboxResult,
   toTopologyAppInboxCommand,
+  toTopologyHttpMutationSemanticHash,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+// deno-fmt-ignore
+import { decodeJsonWireValue } from '@shared-server/rallar-system/services/\
+mutation-command-identity.ts';
 
 import type {
   CrdtAdminMutations,
@@ -28,8 +31,8 @@ export interface ApiAdminPruneMutationPort {
 }
 
 export interface ApiTopologyRecomputeMutationPort {
-  readonly processAuthenticatedTopologyEntryUntilCompletionResult:
-    AppGroupInboxService['processAuthenticatedTopologyEntryUntilCompletionResult'];
+  readonly processAuthenticatedHttpTopologyEntryUntilCompletionResult:
+    AppGroupInboxService['processAuthenticatedHttpTopologyEntryUntilCompletionResult'];
 }
 
 export interface CreateApiAdminMutationGatewayInput {
@@ -43,40 +46,51 @@ export function createApiAdminMutationGateway(
   input: CreateApiAdminMutationGatewayInput,
 ): AdminOperationsMutationGateway {
   return {
-    recomputeTopology: async ({ adminSession, request }) => {
+    recomputeTopology: async ({ adminSession, requestId, request }) => {
       if (!request.groupRef) {
         throw new TypeError('Admin topology recompute requires groupRef');
       }
-      const command = await toTopologyAppInboxCommand({
-        actor: { principalId: adminSession.clientId, sessionId: adminSession.sessionId },
-        groupRef: request.groupRef,
-        requestId: request.requestId ?? crypto.randomUUID(),
-        capturedAtEpochMs: input.now(),
-        payload: {
-          operation: 'reconfigureTopology',
-          requestOptions: request.options ?? {},
-          publish: request.publish ?? true,
-        },
+      const groupRef = request.groupRef;
+      const requestPayload = {
+        operation: 'reconfigureTopology' as const,
+        requestOptions: request.options ?? {},
+        publish: request.publish ?? true,
+      };
+      const semanticHash = await toTopologyHttpMutationSemanticHash({
+        principalId: adminSession.clientId,
+        groupRef,
+        requestId,
+        payload: requestPayload,
       });
-      const result = await input.appGroup.processAuthenticatedTopologyEntryUntilCompletionResult(
-        {
-          type: AppInboxType.TOPOLOGY_RECONFIGURE,
-          resourceId: command.requestId,
-          contextId: [
-            command.groupRef.applicationId,
-            command.groupRef.workspaceId,
-            command.groupRef.groupId,
-          ]
-            .map(encodeURIComponent).join(':'),
-          senderId: command.actor.principalId,
-          data: command,
-        },
-        toIssuedAuthSession(adminSession, input.now()),
-      );
+      const result = await input.appGroup
+        .processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+          {
+            operation: requestPayload.operation,
+            requestId,
+            callerId: adminSession.clientId,
+            groupRef,
+            semanticHash,
+            materialize: async () =>
+              await toTopologyAppInboxCommand({
+                actor: {
+                  principalId: adminSession.clientId,
+                  sessionId: adminSession.sessionId,
+                },
+                groupRef,
+                requestId,
+                capturedAtEpochMs: input.now(),
+                payload: requestPayload,
+              }),
+          },
+          toIssuedAuthSession(adminSession),
+        );
       if (result.right !== undefined) {
         return requireTopologyReconfigureResult(result.right);
       }
-      throw new Error(result.left?.message ?? 'Admin topology AppInbox processing failed');
+      if (result.left !== undefined) {
+        throw Object.assign(new Error(result.left.message), result.left);
+      }
+      throw new Error('Admin topology AppInbox processing failed');
     },
     pruneExpired: async (request) => {
       const result = await input.appAdmin.pruneExpired(request);
@@ -97,7 +111,8 @@ export function createApiAdminMutationGateway(
         await input.crdtAdminMutations.writeCrdtAdminMutation({
           operation: 'compact',
           adminSession: request.adminSession,
-          request: request.request,
+          requestId: request.requestId,
+          request: decodeJsonWireValue(request.request, 'CRDT compact request'),
         }),
       ),
     updateCrdtLifecycle: async (request) =>
@@ -105,7 +120,8 @@ export function createApiAdminMutationGateway(
         await input.crdtAdminMutations.writeCrdtAdminMutation({
           operation: 'lifecycle',
           adminSession: request.adminSession,
-          request: request.request,
+          requestId: request.requestId,
+          request: decodeJsonWireValue(request.request, 'CRDT lifecycle request'),
         }),
       ),
     eraseCrdt: async (request) =>
@@ -113,7 +129,8 @@ export function createApiAdminMutationGateway(
         await input.crdtAdminMutations.writeCrdtAdminMutation({
           operation: 'erase',
           adminSession: request.adminSession,
-          request: request.request,
+          requestId: request.requestId,
+          request: decodeJsonWireValue(request.request, 'CRDT erase request'),
         }),
       ),
   };
@@ -123,7 +140,7 @@ function requireTopologyReconfigureResult(
   result: Awaited<
     ReturnType<
       ApiTopologyRecomputeMutationPort[
-        'processAuthenticatedTopologyEntryUntilCompletionResult'
+        'processAuthenticatedHttpTopologyEntryUntilCompletionResult'
       ]
     >
   >['right'],
@@ -134,7 +151,11 @@ function requireTopologyReconfigureResult(
   return result;
 }
 
-function toIssuedAuthSession(session: AuthSession, issuedAtEpochMs: number): IssuedAuthSession {
+function toIssuedAuthSession(session: AuthSession): IssuedAuthSession {
+  const issuedAtEpochMs = Reflect.get(session, 'issuedAtEpochMs');
+  if (!Number.isSafeInteger(issuedAtEpochMs) || issuedAtEpochMs < 0) {
+    throw new TypeError('Admin topology recompute requires authenticated session issue time');
+  }
   return { ...session, issuedAtEpochMs };
 }
 

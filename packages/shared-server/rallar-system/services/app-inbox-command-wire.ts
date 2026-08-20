@@ -288,10 +288,9 @@ function toStableTopologyCommand(type: AppInboxType, value: unknown): unknown | 
       throw new TypeError('Topology operation differs from payload');
     }
     return {
-      actor,
+      actor: { principalId: actor.principalId },
       groupRef,
       requestId: command.requestId,
-      commandHash: command.commandHash,
       operation: command.operation,
       payload,
     };

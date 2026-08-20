@@ -1,6 +1,7 @@
 import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
+import type { PersistedAuthSession } from '../../auth/persistence/auth-persistence-contracts.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import { requireExactKeys, requireString } from '../../services/exact-object-codec.ts';
 import type { AppInboxMutationTransactionWriter } from '../../services/app-inbox-transaction-writer.ts';
@@ -25,7 +26,9 @@ import type { GroupTopologyReconfigureCommand } from '../reconfigure/group-topol
 import type { GroupTopologyReconfigureMutation } from '../reconfigure/group-topology-reconfigure-mutation.ts';
 import {
   createAuthenticatedTopologyEnqueue,
+  createAuthenticatedTopologyEnqueueFromValidatedSession,
   readTopologyAppInboxAuthority,
+  validateCurrentTopologySession,
   verifyTopologyAppInboxAuthority,
 } from './topology-app-inbox-authority.ts';
 import { toTopologyConfigMutationCommand } from './topology-app-inbox-command.ts';
@@ -143,6 +146,28 @@ export class TopologyAppInboxHandler {
       claimedAuthority: authority,
       groupStateService: this.dependencies.groupStateService,
       nowEpochMs: this.dependencies.nowEpochMs,
+    });
+  }
+
+  async validateCurrentSession(
+    principalId: string,
+    claimedAuthority: IssuedAuthSession,
+  ): Promise<PersistedAuthSession> {
+    return await validateCurrentTopologySession({
+      principalId,
+      claimedAuthority,
+      groupStateService: this.dependencies.groupStateService,
+      nowEpochMs: this.dependencies.nowEpochMs,
+    });
+  }
+
+  async createAuthenticatedEnqueueFromValidatedSession<V>(
+    enqueue: AppInboxEnqueueInput<V>,
+    currentSession: PersistedAuthSession,
+  ): Promise<AppInboxEnqueueInput<V>> {
+    return await createAuthenticatedTopologyEnqueueFromValidatedSession({
+      enqueue,
+      currentSession,
     });
   }
 

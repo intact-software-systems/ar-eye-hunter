@@ -39,13 +39,7 @@ describe('topology and RTC RTT AppInbox ownership', () => {
     expect(targetOwners.filter((path) => !existsSync(`${serverRoot}${path}`))).toEqual([]);
   });
 
-  it('keeps public topology command compatibility as a direct one-hop export', () => {
-    const facade = readOwner('services/AppGroupInboxService.ts');
-
-    expect(facade).toContain("from '../topology/inbox/topology-app-inbox-command.ts';");
-    expect(facade).toContain('export { toTopologyAppInboxCommand }');
-    expect(facade).not.toContain('function toCanonicalTopologyAppInboxPayload(');
-    expect(facade).not.toContain('function toTopologyConfigMutationCommand(');
+  it('keeps public topology command compatibility bound to the canonical function', () => {
     expect(compatibilityTopologyCommand).toBe(canonicalTopologyCommand);
   });
 

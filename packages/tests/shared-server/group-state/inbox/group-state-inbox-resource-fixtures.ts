@@ -8,9 +8,41 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 
 export class TestResourceInbox extends InMemoryQueueBox {
+  private readonly materializations = new Map<string, Promise<ResourceEntry>>();
+
   async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
     const entry = await this.getItem(key);
     return entry !== undefined && statuses.includes(entry.status);
+  }
+
+  async writeMaterializedIfAbsentOrReplaceExpired(
+    placeholder: ResourceEntry,
+    materialize: () => Promise<ResourceEntry>,
+  ): Promise<ResourceEntry> {
+    const key = toKeyAsString(placeholder.key);
+    const active = this.materializations.get(key);
+    if (active !== undefined) {
+      return await active;
+    }
+    const pending = this.materializeEntry(placeholder, materialize);
+    this.materializations.set(key, pending);
+    try {
+      return await pending;
+    } finally {
+      this.materializations.delete(key);
+    }
+  }
+
+  private async materializeEntry(
+    placeholder: ResourceEntry,
+    materialize: () => Promise<ResourceEntry>,
+  ): Promise<ResourceEntry> {
+    const existing = await this.getItem(placeholder.key);
+    if (existing !== undefined && !isExpiredResourceEntry(existing)) {
+      return existing;
+    }
+    const materialized = await materialize();
+    return await this.enqueueIfAbsent({ ...placeholder, resource: materialized.resource });
   }
 }
 

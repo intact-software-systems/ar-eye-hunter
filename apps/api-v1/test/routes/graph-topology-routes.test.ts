@@ -31,9 +31,9 @@ Deno.test('topology mutations expose only path-owned request identities', async 
   const calls: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1][] = [];
   const app = createRouteApp({
     group: createGroupSnapshot('room-1', ['owner']),
-    processTopologyAppInbox: (_authority, enqueue) => {
-      calls.push(enqueue);
-      return Promise.resolve(createTopologyAppInboxResult(enqueue));
+    processTopologyAppInbox: (_authority, reservation) => {
+      calls.push(reservation);
+      return createTopologyAppInboxResult(reservation);
     },
   });
 
@@ -50,25 +50,23 @@ Deno.test('topology mutations expose only path-owned request identities', async 
     assert.equal(response.status, 200, `${mutation.method} ${mutation.path}`);
   }
 
-  assert.deepEqual(calls.map((call) => call.resourceId), [
+  assert.deepEqual(calls.map((call) => call.requestId), [
     'topology-request-0000',
     'topology-request-0001',
     'topology-request-0002',
     'topology-request-0003',
     'topology-request-0004',
   ]);
-  assert.deepEqual(calls.map((call) => call.topicId), [
-    'TOPOLOGY_CONFIG_PUT',
-    'TOPOLOGY_CONFIG_DELETE',
-    'TOPOLOGY_OVERRIDE_PUT',
-    'TOPOLOGY_OVERRIDE_DELETE',
-    'TOPOLOGY_RECONFIGURE',
+  assert.deepEqual(calls.map((call) => call.operation), [
+    'putConfig',
+    'deleteConfig',
+    'putOverride',
+    'deleteOverride',
+    'reconfigureTopology',
   ]);
   assert.ok(
     calls.every(
-      (call) =>
-        call.contextId ===
-          'application=app-1:workspace=workspace-1:group=room-1:caller=owner',
+      (call) => call.callerId === 'owner' && call.groupRef.groupId === 'room-1',
     ),
   );
 });
@@ -213,9 +211,9 @@ Deno.test('topology writes require group manager or platform admin auth', async 
   const ownerApp = createRouteApp({
     group: createGroupSnapshot('room-1', ['owner']),
     session: createIssuedSession('owner', 'owner-session'),
-    processTopologyAppInbox: (_authority, enqueue) => {
-      ownerCalls.push(enqueue);
-      return Promise.resolve(createTopologyAppInboxResult(enqueue));
+    processTopologyAppInbox: (_authority, reservation) => {
+      ownerCalls.push(reservation);
+      return createTopologyAppInboxResult(reservation);
     },
   });
   const ownerAllowed = await ownerApp.request(
@@ -228,10 +226,10 @@ Deno.test('topology writes require group manager or platform admin auth', async 
   );
   assert.equal(ownerAllowed.status, 200);
   assert.equal(
-    ownerCalls[0]?.contextId,
-    'application=app-1:workspace=workspace-1:group=room-1:caller=owner',
+    ownerCalls[0]?.callerId,
+    'owner',
   );
-  assert.deepEqual(ownerCalls[0]?.data.payload, {
+  assert.deepEqual((await ownerCalls[0]?.materialize())?.payload, {
     operation: 'putConfig',
     config: toCanonicalGroupTopologyConfigPatch({ topologyKind: 'tree' }),
   });
@@ -241,9 +239,9 @@ Deno.test('topology writes require group manager or platform admin auth', async 
     group: createGroupSnapshot('room-1', ['owner']),
     session: createIssuedSession('platform-admin', 'admin-session'),
     adminClientIds: ['platform-admin'],
-    processTopologyAppInbox: (_authority, enqueue) => {
-      adminCalls.push(enqueue);
-      return Promise.resolve(createTopologyAppInboxResult(enqueue));
+    processTopologyAppInbox: (_authority, reservation) => {
+      adminCalls.push(reservation);
+      return createTopologyAppInboxResult(reservation);
     },
   });
   const adminAllowed = await adminApp.request(
@@ -256,12 +254,12 @@ Deno.test('topology writes require group manager or platform admin auth', async 
   );
   assert.equal(adminAllowed.status, 200);
   assert.equal(
-    adminCalls[0]?.data.actor.principalId,
+    (await adminCalls[0]?.materialize())?.actor.principalId,
     'platform-admin',
   );
   assert.equal(
-    adminCalls[0]?.contextId,
-    'application=app-1:workspace=workspace-1:group=room-1:caller=platform-admin',
+    adminCalls[0]?.callerId,
+    'platform-admin',
   );
 });
 
@@ -275,7 +273,7 @@ Deno.test('all topology mutation routes submit complete AppInbox commands', asyn
     session: createIssuedSession('owner', 'owner-session'),
     processTopologyAppInbox: (authority, enqueue) => {
       appInboxCommands.push({ authority, enqueue });
-      return Promise.resolve(createTopologyAppInboxResult(enqueue));
+      return createTopologyAppInboxResult(enqueue);
     },
   });
 
@@ -320,41 +318,37 @@ Deno.test('all topology mutation routes submit complete AppInbox commands', asyn
   }
 
   assert.deepEqual(
-    appInboxCommands.map((value) => value.enqueue.type),
+    appInboxCommands.map((value) => value.enqueue.operation),
     [
-      'TOPOLOGY_CONFIG_PUT',
-      'TOPOLOGY_CONFIG_DELETE',
-      'TOPOLOGY_OVERRIDE_PUT',
-      'TOPOLOGY_OVERRIDE_DELETE',
-      'TOPOLOGY_RECONFIGURE',
+      'putConfig',
+      'deleteConfig',
+      'putOverride',
+      'deleteOverride',
+      'reconfigureTopology',
     ],
   );
   for (const value of appInboxCommands) {
-    const command = value;
-    assert.equal(command.authority.accessToken, 'owner-token');
-    assert.equal(command.enqueue.resourceId, command.enqueue.data.requestId);
-    assert.equal(
-      command.enqueue.contextId,
-      'application=app-1:workspace=workspace-1:group=room-1:caller=owner',
-    );
-    assert.equal(command.enqueue.senderId, 'owner');
-    assert.deepEqual(command.enqueue.data.actor, {
+    const command = await value.enqueue.materialize();
+    assert.equal(value.authority.accessToken, 'owner-token');
+    assert.equal(value.enqueue.requestId, command.requestId);
+    assert.equal(value.enqueue.callerId, 'owner');
+    assert.deepEqual(command.actor, {
       principalId: 'owner',
       sessionId: 'owner-session',
     });
-    assert.deepEqual(command.enqueue.data.groupRef, {
+    assert.deepEqual(command.groupRef, {
       ...TEST_SCOPE,
       groupId: 'room-1',
     });
-    assert.match(command.enqueue.data.commandHash, /^sha256:[0-9a-f]{64}$/u);
-    assert.equal(command.enqueue.data.capturedAtEpochMs, 123_456);
-    assert.equal(typeof command.enqueue.data.operation, 'string');
-    assert.equal(typeof command.enqueue.data.payload, 'object');
+    assert.match(command.commandHash, /^sha256:[0-9a-f]{64}$/u);
+    assert.equal(command.capturedAtEpochMs, 123_456);
+    assert.equal(typeof command.operation, 'string');
+    assert.equal(typeof command.payload, 'object');
   }
 });
 
-Deno.test('topology AppInbox context ids preserve scoped component boundaries', async () => {
-  const contexts: string[] = [];
+Deno.test('topology AppInbox reservations preserve scoped target components', async () => {
+  const contexts: Array<Readonly<{ callerId: string; groupRef: GroupRef }>> = [];
   const refs = [
     { applicationId: 'app:a', workspaceId: 'workspace', groupId: 'room' },
     { applicationId: 'app', workspaceId: 'a:workspace', groupId: 'room' },
@@ -364,10 +358,12 @@ Deno.test('topology AppInbox context ids preserve scoped component boundaries', 
     const app = createRouteApp({
       group: createGroupSnapshot(ref.groupId, ['owner'], ref),
       session: createIssuedSession('owner', 'owner-session'),
-      processTopologyAppInbox: (_authority, enqueue) => {
-        assert.ok(enqueue.contextId);
-        contexts.push(enqueue.contextId);
-        return Promise.resolve(createTopologyAppInboxResult(enqueue));
+      processTopologyAppInbox: (_authority, reservation) => {
+        contexts.push({
+          callerId: reservation.callerId,
+          groupRef: reservation.groupRef,
+        });
+        return createTopologyAppInboxResult(reservation);
       },
     });
     const response = await app.request(
@@ -386,10 +382,16 @@ Deno.test('topology AppInbox context ids preserve scoped component boundaries', 
   }
 
   assert.deepEqual(contexts, [
-    'application=app%3Aa:workspace=workspace:group=room:caller=owner',
-    'application=app:workspace=a%3Aworkspace:group=room:caller=owner',
+    {
+      callerId: 'owner',
+      groupRef: { applicationId: 'app:a', workspaceId: 'workspace', groupId: 'room' },
+    },
+    {
+      callerId: 'owner',
+      groupRef: { applicationId: 'app', workspaceId: 'a:workspace', groupId: 'room' },
+    },
   ]);
-  assert.notEqual(contexts[0], contexts[1]);
+  assert.notDeepEqual(contexts[0], contexts[1]);
 });
 
 Deno.test(
@@ -399,9 +401,9 @@ Deno.test(
     const app = createRouteApp({
       group: createGroupSnapshot('room-1', ['owner']),
       session: createIssuedSession('owner', 'owner-session'),
-      processTopologyAppInbox: (_authority, enqueue) => {
-        calls.push(enqueue);
-        return Promise.resolve(createTopologyAppInboxResult(enqueue));
+      processTopologyAppInbox: (_authority, reservation) => {
+        calls.push(reservation);
+        return createTopologyAppInboxResult(reservation);
       },
     });
 
@@ -447,7 +449,7 @@ Deno.test(
 
     assert.equal(reconfigureResponse.status, 200);
     assert.deepEqual(
-      calls.map((call) => call.data.payload),
+      await Promise.all(calls.map(async (call) => (await call.materialize()).payload)),
       [
         {
           operation: 'putOverride',
@@ -472,9 +474,9 @@ Deno.test('all legacy topology mutation paths return 404 without enqueue', async
   const app = createRouteApp({
     group: createGroupSnapshot('room-1', ['owner']),
     session: createIssuedSession('owner', 'owner-session'),
-    processTopologyAppInbox: (_authority, enqueue) => {
-      calls.push(enqueue);
-      return Promise.resolve(createTopologyAppInboxResult(enqueue));
+    processTopologyAppInbox: (_authority, reservation) => {
+      calls.push(reservation);
+      return createTopologyAppInboxResult(reservation);
     },
   });
 
@@ -505,9 +507,9 @@ Deno.test('all topology mutation routes reject header and body request identitie
   const app = createRouteApp({
     group: createGroupSnapshot('room-1', ['owner']),
     session: createIssuedSession('owner', 'owner-session'),
-    processTopologyAppInbox: (_authority, enqueue) => {
-      calls.push(enqueue);
-      return Promise.resolve(createTopologyAppInboxResult(enqueue));
+    processTopologyAppInbox: (_authority, reservation) => {
+      calls.push(reservation);
+      return createTopologyAppInboxResult(reservation);
     },
   });
   const mutations = [
@@ -669,7 +671,7 @@ function createRouteApp(options: {
           })),
     },
     processTopologyAppInbox: options.processTopologyAppInbox ??
-      ((_authority, enqueue) => Promise.resolve(createTopologyAppInboxResult(enqueue))),
+      ((_authority, reservation) => createTopologyAppInboxResult(reservation)),
     now: () => 123_456,
   });
   return app;
@@ -692,28 +694,29 @@ function createTopologyConfigView() {
   };
 }
 
-function createTopologyAppInboxResult(
-  enqueue: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1],
-): Awaited<ReturnType<graphTopologyRoutes.ProcessTopologyAppInbox>> {
-  if (enqueue.data.operation === 'reconfigureTopology') {
+async function createTopologyAppInboxResult(
+  reservation: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1],
+): ReturnType<graphTopologyRoutes.ProcessTopologyAppInbox> {
+  const command = await reservation.materialize();
+  if (command.operation === 'reconfigureTopology') {
     return {
       status: 'queued',
-      groupRef: enqueue.data.groupRef,
-      requestId: enqueue.data.requestId,
-      outboxId: `${enqueue.data.requestId}:outbox`,
+      groupRef: command.groupRef,
+      requestId: command.requestId,
+      outboxId: `${command.requestId}:outbox`,
     };
   }
   return {
     receipt: {
-      commandId: enqueue.data.requestId,
-      requestId: enqueue.data.requestId,
-      commandHash: enqueue.data.commandHash,
-      operation: enqueue.data.operation,
+      commandId: command.requestId,
+      requestId: command.requestId,
+      commandHash: command.commandHash,
+      operation: command.operation,
       outcome: 'no-op',
       attemptCount: 1,
-      groupRef: enqueue.data.groupRef,
-      target: enqueue.data.operation === 'putOverride' ||
-          enqueue.data.operation === 'deleteOverride'
+      groupRef: command.groupRef,
+      target: command.operation === 'putOverride' ||
+          command.operation === 'deleteOverride'
         ? 'override'
         : 'config',
       acceptedVersion: 1,

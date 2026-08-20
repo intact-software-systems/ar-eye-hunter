@@ -2,10 +2,16 @@ import assert from 'node:assert/strict';
 
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
-import type { AuthSession } from '@shared/api/api-config.ts';
+// deno-fmt-ignore
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/\
+auth-session-types.ts';
 import type { RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { toUnavailableAppInboxFailure } from '@shared-server/rallar-system/services/\
+import {
+  type AppInboxFailure,
+  toUnavailableAppInboxFailure,
+} from '@shared-server/rallar-system/services/\
 app-inbox-failure.ts';
 
 import type {
@@ -19,13 +25,14 @@ import {
 } from '../../src/services/create-api-admin-mutation-gateway.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
-const ADMIN_SESSION: AuthSession = {
+const ADMIN_SESSION = {
   clientId: 'platform-admin',
   username: 'admin',
   accessToken: 'access-token',
   sessionId: 'admin-session',
+  issuedAtEpochMs: NOW_EPOCH_MS - 1_000,
   expiresAtEpochMs: NOW_EPOCH_MS + 60_000,
-};
+} satisfies IssuedAuthSession;
 const CRDT_DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
   workspaceId: 'workspace-1',
@@ -207,21 +214,120 @@ Deno.test('admin prune pending completion preserves its typed 503 response', asy
   });
   const app = createApp({ operations: { pruneExpired: recording.gateway.pruneExpired } });
 
-  const response = await app.request('/api/admin/operations/maintenance/prune-expired', {
-    method: 'POST',
-    headers: {
-      authorization: 'Bearer admin-token',
-      'x-client-id': 'platform-admin',
-      'Content-Type': 'application/json',
+  const response = await app.request(
+    '/api/admin/operations/maintenance/prune-expired/requests/pending-prune-request-0001',
+    {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer admin-token',
+        'x-client-id': 'platform-admin',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ dryRun: false }),
     },
-    body: JSON.stringify({ requestId: 'pending-prune', dryRun: false }),
-  });
+  );
 
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), {
-    error: 'App inbox entry did not complete within the wait budget',
+    type: 'api-mutation-failure',
+    version: 'canonical.v1',
+    status: 503,
+    code: 'app-inbox-unavailable',
+    message: 'App inbox entry did not complete within the wait budget',
+    issues: null,
+    denial: null,
+    retry: {
+      kind: 'unavailable',
+      attempts: null,
+      lane: null,
+      queueAgeMs: null,
+      dueAgeMs: null,
+      retryAfterMs: null,
+    },
   });
 });
+
+Deno.test(
+  'admin topology recompute materializes winner facts once across renewed credentials',
+  async () => {
+    const completed = new Map<
+      string,
+      Either<AppInboxFailure, {
+        status: 'queued';
+        groupRef: GroupRef;
+        requestId: string;
+        outboxId: string;
+      }>
+    >();
+    let capturedAtEpochMs = NOW_EPOCH_MS;
+    let materializations = 0;
+    const recording = createRecordingGateway({
+      topology: async (reservation) => {
+        const key = `${reservation.operation}:${reservation.callerId}:${reservation.requestId}`;
+        const existing = completed.get(key);
+        if (existing !== undefined) return existing;
+        const command = await reservation.materialize();
+        materializations += 1;
+        const result = Either.ofRight<AppInboxFailure, {
+          status: 'queued';
+          groupRef: GroupRef;
+          requestId: string;
+          outboxId: string;
+        }>({
+          status: 'queued' as const,
+          groupRef: command.groupRef,
+          requestId: command.requestId,
+          outboxId: `${reservation.callerId}:outbox`,
+        });
+        completed.set(key, result);
+        return result;
+      },
+      now: () => {
+        capturedAtEpochMs += 1;
+        return capturedAtEpochMs;
+      },
+    });
+    const request = {
+      groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
+      options: { topologyKind: 'tree' as const },
+      publish: true,
+    };
+
+    const first = await recording.gateway.recomputeTopology({
+      adminSession: ADMIN_SESSION,
+      requestId: 'admin-topology-request-0001',
+      request,
+    });
+    const renewed = {
+      ...ADMIN_SESSION,
+      sessionId: 'admin-renewed-session',
+      issuedAtEpochMs: ADMIN_SESSION.issuedAtEpochMs + 1,
+    };
+    await assert.doesNotReject(() =>
+      recording.gateway.recomputeTopology({
+        adminSession: renewed,
+        requestId: 'admin-topology-request-0001',
+        request,
+      })
+    );
+    const other = {
+      ...ADMIN_SESSION,
+      clientId: 'other-admin',
+      username: 'other-admin',
+      sessionId: 'other-admin-session',
+    };
+    const isolated = await recording.gateway.recomputeTopology({
+      adminSession: other,
+      requestId: 'admin-topology-request-0001',
+      request,
+    });
+
+    assert.equal(first.requestId, 'admin-topology-request-0001');
+    assert.equal(isolated.requestId, 'admin-topology-request-0001');
+    assert.equal(materializations, 2);
+    assert.equal(capturedAtEpochMs, NOW_EPOCH_MS + 2);
+  },
+);
 
 Deno.test('admin CRDT routes preserve compact lifecycle and erase operations', async () => {
   const recording = createRecordingGateway();
@@ -234,14 +340,14 @@ Deno.test('admin CRDT routes preserve compact lifecycle and erase operations', a
   });
 
   for (
-    const [path, operation] of [
-      ['/api/admin/operations/crdt/compact', 'compact'],
-      ['/api/admin/operations/crdt/lifecycle', 'lifecycle'],
-      ['/api/admin/operations/crdt/erase', 'erase'],
+    const [path, operation, requestId] of [
+      ['/api/admin/operations/crdt/compact', 'compact', 'compact-request-0000001'],
+      ['/api/admin/operations/crdt/lifecycle', 'lifecycle', 'lifecycle-request-00001'],
+      ['/api/admin/operations/crdt/erase', 'erase', 'erase-request-0000000001'],
     ] as const
   ) {
-    const request = { requestId: `${operation}-request` };
-    const response = await app.request(path, {
+    const request = {};
+    const response = await app.request(`${path}/requests/${requestId}`, {
       method: 'POST',
       headers: {
         authorization: 'Bearer admin-token',
@@ -255,6 +361,7 @@ Deno.test('admin CRDT routes preserve compact lifecycle and erase operations', a
     assert.deepEqual(recording.crdtCalls.at(-1), {
       operation,
       adminSession: ADMIN_SESSION,
+      requestId,
       request,
     });
   }
@@ -262,6 +369,10 @@ Deno.test('admin CRDT routes preserve compact lifecycle and erase operations', a
 
 interface CreateRecordingGatewayInput {
   readonly pruneExpired?: CreateApiAdminMutationGatewayInput['appAdmin']['pruneExpired'];
+  readonly topology?: CreateApiAdminMutationGatewayInput['appGroup'][
+    'processAuthenticatedHttpTopologyEntryUntilCompletionResult'
+  ];
+  readonly now?: () => number;
 }
 
 interface RecordingGateway {
@@ -295,10 +406,10 @@ function createRecordingGateway(
       },
     },
     appGroup: {
-      processAuthenticatedTopologyEntryUntilCompletionResult: () =>
-        Promise.reject(new Error('Unexpected topology recompute')),
+      processAuthenticatedHttpTopologyEntryUntilCompletionResult: input.topology ??
+        (() => Promise.reject(new Error('Unexpected topology recompute'))),
     },
-    now: () => NOW_EPOCH_MS,
+    now: input.now ?? (() => NOW_EPOCH_MS),
   });
   return { gateway, crdtCalls };
 }

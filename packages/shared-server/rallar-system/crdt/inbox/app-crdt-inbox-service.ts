@@ -10,8 +10,12 @@ ResourceInboxRepository.ts';
 import type { ResourceInboxResultsRepository } from '../../../postgres/resource-inbox/\
 ResourceInboxResultsRepository.ts';
 import type { AppInboxFailure } from '../../services/app-inbox-failure.ts';
-import { toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
-import { type AppInboxMessageContext, AppInboxType } from '../../services/app-inbox-contracts.ts';
+import { toAppQueueKey, toStrictAppInboxQueueKey } from '../../services/app-inbox-queue-key.ts';
+import {
+  AppInboxIdempotencyConflictError,
+  type AppInboxMessageContext,
+  AppInboxType,
+} from '../../services/app-inbox-contracts.ts';
 import { AppInboxService, type AppInboxServiceOptions } from '../../services/AppInboxService.ts';
 import type { RallarTimingSink } from '../../services/timing.ts';
 import {
@@ -68,6 +72,16 @@ export namespace AppCrdtInboxService {
     readonly timing: RallarTimingSink | undefined;
     readonly appInbox: AppInboxServiceOptions;
   }
+
+  export interface HttpAdminCommandReservation {
+    readonly operation: Exclude<CrdtMutationCommand['operation'], 'append'>;
+    readonly requestId: string;
+    readonly callerId: string;
+    readonly documentKey: string;
+    readonly semanticHash: string;
+    readonly materialize: () => Promise<CrdtMutationCommand>;
+    readonly matches: (command: CrdtMutationCommand) => boolean | Promise<boolean>;
+  }
 }
 
 export class AppCrdtInboxService extends AppInboxService {
@@ -120,6 +134,55 @@ export class AppCrdtInboxService extends AppInboxService {
         data: decoded,
       },
       decodeCrdtMutationResult,
+    );
+  }
+
+  async writeHttpAdminCommandUntilCompletion(
+    reservation: AppCrdtInboxService.HttpAdminCommandReservation,
+  ): Promise<Either<AppInboxFailure, CrdtMutationResult>> {
+    const type = toCrdtAppInboxType({ operation: reservation.operation });
+    const key = toStrictAppInboxQueueKey({
+      topicId: type,
+      resourceId: reservation.requestId,
+      contextId: toCrdtHttpAdminContextId(reservation.callerId, reservation.documentKey),
+    });
+    const reserved = await this.reserveMaterializedEntry(
+      {
+        type,
+        ...key,
+        senderId: reservation.callerId,
+        data: null,
+      },
+      async () => ({
+        type,
+        ...key,
+        senderId: reservation.callerId,
+        data: await reservation.materialize(),
+      }),
+    );
+    const command = decodeCrdtMutationCommand(reserved.enqueue.data);
+    if (
+      command.operation !== reservation.operation ||
+      command.deliveryId !== reservation.requestId ||
+      command.documentKey !== reservation.documentKey ||
+      command.actor.actorId !== reservation.callerId ||
+      reserved.enqueue.type !== type ||
+      reserved.enqueue.topicId !== key.topicId ||
+      reserved.enqueue.resourceId !== key.resourceId ||
+      reserved.enqueue.contextId !== key.contextId ||
+      reserved.enqueue.senderId !== reservation.callerId ||
+      !(await reservation.matches(command))
+    ) {
+      throw new AppInboxIdempotencyConflictError(
+        reservation.requestId,
+        command.commandHash,
+        reservation.semanticHash,
+      );
+    }
+    return await this.waitForReservedEntryResult(
+      reserved.enqueue,
+      decodeCrdtMutationResult,
+      reserved.winner,
     );
   }
 
@@ -188,6 +251,9 @@ export class AppCrdtInboxService extends AppInboxService {
     if (issues[0] !== undefined) {
       throw new TypeError(issues[0].message);
     }
+    if (computed.outcome === 'rejected' && isCrdtHttpAdminIdentity({ command, appInboxContext })) {
+      throw toCrdtHttpAdminRejection(computed.code);
+    }
     const result = await this.writeMutation(
       appInboxContext,
       async (transaction) => await this.mutationService.write(transaction, computed),
@@ -199,27 +265,68 @@ export class AppCrdtInboxService extends AppInboxService {
   }
 }
 
+function toCrdtHttpAdminRejection(reasonCode: string): Error {
+  const status = reasonCode.startsWith('authentication-')
+    ? 401
+    : reasonCode === 'document-not-found'
+      ? 404
+      : reasonCode.startsWith('authorization-') || reasonCode === 'feature-disabled'
+        ? 403
+        : 409;
+  return Object.assign(new Error(`CRDT admin mutation rejected: ${reasonCode}`), {
+    code: 'crdt-admin-mutation-rejected',
+    status,
+    details: { reasonCode },
+  });
+}
+
 interface AssertCrdtAppInboxIdentityInput {
   readonly command: CrdtMutationCommand;
   readonly appInboxContext: AppInboxMessageContext;
 }
 
 function assertCrdtAppInboxIdentity(input: AssertCrdtAppInboxIdentityInput): void {
-  const expectedKey = toAppQueueKey({
+  const legacyKey = toAppQueueKey({
     topicId: CRDT_APP_INBOX_TOPIC,
     resourceId: input.command.deliveryId,
     contextId: input.command.documentKey,
   });
   if (
     toCrdtAppInboxType(input.command) !== input.appInboxContext.enqueue.type ||
-    expectedKey.resourceId !== input.appInboxContext.entry.key.resourceId ||
-    expectedKey.contextId !== input.appInboxContext.entry.key.contextId
+    !(
+      (legacyKey.resourceId === input.appInboxContext.entry.key.resourceId &&
+        legacyKey.contextId === input.appInboxContext.entry.key.contextId &&
+        legacyKey.topicId === input.appInboxContext.entry.key.topicId) ||
+      isCrdtHttpAdminIdentity(input)
+    )
   ) {
     throw new TypeError('CRDT AppInbox command identity differs from queue key');
   }
 }
 
-export function toCrdtAppInboxType(command: CrdtMutationCommand): AppInboxType {
+function isCrdtHttpAdminIdentity(input: AssertCrdtAppInboxIdentityInput): boolean {
+  if (input.command.operation === 'append') {
+    return false;
+  }
+  const type = toCrdtAppInboxType(input.command);
+  const expectedKey = toStrictAppInboxQueueKey({
+    topicId: type,
+    resourceId: input.command.deliveryId,
+    contextId: toCrdtHttpAdminContextId(input.command.actor.actorId, input.command.documentKey),
+  });
+  return (
+    expectedKey.topicId === input.appInboxContext.entry.key.topicId &&
+    expectedKey.resourceId === input.appInboxContext.entry.key.resourceId &&
+    expectedKey.contextId === input.appInboxContext.entry.key.contextId &&
+    input.appInboxContext.enqueue.senderId === input.command.actor.actorId
+  );
+}
+
+export function toCrdtHttpAdminContextId(callerId: string, documentKey: string): string {
+  return `caller=${encodeURIComponent(callerId)}:document=${encodeURIComponent(documentKey)}`;
+}
+
+export function toCrdtAppInboxType(command: Pick<CrdtMutationCommand, 'operation'>): AppInboxType {
   switch (command.operation) {
     case 'append':
       return AppInboxType.CRDT_UPDATE_APPEND;
