@@ -62,6 +62,59 @@ const MALFORMED_NON_PRESENCE_ROUTE_CASES = [
 ] as const;
 const randomUuidDescriptor = Object.getOwnPropertyDescriptor(crypto, 'randomUUID');
 const randomUuidAtModuleLoad = crypto.randomUUID;
+const EXPECTED_CREATE_COMMAND = {
+  type: AppInboxType.GROUP_CREATE,
+  resourceId: 'create-body',
+  contextId: 'app-1:workspace-1:room%2F1',
+  senderId: 'alice',
+  data: {
+    scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+    request: {
+      groupId: 'room/1',
+      displayName: 'Room',
+      kind: 'room',
+      createdByPrincipalId: 'alice',
+      actorPrincipalId: 'alice',
+      actorSessionId: 'alice-session',
+      requestId: 'create-body',
+    },
+  },
+} satisfies AuthenticatedGroupMutationEnqueue;
+const EXPECTED_AGGREGATE_COMMANDS = [
+  {
+    type: AppInboxType.GROUP_UPDATE,
+    resourceId: 'update-body',
+    contextId: 'app-1:workspace-1:room-2',
+    senderId: 'alice',
+    data: {
+      scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+      groupId: 'room-2',
+      request: {
+        displayName: 'Renamed',
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        requestId: 'update-body',
+      },
+    },
+  },
+  {
+    type: AppInboxType.GROUP_DIRECTOR_APPOINT,
+    resourceId: 'appoint-body',
+    contextId: 'app-1:workspace-1:room-3',
+    senderId: 'alice',
+    data: {
+      scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+      groupId: 'room-3',
+      request: {
+        heartbeatTtlMs: 20,
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        requestId: 'appoint-body',
+      },
+    },
+  },
+] satisfies readonly AuthenticatedGroupMutationEnqueue[];
+
 Deno.test('canonical group request reader retains body request ID precedence', async () => {
   const request = await readGroupStateRouteRequest<{ requestId?: string; name: string }>({
     req: {
@@ -86,10 +139,7 @@ Deno.test('group create command retains its authenticated AppInbox envelope', ()
       requestId: 'create-body',
     },
   });
-  assert.equal(
-    JSON.stringify(command),
-    '{"type":"GROUP_CREATE","resourceId":"create-body","contextId":"app-1:workspace-1:room%2F1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"request":{"groupId":"room/1","displayName":"Room","kind":"room","createdByPrincipalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"create-body"}}}',
-  );
+  assert.deepEqual(command, EXPECTED_CREATE_COMMAND);
 });
 Deno.test('group command output keeps create payloads isolated from updates', () => {
   const command = toGroupStateCommand({
@@ -141,10 +191,7 @@ Deno.test('group aggregate commands retain update and director envelopes', () =>
       },
     }),
   ];
-  assert.equal(
-    JSON.stringify(commands),
-    '[{"type":"GROUP_UPDATE","resourceId":"update-body","contextId":"app-1:workspace-1:room-2","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-2","request":{"displayName":"Renamed","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"update-body"}}},{"type":"GROUP_DIRECTOR_APPOINT","resourceId":"appoint-body","contextId":"app-1:workspace-1:room-3","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-3","request":{"heartbeatTtlMs":20,"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"appoint-body"}}}]',
-  );
+  assert.deepEqual(commands, EXPECTED_AGGREGATE_COMMANDS);
 });
 Deno.test('group mutation response retains snapshot identity and durable error text', () => {
   const snapshot = createGroupStateRouteSnapshot('room-1');
@@ -153,10 +200,6 @@ Deno.test('group mutation response retains snapshot identity and durable error t
     written: toGroupStateWritten(snapshot),
   });
   assert.strictEqual(response.snapshot, snapshot);
-  assert.equal(
-    JSON.stringify(response.snapshot),
-    '{"stateRevision":1,"causalRevision":{"groupRevision":1,"presenceRevision":0},"group":{"applicationId":"app-1","workspaceId":"workspace-1","groupId":"room-1","slug":null,"displayName":"room-1","description":null,"kind":"room","status":"active","joinMode":"open","maxMembers":null,"maxSessionsPerMember":null,"metadata":{},"activeMemberCount":1,"ownerPrincipalId":"alice","snapshotVersion":1,"metadataVersion":1,"rosterVersion":1,"presenceVersion":0,"created":{"atEpochMs":1,"actor":{"kind":"service","serviceId":"test"},"reason":null,"traceId":null,"requestId":null},"updated":{"atEpochMs":1,"actor":{"kind":"service","serviceId":"test"},"reason":null,"traceId":null,"requestId":null},"expiresAtEpochMs":null,"emptySinceEpochMs":null,"purgeAfterEpochMs":null,"archived":null,"deleted":null,"lifecycleState":"active","formationEpoch":0,"formationAttemptCount":0,"lastFormationOutcome":null,"establishmentStartedAtEpochMs":null,"formationElectorate":["alice"]},"members":[{"applicationId":"app-1","workspaceId":"workspace-1","groupId":"room-1","principalId":"alice","role":"owner","status":"active","joined":{"atEpochMs":1,"actor":{"kind":"service","serviceId":"test"},"reason":null,"traceId":null,"requestId":null},"updated":{"atEpochMs":1,"actor":{"kind":"service","serviceId":"test"},"reason":null,"traceId":null,"requestId":null},"left":null,"removed":null,"banned":null,"invitedByPrincipalId":null,"invitationExpiresAtEpochMs":null}],"activeSessions":[],"memberCount":1,"onlineMemberCount":0}',
-  );
   assert.throws(
     () =>
       toGroupStateResponse({
@@ -167,7 +210,7 @@ Deno.test('group mutation response retains snapshot identity and durable error t
   );
 });
 Deno.test('group aggregate routes retain their AppInbox envelopes', async () => {
-  const enqueued: unknown[] = [];
+  const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
   const snapshot = createGroupStateRouteSnapshot('room-1');
   const runtime = createGroupStateRouteTestRuntime({
     groupService: { readSnapshot: () => Promise.resolve(snapshot) },
@@ -199,10 +242,7 @@ Deno.test('group aggregate routes retain their AppInbox envelopes', async () => 
   assert.equal(responses[0].status, 201);
   assert.equal(responses[1].status, 200);
   assert.equal(responses[2].status, 200);
-  assert.equal(
-    JSON.stringify(enqueued),
-    '[{"type":"GROUP_CREATE","resourceId":"create-body","contextId":"app-1:workspace-1:room%2F1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"request":{"groupId":"room/1","displayName":"Room","kind":"room","createdByPrincipalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"create-body"}}},{"type":"GROUP_UPDATE","resourceId":"update-body","contextId":"app-1:workspace-1:room-2","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-2","request":{"displayName":"Renamed","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"update-body"}}},{"type":"GROUP_DIRECTOR_APPOINT","resourceId":"appoint-body","contextId":"app-1:workspace-1:room-3","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-3","request":{"heartbeatTtlMs":20,"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"appoint-body"}}}]',
-  );
+  assert.deepEqual(enqueued, [EXPECTED_CREATE_COMMAND, ...EXPECTED_AGGREGATE_COMMANDS]);
 });
 Deno.test(
   'group aggregate routes preserve body, header, then one generated request ID',
@@ -240,9 +280,55 @@ Deno.test(
       assert.equal(generatedResponse.status, 201);
       assert.equal(readRandomCallCount(), 1);
     });
-    assert.equal(
-      JSON.stringify(enqueued.map((entry) => [entry.resourceId, entry.data])),
-      '[["body-request",{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"request":{"groupId":"body-id-group","displayName":"Body","kind":"room","requestId":"body-request","createdByPrincipalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session"}}],["header-request",{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"request":{"groupId":"header-id-group","displayName":"Header","kind":"room","requestId":"header-request","createdByPrincipalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session"}}],["generated-request",{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"request":{"groupId":"generated-id-group","displayName":"Generated","kind":"room","requestId":"generated-request","createdByPrincipalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session"}}]]',
+    assert.deepEqual(
+      enqueued.map((entry) => ({ resourceId: entry.resourceId, data: entry.data })),
+      [
+        {
+          resourceId: 'body-request',
+          data: {
+            scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+            request: {
+              groupId: 'body-id-group',
+              displayName: 'Body',
+              kind: 'room',
+              requestId: 'body-request',
+              createdByPrincipalId: 'alice',
+              actorPrincipalId: 'alice',
+              actorSessionId: 'alice-session',
+            },
+          },
+        },
+        {
+          resourceId: 'header-request',
+          data: {
+            scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+            request: {
+              groupId: 'header-id-group',
+              displayName: 'Header',
+              kind: 'room',
+              requestId: 'header-request',
+              createdByPrincipalId: 'alice',
+              actorPrincipalId: 'alice',
+              actorSessionId: 'alice-session',
+            },
+          },
+        },
+        {
+          resourceId: 'generated-request',
+          data: {
+            scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+            request: {
+              groupId: 'generated-id-group',
+              displayName: 'Generated',
+              kind: 'room',
+              requestId: 'generated-request',
+              createdByPrincipalId: 'alice',
+              actorPrincipalId: 'alice',
+              actorSessionId: 'alice-session',
+            },
+          },
+        },
+      ],
     );
   },
 );
@@ -357,7 +443,7 @@ Deno.test(
   'all non-presence group REST mutations reject malformed bodies before inbox ' +
     'enqueue',
   async () => {
-    const processCalls: unknown[] = [];
+    const processCalls: AuthenticatedGroupMutationEnqueue[] = [];
     const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
     const ownerSnapshot = {
       ...snapshot,

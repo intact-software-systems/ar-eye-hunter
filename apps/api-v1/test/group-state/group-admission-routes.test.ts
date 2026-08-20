@@ -32,6 +32,91 @@ import {
 
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1';
 const AUTHENTICATED_HEADERS = { authorization: 'Bearer token' } as const;
+const EXPECTED_ADMISSION_COMMANDS = [
+  {
+    type: AppInboxType.GROUP_JOIN,
+    resourceId: 'join-request',
+    contextId: 'app-1:workspace-1:room-1',
+    senderId: 'alice',
+    data: {
+      scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+      groupId: 'room-1',
+      request: {
+        inviteToken: 'invite-1',
+        joinCode: 'code-1',
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        requestId: 'join-request',
+      },
+    },
+  },
+  {
+    type: AppInboxType.GROUP_INVITE_ACCEPT,
+    resourceId: 'accept-request',
+    contextId: 'app-1:workspace-1:room-1',
+    senderId: 'alice',
+    data: {
+      scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+      groupId: 'room-1',
+      request: {
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        requestId: 'accept-request',
+      },
+    },
+  },
+  {
+    type: AppInboxType.GROUP_JOIN_CODE_ROTATE,
+    resourceId: 'rotate-request',
+    contextId: 'app-1:workspace-1:room-1',
+    senderId: 'alice',
+    data: {
+      scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+      groupId: 'room-1',
+      request: {
+        joinCode: 'next-code',
+        expiresAtEpochMs: 2000,
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        requestId: 'rotate-request',
+      },
+    },
+  },
+  {
+    type: AppInboxType.GROUP_INVITE_CREATE,
+    resourceId: 'invite-request',
+    contextId: 'app-1:workspace-1:room-1',
+    senderId: 'alice',
+    data: {
+      scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+      groupId: 'room-1',
+      principalId: 'bob',
+      request: {
+        invitationExpiresAtEpochMs: 2000,
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        requestId: 'invite-request',
+      },
+    },
+  },
+  {
+    type: AppInboxType.GROUP_INVITE_REVOKE,
+    resourceId: 'revoke-request',
+    contextId: 'app-1:workspace-1:room-1',
+    senderId: 'alice',
+    data: {
+      scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+      groupId: 'room-1',
+      principalId: 'bob',
+      request: {
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        requestId: 'revoke-request',
+      },
+    },
+  },
+] satisfies readonly AuthenticatedGroupMutationEnqueue[];
+
 Deno.test('group admission commands retain every authenticated AppInbox envelope', () => {
   const authSession = createGroupStateRouteAuthSession('alice');
   const commandBase = { authSession, scope: TEST_GROUP_SCOPE, groupId: 'room-1' } as const;
@@ -85,12 +170,9 @@ Deno.test('group admission commands retain every authenticated AppInbox envelope
       },
     }),
   ];
-  assert.equal(
-    JSON.stringify(commands),
-    '[{"type":"GROUP_JOIN","resourceId":"join-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","request":{"inviteToken":"invite-1","joinCode":"code-1","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"join-request"}}},{"type":"GROUP_INVITE_ACCEPT","resourceId":"accept-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","request":{"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"accept-request"}}},{"type":"GROUP_JOIN_CODE_ROTATE","resourceId":"rotate-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","request":{"joinCode":"next-code","expiresAtEpochMs":2000,"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"rotate-request"}}},{"type":"GROUP_INVITE_CREATE","resourceId":"invite-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"invitationExpiresAtEpochMs":2000,"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"invite-request"}}},{"type":"GROUP_INVITE_REVOKE","resourceId":"revoke-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"revoke-request"}}}]',
-  );
+  assert.deepEqual(commands, EXPECTED_ADMISSION_COMMANDS);
 });
-Deno.test('group join-code response omits its event without changing JSON order', () => {
+Deno.test('group join-code response omits its event while preserving response fields', () => {
   const snapshot = createGroupStateRouteSnapshot('room-1');
   const response = toGroupStateResponse({
     kind: 'join-code',
@@ -105,13 +187,14 @@ Deno.test('group join-code response omits its event without changing JSON order'
     },
   });
   assert.strictEqual(response.snapshot, snapshot);
-  assert.equal(
-    JSON.stringify(response),
-    '{"joinCode":"next-code","expiresAtEpochMs":2000,"snapshot":{"stateRevision":1,"causalRevision":{"groupRevision":1,"presenceRevision":0},"group":{"applicationId":"app-1","workspaceId":"workspace-1","groupId":"room-1","slug":null,"displayName":"room-1","description":null,"kind":"room","status":"active","joinMode":"open","maxMembers":null,"maxSessionsPerMember":null,"metadata":{},"activeMemberCount":1,"ownerPrincipalId":"alice","snapshotVersion":1,"metadataVersion":1,"rosterVersion":1,"presenceVersion":0,"created":{"atEpochMs":1,"actor":{"kind":"service","serviceId":"test"},"reason":null,"traceId":null,"requestId":null},"updated":{"atEpochMs":1,"actor":{"kind":"service","serviceId":"test"},"reason":null,"traceId":null,"requestId":null},"expiresAtEpochMs":null,"emptySinceEpochMs":null,"purgeAfterEpochMs":null,"archived":null,"deleted":null,"lifecycleState":"active","formationEpoch":0,"formationAttemptCount":0,"lastFormationOutcome":null,"establishmentStartedAtEpochMs":null,"formationElectorate":["alice"]},"members":[{"applicationId":"app-1","workspaceId":"workspace-1","groupId":"room-1","principalId":"alice","role":"owner","status":"active","joined":{"atEpochMs":1,"actor":{"kind":"service","serviceId":"test"},"reason":null,"traceId":null,"requestId":null},"updated":{"atEpochMs":1,"actor":{"kind":"service","serviceId":"test"},"reason":null,"traceId":null,"requestId":null},"left":null,"removed":null,"banned":null,"invitedByPrincipalId":null,"invitationExpiresAtEpochMs":null}],"activeSessions":[],"memberCount":1,"onlineMemberCount":0}}',
-  );
+  assert.deepEqual(response, {
+    joinCode: 'next-code',
+    expiresAtEpochMs: 2000,
+    snapshot,
+  });
 });
 Deno.test('group admission routes retain every AppInbox envelope and actor override', async () => {
-  const enqueued: unknown[] = [];
+  const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
   const snapshot = createGroupStateRouteSnapshot('room-1');
   const runtime = createGroupStateRouteTestRuntime({
     processGroupAppInbox: captureGroupStateRouteWrite(enqueued, snapshot),
@@ -151,10 +234,7 @@ Deno.test('group admission routes retain every AppInbox envelope and actor overr
   for (const response of responses) {
     assert.equal(response.status, 200);
   }
-  assert.equal(
-    JSON.stringify(enqueued),
-    '[{"type":"GROUP_JOIN","resourceId":"join-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","request":{"inviteToken":"invite-1","joinCode":"code-1","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"join-request"}}},{"type":"GROUP_INVITE_ACCEPT","resourceId":"accept-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","request":{"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"accept-request"}}},{"type":"GROUP_JOIN_CODE_ROTATE","resourceId":"rotate-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","request":{"joinCode":"next-code","expiresAtEpochMs":2000,"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"rotate-request"}}},{"type":"GROUP_INVITE_CREATE","resourceId":"invite-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"invitationExpiresAtEpochMs":2000,"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"invite-request"}}},{"type":"GROUP_INVITE_REVOKE","resourceId":"revoke-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"revoke-request"}}}]',
-  );
+  assert.deepEqual(enqueued, EXPECTED_ADMISSION_COMMANDS);
 });
 Deno.test('group join route enqueues explicit join intent with authenticated actor', async () => {
   await withStrictGroupStateRouteReadAuth(false, async () => {

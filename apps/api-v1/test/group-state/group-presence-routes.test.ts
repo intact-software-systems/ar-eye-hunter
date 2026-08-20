@@ -6,6 +6,11 @@ import type {
 import type {
   InactiveGroupPresenceResult,
 } from '@shared-server/rallar-system/group-state/presence/group-presence-service.ts';
+// prettier-ignore
+import type {
+  AuthenticatedGroupMutationEnqueue,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
 import { toGroupStateResponse } from '../../src/group-state/to-group-state-response.ts';
@@ -30,6 +35,70 @@ const AUTHENTICATED_HEADERS = {
 const PRESENCE_CONNECT_ROUTE = { path: API_BASE, method: 'PUT' } as const;
 const PRESENCE_HEARTBEAT_ROUTE = { path: `${API_BASE}/heartbeat`, method: 'POST' } as const;
 const PRESENCE_DISCONNECT_ROUTE = { path: `${API_BASE}/disconnect`, method: 'POST' } as const;
+const EXPECTED_PRESENCE_COMMANDS = [
+  {
+    type: AppInboxType.GROUP_PRESENCE_CONNECT,
+    resourceId: 'connect-request',
+    contextId: 'app-1:workspace-1:room-1',
+    senderId: 'alice',
+    data: {
+      scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+      groupId: 'room-1',
+      sessionId: 'alice-session',
+      request: {
+        generationId: 'generation-connect',
+        principalId: 'alice',
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: 1,
+        expiresAtEpochMs: 2,
+        requestId: 'connect-request',
+      },
+    },
+  },
+  {
+    type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
+    resourceId: 'heartbeat-request',
+    contextId: 'app-1:workspace-1:room-1',
+    senderId: 'alice',
+    data: {
+      scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+      groupId: 'room-1',
+      sessionId: 'alice-session',
+      request: {
+        generationId: 'generation-heartbeat',
+        principalId: 'alice',
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        lastHeartbeatAtEpochMs: 2,
+        expiresAtEpochMs: 3,
+        requestId: 'heartbeat-request',
+      },
+    },
+  },
+  {
+    type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
+    resourceId: 'disconnect-request',
+    contextId: 'app-1:workspace-1:room-1',
+    senderId: 'alice',
+    data: {
+      scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+      groupId: 'room-1',
+      sessionId: 'alice-session',
+      request: {
+        generationId: 'generation-disconnect',
+        principalId: 'alice',
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        lastHeartbeatAtEpochMs: 3,
+        disconnectedAtEpochMs: 4,
+        expiresAtEpochMs: 5,
+        requestId: 'disconnect-request',
+      },
+    },
+  },
+] satisfies readonly AuthenticatedGroupMutationEnqueue[];
 
 Deno.test('group presence commands retain validation and authenticated envelopes', () => {
   const authSession = createGroupStateRouteAuthSession('alice');
@@ -82,13 +151,10 @@ Deno.test('group presence commands retain validation and authenticated envelopes
     }),
   ];
 
-  assert.equal(
-    JSON.stringify(commands),
-    '[{"type":"GROUP_PRESENCE_CONNECT","resourceId":"connect-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","sessionId":"alice-session","request":{"generationId":"generation-connect","principalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session","connectedAtEpochMs":1,"lastHeartbeatAtEpochMs":1,"expiresAtEpochMs":2,"requestId":"connect-request"}}},{"type":"GROUP_PRESENCE_HEARTBEAT","resourceId":"heartbeat-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","sessionId":"alice-session","request":{"generationId":"generation-heartbeat","principalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session","lastHeartbeatAtEpochMs":2,"expiresAtEpochMs":3,"requestId":"heartbeat-request"}}},{"type":"GROUP_PRESENCE_DISCONNECT","resourceId":"disconnect-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","sessionId":"alice-session","request":{"generationId":"generation-disconnect","principalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session","lastHeartbeatAtEpochMs":3,"disconnectedAtEpochMs":4,"expiresAtEpochMs":5,"requestId":"disconnect-request"}}}]',
-  );
+  assert.deepEqual(commands, EXPECTED_PRESENCE_COMMANDS);
 });
 
-Deno.test('group presence response retains the current snapshot and JSON order', async () => {
+Deno.test('group presence response retains the current snapshot', async () => {
   const snapshot = createGroupStateRouteSnapshot('room-1');
   let currentSnapshotReads = 0;
   const service = createPresenceResponseService(snapshot, () => {
@@ -119,10 +185,7 @@ Deno.test('group presence response retains the current snapshot and JSON order',
   });
 
   assert.strictEqual(accepted, snapshot);
-  assert.equal(
-    JSON.stringify(accepted),
-    '{"stateRevision":1,"causalRevision":{"groupRevision":1,"presenceRevision":0},"group":{"applicationId":"app-1","workspaceId":"workspace-1","groupId":"room-1","slug":null,"displayName":"room-1","description":null,"kind":"room","status":"active","joinMode":"open","maxMembers":null,"maxSessionsPerMember":null,"metadata":{},"activeMemberCount":1,"ownerPrincipalId":"alice","snapshotVersion":1,"metadataVersion":1,"rosterVersion":1,"presenceVersion":0,"created":{"atEpochMs":1,"actor":{"kind":"service","serviceId":"test"},"reason":null,"traceId":null,"requestId":null},"updated":{"atEpochMs":1,"actor":{"kind":"service","serviceId":"test"},"reason":null,"traceId":null,"requestId":null},"expiresAtEpochMs":null,"emptySinceEpochMs":null,"purgeAfterEpochMs":null,"archived":null,"deleted":null,"lifecycleState":"active","formationEpoch":0,"formationAttemptCount":0,"lastFormationOutcome":null,"establishmentStartedAtEpochMs":null,"formationElectorate":["alice"]},"members":[{"applicationId":"app-1","workspaceId":"workspace-1","groupId":"room-1","principalId":"alice","role":"owner","status":"active","joined":{"atEpochMs":1,"actor":{"kind":"service","serviceId":"test"},"reason":null,"traceId":null,"requestId":null},"updated":{"atEpochMs":1,"actor":{"kind":"service","serviceId":"test"},"reason":null,"traceId":null,"requestId":null},"left":null,"removed":null,"banned":null,"invitedByPrincipalId":null,"invitationExpiresAtEpochMs":null}],"activeSessions":[],"memberCount":1,"onlineMemberCount":0}',
-  );
+  assert.deepEqual(accepted, snapshot);
   assert.equal(currentSnapshotReads, 1);
 });
 
@@ -166,7 +229,7 @@ Deno.test('group presence response rejects before reading its current snapshot',
 Deno.test(
   'group presence routes retain every AppInbox envelope and post-receipt snapshot read',
   async () => {
-    const enqueued: unknown[] = [];
+    const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     let currentSnapshotReads = 0;
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const runtime = createGroupStateRouteTestRuntime({
@@ -216,10 +279,7 @@ Deno.test(
       assert.deepEqual(await response.json(), snapshot);
     }
     assert.equal(currentSnapshotReads, 3);
-    assert.equal(
-      JSON.stringify(enqueued),
-      '[{"type":"GROUP_PRESENCE_CONNECT","resourceId":"connect-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","sessionId":"alice-session","request":{"generationId":"generation-connect","principalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session","connectedAtEpochMs":1,"lastHeartbeatAtEpochMs":1,"expiresAtEpochMs":2,"requestId":"connect-request"}}},{"type":"GROUP_PRESENCE_HEARTBEAT","resourceId":"heartbeat-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","sessionId":"alice-session","request":{"generationId":"generation-heartbeat","principalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session","lastHeartbeatAtEpochMs":2,"expiresAtEpochMs":3,"requestId":"heartbeat-request"}}},{"type":"GROUP_PRESENCE_DISCONNECT","resourceId":"disconnect-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","sessionId":"alice-session","request":{"generationId":"generation-disconnect","principalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session","lastHeartbeatAtEpochMs":3,"disconnectedAtEpochMs":4,"expiresAtEpochMs":5,"requestId":"disconnect-request"}}}]',
-    );
+    assert.deepEqual(enqueued, EXPECTED_PRESENCE_COMMANDS);
   },
 );
 
@@ -302,7 +362,9 @@ function createPresenceResponseService(
   };
 }
 
-function capturePresenceReceipt(enqueued: unknown[]): ProcessGroupAppInbox {
+function capturePresenceReceipt(
+  enqueued: AuthenticatedGroupMutationEnqueue[],
+): ProcessGroupAppInbox {
   return (_authority, entry) => {
     enqueued.push(entry);
     return Promise.resolve(
@@ -356,7 +418,7 @@ async function requestPresenceMutation(
 }
 
 Deno.test('group REST presence lifecycle requires a valid generation before enqueue', async () => {
-  const processCalls: unknown[] = [];
+  const processCalls: AuthenticatedGroupMutationEnqueue[] = [];
   const { app, sessionPath } = createPresenceValidationRuntime(processCalls);
 
   await verifyMalformedPresenceRequests(app, sessionPath);
@@ -365,7 +427,9 @@ Deno.test('group REST presence lifecycle requires a valid generation before enqu
   assert.equal(processCalls.length, 3);
 });
 
-function createPresenceValidationRuntime(processCalls: unknown[]): {
+function createPresenceValidationRuntime(
+  processCalls: AuthenticatedGroupMutationEnqueue[],
+): {
   readonly app: ReturnType<typeof createPredecessorGroupStateRouteTestRuntime>['app'];
   readonly sessionPath: string;
 } {

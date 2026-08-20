@@ -17,7 +17,6 @@ import type {
 } from '@shared/api/state-types.ts';
 import type {
   DeleteGroupTopologyConfigInput,
-  GroupTopologyConfigMutationExecution,
   PutGroupTopologyConfigInput,
 } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
@@ -34,13 +33,15 @@ import type {
   ClientMutationReceipt,
 } from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import {
-  type ClientStateWritten,
   toClientMutationCommand,
   toClientMutationIssuedSessionAuthority,
   toConnectCommandInput,
   toDisconnectCommandInput,
   toHeartbeatCommandInput,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
+import type {
+  ClientMutationCommandInput,
+} from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 // prettier-ignore
 import type {
   IssuedAuthSession,
@@ -51,8 +52,8 @@ import type {
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 // prettier-ignore
 import {
-  isAuthenticatedGroupMutationEnqueue,
   type AuthenticatedGroupMutationEnqueue,
+  isAuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 // prettier-ignore
 import {
@@ -75,6 +76,7 @@ import {
   createPostgresAppInboxWorkerRuntime,
   type PersistedAppInboxAttempt,
 } from './postgres-app-inbox-worker-runtime.ts';
+import { toPSqlSql } from './postgres-sql-adapter.ts';
 // prettier-ignore
 import type {
   JsonWireObject,
@@ -93,78 +95,82 @@ interface WorkerCommandBase {
   readonly barrier: WorkerBarrier;
 }
 
-type WorkerMutationRequest<T> = Omit<T, 'requestId'> &
-  Readonly<{
+type WorkerMutationRequest<T> =
+  & Omit<T, 'requestId'>
+  & Readonly<{
     requestId: string;
   }>;
 
-type ClientWorkerInput = WorkerCommandBase &
-  Readonly<{
+type ClientWorkerInput =
+  & WorkerCommandBase
+  & Readonly<{
     principalId: string;
     clientInstanceId: string;
     sessionId: string;
-  }> &
-  (
+  }>
+  & (
     | Readonly<{
-        command: 'client-heartbeat';
-        request: WorkerMutationRequest<HeartbeatClientSessionRequest>;
-      }>
+      command: 'client-heartbeat';
+      request: WorkerMutationRequest<HeartbeatClientSessionRequest>;
+    }>
     | Readonly<{
-        command: 'client-disconnect';
-        request: WorkerMutationRequest<DisconnectClientSessionRequest>;
-      }>
+      command: 'client-disconnect';
+      request: WorkerMutationRequest<DisconnectClientSessionRequest>;
+    }>
     | Readonly<{
-        command: 'client-reconnect';
-        request: WorkerMutationRequest<ConnectClientSessionRequest>;
-      }>
+      command: 'client-reconnect';
+      request: WorkerMutationRequest<ConnectClientSessionRequest>;
+    }>
   );
 
-type GroupWorkerInput = WorkerCommandBase &
-  Readonly<{
+type GroupWorkerInput =
+  & WorkerCommandBase
+  & Readonly<{
     groupId: string;
-  }> &
-  (
+  }>
+  & (
     | Readonly<{
-        command: 'group-join';
-        request: WorkerMutationRequest<JoinGroupRequest>;
-      }>
+      command: 'group-join';
+      request: WorkerMutationRequest<JoinGroupRequest>;
+    }>
     | Readonly<{
-        command: 'group-ban';
-        targetPrincipalId: string;
-        request: WorkerMutationRequest<BanGroupMemberRequest>;
-      }>
+      command: 'group-ban';
+      targetPrincipalId: string;
+      request: WorkerMutationRequest<BanGroupMemberRequest>;
+    }>
     | Readonly<{
-        command: 'group-presence-connect';
-        sessionId: string;
-        request: WorkerMutationRequest<ConnectGroupPresenceSessionRequest>;
-      }>
+      command: 'group-presence-connect';
+      sessionId: string;
+      request: WorkerMutationRequest<ConnectGroupPresenceSessionRequest>;
+    }>
     | Readonly<{
-        command: 'group-presence-heartbeat';
-        sessionId: string;
-        request: WorkerMutationRequest<HeartbeatGroupPresenceSessionRequest>;
-      }>
+      command: 'group-presence-heartbeat';
+      sessionId: string;
+      request: WorkerMutationRequest<HeartbeatGroupPresenceSessionRequest>;
+    }>
     | Readonly<{
-        command: 'group-presence-disconnect';
-        sessionId: string;
-        request: WorkerMutationRequest<DisconnectGroupPresenceSessionRequest>;
-      }>
+      command: 'group-presence-disconnect';
+      sessionId: string;
+      request: WorkerMutationRequest<DisconnectGroupPresenceSessionRequest>;
+    }>
   );
 
-type TopologyWorkerInput = Readonly<{
-  groupRef: GroupRef;
-  atEpochMs: number;
-  traceFilePath: string;
-  barrier: WorkerBarrier;
-}> &
-  (
+type TopologyWorkerInput =
+  & Readonly<{
+    groupRef: GroupRef;
+    atEpochMs: number;
+    traceFilePath: string;
+    barrier: WorkerBarrier;
+  }>
+  & (
     | Readonly<{
-        command: 'topology-config-put';
-        request: WorkerMutationRequest<Omit<PutGroupTopologyConfigInput, 'groupRef'>>;
-      }>
+      command: 'topology-config-put';
+      request: WorkerMutationRequest<Omit<PutGroupTopologyConfigInput, 'groupRef'>>;
+    }>
     | Readonly<{
-        command: 'topology-config-delete';
-        request: WorkerMutationRequest<Omit<DeleteGroupTopologyConfigInput, 'groupRef'>>;
-      }>
+      command: 'topology-config-delete';
+      request: WorkerMutationRequest<Omit<DeleteGroupTopologyConfigInput, 'groupRef'>>;
+    }>
   );
 
 type StateMutationWorkerInput = ClientWorkerInput | GroupWorkerInput | TopologyWorkerInput;
@@ -195,7 +201,8 @@ async function main(): Promise<void> {
 
   const inputValue = readInputValue();
   const traceFilePath = readWorkerTraceFilePath(inputValue);
-  const sql = postgres(databaseUrl, { max: 2, idle_timeout: 1 });
+  const postgresSql = postgres(databaseUrl, { max: 2, idle_timeout: 1 });
+  const sql = toPSqlSql(postgresSql);
 
   try {
     const [{ pid }] = await sql<{ pid: number }[]>`
@@ -208,14 +215,12 @@ async function main(): Promise<void> {
     };
     try {
       const input = decodeStateMutationWorkerInput(inputValue);
-      console.log(
-        JSON.stringify(await runStateMutationWorker(input, sql as unknown as PSqlSql, trace)),
-      );
+      console.log(JSON.stringify(await runStateMutationWorker(input, sql, trace)));
     } finally {
       await Deno.writeTextFile(traceFilePath, JSON.stringify(trace));
     }
   } finally {
-    await sql.end();
+    await postgresSql.end();
   }
 }
 
@@ -287,7 +292,7 @@ async function runClientMutation(
         data,
       },
       authoritySession,
-    ),
+    )
   );
   const written = result.fold(
     (error) => {
@@ -331,7 +336,7 @@ async function runClientMutation(
     toClientMutationIssuedSessionAuthority(
       authoritySession,
       commandInput.aggregateRef,
-      commandInput.operation as Exclude<typeof commandInput.operation, 'expireSession'>,
+      commandInput.operation,
     ),
   );
   return {
@@ -347,9 +352,11 @@ async function runClientMutation(
   };
 }
 
-function toClientWorkerCommandInput(input: ClientWorkerInput) {
+function toClientWorkerCommandInput(
+  input: ClientWorkerInput,
+): Exclude<ClientMutationCommandInput, { readonly operation: 'expireSession' }> {
   if (input.command === 'client-heartbeat') {
-    return toHeartbeatCommandInput(
+    const commandInput = toHeartbeatCommandInput(
       input.scope,
       input.principalId,
       input.clientInstanceId,
@@ -357,9 +364,13 @@ function toClientWorkerCommandInput(input: ClientWorkerInput) {
       input.request,
       input.request.requestId,
     );
+    if (commandInput.operation !== 'heartbeatSession') {
+      throw new TypeError(`Expected heartbeatSession, received ${commandInput.operation}`);
+    }
+    return commandInput;
   }
   if (input.command === 'client-disconnect') {
-    return toDisconnectCommandInput(
+    const commandInput = toDisconnectCommandInput(
       'disconnectSession',
       input.scope,
       input.principalId,
@@ -368,8 +379,12 @@ function toClientWorkerCommandInput(input: ClientWorkerInput) {
       input.request,
       input.request.requestId,
     );
+    if (commandInput.operation !== 'disconnectSession') {
+      throw new TypeError(`Expected disconnectSession, received ${commandInput.operation}`);
+    }
+    return commandInput;
   }
-  return toConnectCommandInput(
+  const commandInput = toConnectCommandInput(
     'connectSession',
     input.scope,
     input.principalId,
@@ -379,6 +394,10 @@ function toClientWorkerCommandInput(input: ClientWorkerInput) {
     input.request.requestId,
     {},
   );
+  if (commandInput.operation !== 'connectSession') {
+    throw new TypeError(`Expected connectSession, received ${commandInput.operation}`);
+  }
+  return commandInput;
 }
 
 function toClientAppInboxType(command: ClientWorkerInput['command']): AppInboxType {
@@ -428,7 +447,7 @@ async function runGroupMutation(
   }
   runtime.armBarrier();
   const result = await runtime.runUntilCompletion(() =>
-    runtime.group.processAuthenticatedGroupEntryUntilCompletion(enqueue, authority),
+    runtime.group.processAuthenticatedGroupEntryUntilCompletion(enqueue, authority)
   );
   const durableResult = result.fold(
     (error) => {
@@ -440,10 +459,10 @@ async function runGroupMutation(
   const receipt = isGroupPresenceCommand(input.command)
     ? requireGroupMutationReceipt(durableResult)
     : (
-        await createGroupStateRepository(
-          new PSqlRuntimeStateRepository(sql),
-        ).findIdempotentGroupMutationReceipt({ ...input.scope, groupId: input.groupId }, requestId)
-      )?.receipt;
+      await createGroupStateRepository(
+        new PSqlRuntimeStateRepository(sql),
+      ).findIdempotentGroupMutationReceipt({ ...input.scope, groupId: input.groupId }, requestId)
+    )?.receipt;
   if (!receipt) throw new Error(`Group mutation receipt not found: ${requestId}`);
   return compactGroupReceipt(input.command, requestId, receipt);
 }
@@ -515,19 +534,17 @@ async function runTopologyMutation(
     groupRef: input.groupRef,
     requestId,
     capturedAtEpochMs: input.atEpochMs,
-    payload:
-      input.command === 'topology-config-put'
-        ? { operation: 'putConfig', config: input.request.config }
-        : { operation: 'deleteConfig', target: 'config' },
+    payload: input.command === 'topology-config-put'
+      ? { operation: 'putConfig', config: input.request.config }
+      : { operation: 'deleteConfig', target: 'config' },
   });
   runtime.armBarrier();
   const result = await runtime.runUntilCompletion(() =>
     runtime.group.processAuthenticatedTopologyEntryUntilCompletion(
       {
-        type:
-          input.command === 'topology-config-put'
-            ? AppInboxType.TOPOLOGY_CONFIG_PUT
-            : AppInboxType.TOPOLOGY_CONFIG_DELETE,
+        type: input.command === 'topology-config-put'
+          ? AppInboxType.TOPOLOGY_CONFIG_PUT
+          : AppInboxType.TOPOLOGY_CONFIG_DELETE,
         resourceId: requestId,
         contextId: inboxContextId(
           input.groupRef.applicationId,
@@ -538,7 +555,7 @@ async function runTopologyMutation(
         data,
       },
       authority,
-    ),
+    )
   );
   const execution = result.fold(
     (error) => {
@@ -609,13 +626,10 @@ function compactTopologyReceipt(
     commandHash: receipt.commandHash,
     attemptCount: receipt.attemptCount,
     acceptedStorageRevision: receipt.acceptedStorageRevision,
-    acceptedCausalRevision:
-      receipt.acceptedCausalRevision === null
-        ? null
-        : {
-            ...receipt.acceptedCausalRevision,
-            causalRevision: { ...receipt.acceptedCausalRevision.causalRevision },
-          },
+    acceptedCausalRevision: receipt.acceptedCausalRevision === null ? null : {
+      ...receipt.acceptedCausalRevision,
+      causalRevision: { ...receipt.acceptedCausalRevision.causalRevision },
+    },
     acceptedVersion: receipt.acceptedVersion,
     outboxIds: [...receipt.outboxIds],
     domainStatus: receipt.outcome,
