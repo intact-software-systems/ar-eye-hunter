@@ -50,11 +50,12 @@ type AcceptedRtcTopologyMutation = Exclude<
   Readonly<{ outcome: 'loaded' | 'retry' }>
 >;
 
-import { computeFormationCriterionCommand } from './compute-formation-criterion-command.ts';
-import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
-import type { GroupMutationCommand } from '../../group-state/mutation/group-mutation-contracts.ts';
-import type { GroupTopologyPlanningAuthority } from '../planning/group-topology-planning-authority.ts';
-import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import {
+  createDeferredCriterionPetitioner,
+  type DeferredCriterionPetitioner,
+  type FormationCriterionPort,
+  petitionFormationCriterion,
+} from './compute-formation-criterion-command.ts';
 
 export interface RtcTopologyDeliveryOptions {
   readonly publisherStreamId: string;
@@ -79,10 +80,12 @@ interface RtcTopologyWorkHandlerOptions {
    * this deployment does not automate formation; groups then activate only by
    * operator command.
    */
-  readonly formationCriterion?: Readonly<{
-    readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
-    submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
-  }>;
+  readonly formationCriterion?: FormationCriterionPort;
+  /**
+   * Damping interval for criterion petitions from refinement-deferred RTT
+   * work. Absent means the default; 0 petitions per deferred item.
+   */
+  readonly criterionPetitionMinIntervalMs?: number;
   readonly topologyDelivery?: RtcTopologyDeliveryOptions;
   readonly onInactiveOverlay?: (overlayId: string) => void;
   readonly wakeQueue?: () => void;
@@ -129,6 +132,7 @@ interface ComputeAcceptedRtcTopologyWorkInput {
   readonly attemptCount: number;
   readonly read: RtcTopologyExecutionRead;
   readonly expireAtEpochMs: number;
+  readonly deferredCriterionPetitioner: DeferredCriterionPetitioner;
 }
 
 interface ToTopologyPublicationInput {
@@ -141,18 +145,23 @@ interface ToTopologyPublicationInput {
 export function createRtcTopologyWorkHandler(
   options: RtcTopologyWorkHandlerOptions,
 ): OnMessageCallback {
+  const deferredCriterionPetitioner = createDeferredCriterionPetitioner(options);
   return {
     onMessage: async (message, entry) => {
-      await processRtcTopologyWork(options, message, entry);
+      await processRtcTopologyWork({ options, message, entry, deferredCriterionPetitioner });
     },
   };
 }
 
-async function processRtcTopologyWork(
-  options: RtcTopologyWorkHandlerOptions,
-  message: ALMessage,
-  entry: ResourceEntry,
-): Promise<void> {
+interface ProcessRtcTopologyWorkInput {
+  readonly options: RtcTopologyWorkHandlerOptions;
+  readonly message: ALMessage;
+  readonly entry: ResourceEntry;
+  readonly deferredCriterionPetitioner: DeferredCriterionPetitioner;
+}
+
+async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promise<void> {
+  const { options, message, entry, deferredCriterionPetitioner } = input;
   const workEnvelope = readRtcTopologyWorkEnvelope(message, options.runtime.workType);
   const workId = toRtcTopologyExecutionId(workEnvelope);
   const read = await options.executionRepository.readTopologyMutation(
@@ -170,6 +179,7 @@ async function processRtcTopologyWork(
     attemptCount: entry.dequeueAudit.attempts,
     read,
     expireAtEpochMs: entry.audit.expiryTs.epochMilliseconds,
+    deferredCriterionPetitioner,
   });
   await writeAcceptedRtcTopologyWork(options, entry, accepted);
 }
@@ -202,23 +212,6 @@ async function processLoadedRtcTopologyWork(
   options.wakeReplay?.();
 }
 
-async function petitionFormationCriterion(
-  options: RtcTopologyWorkHandlerOptions,
-  authority: GroupTopologyPlanningAuthority,
-  planned: RallarOverlayTopologySnapshot,
-): Promise<void> {
-  if (!options.formationCriterion) return;
-  const command = await computeFormationCriterionCommand({
-    group: authority.group,
-    planned,
-    rttMeasurements: authority.rttMeasurements,
-    nowEpochMs: authority.nowEpochMs,
-    readLifecyclePolicy: options.formationCriterion.readLifecyclePolicy,
-  });
-  if (command === null) return;
-  await options.formationCriterion.submitCommand(command, authority.nowEpochMs);
-}
-
 async function computeAcceptedRtcTopologyWork(
   input: ComputeAcceptedRtcTopologyWorkInput,
 ): Promise<AcceptedRtcTopologyWork> {
@@ -235,6 +228,12 @@ async function computeAcceptedRtcTopologyWork(
       expireAtEpochMs: input.expireAtEpochMs,
     })
   ) {
+    // The gate defers the replan, never the activation decision: the
+    // measurement that carries an establishing group across its threshold
+    // must still petition the criterion, or activation waits for the next
+    // deadline evaluation. A removed stored plan never petitions — its
+    // empty edge set would read as trivially-complete readiness.
+    await input.deferredCriterionPetitioner.request(work, read);
     return {
       decision: 'skipped-rtt-refinement',
       work,

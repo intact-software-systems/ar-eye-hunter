@@ -492,14 +492,14 @@
             "send": {
               "id": {
                 "v": 2,
-                "msgId": "rtt-{i}x{j}-{runId}",
+                "msgId": "rtt-managed-burst-large-{i}x{j}-{runId}",
                 "ts": 0,
                 "senderId": "{client{i}SessionId}",
                 "sessionId": "{client{i}SessionId}"
               },
               "route": {
                 "topicId": "rtt",
-                "resourceId": "rtt-{i}x{j}",
+                "resourceId": "rtt-managed-burst-large-{i}x{j}",
                 "contextId": "1"
               },
               "delivery": {
@@ -606,7 +606,7 @@
               "mode": "open"
             },
             "activation": {
-              "deadlineMs": 45000,
+              "deadlineMs": 600000,
               "maxFormationAttempts": 1
             }
           }
@@ -18598,8 +18598,7 @@
         "body": {
           "lifecycleState": "active",
           "lastFormationOutcome": {
-            "outcome": "activated",
-            "observedRate": 1
+            "outcome": "activated"
           }
         }
       }

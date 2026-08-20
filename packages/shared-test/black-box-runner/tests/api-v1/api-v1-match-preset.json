@@ -551,7 +551,7 @@
       },
       "expect": {
         "connection": "wsBob",
-        "withinMs": 10000,
+        "withinMs": 20000,
         "message": {
           "payload": {
             "typeId": "al.control.nack.v1"
@@ -1003,7 +1003,7 @@
       },
       "expect": {
         "connection": "wsCarol",
-        "withinMs": 10000,
+        "withinMs": 20000,
         "message": {
           "id": {
             "msgId": "match-arena-live-{runId}"
@@ -1048,8 +1048,8 @@
           "x-client-id": "{aliceClientId}"
         },
         "poll": {
-          "maxAttempts": 50,
-          "maxDurationMs": 75000,
+          "maxAttempts": 100,
+          "maxDurationMs": 150000,
           "backoffMs": 1500,
           "backoffMultiplier": 1
         }

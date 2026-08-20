@@ -278,10 +278,13 @@ apart from the items under "Deferred, explicitly".
   generic `400 app-inbox-malformed-command`; the issue codes (`strict-confirmation-unsupported`,
   `manager-initiator-without-manager`, …) never reach the response. Deferred at 6a until an
   application needs to distinguish them — the HTTP twin of the WS NACK opacity in decision 6.2.
-- **A threshold edge-trigger on the evidence leg.** The acceptance that moves readiness
-  across a group's threshold could petition the activation criterion directly, bypassing the
-  refinement gate's debounce for that one case, so bursty-evidence groups activate when the
-  threshold is crossed instead of at the next deadline evaluation (decision 6.9).
+- ~~A threshold edge-trigger on the evidence leg.~~ Delivered immediately after the
+  workstream close-out (product-owner selection, 2026-08-20): refinement-deferred RTT work
+  petitions the criterion under process-local per-group damping with a trailing flush, so
+  bursty-evidence groups activate within about a second of crossing the threshold instead
+  of at the next deadline evaluation; the deadline stays the correctness backstop. The
+  managed burst tiers pin it structurally — deadlines at the ten-minute clamp with
+  sub-minute activation polls.
 - **Per-edge confirm-or-fail batch machinery** — the whole activation design. Gated behind
   `strictConfirmation: true`, which v1 rejects. The posture decision (observed convergence as
   default) is recorded product-owner decision 2 and is supported by the Phase 0–4 evidence in
