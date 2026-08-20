@@ -2,6 +2,7 @@ import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-co
 
 import type { MutationRoutingAstNode } from './mutation-routing-call-graph.ts';
 import type { MutationRouteInventoryEntry } from './mutation-routing-inventory.ts';
+import { hasExactCrdtAdminRouteDefinition } from './mutation-routing-http-registration.ts';
 import type { MutationRoutingProgramLoader } from './mutation-routing-live-registration.ts';
 
 const CRDT_ADMIN_MUTATIONS_PATH = 'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts';
@@ -104,10 +105,15 @@ function hasExactRouteOperation(
 ): boolean {
   if (input.item.sourcePath === CRDT_ADMIN_ROUTES_PATH) {
     return (
-      hasExactLiveOperationCall({
+      hasExactCrdtAdminRouteDefinition(
+        input.source,
+        input.item.entrypoint.split(' ').slice(1).join(' '),
+        operation,
+      ) &&
+      hasExactNestedOperationCall({
         root: input.handler,
         callName: 'processCrdtAdminMutation',
-        expectedOperationValues: [`literal:${operation}`],
+        expectedOperationValues: ['member:route.operation'],
       }) &&
       hasNamedOwnerOperationCall({
         program: input.source,
@@ -164,35 +170,43 @@ function hasExactAdminMutationSubmission(
   }
   const facts = readLiveFunctionFacts(owner);
   const submissions = facts.calls.filter((call) =>
-    isCallNamed(call, 'writeCrdtCommandUntilCompletion'),
+    isCallNamed(call, 'writeHttpAdminCommandUntilCompletion'),
   );
-  if (submissions.length !== 1) {
-    return false;
-  }
   const submission = submissions[0];
-  if (!submission) {
-    return false;
-  }
-  const commandBinding = readName(unwrapExpression(asNodes(submission.arguments)[0]));
-  const binding = readLexicalBinding(owner, submission, commandBinding);
-  if (!binding || !facts.declarations.includes(binding.declarationStatement)) {
-    return false;
-  }
-  const creation = unwrapExpression(asNode(binding.declaration.init));
-  if (!creation || !isCallNamed(creation, 'createCrdtAdminCommand')) {
-    return false;
-  }
-  const submittedOperation = readEffectiveOperation(asNodes(creation.arguments)[0]);
+  const materialize = readObjectFunctionProperty(asNodes(submission?.arguments)[0], 'materialize');
   return (
-    [`literal:${operation}`, 'member:mutation.operation'].includes(submittedOperation ?? '') &&
-    isImmutableSubmittedCommand({
-      owner,
-      facts,
-      binding,
-      bindingName: commandBinding,
-      submission,
-    })
+    submissions.length === 1 &&
+    hasExactLiveOperationCall({
+      root: owner,
+      callName: 'writeHttpAdminCommandUntilCompletion',
+      expectedOperationValues: ['member:mutation.operation'],
+    }) &&
+    materialize !== undefined &&
+    hasSingleLiveCall(materialize, 'createCrdtAdminCommand') &&
+    facts.calls.every((call) => !isCallNamed(call, 'writeCrdtCommandUntilCompletion')) &&
+    ['rebuild-projection', 'compact', 'lifecycle', 'erase'].includes(operation)
   );
+}
+
+function readObjectFunctionProperty(
+  object: MutationRoutingAstNode | undefined,
+  propertyName: string,
+): MutationRoutingAstNode | undefined {
+  if (object?.type !== 'ObjectExpression') {
+    return undefined;
+  }
+  const properties = asNodes(object.properties).filter(
+    (property) => !property.computed && readName(asNode(property.key)) === propertyName,
+  );
+  if (properties.length !== 1) {
+    return undefined;
+  }
+  const property = properties[0];
+  if (property?.type === 'ObjectMethod') {
+    return property;
+  }
+  const value = property?.type === 'ObjectProperty' ? asNode(property.value) : undefined;
+  return value && isFunctionNode(value) ? value : undefined;
 }
 
 function readLexicalBinding(
@@ -541,6 +555,21 @@ function hasExactLiveOperationCall(input: ExactLiveOperationCallInput): boolean 
   }
   const operation = readEffectiveOperation(asNodes(call.arguments)[0]);
   return input.expectedOperationValues.includes(operation ?? '');
+}
+
+function hasExactNestedOperationCall(input: ExactLiveOperationCallInput): boolean {
+  const calls = findAll(
+    input.root,
+    (node) =>
+      (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') &&
+      isCallNamed(node, input.callName),
+  );
+  if (calls.length !== 1) {
+    return false;
+  }
+  return input.expectedOperationValues.includes(
+    readEffectiveOperation(asNodes(calls[0]?.arguments)[0]) ?? '',
+  );
 }
 
 function hasSingleLiveCall(root: MutationRoutingAstNode, callName: string): boolean {

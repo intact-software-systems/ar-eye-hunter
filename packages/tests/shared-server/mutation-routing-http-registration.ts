@@ -18,6 +18,9 @@ interface GroupStateRouteOperation {
   readonly type: string;
 }
 
+type AstTraversalValue =
+  AstNode | readonly AstTraversalValue[] | string | number | boolean | null | undefined;
+
 export function findExactHttpRouteHandler({
   program,
   method,
@@ -28,7 +31,10 @@ export function findExactHttpRouteHandler({
 }: FindHttpRouteHandlerInput): AstNode | undefined {
   if (!familyRegistrationMarker) {
     const direct = findRouteRegistration(program, method, routePath);
-    return direct ? asNodes(direct.arguments)[1] : undefined;
+    if (direct) {
+      return asNodes(direct.arguments)[1];
+    }
+    return findCollectionRouteHandler(program, method, routePath);
   }
   return findDirectGroupRouteHandler({
     program,
@@ -38,6 +44,122 @@ export function findExactHttpRouteHandler({
     familyOwnerName: familyRegistrationMarker,
     familyPrivateOwnerNames,
   });
+}
+
+export function hasExactCrdtAdminRouteDefinition(
+  program: AstNode,
+  routePath: string,
+  operation: string,
+): boolean {
+  const basePath = stripMutationRequestPath(routePath);
+  const definitions = findCrdtAdminMutationRouteDefinitions(program);
+  if (!basePath || definitions.length !== 1) {
+    return false;
+  }
+  const entries = asNodes(asNode(definitions[0]?.init)?.elements);
+  return (
+    entries.filter(
+      (entry) =>
+        readObjectString(entry, 'path') === basePath &&
+        readObjectString(entry, 'operation') === operation,
+    ).length === 1
+  );
+}
+
+function findCollectionRouteHandler(
+  program: AstNode,
+  method: string,
+  routePath: string,
+): AstNode | undefined {
+  const basePath = stripMutationRequestPath(routePath);
+  const definitions = findCrdtAdminMutationRouteDefinitions(program);
+  if (!basePath || definitions.length !== 1) {
+    return undefined;
+  }
+  const entries = asNodes(asNode(definitions[0]?.init)?.elements);
+  if (entries.filter((entry) => readObjectString(entry, 'path') === basePath).length !== 1) {
+    return undefined;
+  }
+  const registrations = findAll(program, (node) => {
+    if (node.type !== 'CallExpression') {
+      return false;
+    }
+    const arguments_ = asNodes(node.arguments);
+    return (
+      readMemberName(asNode(node.callee)) === method &&
+      isCrdtAdminMutationRouteTemplate(arguments_[0])
+    );
+  });
+  return registrations.length === 1 ? asNodes(registrations[0]?.arguments)[1] : undefined;
+}
+
+function findCrdtAdminMutationRouteDefinitions(program: AstNode): readonly AstNode[] {
+  return findAll(
+    program,
+    (node) =>
+      node.type === 'VariableDeclarator' &&
+      readName(asNode(node.id)) === 'CRDT_ADMIN_MUTATION_ROUTES',
+  );
+}
+
+function stripMutationRequestPath(routePath: string): string | undefined {
+  const suffix = '/requests/:requestId';
+  return routePath.endsWith(suffix) ? routePath.slice(0, -suffix.length) : undefined;
+}
+
+function isCrdtAdminMutationRouteTemplate(node: AstNode | undefined): boolean {
+  if (node?.type !== 'TemplateLiteral') {
+    return false;
+  }
+  const expressions = asNodes(node.expressions);
+  const quasis = asNodes(node.quasis);
+  return (
+    expressions.length === 1 &&
+    readMemberPath(expressions[0]) === 'route.path' &&
+    readTemplateElement(quasis[0]) === '' &&
+    readTemplateElement(quasis[1]) === '/requests/:requestId'
+  );
+}
+
+function readObjectString(node: AstNode, propertyName: string): string | undefined {
+  if (node.type !== 'ObjectExpression') {
+    return undefined;
+  }
+  const values = asNodes(node.properties)
+    .filter(
+      (property) =>
+        property.type === 'ObjectProperty' &&
+        !property.computed &&
+        readName(asNode(property.key)) === propertyName,
+    )
+    .map((property) => readString(asNode(property.value)))
+    .filter((value): value is string => value !== undefined);
+  return values.length === 1 ? values[0] : undefined;
+}
+
+function readTemplateElement(node: AstNode | undefined): string | undefined {
+  const value = asNode(node?.value);
+  return typeof value?.raw === 'string' ? value.raw : undefined;
+}
+
+function findAll(value: AstNode, predicate: (node: AstNode) => boolean): AstNode[] {
+  const matches: AstNode[] = [];
+  const visit = (current: AstTraversalValue): void => {
+    if (!current || typeof current !== 'object') return;
+    if (Array.isArray(current)) {
+      for (const child of current) visit(child);
+      return;
+    }
+    const node = current as AstNode;
+    if (typeof node.type === 'string' && predicate(node)) matches.push(node);
+    for (const [key, child] of Object.entries(node)) {
+      if (!['loc', 'start', 'end', 'comments', 'tokens'].includes(key)) {
+        visit(child as AstTraversalValue);
+      }
+    }
+  };
+  visit(value);
+  return matches;
 }
 
 export function isExactGroupStateRouteOperation(
