@@ -127,6 +127,46 @@ describe('group admission mutation', () => {
     expect(await memberStatus(runtime, 'non-manager-room', 'carol')).toBe('pending');
   });
 
+  it('names the affected member in member event payloads', async () => {
+    const runtime = new FakeRuntimeStateRepository();
+    await seedManagedGroup(runtime, 'event-payload-room');
+    const service = createService(runtime, 2_000);
+
+    await service.joinGroup(SCOPE, 'event-payload-room', {
+      actorPrincipalId: 'bob',
+      requestId: 'park-bob-events',
+    });
+    await service.grantGroupAdmission(SCOPE, 'event-payload-room', 'bob', {
+      actorPrincipalId: 'alice',
+      requestId: 'grant-bob-events',
+    });
+    await service.transferGroupOwnership(SCOPE, 'event-payload-room', {
+      newOwnerPrincipalId: 'bob',
+      actorPrincipalId: 'alice',
+      requestId: 'transfer-to-bob-events',
+    });
+
+    const events = await new GroupStateRepository(runtime).listEvents(
+      groupRef('event-payload-room'),
+    );
+    const byRequestId = (requestId: string) =>
+      events.find((event) => event.requestId === requestId);
+    expect(byRequestId('park-bob-events')).toMatchObject({
+      eventType: 'member-admission-requested',
+      payload: { principalId: 'bob' },
+    });
+    // The actor is the manager who granted; the payload names who joined.
+    expect(byRequestId('grant-bob-events')).toMatchObject({
+      eventType: 'member-joined',
+      actor: { principalId: 'alice' },
+      payload: { principalId: 'bob' },
+    });
+    expect(byRequestId('transfer-to-bob-events')).toMatchObject({
+      eventType: 'ownership-transferred',
+      payload: { fromPrincipalId: 'alice', toPrincipalId: 'bob' },
+    });
+  });
+
   it('re-checks the admission window at grant time, not at parking time', async () => {
     const runtime = new FakeRuntimeStateRepository();
     await seedManagedGroup(runtime, 'window-room', {

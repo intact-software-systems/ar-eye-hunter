@@ -397,7 +397,10 @@
         "body": [
           {
             "eventType": "member-joined",
-            "requestId": "grant-bob-{runId}"
+            "requestId": "grant-bob-{runId}",
+            "payload": {
+              "principalId": "{bobClientId}"
+            }
           }
         ]
       }
