@@ -3,16 +3,18 @@ import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-sy
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
 import type { AuthMutationService } from '../auth-mutation-service.ts';
 import type { AuthMutationResult } from '../mutation/auth-mutation-contracts.ts';
-import { decodeAuthMutationCommand } from '../mutation/decode-auth-mutation-command.ts';
-import { captureAuthMutationFacts } from '../mutation/read/capture-auth-mutation-facts.ts';
+import { decodeAuthMutationIntent } from '../mutation/decode-auth-mutation-intent.ts';
+import { materializeAuthMutationIntent } from '../mutation/materialize-auth-mutation-intent.ts';
 import type { AppInboxMessageContext } from '../../services/app-inbox-contracts.ts';
 import { toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
-import { toAuthAppInboxType, toAuthCommandContextId } from './auth-app-inbox-routing.ts';
+import type { JsonWireValue } from '../../services/mutation-command-identity.ts';
+import { toAuthAppInboxType, toAuthIntentContextId } from './auth-app-inbox-routing.ts';
 
 export interface AuthInboxHandlerDependencies {
   readonly mutationService: AuthMutationService;
   readonly credentialIssuer: AuthCredentialIssuer;
   readonly transactionWriter: AppInboxMutationTransactionWriter;
+  readonly nowEpochMs: () => number;
 }
 
 export class AuthInboxHandler {
@@ -26,23 +28,27 @@ export class AuthInboxHandler {
     commandCandidate: unknown,
     context: AppInboxMessageContext,
   ): Promise<AuthMutationResult> {
-    const command = decodeAuthMutationCommand(commandCandidate);
+    const intent = decodeAuthMutationIntent(commandCandidate as JsonWireValue);
     const expectedKey = toAppQueueKey({
-      topicId: toAuthAppInboxType(command),
-      resourceId: command.requestId,
-      contextId: toAuthCommandContextId(command),
+      topicId: toAuthAppInboxType(intent),
+      resourceId: intent.requestId,
+      contextId: toAuthIntentContextId(intent),
     });
     if (
-      toAuthAppInboxType(command) !== context.enqueue.type ||
+      toAuthAppInboxType(intent) !== context.enqueue.type ||
       expectedKey.topicId !== context.entry.key.topicId ||
       expectedKey.resourceId !== context.entry.key.resourceId ||
       expectedKey.contextId !== context.entry.key.contextId
     ) {
       throw new TypeError('Auth AppInbox command identity differs from queue key');
     }
+    const materialized = await materializeAuthMutationIntent(intent, {
+      credentialIssuer: this.dependencies.credentialIssuer,
+      nowEpochMs: this.dependencies.nowEpochMs,
+    });
+    const command = materialized.command;
     const read = await this.dependencies.mutationService.read(command);
-    const facts = await captureAuthMutationFacts(command, this.dependencies.credentialIssuer);
-    const computed = this.dependencies.mutationService.compute(command, read, facts);
+    const computed = this.dependencies.mutationService.compute(command, read, materialized.facts);
     this.dependencies.mutationService.validate(command, read, computed);
     return await this.dependencies.transactionWriter.writeMutation(
       context,

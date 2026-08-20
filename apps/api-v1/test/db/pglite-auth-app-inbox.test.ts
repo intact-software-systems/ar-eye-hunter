@@ -272,3 +272,92 @@ Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async (
     assert.equal(JSON.stringify(rows[0].ris_resource).includes('session-issued'), false);
   });
 });
+
+Deno.test(
+  'PGlite AppAuth materializes one delayed winner fact set at worker execution',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const runtime = new PSqlRuntimeStateRepository(sql);
+      const resourceInbox = new ResourceInboxRepository(sql);
+      const resourceResults = new ResourceInboxResultsRepository(sql);
+      const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+      const databaseNowEpochMs = await readPGliteDatabaseEpochMs(sql);
+      let authFactNowEpochMs = 0;
+      let authClockCalls = 0;
+      const appAuth = new AppAuthInboxService(
+        {
+          inboxQueueReader: inboxReader,
+          resourceInboxRepository: resourceInbox,
+          resourceInboxResultsRepository: resourceResults,
+          database: sql,
+          authMutationService: createAuthMutationService({
+            runtimeRepository: runtime,
+            serviceId: 'pglite-auth-delayed-facts',
+          }),
+          credentialIssuer: createHmacAuthCredentialIssuer(
+            'pglite-auth-delayed-facts-secret-0123456789abcdef',
+          ),
+        },
+        {
+          serviceId: 'pglite-auth-delayed-facts',
+          options: {
+            waitMaxElapsedMsecs: 5_000,
+            waitRetryIntervalMsecs: 1,
+            waitMaxRetryIntervalMsecs: 4,
+            waitJitterRatio: 0,
+            nowEpochMs: () => databaseNowEpochMs,
+          },
+          authFactNowEpochMs: () => {
+            authClockCalls += 1;
+            return authFactNowEpochMs;
+          },
+        },
+      );
+      const input = {
+        requestId: 'pglite-auth-delayed-session',
+        clientId: 'pglite-delayed-client',
+        username: 'alice',
+        authority: {
+          kind: 'static-client' as const,
+          clientId: 'pglite-delayed-client',
+          normalizedUsername: 'alice',
+        },
+        ttlMs: 60_000,
+      };
+
+      const first = appAuth.issueSession(input);
+      const second = appAuth.issueSession(input);
+      await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+      const [queued] = await sql<{ ri_resource: string }[]>`
+      select ri_resource from resource_inbox
+      where ri_type_id = 'APP_INBOX' and ri_status = 'NEW'
+    `;
+      assert.ok(queued);
+      assert.equal(authClockCalls, 0);
+      assert.equal(queued.ri_resource.includes('capturedAtEpochMs'), false);
+      assert.equal(queued.ri_resource.includes('sessionId'), false);
+      assert.equal(queued.ri_resource.includes('accessTokenDigest'), false);
+
+      authFactNowEpochMs = 9_000;
+      await inboxReader.dequeueInbox(
+        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+        toResilienceDto(),
+      );
+      const [firstResult, secondResult] = await Promise.all([first, second]);
+      assert.ok(firstResult.right);
+      assert.deepEqual(secondResult.right, firstResult.right);
+      assert.equal(firstResult.right.expiresAtEpochMs, 69_000);
+      assert.equal(authClockCalls, 1);
+      const [resultRows] = await sql<{ count: string | number }[]>`
+      select count(*) as count from resource_inbox_results
+      where ris_resource_id = 'pglite-auth-delayed-session'
+    `;
+      assert.ok(resultRows);
+      assert.equal(Number(resultRows.count), 1);
+
+      const replay = await appAuth.issueSession(input);
+      assert.deepEqual(replay.right, firstResult.right);
+      assert.equal(authClockCalls, 1);
+    });
+  },
+);

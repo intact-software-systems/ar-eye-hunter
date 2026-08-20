@@ -2,29 +2,32 @@ import { hashAuthSecret } from '../credentials/hash-auth-secret.ts';
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
 import type {
   AuthMutationCommand,
+  AuthMutationIntent,
   AuthMutationPublicResult,
   AuthMutationResult,
 } from './auth-mutation-contracts.ts';
 
+type AuthMutationPublicResultRequest = AuthMutationIntent | AuthMutationCommand;
+
 export async function toAuthMutationPublicResult(
-  command: AuthMutationCommand,
+  request: AuthMutationPublicResultRequest,
   result: AuthMutationResult,
   credentialIssuer: AuthCredentialIssuer,
 ): Promise<AuthMutationPublicResult> {
-  switch (command.kind) {
+  switch (request.kind) {
     case 'register-user':
       return toRegisteredUserPublicResult(result);
     case 'logout-session':
       return toLoggedOutPublicResult(result);
     case 'issue-session':
-      return await toIssuedSessionPublicResult(result, credentialIssuer);
+      return await toIssuedSessionPublicResult(request, result, credentialIssuer);
     case 'issue-ws-ticket':
-      return await toIssuedWebSocketTicketPublicResult(command, result, credentialIssuer);
+      return await toIssuedWebSocketTicketPublicResult(request, result, credentialIssuer);
     case 'consume-ws-ticket':
     case 'consume-agent-ticket':
-      return await toConsumedTicketPublicResult(command, result, credentialIssuer);
+      return await toConsumedTicketPublicResult(request, result, credentialIssuer);
     case 'issue-agent-tickets':
-      return await toIssuedAgentTicketsPublicResult(command, result, credentialIssuer);
+      return await toIssuedAgentTicketsPublicResult(request, result, credentialIssuer);
   }
 }
 
@@ -48,10 +51,22 @@ function toLoggedOutPublicResult(result: AuthMutationResult): AuthMutationPublic
 }
 
 async function toIssuedSessionPublicResult(
+  request: Extract<AuthMutationPublicResultRequest, { kind: 'issue-session' }>,
   result: AuthMutationResult,
   credentialIssuer: AuthCredentialIssuer,
 ): Promise<AuthMutationPublicResult> {
   const receipt = requireResultKind(result, 'session-issued');
+  const expected =
+    'session' in request
+      ? request.session
+      : { clientId: request.clientId, username: request.username };
+  if (
+    receipt.clientId !== expected.clientId ||
+    receipt.username !== expected.username ||
+    ('sessionId' in expected && receipt.sessionId !== expected.sessionId)
+  ) {
+    throw new Error('Auth session result identity differs');
+  }
   const accessToken = await resolveAccessToken(
     credentialIssuer,
     receipt.sessionId,
@@ -67,12 +82,17 @@ async function toIssuedSessionPublicResult(
 }
 
 async function toIssuedWebSocketTicketPublicResult(
-  command: Extract<AuthMutationCommand, { kind: 'issue-ws-ticket' }>,
+  request: Extract<AuthMutationPublicResultRequest, { kind: 'issue-ws-ticket' }>,
   result: AuthMutationResult,
   credentialIssuer: AuthCredentialIssuer,
 ): Promise<AuthMutationPublicResult> {
   const receipt = requireResultKind(result, 'ws-ticket-issued');
-  const ticket = await credentialIssuer.issueWebSocketTicket(command.requestId, receipt.sessionId);
+  const expectedSessionId =
+    'authority' in request ? request.authority.sessionId : request.ticketRecord.sessionId;
+  if (receipt.sessionId !== expectedSessionId) {
+    throw new Error('Auth websocket ticket result identity differs');
+  }
+  const ticket = await credentialIssuer.issueWebSocketTicket(request.requestId, receipt.sessionId);
   await requireCredentialDigest(ticket, receipt.ticketDigest);
   return {
     ticket,
@@ -82,13 +102,19 @@ async function toIssuedWebSocketTicketPublicResult(
 }
 
 async function toConsumedTicketPublicResult(
-  command: Extract<AuthMutationCommand, { kind: 'consume-ws-ticket' | 'consume-agent-ticket' }>,
+  request: Extract<
+    AuthMutationPublicResultRequest,
+    { kind: 'consume-ws-ticket' | 'consume-agent-ticket' }
+  >,
   result: AuthMutationResult,
   credentialIssuer: AuthCredentialIssuer,
 ): Promise<AuthMutationPublicResult> {
   const expectedKind =
-    command.kind === 'consume-ws-ticket' ? 'ws-ticket-consumed' : 'agent-ticket-consumed';
+    request.kind === 'consume-ws-ticket' ? 'ws-ticket-consumed' : 'agent-ticket-consumed';
   const receipt = requireResultKind(result, expectedKind);
+  if (request.kind === 'consume-ws-ticket' && receipt.sessionId !== request.expectedSessionId) {
+    throw new Error('Auth consumed websocket ticket result identity differs');
+  }
   const accessToken = await resolveAccessToken(
     credentialIssuer,
     receipt.sessionId,
@@ -105,21 +131,24 @@ async function toConsumedTicketPublicResult(
 }
 
 async function toIssuedAgentTicketsPublicResult(
-  command: Extract<AuthMutationCommand, { kind: 'issue-agent-tickets' }>,
+  request: Extract<AuthMutationPublicResultRequest, { kind: 'issue-agent-tickets' }>,
   result: AuthMutationResult,
   credentialIssuer: AuthCredentialIssuer,
 ): Promise<AuthMutationPublicResult> {
   const receipt = requireResultKind(result, 'agent-tickets-issued');
-  const bySession = new Map(command.tickets.map((ticket) => [ticket.sessionId, ticket]));
+  const expectedAgentIds =
+    'agentIds' in request ? request.agentIds : request.tickets.map((ticket) => ticket.agentId);
+  if (
+    receipt.tickets.length !== expectedAgentIds.length ||
+    receipt.tickets.some((ticket, index) => ticket.agentId !== expectedAgentIds[index])
+  ) {
+    throw new Error('Auth agent ticket result identity differs');
+  }
   return {
     tickets: await Promise.all(
       receipt.tickets.map(async (ticket) => {
-        const identity = bySession.get(ticket.sessionId);
-        if (!identity || identity.agentId !== ticket.agentId) {
-          throw new Error('Auth agent ticket result identity differs');
-        }
         const plaintext = await credentialIssuer.issueAgentTicket(
-          command.requestId,
+          request.requestId,
           ticket.agentId,
           ticket.sessionId,
         );

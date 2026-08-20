@@ -3,7 +3,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { readCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import { validateRtcRttMeasurement } from '../rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
 import { hashCanonicalCommand } from './canonical-command-hash.ts';
-import { decodeAuthMutationCommand } from '../auth/mutation/decode-auth-mutation-command.ts';
+import { decodeAuthMutationIntent } from '../auth/mutation/decode-auth-mutation-intent.ts';
 import { toAuthAppInboxType } from '../auth/inbox/auth-app-inbox-routing.ts';
 import {
   type JsonWireValue,
@@ -90,90 +90,69 @@ function toStableAuthCommand(
     return undefined;
   }
   try {
-    const command = decodeAuthMutationCommand(
+    const intent = decodeAuthMutationIntent(
       JSON.parse(JSON.stringify(value)) as JsonWireValue,
     );
-    if (toAuthAppInboxType(command) !== type) {
+    if (toAuthAppInboxType(intent) !== type) {
       return undefined;
     }
-    switch (command.kind) {
+    switch (intent.kind) {
       case 'register-user':
         return {
-          kind: command.kind,
-          requestId: command.requestId,
-          user: {
-            clientId: command.user.clientId,
-            username: command.user.username,
-            normalizedUsername: command.user.normalizedUsername,
-            displayName: command.user.displayName,
-            passwordHash: command.user.passwordHash,
-            passwordSalt: command.user.passwordSalt,
-            passwordAlgorithm: command.user.passwordAlgorithm,
-            passwordIterations: command.user.passwordIterations,
-            roles: command.user.roles,
-            status: command.user.status,
+          kind: intent.kind,
+          requestId: intent.requestId,
+          registration: {
+            username: intent.registration.username,
+            normalizedUsername: intent.registration.normalizedUsername,
+            displayName: intent.registration.displayName,
+            passwordAlgorithm: intent.registration.passwordAlgorithm,
+            passwordIterations: intent.registration.passwordIterations,
+            roles: intent.registration.roles,
+            status: intent.registration.status,
           },
         };
       case 'issue-session':
         return {
-          kind: command.kind,
-          requestId: command.requestId,
-          authority: command.authority,
-          session: {
-            clientId: command.session.clientId,
-            username: command.session.username,
-            sessionId: command.session.sessionId,
-            accessTokenDigest: command.session.accessTokenDigest,
-            ttlMs: command.session.expiresAtEpochMs - command.session.issuedAtEpochMs,
-          },
+          kind: intent.kind,
+          requestId: intent.requestId,
+          authority: intent.authority,
+          clientId: intent.clientId,
+          username: intent.username,
+          ttlMs: intent.ttlMs,
         };
       case 'logout-session':
         return {
-          kind: command.kind,
-          requestId: command.requestId,
-          expected: command.expected,
+          kind: intent.kind,
+          requestId: intent.requestId,
+          expected: intent.expected,
         };
       case 'issue-ws-ticket':
         return {
-          kind: command.kind,
-          requestId: command.requestId,
-          ticketRecord: {
-            ticketDigest: command.ticketRecord.ticketDigest,
-            accessTokenDigest: command.ticketRecord.accessTokenDigest,
-            sessionId: command.ticketRecord.sessionId,
-            clientId: command.ticketRecord.clientId,
-            ttlMs: command.ticketRecord.expiresAtEpochMs -
-              command.ticketRecord.issuedAtEpochMs,
-          },
+          kind: intent.kind,
+          requestId: intent.requestId,
+          authority: intent.authority,
+          ttlMs: intent.ttlMs,
         };
       case 'consume-ws-ticket':
         return {
-          kind: command.kind,
-          requestId: command.requestId,
-          ticketDigest: command.ticketDigest,
-          expectedSessionId: command.expectedSessionId,
+          kind: intent.kind,
+          requestId: intent.requestId,
+          ticketDigest: intent.ticketDigest,
+          expectedSessionId: intent.expectedSessionId,
         };
       case 'issue-agent-tickets':
         return {
-          kind: command.kind,
-          requestId: command.requestId,
-          authority: command.authority,
-          tickets: command.tickets.map((ticket) => ({
-            agentId: ticket.agentId,
-            sessionId: ticket.sessionId,
-            accessTokenDigest: ticket.accessTokenDigest,
-            ticketDigest: ticket.ticketDigest,
-            clientId: ticket.clientId,
-            username: ticket.username,
-            sessionTtlMs: ticket.sessionExpiresAtEpochMs - ticket.issuedAtEpochMs,
-            ticketTtlMs: ticket.ticketExpiresAtEpochMs - ticket.issuedAtEpochMs,
-          })),
+          kind: intent.kind,
+          requestId: intent.requestId,
+          authority: intent.authority,
+          ticketTtlMs: intent.ticketTtlMs,
+          agentIds: intent.agentIds,
         };
       case 'consume-agent-ticket':
         return {
-          kind: command.kind,
-          requestId: command.requestId,
-          ticketDigest: command.ticketDigest,
+          kind: intent.kind,
+          requestId: intent.requestId,
+          ticketDigest: intent.ticketDigest,
         };
     }
   } catch {

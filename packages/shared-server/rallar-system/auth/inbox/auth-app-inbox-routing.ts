@@ -1,10 +1,15 @@
-import type { AuthMutationCommand } from '../mutation/auth-mutation-contracts.ts';
+import type {
+  AuthMutationCommand,
+  AuthMutationIntent,
+} from '../mutation/auth-mutation-contracts.ts';
 import { AppInboxType } from '../../services/app-inbox-contracts.ts';
 
 export const AUTH_STATE_APP_INBOX_TOPIC = 'app-inbox.auth-state';
 
-export function toAuthAppInboxType(command: AuthMutationCommand): AppInboxType {
-  switch (command.kind) {
+export function toAuthAppInboxType(
+  mutation: Readonly<{ kind: AuthMutationCommand['kind'] }>,
+): AppInboxType {
+  switch (mutation.kind) {
     case 'register-user':
       return AppInboxType.AUTH_USER_REGISTER;
     case 'issue-session':
@@ -19,6 +24,40 @@ export function toAuthAppInboxType(command: AuthMutationCommand): AppInboxType {
       return AppInboxType.AUTH_AGENT_SESSION_TICKETS_ISSUE;
     case 'consume-agent-ticket':
       return AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME;
+  }
+}
+
+export function toAuthIntentContextId(intent: AuthMutationIntent): string {
+  switch (intent.kind) {
+    case 'register-user':
+      return toAuthUsernameContextId(intent.kind, intent.registration.normalizedUsername);
+    case 'issue-session':
+      return toAuthUsernameContextId(intent.kind, intent.authority.normalizedUsername);
+    case 'logout-session':
+      return toAuthSessionContextId(intent.expected.clientId, intent.expected.sessionId);
+    case 'issue-ws-ticket':
+    case 'issue-agent-tickets':
+      return toAuthSessionContextId(intent.authority.clientId, intent.authority.sessionId);
+    case 'consume-ws-ticket':
+    case 'consume-agent-ticket':
+      return toAuthCredentialContextId(intent.ticketDigest);
+  }
+}
+
+export function toAuthIntentSenderId(intent: AuthMutationIntent): string {
+  switch (intent.kind) {
+    case 'register-user':
+      return intent.registration.normalizedUsername;
+    case 'issue-session':
+      return intent.clientId;
+    case 'logout-session':
+      return intent.expected.clientId;
+    case 'issue-ws-ticket':
+    case 'issue-agent-tickets':
+      return intent.authority.clientId;
+    case 'consume-ws-ticket':
+    case 'consume-agent-ticket':
+      return intent.ticketDigest;
   }
 }
 

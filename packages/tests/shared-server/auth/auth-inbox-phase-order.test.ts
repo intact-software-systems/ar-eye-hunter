@@ -9,16 +9,19 @@ import type { AuthCredentialIssuer } from '@shared-server/rallar-system/auth/cre
 import { AuthInboxHandler } from '@shared-server/rallar-system/auth/inbox/auth-inbox-handler.ts';
 import {
   toAuthAppInboxType,
-  toAuthCommandContextId,
+  toAuthIntentContextId,
 } from '@shared-server/rallar-system/auth/inbox/auth-app-inbox-routing.ts';
 import type { AuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import type {
   AuthMutationCommand,
   AuthMutationComputed,
+  AuthMutationIntent,
   AuthMutationRead,
   AuthMutationResult,
 } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
-import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
+// prettier-ignore
+import { materializeAuthMutationIntent }
+  from '@shared-server/rallar-system/auth/mutation/materialize-auth-mutation-intent.ts';
 import type { AppInboxMessageContext } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 import type {
   AppInboxMutationTransactionResult,
@@ -29,10 +32,16 @@ const decodeOrderCase =
   'decodes before queue identity validation and exits before mutation phases on mismatch';
 
 describe('auth inbox mutation phase order', () => {
-  it('runs decode, read, facts, compute, validate, and transaction write in order', async () => {
+  it('materializes worker facts before mutation phases', async () => {
     const actions: string[] = [];
     const transaction = {} as PSqlTransactionSql;
-    const command = await createIssueSessionCommand();
+    const intent = createIssueSessionIntent();
+    const command = (
+      await materializeAuthMutationIntent(intent, {
+        credentialIssuer: createCredentialIssuer([]),
+        nowEpochMs: () => 1_000,
+      })
+    ).command as Extract<AuthMutationCommand, { kind: 'issue-session' }>;
     const read: AuthMutationRead = {
       kind: 'issue-session',
       userByUsername: null,
@@ -61,12 +70,22 @@ describe('auth inbox mutation phase order', () => {
       mutationService: createMutationService({ actions, read, computed, result, written }),
       credentialIssuer: createCredentialIssuer(actions),
       transactionWriter: new RecordingTransactionWriter(actions, transaction),
+      nowEpochMs: () => {
+        actions.push('clock');
+        return 1_000;
+      },
     });
 
-    await expect(handler.processAuthMutation(command, createContext(command))).resolves.toBe(
-      result,
-    );
-    expect(actions).toEqual(['read', 'facts', 'compute', 'validate', 'transaction', 'write']);
+    await expect(handler.processAuthMutation(intent, createContext(intent))).resolves.toBe(result);
+    expect(actions).toEqual([
+      'clock',
+      'facts',
+      'read',
+      'compute',
+      'validate',
+      'transaction',
+      'write',
+    ]);
     expect(written).toEqual([[transaction, computed]]);
   });
 });
@@ -75,50 +94,41 @@ describe('auth inbox routing rejection', () => {
   it(decodeOrderCase, async () => {
     const actions: string[] = [];
     const transaction = {} as PSqlTransactionSql;
-    const command = await createIssueSessionCommand();
-    const context = createContext(command, 'wrong-context');
+    const intent = createIssueSessionIntent();
+    const context = createContext(intent, 'wrong-context');
     const handler = new AuthInboxHandler({
       mutationService: createUnreachableMutationService(actions),
       credentialIssuer: createCredentialIssuer(actions),
       transactionWriter: new RecordingTransactionWriter(actions, transaction),
+      nowEpochMs: () => {
+        actions.push('unexpected-clock');
+        return 1_000;
+      },
     });
 
     await expect(handler.processAuthMutation({}, context)).rejects.toThrow(
-      'Auth mutation command version is invalid',
+      'Auth mutation intent version is invalid',
     );
-    await expect(handler.processAuthMutation(command, context)).rejects.toThrow(
+    await expect(handler.processAuthMutation(intent, context)).rejects.toThrow(
       'Auth AppInbox command identity differs from queue key',
     );
     expect(actions).toEqual([]);
   });
 });
 
-async function createIssueSessionCommand(): Promise<
-  Extract<
-    AuthMutationCommand,
-    {
-      kind: 'issue-session';
-    }
-  >
-> {
+function createIssueSessionIntent(): Extract<AuthMutationIntent, { kind: 'issue-session' }> {
   return {
     version: 1,
     kind: 'issue-session',
     requestId: 'handler-session-request',
-    capturedAtEpochMs: 1_000,
     authority: {
       kind: 'static-client',
       clientId: 'client-1',
       normalizedUsername: 'alice',
     },
-    session: {
-      clientId: 'client-1',
-      username: 'alice',
-      sessionId: 'session-1',
-      accessTokenDigest: await hashAuthSecret('handler-access-token'),
-      issuedAtEpochMs: 1_000,
-      expiresAtEpochMs: 2_000,
-    },
+    clientId: 'client-1',
+    username: 'alice',
+    ttlMs: 1_000,
   };
 }
 
@@ -183,10 +193,7 @@ class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
   private readonly actions: string[];
   private readonly transaction: PSqlTransactionSql;
 
-  constructor(
-    actions: string[],
-    transaction: PSqlTransactionSql,
-  ) {
+  constructor(actions: string[], transaction: PSqlTransactionSql) {
     this.actions = actions;
     this.transaction = transaction;
   }
@@ -210,15 +217,15 @@ class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
 }
 
 function createContext(
-  command: AuthMutationCommand,
-  contextId: string = toAuthCommandContextId(command),
+  intent: AuthMutationIntent,
+  contextId: string = toAuthIntentContextId(intent),
 ): AppInboxMessageContext {
   const enqueue = {
-    type: toAuthAppInboxType(command),
-    topicId: toAuthAppInboxType(command),
-    resourceId: command.requestId,
+    type: toAuthAppInboxType(intent),
+    topicId: toAuthAppInboxType(intent),
+    resourceId: intent.requestId,
     contextId,
-    data: command,
+    data: intent,
   };
   const entry: ResourceEntry = {
     key: toAppQueueKey({

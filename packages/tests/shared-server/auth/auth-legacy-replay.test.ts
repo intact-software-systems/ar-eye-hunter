@@ -18,7 +18,9 @@ app-auth-inbox-service.ts';
 // prettier-ignore
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 // prettier-ignore
-import type { IssueAuthSessionCommand } from '@shared-server/rallar-system/auth/mutation/\
+import { decodeAuthMutationResult } from '@shared-server/rallar-system/auth/mutation/\
+decode-auth-mutation-result.ts';
+import type { AuthMutationResult } from '@shared-server/rallar-system/auth/mutation/\
 auth-mutation-contracts.ts';
 // prettier-ignore
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/\
@@ -229,29 +231,35 @@ async function failsReplayAfterSecretRotation(): Promise<void> {
     serviceId,
     credentialSecret: 'first-auth-secret-0123456789abcdef-extra',
   });
-  const firstAccessToken = await auth.credentialIssuer.issueAccessToken('rotation-session');
-  const command = await createIssueSessionCommand({
+  const input = {
     requestId: 'rotated-secret-replay',
     clientId: 'rotation-client',
     username: 'rotation-user',
-    sessionId: 'rotation-session',
-    accessToken: firstAccessToken,
-  });
-  const firstPending = auth.service.processAuthCommandUntilCompletion(command);
+    authority: {
+      kind: 'static-client' as const,
+      clientId: 'rotation-client',
+      normalizedUsername: 'rotation-user',
+    },
+    ttlMs: 60_000,
+  };
+  const firstPending = auth.service.issueSession(input);
   await waitForAuthInboxEntry(auth.queue);
   await dequeue(auth);
-  expect((await firstPending).right).toBeDefined();
+  const first = await firstPending;
+  if (!first.right) throw new Error('Expected initial auth session');
 
   const rotatedIssuer = createHmacAuthCredentialIssuer(
     'second-auth-secret-0123456789abcdef-extra',
   );
   const rotatedService = createServiceWithIssuer(auth, runtimeRepository, rotatedIssuer);
-  await expect(rotatedService.processAuthCommandUntilCompletion(command)).rejects.toThrow(
+  await expect(rotatedService.issueSession(input)).rejects.toThrow(
     /digest differs/u,
   );
   const durable = await durableResources(auth);
-  expect(durable).not.toContain(firstAccessToken);
-  expect(durable).not.toContain(await rotatedIssuer.issueAccessToken('rotation-session'));
+  expect(durable).not.toContain(first.right.accessToken);
+  expect(durable).not.toContain(
+    await rotatedIssuer.issueAccessToken(first.right.sessionId),
+  );
 }
 
 async function failsClosedOnCorruptResults(): Promise<void> {
@@ -261,15 +269,18 @@ async function failsClosedOnCorruptResults(): Promise<void> {
     serviceId,
     credentialSecret: 'corrupted-result-secret-0123456789abcdef',
   });
-  const accessToken = await auth.credentialIssuer.issueAccessToken('corrupt-session');
-  const command = await createIssueSessionCommand({
+  const input = {
     requestId: 'corrupt-result-replay',
     clientId: 'corrupt-client',
     username: 'corrupt-user',
-    sessionId: 'corrupt-session',
-    accessToken,
-  });
-  const pending = auth.service.processAuthCommandUntilCompletion(command);
+    authority: {
+      kind: 'static-client' as const,
+      clientId: 'corrupt-client',
+      normalizedUsername: 'corrupt-user',
+    },
+    ttlMs: 60_000,
+  };
+  const pending = auth.service.issueSession(input);
   await waitForAuthInboxEntry(auth.queue);
   await dequeue(auth);
   expect((await pending).right).toBeDefined();
@@ -279,10 +290,11 @@ async function failsClosedOnCorruptResults(): Promise<void> {
   }
 
   const injectedSecret = 'must-never-appear-in-error';
-  for (const corruptedResult of corruptedResultRows(command, injectedSecret)) {
+  const validResult = decodeAuthMutationResult(JSON.parse(durableResult.resource));
+  for (const corruptedResult of corruptedResultRows(validResult, injectedSecret)) {
     await expectCorruptReplayRejected({
       auth,
-      command,
+      input,
       durableResult,
       corrupted: corruptedResult.value,
       expectedMessage: corruptedResult.expectedMessage,
@@ -291,65 +303,36 @@ async function failsClosedOnCorruptResults(): Promise<void> {
   }
 }
 
-interface IssueSessionCommandInput {
-  readonly requestId: string;
-  readonly clientId: string;
-  readonly username: string;
-  readonly sessionId: string;
-  readonly accessToken: string;
-}
-
-async function createIssueSessionCommand({
-  requestId,
-  clientId,
-  username,
-  sessionId,
-  accessToken,
-}: IssueSessionCommandInput): Promise<IssueAuthSessionCommand> {
-  return {
-    version: 1,
-    kind: 'issue-session',
-    requestId,
-    capturedAtEpochMs: 1_000,
-    authority: { kind: 'static-client', clientId, normalizedUsername: username },
-    session: {
-      clientId,
-      username,
-      sessionId,
-      accessTokenDigest: await hashAuthSecret(accessToken),
-      issuedAtEpochMs: 1_000,
-      expiresAtEpochMs: Date.now() + 60_000,
-    },
-  };
-}
-
-function corruptedResultRows(command: IssueAuthSessionCommand, injectedSecret: string) {
+function corruptedResultRows(result: AuthMutationResult, injectedSecret: string) {
+  if (!('kind' in result) || result.kind !== 'session-issued') {
+    throw new Error('Expected durable session-issued result');
+  }
   return [
     {
-      value: { ...command.session, kind: 'session-issued', accessToken: injectedSecret },
+      value: { ...result, requestId: undefined, accessToken: injectedSecret },
       expectedMessage: 'Auth mutation result requestId is required',
     },
     {
       value: {
-        clientId: command.session.clientId,
-        username: command.session.username,
-        sessionId: command.session.sessionId,
+        clientId: result.clientId,
+        username: result.username,
+        sessionId: result.sessionId,
         kind: 'session-issued',
-        issuedAtEpochMs: command.session.issuedAtEpochMs,
-        expiresAtEpochMs: command.session.expiresAtEpochMs,
+        issuedAtEpochMs: result.issuedAtEpochMs,
+        expiresAtEpochMs: result.expiresAtEpochMs,
       },
       expectedMessage: 'Auth mutation result requestId is required',
     },
     {
-      value: { ...command.session, kind: 'session-issued', expiresAtEpochMs: 'tomorrow' },
-      expectedMessage: 'Auth mutation result requestId is required',
+      value: { ...result, expiresAtEpochMs: 'tomorrow' },
+      expectedMessage: 'Auth result expiresAtEpochMs is invalid',
     },
   ];
 }
 
 interface CorruptReplayInput {
   readonly auth: AuthInboxTestRuntime;
-  readonly command: IssueAuthSessionCommand;
+  readonly input: Parameters<AppAuthInboxService['issueSession']>[0];
   readonly durableResult: ResourceEntry;
   readonly corrupted: JsonWireValue;
   readonly expectedMessage: string;
@@ -361,7 +344,7 @@ async function expectCorruptReplayRejected(input: CorruptReplayInput): Promise<v
     ...input.durableResult,
     resource: JSON.stringify(input.corrupted),
   });
-  const result = await input.auth.service.processAuthCommandUntilCompletion(input.command);
+  const result = await input.auth.service.issueSession(input.input);
   expect(result.right).toBeUndefined();
   expect(result.left).toEqual({
     type: 'app-inbox-failure',

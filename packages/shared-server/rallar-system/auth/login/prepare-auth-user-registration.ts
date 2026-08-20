@@ -9,6 +9,18 @@ const PASSWORD_HASH_BITS = 256;
 const PASSWORD_SALT_BYTES = 16;
 const USERNAME_PATTERN = /^[a-zA-Z0-9._-]+$/;
 
+export interface PreparedAuthUserRegistration {
+  readonly username: string;
+  readonly normalizedUsername: string;
+  readonly displayName: string | null;
+  readonly passwordHash: string;
+  readonly passwordSalt: string;
+  readonly passwordAlgorithm: 'pbkdf2-sha256';
+  readonly passwordIterations: number;
+  readonly roles: readonly string[];
+  readonly status: 'active';
+}
+
 export async function prepareAuthUserRegistration(
   request: RegisterRequest,
   facts: Readonly<{
@@ -18,6 +30,19 @@ export async function prepareAuthUserRegistration(
   }>,
   staticClients: readonly LoginClientData[] = [],
 ): Promise<AuthUser> {
+  const prepared = await prepareAuthUserRegistrationVerifier(
+    request,
+    { passwordSaltSeed: facts.passwordSaltSeed },
+    staticClients,
+  );
+  return materializeAuthUserRegistration(prepared, facts);
+}
+
+export async function prepareAuthUserRegistrationVerifier(
+  request: RegisterRequest,
+  facts: Readonly<{ passwordSaltSeed?: string }>,
+  staticClients: readonly LoginClientData[] = [],
+): Promise<PreparedAuthUserRegistration> {
   const username = validateUsername(request.username);
   const normalizedUsername = normalizeUsername(username);
   validatePassword(request.password);
@@ -29,7 +54,6 @@ export async function prepareAuthUserRegistration(
   }
   const password = await hashPassword(request.password, facts.passwordSaltSeed);
   return {
-    clientId: facts.clientId,
     username,
     normalizedUsername,
     displayName: validateDisplayName(request.displayName) ?? null,
@@ -39,6 +63,16 @@ export async function prepareAuthUserRegistration(
     passwordIterations: PASSWORD_ITERATIONS,
     roles: ['member'],
     status: 'active',
+  };
+}
+
+export function materializeAuthUserRegistration(
+  prepared: PreparedAuthUserRegistration,
+  facts: Readonly<{ clientId: string; capturedAtEpochMs: number }>,
+): AuthUser {
+  return {
+    clientId: facts.clientId,
+    ...prepared,
     createdAtEpochMs: facts.capturedAtEpochMs,
     updatedAtEpochMs: facts.capturedAtEpochMs,
   };

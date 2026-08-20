@@ -9,13 +9,10 @@ auth-mutation-service.ts';
 // prettier-ignore
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/\
 auth-credential-issuer.ts';
-import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 // prettier-ignore
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/\
 app-auth-inbox-service.ts';
 // prettier-ignore
-import type { IssueAuthSessionCommand } from '@shared-server/rallar-system/auth/mutation/\
-auth-mutation-contracts.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
@@ -94,64 +91,27 @@ it('defines every mandatory auth mutation command at the AppInbox boundary', () 
   expect(AUTH_INBOX_TYPES.map((type) => AppInboxType[type])).toEqual(AUTH_INBOX_TYPES);
 });
 
-it(
-  'does not persist session or success results for malformed lifecycle commands',
-  rejectsMalformedSessionLifecycles,
-);
-
-async function rejectsMalformedSessionLifecycles(): Promise<void> {
-  const capturedAtEpochMs = Date.now() + 60_000;
-  const invalidLifecycles = [
-    {
-      label: 'backdated',
-      issuedAtEpochMs: capturedAtEpochMs - 1,
-      expiresAtEpochMs: capturedAtEpochMs + 60_000,
-    },
-    {
-      label: 'future-issued',
-      issuedAtEpochMs: capturedAtEpochMs + 1,
-      expiresAtEpochMs: capturedAtEpochMs + 60_000,
-    },
-    {
-      label: 'equal-expiry',
-      issuedAtEpochMs: capturedAtEpochMs,
-      expiresAtEpochMs: capturedAtEpochMs,
-    },
-    {
-      label: 'reversed-expiry',
-      issuedAtEpochMs: capturedAtEpochMs,
-      expiresAtEpochMs: capturedAtEpochMs - 1,
-    },
-  ] as const;
-  for (const lifecycle of invalidLifecycles) {
-    await expectMalformedLifecycle({ capturedAtEpochMs, lifecycle });
-  }
-}
-
-interface MalformedLifecycleInput {
-  readonly capturedAtEpochMs: number;
-  readonly lifecycle: Readonly<{
-    label: string;
-    issuedAtEpochMs: number;
-    expiresAtEpochMs: number;
-  }>;
-}
-
-async function expectMalformedLifecycle({
-  capturedAtEpochMs,
-  lifecycle,
-}: MalformedLifecycleInput): Promise<void> {
+it('does not persist session or success results for invalid session TTL intent', async () => {
   const runtimeRepository = new FakeRuntimeStateRepository();
   const auth = createAuthInboxTestRuntime({
     runtimeRepository,
     serviceId: 'auth-test-service',
     credentialSecret: 'invalid-lifecycle-secret-0123456789abcdef',
   });
-  const command = await createMalformedCommand(auth, capturedAtEpochMs, lifecycle);
-  const pending = auth.service.processAuthCommandUntilCompletion(command);
-  const rejected = await observeMalformedOutcome(auth, pending);
+  const result = await auth.service.issueSession({
+    requestId: 'invalid-session-ttl',
+    clientId: 'client-1',
+    username: 'alice',
+    authority: {
+      kind: 'static-client',
+      clientId: 'client-1',
+      normalizedUsername: 'alice',
+    },
+    ttlMs: 0,
+  });
 
-  expect(rejected).toBe(true);
+  expect(result.right).toBeUndefined();
+  expect(result.left?.status).toBe(400);
   expectSessionStorageEmpty(runtimeRepository);
   expect(
     auth.results
@@ -161,59 +121,7 @@ async function expectMalformedLifecycle({
           entry.status === EntityStatus.COMPLETED || entry.resource.includes('session-issued'),
       ),
   ).toBe(false);
-}
-
-async function createMalformedCommand(
-  auth: AuthInboxTestRuntime,
-  capturedAtEpochMs: number,
-  lifecycle: MalformedLifecycleInput['lifecycle'],
-): Promise<IssueAuthSessionCommand> {
-  return {
-    version: 1,
-    kind: 'issue-session',
-    requestId: `invalid-lifecycle-${lifecycle.label}`,
-    capturedAtEpochMs,
-    authority: {
-      kind: 'static-client',
-      clientId: 'client-1',
-      normalizedUsername: 'alice',
-    },
-    session: {
-      clientId: 'client-1',
-      username: 'alice',
-      sessionId: `invalid-session-${lifecycle.label}`,
-      accessTokenDigest: await hashAuthSecret(
-        await auth.credentialIssuer.issueAccessToken(`invalid-session-${lifecycle.label}`),
-      ),
-      issuedAtEpochMs: lifecycle.issuedAtEpochMs,
-      expiresAtEpochMs: lifecycle.expiresAtEpochMs,
-    },
-  };
-}
-
-async function observeMalformedOutcome(
-  auth: AuthInboxTestRuntime,
-  pending: ReturnType<AuthInboxTestRuntime['service']['processAuthCommandUntilCompletion']>,
-): Promise<boolean> {
-  const firstOutcome = await Promise.race([
-    pending.then(
-      (value) => ({ kind: 'settled' as const, value }),
-      (error) => ({ kind: 'rejected' as const, error }),
-    ),
-    waitForQueuedEntry(auth.queue).then(() => ({ kind: 'queued' as const })),
-  ]);
-  let rejected = firstOutcome.kind === 'rejected';
-  if (firstOutcome.kind === 'queued') {
-    await auth.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-    try {
-      const result = await pending;
-      rejected = result.right === undefined;
-    } catch {
-      rejected = true;
-    }
-  }
-  return rejected;
-}
+});
 
 function expectSessionStorageEmpty(runtimeRepository: FakeRuntimeStateRepository): void {
   expect(

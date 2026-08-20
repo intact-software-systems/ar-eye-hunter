@@ -39,6 +39,7 @@ export type WsQueueBoxClientServiceOptions = Readonly<{
     inboundStores?: ALInboundRuntimeStores;
     outboundStores?: ALOutboundRuntimeStores;
     outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+    newConnectionRequestId?: () => string;
     reconnect: WsQueueBoxClientReconnectOptions;
 }>;
 
@@ -396,9 +397,14 @@ export class WsQueueBoxClientService {
         }
 
         const reconnectGeneration = this.reconnectStatus.generation;
+        const connectionRequestId = this.options.newConnectionRequestId?.();
         const reconnectTask =
             tryWithPolicy(
-                async () => await this.attemptReconnect(reconnectGeneration),
+                async () =>
+                    await this.attemptReconnect(
+                        reconnectGeneration,
+                        connectionRequestId,
+                    ),
                 this.toReconnectPolicy(reconnectGeneration)
             )
                 .catch(
@@ -416,26 +422,29 @@ export class WsQueueBoxClientService {
         this.reconnectStatus.task = reconnectTask;
     }
 
-    private async attemptReconnect(reconnectGeneration: number): Promise<void> {
+    private async attemptReconnect(
+        reconnectGeneration: number,
+        connectionRequestId: string | undefined,
+    ): Promise<void> {
         if (!this.isReconnectCurrent(reconnectGeneration)) {
             return;
         }
 
         this.reconnectStatus.attempts++;
-        await this.connectSocketForReconnect();
+        await this.connectSocketForReconnect(connectionRequestId);
         this.reconnectStatus.attempts = 0;
         this.reconnectStatus.exhausted = false;
     }
 
-    private async connectSocketForReconnect(): Promise<void> {
+    private async connectSocketForReconnect(requestId: string | undefined): Promise<void> {
         const timeoutMs = this.options.reconnect.connectTimeoutMsecs;
         if (timeoutMs <= 0) {
-            await this.socket.connect();
+            await this.socket.connect({ requestId });
             return;
         }
 
         await new Command<void>(
-            (signal) => this.socket.connect({ signal }),
+            (signal) => this.socket.connect({ requestId, signal }),
             {
                 timeoutMs,
                 errorOnNull: false,

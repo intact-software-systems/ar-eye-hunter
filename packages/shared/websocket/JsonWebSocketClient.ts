@@ -9,6 +9,7 @@ export interface OnWebSocketMessageCallback {
 }
 
 export type WebSocketConnectOptions = Readonly<{
+    requestId?: string;
     signal?: AbortSignal;
 }>;
 

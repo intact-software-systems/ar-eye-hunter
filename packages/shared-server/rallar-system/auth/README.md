@@ -13,11 +13,11 @@ these canonical owners. Compatibility paths exist only for the listed callers.
 2. Follow a later dequeue into
    [`AuthInboxHandler`](./inbox/auth-inbox-handler.ts), which exposes the phase
    sequence and transaction boundary in one method.
-3. Read [`AuthMutationCommand`](./mutation/auth-mutation-contracts.ts), then
-   [`AuthMutationService`](./auth-mutation-service.ts) for the seven command
+3. Read [`AuthMutationIntent`](./mutation/auth-mutation-contracts.ts) and
+   [`materializeAuthMutationIntent`](./mutation/materialize-auth-mutation-intent.ts), then
+   [`AuthMutationService`](./auth-mutation-service.ts) for the seven materialized command
    variants and phase interface.
 4. Follow [`readAuthMutation`](./mutation/read/read-auth-mutation.ts),
-   [`captureAuthMutationFacts`](./mutation/read/capture-auth-mutation-facts.ts),
    [`computeAuthMutation`](./mutation/compute/compute-auth-mutation.ts), and
    [`validateAuthMutation`](./mutation/validate/validate-auth-mutation.ts).
 5. Finish at [`writeAuthMutation`](./mutation/write/write-auth-mutation.ts),
@@ -63,11 +63,11 @@ and these traces make no productivity or statistical claim.
 3. **Transaction/retry or query call:** credential proof calls the read-only
    [`AuthUserRepository`](./persistence/auth-user-repository.ts) query. Session
    issuance then enters the authenticated AppInbox transaction trace below.
-4. **Durable write or query-only N/A:**
-   [`createHmacAuthCredentialIssuer`](./credentials/auth-credential-issuer.ts)
-   creates plaintext only at the caller boundary;
-   [`hashAuthSecret`](./credentials/hash-auth-secret.ts) supplies the digest in
-   the queued command, session indexes, and durable result.
+4. **Durable write or query-only N/A:** the enqueue reservation contains only stable login
+   authority and TTL. The winning worker calls
+   [`materializeAuthMutationIntent`](./mutation/materialize-auth-mutation-intent.ts) to create the
+   session identity, access-token digest, issuance time, and expiry immediately before the domain
+   phases. Plaintext credentials are reconstructed only at the public result boundary.
 5. **Commit/after-commit:** after both session indexes, durable result, receipt,
    and queue completion commit, the waiting service reconstructs the same
    access token from the command identity.
@@ -86,9 +86,11 @@ and these traces make no productivity or statistical claim.
     the canonical shared `services/auth-login-service.ts`; its repository contract
     comes from `repositories/AuthUserRepository.ts`.
 
-Registration follows the sibling
-[`prepareAuthUserRegistration`](./login/prepare-auth-user-registration.ts)
-path, then enters the same durable mutation pipeline through `registerUser`.
+Registration uses
+[`prepareAuthUserRegistrationVerifier`](./login/prepare-auth-user-registration.ts) only after its
+enqueue reservation wins. That durable, non-reversible verifier does not expire and stays outside
+semantic equality; the later worker materializes user identity and timestamps before entering the
+same mutation pipeline.
 
 ## Authenticated AppInbox mutation
 
@@ -103,16 +105,17 @@ path, then enters the same durable mutation pipeline through `registerUser`.
 ### Later handler invocation
 
 1. **Later handler invocation:** a public service method uses
-   [`decodeAuthMutationCommand`](./mutation/decode-auth-mutation-command.ts) and
-   [`toAuthAppInboxType`](./inbox/auth-app-inbox-routing.ts) to enqueue one
-   durable command. A later accepted dequeue invokes the callback; conditional
-   conflicts escape to the base AppInbox whole-attempt retry owner.
+   [`decodeAuthMutationIntent`](./mutation/decode-auth-mutation-intent.ts) and
+   [`toAuthAppInboxType`](./inbox/auth-app-inbox-routing.ts) to reserve one credential-safe,
+   durable semantic intent. A later accepted dequeue invokes the callback; conditional conflicts
+   escape to the base AppInbox whole-attempt retry owner.
 2. **First guard/validation:** `AuthInboxHandler.processAuthMutation` decodes again and
    rejects type, resource, or context identity mismatch before any state read.
    Sender is intentionally not part of this established auth-specific check.
-3. **Transaction/retry or query call:** stable reads, facts, pure compute, and
-   validation finish before `transactionWriter.writeMutation` opens the write
-   transaction. Session reads use canonical-then-legacy order in
+3. **Transaction/retry or query call:** after queue identity validation, the worker materializes
+   server-owned time, IDs, credential digests, and expiry facts. Stable reads, pure compute, and
+   validation then finish before `transactionWriter.writeMutation` opens the write transaction.
+   Session reads use canonical-then-legacy order in
    [`readAuthSessionEntries`](./mutation/read/read-auth-session-entries.ts).
 4. **Durable write or query-only N/A:** the transaction calls `writeAuthMutation`, then owns the
    authoritative state changes, durable result, receipt, queue completion, and
@@ -132,7 +135,7 @@ path, then enters the same durable mutation pipeline through `registerUser`.
 9. **Cleanup/finally/rollback:** `runInTransaction` rollback commits none of the
    authoritative state, result, receipt, completion, or outbox writes.
 10. **Caller propagation:**
-    `processAuthCommandUntilCompletion` preserves typed queue failures on the
+    `processAuthIntentUntilCompletion` preserves typed queue failures on the
     left and returns reconstructed plaintext only on the right.
 11. **Compatibility path:** existing service consumers may import
     `services/AppAuthInboxService.ts` and `services/auth-state-mutations.ts`.
@@ -151,8 +154,9 @@ path, then enters the same durable mutation pipeline through `registerUser`.
 ### Later handler invocation
 
 1. **Later handler invocation:** login invokes `issueSession`; authenticated
-   logout invokes `logoutSession`. Both become durable AppInbox commands and
-   retry as complete queue attempts on conditional conflict.
+   logout invokes `logoutSession`. Both reserve durable AppInbox intents and
+   retry as complete queue attempts on conditional conflict; the accepted worker
+   materializes the domain command.
 2. **First guard/validation:**
    [`requireIssueSessionLifecycle`](./sessions/require-issue-session-lifecycle.ts)
    rejects malformed issue timestamps. Logout compute requires the expected
@@ -207,7 +211,8 @@ and [`auth-session-types.ts`](./persistence/auth-session-types.ts).
 
 1. **Later handler invocation:** authenticated routes call the issue methods;
    WebSocket and agent handshakes call the consume methods later. Each command
-   retries as a whole AppInbox attempt after a conditional conflict.
+   begins as a durable semantic intent and retries as a whole AppInbox attempt
+   after a conditional conflict.
 2. **First guard/validation:** queue identity is checked first. Then
    [`computeAuthTicketMutation`](./mutation/compute/compute-auth-ticket-mutation.ts)
    or

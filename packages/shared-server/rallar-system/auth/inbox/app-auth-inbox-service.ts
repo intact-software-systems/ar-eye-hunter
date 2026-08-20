@@ -20,25 +20,26 @@ import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer
 import { constantTimeAuthDigestEqual } from '../credentials/constant-time-auth-digest-equal.ts';
 import { hashAuthSecret } from '../credentials/hash-auth-secret.ts';
 import type {
-  AuthMutationCommand,
+  AuthMutationIntent,
   AuthMutationPublicResult,
   AuthMutationResult,
-  ConsumeAuthAgentTicketCommand,
-  ConsumeAuthWsTicketCommand,
-  IssueAuthAgentTicketsCommand,
-  IssueAuthSessionCommand,
-  IssueAuthWsTicketCommand,
-  LogoutAuthSessionCommand,
-  RegisterAuthUserCommand,
+  AuthSessionAuthority,
+  ConsumeAuthAgentTicketIntent,
+  ConsumeAuthWsTicketIntent,
+  IssueAuthAgentTicketsIntent,
+  IssueAuthSessionIntent,
+  IssueAuthWsTicketIntent,
+  LogoutAuthSessionIntent,
+  RegisterAuthUserIntent,
 } from '../mutation/auth-mutation-contracts.ts';
-import { decodeAuthMutationCommand } from '../mutation/decode-auth-mutation-command.ts';
+import { decodeAuthMutationIntent } from '../mutation/decode-auth-mutation-intent.ts';
 import { decodeAuthMutationResult } from '../mutation/decode-auth-mutation-result.ts';
 import { toAuthMutationPublicResult } from '../mutation/to-auth-mutation-public-result.ts';
 import type { IssuedAuthSession } from '../persistence/auth-session-types.ts';
 import type { AuthUser } from '../persistence/auth-user-repository.ts';
 import type { LoginClientData } from '../login/authenticate-auth-user.ts';
 import { verifyAuthUserPassword } from '../login/authenticate-auth-user.ts';
-import { prepareAuthUserRegistration } from '../login/prepare-auth-user-registration.ts';
+import { prepareAuthUserRegistrationVerifier } from '../login/prepare-auth-user-registration.ts';
 import { AppInboxService, type AppInboxServiceOptions } from '../../services/AppInboxService.ts';
 import {
   AppInboxIdempotencyConflictError,
@@ -54,15 +55,16 @@ import type { RallarTimingSink } from '../../services/timing.ts';
 import {
   AUTH_STATE_APP_INBOX_TOPIC,
   toAuthAppInboxType,
-  toAuthCommandContextId,
-  toAuthCommandSenderId,
   toAuthCredentialContextId,
+  toAuthIntentContextId,
+  toAuthIntentSenderId,
   toAuthSessionContextId,
   toAuthUsernameContextId,
 } from './auth-app-inbox-routing.ts';
 import { AuthInboxHandler } from './auth-inbox-handler.ts';
 import { validateAppInboxCommandIdentity } from '../../services/app-inbox-command-identity.ts';
 import { toJsonWireAppInboxEnqueue } from '../../services/app-inbox-command-wire.ts';
+import type { JsonWireValue } from '../../services/mutation-command-identity.ts';
 import {
   toAppInboxQueueCreatedBy,
   toAppInboxQueueKey,
@@ -122,10 +124,7 @@ export class AppAuthInboxService extends AppInboxService {
   public readonly authMutationService: AuthMutationService;
   public readonly credentialIssuer: AuthCredentialIssuer;
 
-  constructor(
-    dependencies: AppAuthInboxService.Dependencies,
-    config: AppAuthInboxService.Config,
-  ) {
+  constructor(dependencies: AppAuthInboxService.Dependencies, config: AppAuthInboxService.Config) {
     super(
       {
         inboxQueueReader: dependencies.inboxQueueReader,
@@ -149,6 +148,7 @@ export class AppAuthInboxService extends AppInboxService {
       mutationService: dependencies.authMutationService,
       credentialIssuer: dependencies.credentialIssuer,
       transactionWriter: this.transactionWriter,
+      nowEpochMs: this.authFactNowEpochMs,
     });
     for (const type of AUTH_TYPES) {
       this.onStateMessage<Parameters<AuthInboxHandler['processAuthMutation']>[0]>(
@@ -159,46 +159,46 @@ export class AppAuthInboxService extends AppInboxService {
     }
   }
 
-  async processAuthCommandUntilCompletion(
-    command: RegisterAuthUserCommand,
+  async processAuthIntentUntilCompletion(
+    intent: RegisterAuthUserIntent,
   ): Promise<Either<AppInboxFailure, RegisterResponse>>;
-  async processAuthCommandUntilCompletion(
-    command: IssueAuthSessionCommand,
+  async processAuthIntentUntilCompletion(
+    intent: IssueAuthSessionIntent,
   ): Promise<Either<AppInboxFailure, LoginResponse>>;
-  async processAuthCommandUntilCompletion(
-    command: LogoutAuthSessionCommand,
+  async processAuthIntentUntilCompletion(
+    intent: LogoutAuthSessionIntent,
   ): Promise<Either<AppInboxFailure, LogoutResponse>>;
-  async processAuthCommandUntilCompletion(
-    command: IssueAuthWsTicketCommand,
+  async processAuthIntentUntilCompletion(
+    intent: IssueAuthWsTicketIntent,
   ): Promise<Either<AppInboxFailure, WebSocketTicketResponse>>;
-  async processAuthCommandUntilCompletion(
-    command: ConsumeAuthWsTicketCommand,
+  async processAuthIntentUntilCompletion(
+    intent: ConsumeAuthWsTicketIntent,
   ): Promise<Either<AppInboxFailure, IssuedAuthSession>>;
-  async processAuthCommandUntilCompletion(
-    command: IssueAuthAgentTicketsCommand,
+  async processAuthIntentUntilCompletion(
+    intent: IssueAuthAgentTicketsIntent,
   ): Promise<Either<AppInboxFailure, AgentSessionTicketResponse>>;
-  async processAuthCommandUntilCompletion(
-    command: ConsumeAuthAgentTicketCommand,
+  async processAuthIntentUntilCompletion(
+    intent: ConsumeAuthAgentTicketIntent,
   ): Promise<Either<AppInboxFailure, ConsumeAgentSessionTicketResponse>>;
-  async processAuthCommandUntilCompletion(
-    command: AuthMutationCommand,
+  async processAuthIntentUntilCompletion(
+    intent: AuthMutationIntent,
   ): Promise<Either<AppInboxFailure, AuthMutationPublicResult>>;
-  async processAuthCommandUntilCompletion(
-    command: AuthMutationCommand,
+  async processAuthIntentUntilCompletion(
+    intent: AuthMutationIntent,
   ): Promise<Either<AppInboxFailure, AuthMutationPublicResult>> {
-    const decoded = decodeAuthMutationCommand(command);
+    const decoded = decodeAuthMutationIntent(intent);
     let persisted: Either<AppInboxFailure, AuthMutationResult>;
     try {
       persisted = await super.processEntryUntilCompletionResult<
-        AuthMutationCommand,
+        AuthMutationIntent,
         AuthMutationResult
       >(
         {
           type: toAuthAppInboxType(decoded),
           topicId: toAuthAppInboxType(decoded),
           resourceId: decoded.requestId,
-          contextId: toAuthCommandContextId(decoded),
-          senderId: toAuthCommandSenderId(decoded),
+          contextId: toAuthIntentContextId(decoded),
+          senderId: toAuthIntentSenderId(decoded),
           data: decoded,
         },
         decodeAuthMutationResult,
@@ -214,15 +214,14 @@ export class AppAuthInboxService extends AppInboxService {
   }
 
   async registerUser(
-    input:
-      & AppAuthInboxService.RequestIdentity
-      & Readonly<{
+    input: AppAuthInboxService.RequestIdentity &
+      Readonly<{
         request: RegisterRequest;
         staticClients?: readonly LoginClientData[];
       }>,
   ): Promise<Either<AppInboxFailure, RegisterResponse>> {
     const normalizedUsername = readNormalizedUsername(input.request.username);
-    const reserved = await this.reserveAuthCommand(
+    const reserved = await this.reserveAuthIntent(
       {
         type: AppInboxType.AUTH_USER_REGISTER,
         requestId: input.requestId,
@@ -230,16 +229,9 @@ export class AppAuthInboxService extends AppInboxService {
         senderId: normalizedUsername,
       },
       async () => {
-        const capturedAtEpochMs = this.authFactNowEpochMs();
-        const user = await prepareAuthUserRegistration(
+        const registration = await prepareAuthUserRegistrationVerifier(
           input.request,
           {
-            clientId: await toAuthServiceDeterministicId(
-              'user',
-              input.requestId,
-              normalizedUsername,
-            ),
-            capturedAtEpochMs,
             passwordSaltSeed: `auth-registration:${input.requestId}:${normalizedUsername}`,
           },
           input.staticClients,
@@ -248,90 +240,70 @@ export class AppAuthInboxService extends AppInboxService {
           version: 1,
           kind: 'register-user',
           requestId: input.requestId,
-          capturedAtEpochMs,
-          user,
+          registration,
         };
       },
-      async (command) =>
-        command.kind === 'register-user' &&
-        command.user.normalizedUsername === normalizedUsername &&
-        command.user.username === input.request.username.trim() &&
-        command.user.displayName === readRegistrationDisplayName(input.request.displayName) &&
-        await verifyAuthUserPassword(input.request.password, command.user),
+      async (intent) =>
+        intent.kind === 'register-user' &&
+        intent.registration.normalizedUsername === normalizedUsername &&
+        intent.registration.username === input.request.username.trim() &&
+        intent.registration.displayName ===
+          readRegistrationDisplayName(input.request.displayName) &&
+        (await verifyAuthUserPassword(input.request.password, intent.registration)),
     );
     if (reserved.left !== undefined) return Either.ofLeft(reserved.left);
-    return await this.processAuthCommandUntilCompletion(
-      requireReservedCommand(reserved, 'register-user'),
+    return await this.processAuthIntentUntilCompletion(
+      requireReservedIntent(reserved, 'register-user'),
     );
   }
 
   async issueSession(
-    input:
-      & AppAuthInboxService.RequestIdentity
-      & Readonly<{
+    input: AppAuthInboxService.RequestIdentity &
+      Readonly<{
         clientId: string;
         username: string;
         ttlMs: number;
-        authority: IssueAuthSessionCommand['authority'];
+        authority: AuthSessionAuthority;
       }>,
   ): Promise<Either<AppInboxFailure, LoginResponse>> {
-    const reserved = await this.reserveAuthCommand(
+    const reserved = await this.reserveAuthIntent(
       {
         type: AppInboxType.AUTH_SESSION_ISSUE,
         requestId: input.requestId,
-        contextId: toAuthUsernameContextId(
-          'issue-session',
-          input.authority.normalizedUsername,
-        ),
+        contextId: toAuthUsernameContextId('issue-session', input.authority.normalizedUsername),
         senderId: input.clientId,
       },
-      async () => {
-        const capturedAtEpochMs = this.authFactNowEpochMs();
-        const sessionId = await toAuthServiceDeterministicId(
-          'session',
-          input.requestId,
-          input.authority.normalizedUsername,
-          input.clientId,
-        );
-        const accessToken = await this.credentialIssuer.issueAccessToken(sessionId);
-        return {
-          version: 1,
-          kind: 'issue-session',
-          requestId: input.requestId,
-          capturedAtEpochMs,
-          authority: input.authority,
-          session: {
-            clientId: input.clientId,
-            username: input.username,
-            sessionId,
-            accessTokenDigest: await hashAuthSecret(accessToken),
-            issuedAtEpochMs: capturedAtEpochMs,
-            expiresAtEpochMs: capturedAtEpochMs + input.ttlMs,
-          },
-        };
-      },
-      (command) =>
-        command.kind === 'issue-session' &&
-        command.session.clientId === input.clientId &&
-        command.session.username === input.username &&
-        command.authority.kind === input.authority.kind &&
-        command.authority.clientId === input.authority.clientId &&
-        command.authority.normalizedUsername === input.authority.normalizedUsername &&
-        (command.authority.kind !== 'registered-user' ||
+      async () => ({
+        version: 1,
+        kind: 'issue-session',
+        requestId: input.requestId,
+        authority: input.authority,
+        clientId: input.clientId,
+        username: input.username,
+        ttlMs: input.ttlMs,
+      }),
+      (intent) =>
+        intent.kind === 'issue-session' &&
+        intent.clientId === input.clientId &&
+        intent.username === input.username &&
+        intent.authority.kind === input.authority.kind &&
+        intent.authority.clientId === input.authority.clientId &&
+        intent.authority.normalizedUsername === input.authority.normalizedUsername &&
+        (intent.authority.kind !== 'registered-user' ||
           input.authority.kind !== 'registered-user' ||
-          command.authority.userRevision === input.authority.userRevision) &&
-        command.session.expiresAtEpochMs - command.session.issuedAtEpochMs === input.ttlMs,
+          intent.authority.userRevision === input.authority.userRevision) &&
+        intent.ttlMs === input.ttlMs,
     );
     if (reserved.left !== undefined) return Either.ofLeft(reserved.left);
-    return await this.processAuthCommandUntilCompletion(
-      requireReservedCommand(reserved, 'issue-session'),
+    return await this.processAuthIntentUntilCompletion(
+      requireReservedIntent(reserved, 'issue-session'),
     );
   }
 
   async logoutSession(
     input: AppAuthInboxService.RequestIdentity & Readonly<{ session: IssuedAuthSession }>,
   ): Promise<Either<AppInboxFailure, LogoutResponse>> {
-    const reserved = await this.reserveAuthCommand(
+    const reserved = await this.reserveAuthIntent(
       {
         type: AppInboxType.AUTH_SESSION_LOGOUT,
         requestId: input.requestId,
@@ -342,7 +314,6 @@ export class AppAuthInboxService extends AppInboxService {
         version: 1,
         kind: 'logout-session',
         requestId: input.requestId,
-        capturedAtEpochMs: this.authFactNowEpochMs(),
         expected: {
           clientId: input.session.clientId,
           username: input.session.username,
@@ -352,18 +323,18 @@ export class AppAuthInboxService extends AppInboxService {
           expiresAtEpochMs: input.session.expiresAtEpochMs,
         },
       }),
-      async (command) =>
-        command.kind === 'logout-session' &&
-        command.expected.clientId === input.session.clientId &&
-        command.expected.sessionId === input.session.sessionId &&
+      async (intent) =>
+        intent.kind === 'logout-session' &&
+        intent.expected.clientId === input.session.clientId &&
+        intent.expected.sessionId === input.session.sessionId &&
         constantTimeAuthDigestEqual(
-          command.expected.accessTokenDigest,
+          intent.expected.accessTokenDigest,
           await hashAuthSecret(input.session.accessToken),
         ),
     );
     if (reserved.left !== undefined) return Either.ofLeft(reserved.left);
-    return await this.processAuthCommandUntilCompletion(
-      requireReservedCommand(reserved, 'logout-session'),
+    return await this.processAuthIntentUntilCompletion(
+      requireReservedIntent(reserved, 'logout-session'),
     );
   }
 
@@ -379,94 +350,84 @@ export class AppAuthInboxService extends AppInboxService {
       AppInboxType.AUTH_SESSION_LOGOUT,
       input.requestId,
     );
-    const matchingCommands: LogoutAuthSessionCommand[] = [];
+    const matchingIntents: LogoutAuthSessionIntent[] = [];
     for (const entry of entries) {
-      const command = readAuthReplayCommand(entry, AppInboxType.AUTH_SESSION_LOGOUT);
-      if (command === null) {
+      const intent = readAuthReplayIntent(entry, AppInboxType.AUTH_SESSION_LOGOUT);
+      if (intent === null) {
         constantTimeAuthDigestEqual(presentedDigest, '0'.repeat(43));
         continue;
       }
       const proofMatches = constantTimeAuthDigestEqual(
         presentedDigest,
-        command?.kind === 'logout-session' ? command.expected.accessTokenDigest : '0'.repeat(43),
+        intent?.kind === 'logout-session' ? intent.expected.accessTokenDigest : '0'.repeat(43),
       );
       if (
         proofMatches &&
-        command?.kind === 'logout-session' &&
-        command.expected.clientId === input.clientId
+        intent?.kind === 'logout-session' &&
+        intent.expected.clientId === input.clientId
       ) {
-        matchingCommands.push(command);
+        matchingIntents.push(intent);
       }
     }
-    if (matchingCommands.length !== 1) {
+    if (matchingIntents.length !== 1) {
       return null;
     }
-    return await this.processAuthCommandUntilCompletion(matchingCommands[0]);
+    return await this.processAuthIntentUntilCompletion(matchingIntents[0]);
   }
 
   async issueWebSocketTicket(
-    input:
-      & AppAuthInboxService.RequestIdentity
-      & Readonly<{
+    input: AppAuthInboxService.RequestIdentity &
+      Readonly<{
         session: IssuedAuthSession;
         ttlMs: number;
       }>,
   ): Promise<Either<AppInboxFailure, WebSocketTicketResponse>> {
-    const reserved = await this.reserveAuthCommand(
+    const reserved = await this.reserveAuthIntent(
       {
         type: AppInboxType.AUTH_WS_TICKET_ISSUE,
         requestId: input.requestId,
         contextId: toAuthSessionContextId(input.session.clientId, input.session.sessionId),
         senderId: input.session.clientId,
       },
-      async () => {
-        const capturedAtEpochMs = this.authFactNowEpochMs();
-        const ticket = await this.credentialIssuer.issueWebSocketTicket(
-          input.requestId,
-          input.session.sessionId,
-        );
-        return {
-          version: 1,
-          kind: 'issue-ws-ticket',
-          requestId: input.requestId,
-          capturedAtEpochMs,
-          ticketRecord: {
-            ticketDigest: await hashAuthSecret(ticket),
-            accessTokenDigest: await hashAuthSecret(input.session.accessToken),
-            sessionId: input.session.sessionId,
-            clientId: input.session.clientId,
-            issuedAtEpochMs: capturedAtEpochMs,
-            expiresAtEpochMs: capturedAtEpochMs + input.ttlMs,
-          },
-        };
-      },
-      async (command) =>
-        command.kind === 'issue-ws-ticket' &&
-        command.ticketRecord.clientId === input.session.clientId &&
-        command.ticketRecord.sessionId === input.session.sessionId &&
-        command.ticketRecord.expiresAtEpochMs - command.ticketRecord.issuedAtEpochMs ===
-          input.ttlMs &&
+      async () => ({
+        version: 1,
+        kind: 'issue-ws-ticket',
+        requestId: input.requestId,
+        authority: {
+          clientId: input.session.clientId,
+          username: input.session.username,
+          sessionId: input.session.sessionId,
+          accessTokenDigest: await hashAuthSecret(input.session.accessToken),
+          issuedAtEpochMs: input.session.issuedAtEpochMs,
+          expiresAtEpochMs: input.session.expiresAtEpochMs,
+        },
+        ttlMs: input.ttlMs,
+      }),
+      async (intent) =>
+        intent.kind === 'issue-ws-ticket' &&
+        intent.authority.clientId === input.session.clientId &&
+        intent.authority.sessionId === input.session.sessionId &&
+        intent.ttlMs === input.ttlMs &&
         constantTimeAuthDigestEqual(
-          command.ticketRecord.accessTokenDigest,
+          intent.authority.accessTokenDigest,
           await hashAuthSecret(input.session.accessToken),
         ),
     );
     if (reserved.left !== undefined) return Either.ofLeft(reserved.left);
-    return await this.processAuthCommandUntilCompletion(
-      requireReservedCommand(reserved, 'issue-ws-ticket'),
+    return await this.processAuthIntentUntilCompletion(
+      requireReservedIntent(reserved, 'issue-ws-ticket'),
     );
   }
 
   async consumeWebSocketTicket(
-    input:
-      & AppAuthInboxService.RequestIdentity
-      & Readonly<{
+    input: AppAuthInboxService.RequestIdentity &
+      Readonly<{
         ticket: string;
         expectedSessionId: string;
       }>,
   ): Promise<Either<AppInboxFailure, IssuedAuthSession>> {
     const ticketDigest = await hashAuthSecret(input.ticket);
-    const reserved = await this.reserveAuthCommand(
+    const reserved = await this.reserveAuthIntent(
       {
         type: AppInboxType.AUTH_WS_TICKET_CONSUME,
         requestId: input.requestId,
@@ -477,101 +438,63 @@ export class AppAuthInboxService extends AppInboxService {
         version: 1,
         kind: 'consume-ws-ticket',
         requestId: input.requestId,
-        capturedAtEpochMs: this.authFactNowEpochMs(),
         ticketDigest,
         expectedSessionId: input.expectedSessionId,
       }),
-      (command) =>
-        command.kind === 'consume-ws-ticket' &&
-        command.ticketDigest === ticketDigest &&
-        command.expectedSessionId === input.expectedSessionId,
+      (intent) =>
+        intent.kind === 'consume-ws-ticket' &&
+        intent.ticketDigest === ticketDigest &&
+        intent.expectedSessionId === input.expectedSessionId,
     );
     if (reserved.left !== undefined) return Either.ofLeft(reserved.left);
-    return await this.processAuthCommandUntilCompletion(
-      requireReservedCommand(reserved, 'consume-ws-ticket'),
+    return await this.processAuthIntentUntilCompletion(
+      requireReservedIntent(reserved, 'consume-ws-ticket'),
     );
   }
 
   async issueAgentSessionTickets(
-    input:
-      & AppAuthInboxService.RequestIdentity
-      & Readonly<{
+    input: AppAuthInboxService.RequestIdentity &
+      Readonly<{
         session: IssuedAuthSession;
         ticketTtlMs: number;
         agents: readonly Readonly<{ agentId: string }>[];
       }>,
   ): Promise<Either<AppInboxFailure, AgentSessionTicketResponse>> {
-    const reserved = await this.reserveAuthCommand(
+    const reserved = await this.reserveAuthIntent(
       {
         type: AppInboxType.AUTH_AGENT_SESSION_TICKETS_ISSUE,
         requestId: input.requestId,
         contextId: toAuthSessionContextId(input.session.clientId, input.session.sessionId),
         senderId: input.session.clientId,
       },
-      async () => {
-        const capturedAtEpochMs = this.authFactNowEpochMs();
-        const tickets = await Promise.all(
-          input.agents.map(async (agent) => {
-            const sessionId = await toAuthServiceDeterministicId(
-              'agent-session',
-              input.requestId,
-              input.session.clientId,
-              agent.agentId,
-            );
-            const accessToken = await this.credentialIssuer.issueAccessToken(sessionId);
-            const ticket = await this.credentialIssuer.issueAgentTicket(
-              input.requestId,
-              agent.agentId,
-              sessionId,
-            );
-            return {
-              agentId: agent.agentId,
-              sessionId,
-              accessTokenDigest: await hashAuthSecret(accessToken),
-              ticketDigest: await hashAuthSecret(ticket),
-              clientId: input.session.clientId,
-              username: input.session.username,
-              issuedAtEpochMs: capturedAtEpochMs,
-              sessionExpiresAtEpochMs: input.session.expiresAtEpochMs,
-              ticketExpiresAtEpochMs: Math.min(
-                input.session.expiresAtEpochMs,
-                capturedAtEpochMs + input.ticketTtlMs,
-              ),
-            };
-          }),
-        );
-        return {
-          version: 1,
-          kind: 'issue-agent-tickets',
-          requestId: input.requestId,
-          capturedAtEpochMs,
-          authority: {
-            clientId: input.session.clientId,
-            username: input.session.username,
-            sessionId: input.session.sessionId,
-            accessTokenDigest: await hashAuthSecret(input.session.accessToken),
-            issuedAtEpochMs: input.session.issuedAtEpochMs,
-            expiresAtEpochMs: input.session.expiresAtEpochMs,
-          },
-          tickets,
-        };
-      },
-      async (command) =>
-        command.kind === 'issue-agent-tickets' &&
-        command.tickets.map((ticket) => ticket.agentId).join('\u0000') ===
+      async () => ({
+        version: 1,
+        kind: 'issue-agent-tickets',
+        requestId: input.requestId,
+        authority: {
+          clientId: input.session.clientId,
+          username: input.session.username,
+          sessionId: input.session.sessionId,
+          accessTokenDigest: await hashAuthSecret(input.session.accessToken),
+          issuedAtEpochMs: input.session.issuedAtEpochMs,
+          expiresAtEpochMs: input.session.expiresAtEpochMs,
+        },
+        ticketTtlMs: input.ticketTtlMs,
+        agentIds: input.agents.map((agent) => agent.agentId),
+      }),
+      async (intent) =>
+        intent.kind === 'issue-agent-tickets' &&
+        intent.agentIds.join('\u0000') ===
           input.agents.map((agent) => agent.agentId).join('\u0000') &&
-        command.tickets.every((ticket) =>
-          ticket.ticketExpiresAtEpochMs - ticket.issuedAtEpochMs ===
-            Math.min(input.ticketTtlMs, input.session.expiresAtEpochMs - ticket.issuedAtEpochMs)
-        ) &&
+        intent.ticketTtlMs === input.ticketTtlMs &&
         constantTimeAuthDigestEqual(
-          command.authority.accessTokenDigest,
+          intent.authority.accessTokenDigest,
           await hashAuthSecret(input.session.accessToken),
         ),
     );
     if (reserved.left !== undefined) return Either.ofLeft(reserved.left);
-    return await this.processAuthCommandUntilCompletion(
-      requireReservedCommand(reserved, 'issue-agent-tickets'),
+    return await this.processAuthIntentUntilCompletion(
+      requireReservedIntent(reserved, 'issue-agent-tickets'),
     );
   }
 
@@ -583,26 +506,22 @@ export class AppAuthInboxService extends AppInboxService {
       AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME,
       input.requestId,
     );
-    const matchingCommands: ConsumeAuthAgentTicketCommand[] = [];
+    const matchingIntents: ConsumeAuthAgentTicketIntent[] = [];
     for (const entry of entries) {
-      const command = readAuthReplayCommand(
-        entry,
-        AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME,
-      );
-      const expectedDigest = command?.kind === 'consume-agent-ticket'
-        ? command.ticketDigest
-        : '0'.repeat(43);
+      const intent = readAuthReplayIntent(entry, AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME);
+      const expectedDigest =
+        intent?.kind === 'consume-agent-ticket' ? intent.ticketDigest : '0'.repeat(43);
       if (
         constantTimeAuthDigestEqual(ticketDigest, expectedDigest) &&
-        command?.kind === 'consume-agent-ticket'
+        intent?.kind === 'consume-agent-ticket'
       ) {
-        matchingCommands.push(command);
+        matchingIntents.push(intent);
       }
     }
-    if (matchingCommands.length === 1) {
-      return await this.processAuthCommandUntilCompletion(matchingCommands[0]);
+    if (matchingIntents.length === 1) {
+      return await this.processAuthIntentUntilCompletion(matchingIntents[0]);
     }
-    const reserved = await this.reserveAuthCommand(
+    const reserved = await this.reserveAuthIntent(
       {
         type: AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME,
         requestId: input.requestId,
@@ -613,23 +532,21 @@ export class AppAuthInboxService extends AppInboxService {
         version: 1,
         kind: 'consume-agent-ticket',
         requestId: input.requestId,
-        capturedAtEpochMs: this.authFactNowEpochMs(),
         ticketDigest,
       }),
-      (command) =>
-        command.kind === 'consume-agent-ticket' && command.ticketDigest === ticketDigest,
+      (intent) => intent.kind === 'consume-agent-ticket' && intent.ticketDigest === ticketDigest,
     );
     if (reserved.left !== undefined) return Either.ofLeft(reserved.left);
-    return await this.processAuthCommandUntilCompletion(
-      requireReservedCommand(reserved, 'consume-agent-ticket'),
+    return await this.processAuthIntentUntilCompletion(
+      requireReservedIntent(reserved, 'consume-agent-ticket'),
     );
   }
 
-  private async reserveAuthCommand<C extends AuthMutationCommand>(
+  private async reserveAuthIntent<I extends AuthMutationIntent>(
     reservation: AuthCommandReservation,
-    materialize: () => Promise<C>,
-    matches: (command: AuthMutationCommand) => boolean | Promise<boolean>,
-  ): Promise<Either<AppInboxFailure, C>> {
+    materialize: () => Promise<I>,
+    matches: (intent: AuthMutationIntent) => boolean | Promise<boolean>,
+  ): Promise<Either<AppInboxFailure, I>> {
     try {
       const placeholder = toAuthInboxEntry({
         type: reservation.type,
@@ -639,20 +556,20 @@ export class AppAuthInboxService extends AppInboxService {
         senderId: reservation.senderId,
         data: null,
       });
-      const entry = await this.authInboxRepository
-        .writeMaterializedIfAbsentOrReplaceExpired(
-          placeholder,
-          async () => toAuthInboxEntry(toAuthCommandEnqueue(await materialize())),
-        );
-      const command = readAuthReplayCommand(entry, reservation.type);
-      if (!command || !(await matches(command))) {
+      const entry = await this.authInboxRepository.writeMaterializedIfAbsentOrReplaceExpired(
+        placeholder,
+        async () =>
+          toAuthInboxEntry(toAuthIntentEnqueue(decodeAuthMutationIntent(await materialize()))),
+      );
+      const intent = readAuthReplayIntent(entry, reservation.type);
+      if (!intent || !(await matches(intent))) {
         throw new AppInboxIdempotencyConflictError(
           reservation.requestId,
           'existing-auth-command',
           'received-auth-intent',
         );
       }
-      return Either.ofRight(command as C);
+      return Either.ofRight(intent as I);
     } catch (error) {
       return Either.ofLeft(toTerminalAppInboxFailure(error, toAppInboxErrorCode(error)));
     }
@@ -666,22 +583,18 @@ interface AuthCommandReservation {
   readonly senderId: string;
 }
 
-function toAuthCommandEnqueue(
-  command: AuthMutationCommand,
-): AppInboxEnqueueInput<AuthMutationCommand> {
+function toAuthIntentEnqueue(intent: AuthMutationIntent): AppInboxEnqueueInput<AuthMutationIntent> {
   return {
-    type: toAuthAppInboxType(command),
-    topicId: toAuthAppInboxType(command),
-    resourceId: command.requestId,
-    contextId: toAuthCommandContextId(command),
-    senderId: toAuthCommandSenderId(command),
-    data: command,
+    type: toAuthAppInboxType(intent),
+    topicId: toAuthAppInboxType(intent),
+    resourceId: intent.requestId,
+    contextId: toAuthIntentContextId(intent),
+    senderId: toAuthIntentSenderId(intent),
+    data: intent,
   };
 }
 
-function toAuthInboxEntry(
-  enqueue: AppInboxEnqueueInput<AuthMutationCommand | null>,
-): ResourceEntry {
+function toAuthInboxEntry(enqueue: AppInboxEnqueueInput<AuthMutationIntent | null>): ResourceEntry {
   const wire = toJsonWireAppInboxEnqueue(enqueue);
   const key = toAppInboxQueueKey({
     topicId: wire.topicId!,
@@ -699,14 +612,14 @@ function toAuthInboxEntry(
   );
 }
 
-function requireReservedCommand<K extends AuthMutationCommand['kind']>(
-  reserved: Either<AppInboxFailure, AuthMutationCommand>,
+function requireReservedIntent<K extends AuthMutationIntent['kind']>(
+  reserved: Either<AppInboxFailure, AuthMutationIntent>,
   kind: K,
-): Extract<AuthMutationCommand, { kind: K }> {
+): Extract<AuthMutationIntent, { kind: K }> {
   if (reserved.right?.kind !== kind) {
-    throw new Error(`Reserved auth command kind differs: ${kind}`);
+    throw new Error(`Reserved auth intent kind differs: ${kind}`);
   }
-  return reserved.right as Extract<AuthMutationCommand, { kind: K }>;
+  return reserved.right as Extract<AuthMutationIntent, { kind: K }>;
 }
 
 function readNormalizedUsername(username: string): string {
@@ -717,35 +630,27 @@ function readRegistrationDisplayName(displayName: string | undefined): string | 
   return displayName?.trim() || null;
 }
 
-function readAuthReplayCommand(
+function readAuthReplayIntent(
   entry: ResourceEntry,
   operation: AppInboxType,
-): AuthMutationCommand | null {
+): AuthMutationIntent | null {
   const validation = validateAppInboxCommandIdentity(entry);
   if (!validation.valid || validation.identity.operation !== operation) {
     return null;
   }
   try {
-    const command = decodeAuthMutationCommand(validation.command.data);
+    const intent = decodeAuthMutationIntent(validation.command.data as JsonWireValue);
     const expectedKey = toAppQueueKey({
-      topicId: toAuthAppInboxType(command),
-      resourceId: command.requestId,
-      contextId: toAuthCommandContextId(command),
+      topicId: toAuthAppInboxType(intent),
+      resourceId: intent.requestId,
+      contextId: toAuthIntentContextId(intent),
     });
     return expectedKey.topicId === entry.key.topicId &&
-        expectedKey.resourceId === entry.key.resourceId &&
-        expectedKey.contextId === entry.key.contextId
-      ? command
+      expectedKey.resourceId === entry.key.resourceId &&
+      expectedKey.contextId === entry.key.contextId
+      ? intent
       : null;
   } catch {
     return null;
   }
-}
-
-async function toAuthServiceDeterministicId(
-  kind: 'user' | 'session' | 'agent-session',
-  ...identity: readonly string[]
-): Promise<string> {
-  const digest = await hashAuthSecret(JSON.stringify([kind, ...identity]));
-  return `${kind}-${digest.slice(0, 24)}`;
 }

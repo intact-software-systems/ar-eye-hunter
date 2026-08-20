@@ -1,7 +1,8 @@
 import { decodeAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/admin-prune-work-codec.ts';
 import { validateRtcRttMeasurement } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
-import { decodeAuthMutationCommand } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-command.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { decodeAuthMutationIntent } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-intent.ts';
 import { decodeCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 
 export interface ExactStandaloneCommandIdsInput {
@@ -16,11 +17,11 @@ export function readExactStandaloneCommandIds(
 ): readonly string[] {
   const { type, data, authority, fallback } = input;
   if (type.startsWith('AUTH_')) {
-    const command = decodeAuthMutationCommand(data);
-    if (command.kind !== authKind(type)) {
+    const intent = decodeAuthMutationIntent(data as JsonWireValue);
+    if (intent.kind !== authKind(type)) {
       throw new TypeError('auth command kind differs from type');
     }
-    return [command.requestId];
+    return [intent.requestId];
   }
   if (type.startsWith('CRDT_')) {
     const command = decodeCrdtMutationCommand(data);

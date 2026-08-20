@@ -16,6 +16,7 @@ import type {
   PersistedWebSocketTicket,
 } from '../persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../persistence/auth-session-types.ts';
+import type { PreparedAuthUserRegistration } from '../login/prepare-auth-user-registration.ts';
 
 type AuthUser = import('../persistence/auth-user-repository.ts').AuthUser;
 
@@ -24,6 +25,82 @@ type CommandBase = Readonly<{
   requestId: string;
   capturedAtEpochMs: number;
 }>;
+
+type IntentBase = Readonly<{
+  version: 1;
+  requestId: string;
+}>;
+
+export type AuthSessionAuthority =
+  | Readonly<{
+      kind: 'registered-user';
+      clientId: string;
+      normalizedUsername: string;
+      userRevision: number;
+    }>
+  | Readonly<{
+      kind: 'static-client';
+      clientId: string;
+      normalizedUsername: string;
+    }>;
+
+export type RegisterAuthUserIntent = IntentBase &
+  Readonly<{
+    kind: 'register-user';
+    registration: PreparedAuthUserRegistration;
+  }>;
+
+export type IssueAuthSessionIntent = IntentBase &
+  Readonly<{
+    kind: 'issue-session';
+    authority: AuthSessionAuthority;
+    clientId: string;
+    username: string;
+    ttlMs: number;
+  }>;
+
+export type LogoutAuthSessionIntent = IntentBase &
+  Readonly<{
+    kind: 'logout-session';
+    expected: PersistedAuthSession;
+  }>;
+
+export type IssueAuthWsTicketIntent = IntentBase &
+  Readonly<{
+    kind: 'issue-ws-ticket';
+    authority: PersistedAuthSession;
+    ttlMs: number;
+  }>;
+
+export type ConsumeAuthWsTicketIntent = IntentBase &
+  Readonly<{
+    kind: 'consume-ws-ticket';
+    ticketDigest: string;
+    expectedSessionId: string;
+  }>;
+
+export type IssueAuthAgentTicketsIntent = IntentBase &
+  Readonly<{
+    kind: 'issue-agent-tickets';
+    authority: PersistedAuthSession;
+    ticketTtlMs: number;
+    agentIds: readonly string[];
+  }>;
+
+export type ConsumeAuthAgentTicketIntent = IntentBase &
+  Readonly<{
+    kind: 'consume-agent-ticket';
+    ticketDigest: string;
+  }>;
+
+export type AuthMutationIntent =
+  | RegisterAuthUserIntent
+  | IssueAuthSessionIntent
+  | LogoutAuthSessionIntent
+  | IssueAuthWsTicketIntent
+  | ConsumeAuthWsTicketIntent
+  | IssueAuthAgentTicketsIntent
+  | ConsumeAuthAgentTicketIntent;
 
 export type RegisterAuthUserCommand = CommandBase &
   Readonly<{
@@ -34,18 +111,7 @@ export type RegisterAuthUserCommand = CommandBase &
 export type IssueAuthSessionCommand = CommandBase &
   Readonly<{
     kind: 'issue-session';
-    authority:
-      | Readonly<{
-          kind: 'registered-user';
-          clientId: string;
-          normalizedUsername: string;
-          userRevision: number;
-        }>
-      | Readonly<{
-          kind: 'static-client';
-          clientId: string;
-          normalizedUsername: string;
-        }>;
+    authority: AuthSessionAuthority;
     session: PersistedAuthSession;
   }>;
 
