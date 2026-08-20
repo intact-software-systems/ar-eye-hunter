@@ -1297,10 +1297,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects a family call before authorization exists"
     },
     {
-      "id": "test-structure-coupling-d326eafe832b6f45",
+      "id": "test-structure-coupling-92d45540fb8d9aa7",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
       "line": 77,
-      "column": 26,
+      "column": 20,
       "kind": "production-source-read",
       "contract": "recipe-matrix-public-interface--points-every-entry-at-a-catalog-recipe-file",
       "disposition": "durable-boundary",
@@ -1466,10 +1466,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a dead exact registration masking the live named route owner"
     },
     {
-      "id": "test-structure-coupling-3dbbecadc0b567f3",
+      "id": "test-structure-coupling-97e5b05c52cc5765",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
-      "line": 426,
-      "column": 9,
+      "line": 415,
+      "column": 5,
       "kind": "symbol-assertion",
       "contract": "recipe-matrix-public-interface--advertises-the-api-v1-profile-in-recipe-matrix-cli-usage",
       "disposition": "durable-boundary",
@@ -1622,10 +1622,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects a separately bound command declared after its submission"
     },
     {
-      "id": "test-structure-coupling-610c1849ac572c39",
+      "id": "test-structure-coupling-2a1b652124c26238",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
-      "line": 114,
-      "column": 47,
+      "line": 112,
+      "column": 7,
       "kind": "production-source-read",
       "contract": "recipe-matrix-public-interface--uses-rallar-signaling-for-signaling-recipe-examples-and-keeps-on",
       "disposition": "durable-boundary",
@@ -1635,10 +1635,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#uses rallar-signaling for signaling recipe examples and keeps one legacy rallar alias fixture"
     },
     {
-      "id": "test-structure-coupling-5908e33a9ba75a63",
+      "id": "test-structure-coupling-c05b59e36fc5cfbf",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
-      "line": 270,
-      "column": 32,
+      "line": 257,
+      "column": 26,
       "kind": "production-source-read",
       "contract": "recipe-matrix-public-interface--labels-every-api-v1-entry-with-an-honest-evidence-tier",
       "disposition": "durable-boundary",
@@ -1648,10 +1648,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#labels every api-v1 entry with an honest evidence tier"
     },
     {
-      "id": "test-structure-coupling-c09bbb4fb7297b90",
+      "id": "test-structure-coupling-78069c4664e1948b",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
-      "line": 271,
-      "column": 37,
+      "line": 258,
+      "column": 31,
       "kind": "symbol-assertion",
       "contract": "recipe-matrix-public-interface--labels-every-api-v1-entry-with-an-honest-evidence-tier",
       "disposition": "durable-boundary",
@@ -2740,10 +2740,10 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions"
     },
     {
-      "id": "test-structure-coupling-d1db7e3352ce50e1",
+      "id": "test-structure-coupling-b9b35b56737df6b4",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
-      "line": 424,
-      "column": 24,
+      "line": 413,
+      "column": 20,
       "kind": "production-source-read",
       "contract": "recipe-matrix-public-interface--advertises-the-api-v1-profile-in-recipe-matrix-cli-usage",
       "disposition": "durable-boundary",
