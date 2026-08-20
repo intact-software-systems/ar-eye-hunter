@@ -86,7 +86,7 @@
       "connection": "apiPrimary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login/requests/bb-login-owner-001-{runId}",
+        "path": "/api/auth/login/requests/bb-login-owner-001-{runId}-state-topology-churn",
         "body": {
           "username": "{ownerUsername}",
           "password": "{ownerPassword}"
@@ -130,7 +130,7 @@
       "connection": "apiPrimary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-scope-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-scope-{runId}-state-topology-churn",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
@@ -159,7 +159,7 @@
       "connection": "apiSecondary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-scope-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-scope-{runId}-state-topology-churn",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
@@ -188,7 +188,7 @@
       "connection": "apiPrimary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/members/{ownerClientId}/requests/activate-owner-scope-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/members/{ownerClientId}/requests/activate-owner-scope-{runId}-state-topology-churn",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
@@ -210,7 +210,7 @@
       "connection": "apiSecondary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/members/{ownerClientId}/requests/activate-owner-scope-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/members/{ownerClientId}/requests/activate-owner-scope-{runId}-state-topology-churn",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"

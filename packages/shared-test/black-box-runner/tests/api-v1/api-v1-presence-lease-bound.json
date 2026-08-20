@@ -61,7 +61,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}",
+        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}-presence-lease-bound",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -105,7 +105,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-scope-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-scope-{runId}-presence-lease-bound",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -132,7 +132,7 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{aliceClientId}/requests/join-scope-scope-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{aliceClientId}/requests/join-scope-scope-{runId}-presence-lease-bound",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -175,7 +175,7 @@
         "body": {
           "type": "api-mutation-failure",
           "version": "canonical.v1",
-          "code": "api-mutation-request-invalid",
+          "code": "group-mutation-rejected",
           "status": 400
         }
       }
@@ -202,7 +202,7 @@
         "body": {
           "type": "api-mutation-failure",
           "version": "canonical.v1",
-          "code": "api-mutation-request-invalid",
+          "code": "group-mutation-rejected",
           "status": 400
         }
       }
@@ -264,7 +264,7 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}/requests/upsert-instance-scope-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}/requests/upsert-instance-scope-{runId}-presence-lease-bound",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -309,7 +309,7 @@
         "body": {
           "type": "api-mutation-failure",
           "version": "canonical.v1",
-          "code": "api-mutation-request-invalid",
+          "code": "client-mutation-rejected",
           "status": 400
         }
       }

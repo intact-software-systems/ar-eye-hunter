@@ -53,7 +53,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}",
+        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}-read-your-writes-presence",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -261,7 +261,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/logout/requests/bb-logout-alice-006-{runId}",
+        "path": "/api/auth/logout/requests/bb-logout-alice-006-{runId}-read-your-writes-presence",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"

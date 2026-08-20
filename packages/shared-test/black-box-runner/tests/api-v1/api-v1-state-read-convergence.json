@@ -68,7 +68,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}",
+        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}-state-read-convergence",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -107,7 +107,7 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal/requests/client-create-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal/requests/client-create-{runId}-state-read-convergence",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"

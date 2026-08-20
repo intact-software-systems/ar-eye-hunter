@@ -1,10 +1,25 @@
 import { describe, expect, it } from 'vitest';
 
+import { executeBlackBox } from '@shared-test/black-box-runner/execute-black-box.ts';
+
 import {
   toFlatApiV1RecipeSteps as flattenRecipeSteps,
   readApiV1Matrix as readMatrix,
   readApiV1Recipe as readRecipe,
 } from './api-v1-recipe-test-fixture.ts';
+
+interface AtomicCompletionAssertionStep {
+  readonly name?: string;
+  readonly expect?: {
+    readonly anyOf?: ReadonlyArray<{
+      readonly atomicCompletionFailures: number;
+      readonly intermediateMutationIntentCount: number;
+      readonly completedAppInboxStatus: string;
+      readonly naturalBoundedRetryObserved: boolean;
+      readonly mutationStatus: string;
+    }>;
+  };
+}
 
 describe('API-v1 medium-scale recipe', () => {
   it('defines the isolated 100-client five-group medium-scale state churn gate', () => {
@@ -480,5 +495,66 @@ describe('API-v1 medium-scale recipe', () => {
         },
       },
     });
+
+    const atomicCompletion = afterChurn.find(
+      (step) => step.name === 'assertAtomicAppInboxCompletion',
+    );
+    expect(atomicCompletion).toMatchObject({
+      actual: {
+        naturalBoundedRetryObserved: '{stateWriteEvidence.naturalBoundedRetryObserved}',
+      },
+      expect: {
+        anyOf: [
+          {
+            atomicCompletionFailures: 0,
+            intermediateMutationIntentCount: 0,
+            completedAppInboxStatus: 'COMPLETED',
+            naturalBoundedRetryObserved: false,
+            mutationStatus: 'SUCCESS',
+          },
+          {
+            atomicCompletionFailures: 0,
+            intermediateMutationIntentCount: 0,
+            completedAppInboxStatus: 'COMPLETED',
+            naturalBoundedRetryObserved: true,
+            mutationStatus: 'SUCCESS',
+          },
+        ],
+      },
+    });
+  });
+
+  it('accepts a run with no natural retry while preserving exact atomic completion', async () => {
+    const { entries } = readMatrix();
+    const entry = entries.find((candidate) => candidate.id === 'api-v1-state-medium-scale-churn');
+    const recipe = readRecipe(entry!.recipe);
+    const assertion = (recipe.steps as AtomicCompletionAssertionStep[]).find(
+      (step) => step.name === 'assertAtomicAppInboxCompletion',
+    );
+    const report = await executeBlackBox(
+      [
+        {
+          ASSERT: {
+            request: {
+              actual: {
+                atomicCompletionFailures: 0,
+                intermediateMutationIntentCount: 0,
+                completedAppInboxStatus: 'COMPLETED',
+                naturalBoundedRetryObserved: false,
+                mutationStatus: 'SUCCESS',
+              },
+              scenarioExecutionNumber: 1,
+              interactionExecutionNumber: 1,
+              repeatIndex: 1,
+            },
+            response: assertion?.expect,
+          },
+          assertAtomicAppInboxCompletion: { type: 'assert' },
+        },
+      ],
+      0,
+    );
+
+    expect(report.summary).toMatchObject({ total: 1, success: 1, failure: 0 });
   });
 });

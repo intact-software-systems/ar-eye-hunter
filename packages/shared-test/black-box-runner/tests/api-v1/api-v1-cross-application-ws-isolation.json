@@ -82,7 +82,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}",
+        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}-cross-application-ws-isolation",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -128,7 +128,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login/requests/bb-login-bob-002-{runId}",
+        "path": "/api/auth/login/requests/bb-login-bob-002-{runId}-cross-application-ws-isolation",
         "body": {
           "username": "{bobUsername}",
           "password": "{bobPassword}"

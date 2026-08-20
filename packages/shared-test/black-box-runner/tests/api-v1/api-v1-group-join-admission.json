@@ -49,7 +49,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register/requests/bb-register-founder-001-{runId}",
+        "path": "/api/auth/register/requests/bb-register-founder-001-{runId}-group-join-admission",
         "body": {
           "username": "joinadm-founder-{runId}",
           "password": "{clientPassword}",
@@ -69,7 +69,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login/requests/bb-login-founder-002-{runId}",
+        "path": "/api/auth/login/requests/bb-login-founder-002-{runId}-group-join-admission",
         "body": {
           "username": "joinadm-founder-{runId}",
           "password": "{clientPassword}"

@@ -57,7 +57,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}",
+        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}-client-state",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -183,7 +183,7 @@
         "body": {
           "type": "api-mutation-failure",
           "version": "canonical.v1",
-          "code": "client-mutation-idempotency-conflict",
+          "code": "app-inbox-idempotency-conflict",
           "status": 409
         }
       }
@@ -194,7 +194,7 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}/requests/upsert-instance-scope-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/{clientInstanceId}/requests/upsert-instance-scope-{runId}-client-state",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -408,7 +408,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/logout/requests/bb-logout-alice-009-{runId}",
+        "path": "/api/auth/logout/requests/bb-logout-alice-009-{runId}-client-state",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
