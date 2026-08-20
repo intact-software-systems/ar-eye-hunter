@@ -61,44 +61,60 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql) {
     serviceId: 'pglite-close-test',
   });
   const client = new AppClientInboxService(
-    reader,
-    resourceInbox,
-    resourceResults,
-    sql,
-    clientState,
-    'pglite-close-test',
-    undefined,
-    options,
+    {
+      inboxQueueReader: reader,
+      resourceInboxRepository: resourceInbox,
+      resourceInboxResultsRepository: resourceResults,
+      database: sql,
+      clientStateService: clientState,
+    },
+    {
+      serviceId: 'pglite-close-test',
+      timing: undefined,
+      options: options,
+    },
   );
   const group = new AppGroupInboxService(
-    reader,
-    resourceInbox,
-    resourceResults,
-    sql,
-    groupState,
-    'pglite-close-test',
-    undefined,
-    options,
+    {
+      inboxQueueReader: reader,
+      resourceInboxRepository: resourceInbox,
+      resourceInboxResultsRepository: resourceResults,
+      database: sql,
+      groupStateService: groupState,
+    },
+    {
+      serviceId: 'pglite-close-test',
+      timing: undefined,
+      options: options,
+    },
   );
   new AppClientInboxService(
-    secondReader,
-    resourceInbox,
-    resourceResults,
-    sql,
-    clientState,
-    'pglite-close-test',
-    undefined,
-    options,
+    {
+      inboxQueueReader: secondReader,
+      resourceInboxRepository: resourceInbox,
+      resourceInboxResultsRepository: resourceResults,
+      database: sql,
+      clientStateService: clientState,
+    },
+    {
+      serviceId: 'pglite-close-test',
+      timing: undefined,
+      options: options,
+    },
   );
   new AppGroupInboxService(
-    secondReader,
-    resourceInbox,
-    resourceResults,
-    sql,
-    groupState,
-    'pglite-close-test',
-    undefined,
-    options,
+    {
+      inboxQueueReader: secondReader,
+      resourceInboxRepository: resourceInbox,
+      resourceInboxResultsRepository: resourceResults,
+      database: sql,
+      groupStateService: groupState,
+    },
+    {
+      serviceId: 'pglite-close-test',
+      timing: undefined,
+      options: options,
+    },
   );
   return {
     authority,

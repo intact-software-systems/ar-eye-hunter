@@ -21,7 +21,6 @@ import {
   type TopologyAppInboxMutationOwners,
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import {
-  authenticatedProcessor,
   createAuthorityHarness,
   createResilience,
   createRoom,
@@ -44,12 +43,17 @@ describe('topology AppInbox transaction and idempotency', () => {
     wakeQueue.mockClear();
     const initialOutboxCount = harness.database.outboxEntries.size;
     const command = await topologyCommand('same-request', 4);
-    const process = authenticatedProcessor<typeof command, unknown>(harness.service);
     const enqueue = topologyEnqueue(command);
 
-    const first = process(enqueue, harness.sessions.owner);
-    await waitForQueueEntry(harness.queue as never);
-    const second = process(structuredClone(enqueue), harness.sessions.owner);
+    const first = harness.service.processAuthenticatedEntryUntilCompletion(
+      enqueue,
+      harness.sessions.owner,
+    );
+    await waitForQueueEntry(harness.queue);
+    const second = harness.service.processAuthenticatedEntryUntilCompletion(
+      structuredClone(enqueue),
+      harness.sessions.owner,
+    );
     await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
     const [firstResult, secondResult] = await Promise.all([first, second]);
@@ -71,12 +75,17 @@ describe('topology AppInbox transaction and idempotency', () => {
     configureTopology(harness);
     const firstCommand = await topologyCommand('divergent-request', 4);
     const secondCommand = await topologyCommand('divergent-request', 7);
-    const process = authenticatedProcessor<typeof firstCommand, unknown>(harness.service);
-    const first = process(topologyEnqueue(firstCommand), harness.sessions.owner);
-    await waitForQueueEntry(harness.queue as never);
+    const first = harness.service.processAuthenticatedEntryUntilCompletion(
+      topologyEnqueue(firstCommand),
+      harness.sessions.owner,
+    );
+    await waitForQueueEntry(harness.queue);
 
     await expect(
-      process(topologyEnqueue(secondCommand), harness.sessions.owner),
+      harness.service.processAuthenticatedEntryUntilCompletion(
+        topologyEnqueue(secondCommand),
+        harness.sessions.owner,
+      ),
     ).rejects.toMatchObject({ code: 'app-inbox-idempotency-conflict' });
     await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
     await expect(first).resolves.toMatchObject({ right: expect.any(Object) });

@@ -37,9 +37,6 @@ import {
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/\
 group-topology-management-service.ts';
-import {
-  type JsonWireValue,
-} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/\
 rallar-rtc-topology-service.ts';
 import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/\
@@ -48,6 +45,7 @@ import {
   AppGroupInboxService,
   type TopologyAppInboxCommand,
   type TopologyAppInboxRequestPayload,
+  type TopologyAppInboxResult,
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
@@ -56,92 +54,24 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import {
-  PGliteTestSocket,
   readPGliteDatabaseEpochMs,
+  waitForPGliteQueueRow,
+} from './pglite-app-inbox-test-runtime.ts';
+import { PGliteTestSocket } from './pglite-test-socket.ts';
+import {
   submitPGliteTopologyCommand,
   topologyGroupSnapshot,
   topologyGroupSnapshotWithSessions,
-  waitForPGliteQueueRow,
-} from './pglite-sql-adapter-test-runtime.ts';
+} from './pglite-topology-test-runtime.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
-
-interface ResourceInboxStatusRow {
-  readonly ri_type_id: string;
-  readonly ri_status: string;
-}
 
 interface NumericCountRow {
   readonly count: string | number;
 }
 
-interface StringCountRow {
-  readonly count: string;
-}
-
-interface ResourceInboxLifecycleRow {
-  readonly ri_resource_id: string;
-  readonly ri_topic_id: string;
-  readonly ri_type_id: string;
-  readonly ri_status: string;
-  readonly ri_resource: string;
-}
-
-interface ResourceInboxForeignKeyRow {
-  readonly ri_topic_id: string;
-  readonly ri_resource_id: string;
-  readonly fk_ext_bank_id: string;
-}
-
-interface ResourceInboxTopicTypeRow {
-  readonly ri_topic_id: string;
-  readonly ri_type_id: string;
-}
-
-interface NumericValueRow {
-  readonly value: number;
-}
-
-interface StringValueRow {
-  readonly value: string;
-}
-
-interface RuntimeStateExpiryRow {
-  readonly store_key: string;
-  readonly expire_at_ts: string;
-}
-
-interface ResourceInboxAttemptStatusRow {
-  readonly ri_attempts: string | number;
-  readonly ri_status: string;
-}
-
 interface ResourceInboxPayloadRow {
   readonly ri_resource: string;
-}
-
-interface EpochMillisecondsRow {
-  readonly epoch_ms: string | number;
-}
-
-interface GroupEventWorkspaceRow {
-  readonly workspace_key: string;
-}
-
-interface CreatedTimestampRow {
-  readonly created_ts: string;
-}
-
-interface ExpireTimestampRow {
-  readonly expire_ts: string;
-}
-
-interface StartTimestampRow {
-  readonly start_ts: string;
-}
-
-interface EndTimestampRow {
-  readonly end_ts: string;
 }
 
 interface TopologyCommandPayload {
@@ -152,7 +82,7 @@ interface AcceptedTopologyHttpCommand {
   readonly command: TopologyAppInboxCommand;
   readonly requestPayload: TopologyAppInboxRequestPayload;
   readonly divergentPayload: TopologyAppInboxRequestPayload;
-  readonly result: JsonWireValue;
+  readonly result: TopologyAppInboxResult;
 }
 
 interface DurableTopologyAuthorityProof {
@@ -167,25 +97,6 @@ interface DurableTopologyAuthorityValue {
 
 interface DurableTopologyAuthority {
   readonly authority: DurableTopologyAuthorityValue;
-}
-
-interface ResourceInboxKeyFields {
-  readonly topicId: string;
-  readonly resourceId: string;
-  readonly contextId: string;
-}
-
-interface RtcTopologyDeliveryState {
-  readonly headSequence: number;
-  readonly sequences: readonly number[];
-}
-
-interface RtcTopologyDeliveryStreamRow {
-  readonly head_sequence: number;
-}
-
-interface RtcTopologyDeliveryEntryRow {
-  readonly sequence: number;
 }
 
 Deno.test(
@@ -235,19 +146,23 @@ Deno.test(
         now: () => nowEpochMs,
       });
       const appGroup = new AppGroupInboxService(
-        inboxReader,
-        resourceInbox,
-        resourceResults,
-        sql,
-        groupState,
-        'pglite-app-inbox-topology',
-        undefined,
         {
-          waitMaxElapsedMsecs: 5_000,
-          waitRetryIntervalMsecs: 1,
-          waitMaxRetryIntervalMsecs: 4,
-          waitJitterRatio: 0,
-          nowEpochMs: () => nowEpochMs,
+          inboxQueueReader: inboxReader,
+          resourceInboxRepository: resourceInbox,
+          resourceInboxResultsRepository: resourceResults,
+          database: sql,
+          groupStateService: groupState,
+        },
+        {
+          serviceId: 'pglite-app-inbox-topology',
+          timing: undefined,
+          options: {
+            waitMaxElapsedMsecs: 5_000,
+            waitRetryIntervalMsecs: 1,
+            waitMaxRetryIntervalMsecs: 4,
+            waitJitterRatio: 0,
+            nowEpochMs: () => nowEpochMs,
+          },
         },
       );
       appGroup.setTopologyManagementService(topology);
@@ -701,7 +616,7 @@ Deno.test(
         toResilienceDto(),
       );
       const revokedResult = await revokedPending;
-      assert.match(revokedResult.left ?? '', /revoked|authority|session/i);
+      assert.match(revokedResult.left?.message ?? '', /revoked|authority|session/i);
       await assert.rejects(
         () => submitPGliteTopologyCommand(appGroup, authority, first),
         (error) =>

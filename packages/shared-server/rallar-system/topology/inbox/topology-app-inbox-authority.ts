@@ -23,13 +23,13 @@ import type {
 export interface CreateAuthenticatedTopologyEnqueueInput<V> {
   readonly enqueue: AppInboxEnqueueInput<V>;
   readonly claimedAuthority: IssuedAuthSession;
-  readonly groupStateService: GroupStateService;
+  readonly groupStateService: Pick<GroupStateService, 'readIssuedAuthSession'>;
   readonly nowEpochMs: () => number;
 }
 
 export interface VerifyTopologyAppInboxAuthorityInput {
   readonly authority: TopologyAppInboxAuthority;
-  readonly groupStateService: GroupStateService;
+  readonly groupStateService: Pick<GroupStateService, 'readIssuedAuthSession'>;
   readonly nowEpochMs: () => number;
 }
 
@@ -140,7 +140,7 @@ export function constantTimeTopologyProofEqual(left: string, right: string): boo
 interface ReadCurrentTopologySessionInput {
   readonly command: TopologyAppInboxCommand;
   readonly claimedAuthority: IssuedAuthSession;
-  readonly groupStateService: GroupStateService;
+  readonly groupStateService: Pick<GroupStateService, 'readIssuedAuthSession'>;
   readonly nowEpochMs: () => number;
 }
 

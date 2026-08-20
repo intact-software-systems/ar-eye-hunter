@@ -4,7 +4,7 @@ import {
   createAppInboxTestDatabase,
 } from '../../app-inbox-test-database.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
@@ -31,7 +31,6 @@ import {
   SCOPE,
   TestResourceInbox,
   TestResourceInboxResults,
-  authenticatedProcessor,
   createAuthorityHarness,
   createResilience,
   createRoom,
@@ -189,12 +188,16 @@ describe('AppGroupInboxService authenticated authority', () => {
         authSessionRepository: AuthSessionRepository;
       }>);
     const service = new AppGroupInboxService(
-      reader,
-      queue as never,
-      results as never,
-      createAppInboxTestDatabase(queue, results, { runtimeRepository }),
-      groupStateService,
-      'server-12345678',
+      {
+        inboxQueueReader: reader,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
+        database: createAppInboxTestDatabase(queue, results, { runtimeRepository }),
+        groupStateService: groupStateService,
+      },
+      {
+        serviceId: 'server-12345678',
+      },
     );
 
     const created = await processAuthenticated<GroupCreateAppInboxPayload, GroupStateWritten>(
@@ -382,13 +385,12 @@ describe('AppGroupInboxService authenticated authority', () => {
         },
       },
     };
-    const pending = authenticatedProcessor<GroupUpdateAppInboxPayload, GroupStateWritten>(
-      harness.service,
-    )(input, harness.sessions.owner);
+    const pending = harness.service.processAuthenticatedEntryUntilCompletion<
+      GroupUpdateAppInboxPayload,
+      GroupStateWritten
+    >(input, harness.sessions.owner);
     await waitForQueueEntry(harness.queue);
-    const queuedWire = JSON.stringify([
-      ...(harness.queue as unknown as { data: Map<string, ResourceEntry> }).data.values(),
-    ]);
+    const queuedWire = JSON.stringify(await harness.queueEntries());
     expect(queuedWire).not.toContain(harness.sessions.owner.accessToken);
     expect(queuedWire).toContain('authority');
     expect(queuedWire).toContain('commandMac');

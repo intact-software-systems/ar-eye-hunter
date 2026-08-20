@@ -4,14 +4,6 @@ import { isCompletedOrFailed } from '@shared/queuebox/ResourceEntry.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql } from '../../../postgres/PostgresSqlClient.ts';
-// prettier-ignore
-import {
-  ResourceInboxRepository,
-} from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
-// prettier-ignore
-import {
-  ResourceInboxResultsRepository,
-} from '../../../postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import type { IssuedAuthSession } from '../../repositories/AuthSessionRepository.ts';
 import {
   type AppInboxEnqueueInput,
@@ -55,46 +47,56 @@ import {
 } from './authorised-ws-client-app-inbox.ts';
 import { ClientStateInboxHandler } from './client-state-inbox-handler.ts';
 
+export namespace AppClientInboxService {
+  export interface Dependencies {
+    readonly inboxQueueReader: InboxQueueReader;
+    readonly resourceInboxRepository: AppInboxService.InboxRepository;
+    readonly resourceInboxResultsRepository: AppInboxService.ResultRepository;
+    readonly database: PSqlSql;
+    readonly clientStateService: ClientStateService;
+  }
+
+  export interface Config {
+    readonly serviceId: string;
+    readonly timing?: RallarTimingSink;
+    readonly options?: AppInboxServiceOptions;
+    readonly wakeOwningQueue?: () => void;
+  }
+}
+
 export class AppClientInboxService extends AppInboxService {
   private readonly handler: ClientStateInboxHandler;
 
   public readonly clientStateService: ClientStateService;
 
   constructor(
-    inbox: InboxQueueReader,
-    resourceInbox: ResourceInboxRepository,
-    resourceInboxResults: ResourceInboxResultsRepository,
-    database: PSqlSql,
-    clientStateService: ClientStateService,
-    serviceId: string,
-    timing?: RallarTimingSink,
-    options?: AppInboxServiceOptions,
-    wakeQueue?: () => void,
+    dependencies: AppClientInboxService.Dependencies,
+    config: AppClientInboxService.Config,
   ) {
     super(
       {
-        inboxQueueReader: inbox,
-        resourceInboxRepository: resourceInbox,
-        resourceInboxResultsRepository: resourceInboxResults,
-        database,
+        inboxQueueReader: dependencies.inboxQueueReader,
+        resourceInboxRepository: dependencies.resourceInboxRepository,
+        resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+        database: dependencies.database,
       },
       {
-        serviceId,
+        serviceId: config.serviceId,
         defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
-        timing,
-        options,
-        wakeOwningQueue: wakeQueue,
+        timing: config.timing,
+        options: config.options,
+        wakeOwningQueue: config.wakeOwningQueue,
       },
     );
-    this.clientStateService = clientStateService;
+    this.clientStateService = dependencies.clientStateService;
     this.handler = new ClientStateInboxHandler({
-      mutationService: clientStateService,
-      sessionGenerationLifecycle: clientStateService.sessionGenerationLifecycle,
-      expiryCandidates: clientStateService,
-      snapshotObserver: clientStateService,
+      mutationService: dependencies.clientStateService,
+      sessionGenerationLifecycle: dependencies.clientStateService.sessionGenerationLifecycle,
+      expiryCandidates: dependencies.clientStateService,
+      snapshotObserver: dependencies.clientStateService,
       transactionWriter: this.transactionWriter,
-      serviceId,
-      formationDamping: clientStateService.formationDamping,
+      serviceId: config.serviceId,
+      formationDamping: dependencies.clientStateService.formationDamping,
     });
     this.registerClientStateMessages();
   }

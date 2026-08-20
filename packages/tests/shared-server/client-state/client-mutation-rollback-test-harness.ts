@@ -50,12 +50,20 @@ export async function createRollbackHarness() {
     },
   });
   const service = new AppClientInboxService(
-    reader,
-    queue as never,
-    results as never,
-    database,
-    createAutoAuthorizingClientStateService(runtimeRepository, database, eventStore),
-    'server-12345678',
+    {
+      inboxQueueReader: reader,
+      resourceInboxRepository: queue,
+      resourceInboxResultsRepository: results,
+      database: database,
+      clientStateService: createAutoAuthorizingClientStateService(
+        runtimeRepository,
+        database,
+        eventStore,
+      ),
+    },
+    {
+      serviceId: 'server-12345678',
+    },
   );
   return { key, queue, reader, results, service, rollbackAssertions: () => rollbackAssertions };
 }

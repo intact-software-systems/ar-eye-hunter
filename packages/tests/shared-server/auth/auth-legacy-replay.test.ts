@@ -2,16 +2,27 @@ import { expect, it } from 'vitest';
 
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
+// prettier-ignore
+import { createAuthMutationService } from '@shared-server/rallar-system/auth/\
+auth-mutation-service.ts';
 import {
   type AuthCredentialIssuer,
   createHmacAuthCredentialIssuer,
 } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
-import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
-import { AUTH_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/auth/inbox/auth-app-inbox-routing.ts';
-import type { IssueAuthSessionCommand } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+// prettier-ignore
+import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/\
+app-auth-inbox-service.ts';
+// prettier-ignore
+import { AUTH_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/auth/inbox/\
+auth-app-inbox-routing.ts';
+// prettier-ignore
+import type { IssueAuthSessionCommand } from '@shared-server/rallar-system/auth/mutation/\
+auth-mutation-contracts.ts';
+// prettier-ignore
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/\
+auth-session-repository.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {
@@ -262,15 +273,18 @@ async function failsClosedOnCorruptResults(): Promise<void> {
   await dequeue(auth);
   expect((await pending).right).toBeDefined();
   const [durableResult] = auth.results.allEntries();
-  expect(durableResult).toBeDefined();
+  if (durableResult === undefined) {
+    throw new Error('Expected completed durable auth result');
+  }
 
   const injectedSecret = 'must-never-appear-in-error';
-  for (const corrupted of corruptedResultRows(command, injectedSecret)) {
+  for (const corruptedResult of corruptedResultRows(command, injectedSecret)) {
     await expectCorruptReplayRejected({
       auth,
       command,
-      durableResult: durableResult!,
-      corrupted,
+      durableResult,
+      corrupted: corruptedResult.value,
+      expectedMessage: corruptedResult.expectedMessage,
       injectedSecret,
     });
   }
@@ -310,16 +324,25 @@ async function createIssueSessionCommand({
 
 function corruptedResultRows(command: IssueAuthSessionCommand, injectedSecret: string) {
   return [
-    { ...command.session, kind: 'session-issued', accessToken: injectedSecret },
     {
-      clientId: command.session.clientId,
-      username: command.session.username,
-      sessionId: command.session.sessionId,
-      kind: 'session-issued',
-      issuedAtEpochMs: command.session.issuedAtEpochMs,
-      expiresAtEpochMs: command.session.expiresAtEpochMs,
+      value: { ...command.session, kind: 'session-issued', accessToken: injectedSecret },
+      expectedMessage: 'Auth mutation result requestId is required',
     },
-    { ...command.session, kind: 'session-issued', expiresAtEpochMs: 'tomorrow' },
+    {
+      value: {
+        clientId: command.session.clientId,
+        username: command.session.username,
+        sessionId: command.session.sessionId,
+        kind: 'session-issued',
+        issuedAtEpochMs: command.session.issuedAtEpochMs,
+        expiresAtEpochMs: command.session.expiresAtEpochMs,
+      },
+      expectedMessage: 'Auth mutation result requestId is required',
+    },
+    {
+      value: { ...command.session, kind: 'session-issued', expiresAtEpochMs: 'tomorrow' },
+      expectedMessage: 'Auth mutation result requestId is required',
+    },
   ];
 }
 
@@ -327,7 +350,8 @@ interface CorruptReplayInput {
   readonly auth: AuthInboxTestRuntime;
   readonly command: IssueAuthSessionCommand;
   readonly durableResult: ResourceEntry;
-  readonly corrupted: unknown;
+  readonly corrupted: JsonWireValue;
+  readonly expectedMessage: string;
   readonly injectedSecret: string;
 }
 
@@ -336,13 +360,19 @@ async function expectCorruptReplayRejected(input: CorruptReplayInput): Promise<v
     ...input.durableResult,
     resource: JSON.stringify(input.corrupted),
   });
-  try {
-    await input.auth.service.processAuthCommandUntilCompletion(input.command);
-    throw new Error('Expected corrupted durable auth result to be rejected');
-  } catch (error) {
-    expect(error).toBeInstanceOf(TypeError);
-    expect(String(error)).not.toContain(input.injectedSecret);
-  }
+  const result = await input.auth.service.processAuthCommandUntilCompletion(input.command);
+  expect(result.right).toBeUndefined();
+  expect(result.left).toEqual({
+    type: 'app-inbox-failure',
+    version: 'canonical.v2',
+    code: 'TypeError',
+    status: 400,
+    message: input.expectedMessage,
+    issues: null,
+    denial: null,
+    retry: null,
+  });
+  expect(JSON.stringify(result.left)).not.toContain(input.injectedSecret);
 }
 
 function createServiceWithIssuer(
@@ -351,13 +381,17 @@ function createServiceWithIssuer(
   credentialIssuer: AuthCredentialIssuer,
 ): AppAuthInboxService {
   return new AppAuthInboxService(
-    auth.reader,
-    auth.queue as never,
-    auth.results as never,
-    auth.database,
-    createAuthMutationService({ runtimeRepository, serviceId }),
-    credentialIssuer,
-    serviceId,
+    {
+      inboxQueueReader: auth.reader,
+      resourceInboxRepository: auth.queue,
+      resourceInboxResultsRepository: auth.results,
+      database: auth.database,
+      authMutationService: createAuthMutationService({ runtimeRepository, serviceId }),
+      credentialIssuer: credentialIssuer,
+    },
+    {
+      serviceId: serviceId,
+    },
   );
 }
 

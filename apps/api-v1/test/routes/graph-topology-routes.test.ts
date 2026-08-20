@@ -3,7 +3,10 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 import { Either } from '@shared/resilience/Either.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import type { GraphDiagnosticReadResponse } from '@shared/api/graph-topology-management-types.ts';
+import type {
+  EffectiveGroupTopologyConfig,
+  GraphDiagnosticReadResponse,
+} from '@shared/api/graph-topology-management-types.ts';
 // deno-fmt-ignore
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/\
 group-topology-config-canonical.ts';
@@ -566,13 +569,10 @@ Deno.test('graph topology routes map missing groups and validation errors', asyn
     group: createGroupSnapshot('room-1', ['owner']),
     session: createIssuedSession('owner', 'owner-session'),
     processTopologyAppInbox: () => {
-      const error = new Error('invalid config') as Error & {
-        status: number;
-        issues: object[];
-      };
-      error.status = 422;
-      error.issues = [{ code: 'invalid-positive-integer' }];
-      throw error;
+      throw Object.assign(new Error('invalid config'), {
+        status: 422,
+        issues: [{ code: 'invalid-positive-integer' }],
+      });
     },
   });
   const invalid = await invalidApp.request(
@@ -632,9 +632,16 @@ function createRouteApp(options: {
     },
     topologyManagement: {
       readTopologyView: options.topologyManagement?.readTopologyView ??
-        ((groupRef) => Promise.resolve({ groupRef, overlayId: 'overlay', config: {} })),
+        ((groupRef) =>
+          Promise.resolve({
+            groupRef,
+            overlayId: 'overlay',
+            snapshot: null,
+            config: createTopologyConfigView(),
+            pending: null,
+          })),
       readConfig: options.topologyManagement?.readConfig ??
-        (() => Promise.resolve({ effective: { topologyKind: 'auto' } })),
+        (() => Promise.resolve(createTopologyConfigView())),
       readOverride: options.topologyManagement?.readOverride ??
         (() => Promise.resolve(undefined)),
       readTopologyPlanningAuthority: options.topologyManagement?.readTopologyPlanningAuthority ??
@@ -654,6 +661,23 @@ function createRouteApp(options: {
     now: () => 123_456,
   });
   return app;
+}
+
+function createTopologyConfigView() {
+  const effective: EffectiveGroupTopologyConfig = {
+    topologyKind: 'auto',
+    degreeLimit: 5,
+    treeMinSize: 5,
+    meshMinSize: 16,
+    meshParamK: 2,
+  };
+  return {
+    serverDefaults: effective,
+    durable: null,
+    temporary: null,
+    requestOptions: null,
+    effective,
+  };
 }
 
 function createTopologyAppInboxResult(

@@ -469,11 +469,11 @@ it.each([
     type: AppInboxType.GROUP_CREATE,
     from:
       'const processGroupMutation = async ' +
-      '(_payload: unknown, context: AppInboxMessageContext) =>\n' +
+      '(_payload: JsonWireValue, context: AppInboxMessageContext) =>\n' +
       '      await this.groupStateInboxHandler.processGroupStateMutation(context);',
     to:
       'const processGroupMutation = async ' +
-      '(_payload: unknown, context: AppInboxMessageContext) => {\n' +
+      '(_payload: JsonWireValue, context: AppInboxMessageContext) => {\n' +
       '      const alias = { groupStateInboxHandler: this.topologyAppInboxHandler };\n' +
       '      return await alias.groupStateInboxHandler.processGroupStateMutation(context);\n' +
       '    };',

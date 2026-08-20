@@ -2,7 +2,9 @@ import { type Context, Hono } from 'jsr:@hono/hono@4.11.9';
 import type {
   GraphDiagnosticReadOptions,
   GraphDiagnosticReadResponse,
-  GroupTopologyConfigPatch,
+  GroupTopologyConfigView,
+  GroupTopologyManagementView,
+  StoredGroupTopologyOverride,
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
@@ -13,6 +15,9 @@ import type {
 import { readGroupFormationView } from './group-formation-view-read.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { Either } from '@shared/resilience/Either.ts';
+import type {
+  JsonWireValue,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import {
   canReadGroupSnapshot,
   canUpdateGroupSnapshot,
@@ -38,25 +43,30 @@ import {
   toGraphTopologyErrorResponse as toErrorResponse,
   TopologyAppInboxFailureError,
 } from './graph-topology-route-errors.ts';
+import {
+  decodePutTopologyConfigBody,
+  decodePutTopologyOverrideBody,
+  decodeReconfigureTopologyBody,
+} from './graph-topology-request-codec.ts';
 
 export type ProcessTopologyAppInbox = (
   authority: IssuedAuthSession,
   enqueue: AppInboxEnqueueInput<TopologyAppInboxCommand>,
 ) => Promise<TopologyAppInboxResult>;
 
-export type GraphTopologyAppInboxService = Readonly<{
+export interface GraphTopologyAppInboxService {
   processAuthenticatedEntryUntilCompletionResult<V, R = V>(
     enqueue: AppInboxEnqueueInput<V>,
     authority: IssuedAuthSession,
     decodeResult: AppInboxResultDecoder<R>,
   ): Promise<Either<AppInboxFailure, R>>;
-}>;
+}
 
-export type GraphTopologyGroupStateService = Readonly<{
+export interface GraphTopologyGroupStateService {
   readCurrentSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
-}>;
+}
 
-export type GraphTopologyRouteGraphDiagnostics = Readonly<{
+export interface GraphTopologyRouteGraphDiagnostics {
   readScopedGlobalGraphDiagnostic(
     scope: StateScope,
     options: GraphDiagnosticReadOptions,
@@ -65,12 +75,12 @@ export type GraphTopologyRouteGraphDiagnostics = Readonly<{
     groupRef: GroupRef,
     options: GraphDiagnosticReadOptions,
   ): Either<string, GraphDiagnosticReadResponse>;
-}>;
+}
 
-export type GraphTopologyRouteTopologyManagement = Readonly<{
-  readTopologyView(groupRef: GroupRef): Promise<unknown>;
-  readConfig(groupRef: GroupRef): Promise<unknown>;
-  readOverride(groupRef: GroupRef): Promise<unknown>;
+export interface GraphTopologyRouteTopologyManagement {
+  readTopologyView(groupRef: GroupRef): Promise<GroupTopologyManagementView>;
+  readConfig(groupRef: GroupRef): Promise<GroupTopologyConfigView>;
+  readOverride(groupRef: GroupRef): Promise<StoredGroupTopologyOverride | undefined>;
   readTopologyPlanningAuthority(
     groupRef: GroupRef,
     requestOptions?: undefined,
@@ -82,20 +92,20 @@ export type GraphTopologyRouteTopologyManagement = Readonly<{
       nowEpochMs: number;
     }>
   >;
-}>;
+}
 
-export type GraphTopologyRouteDependencies = Readonly<{
-  groupStateService: GraphTopologyGroupStateService;
-  graphDiagnostics: GraphTopologyRouteGraphDiagnostics;
-  topologyManagement: GraphTopologyRouteTopologyManagement;
-  processTopologyAppInbox: ProcessTopologyAppInbox;
-  requireApiAuthSession: (
+export interface GraphTopologyRouteDependencies {
+  readonly groupStateService: GraphTopologyGroupStateService;
+  readonly graphDiagnostics: GraphTopologyRouteGraphDiagnostics;
+  readonly topologyManagement: GraphTopologyRouteTopologyManagement;
+  readonly processTopologyAppInbox: ProcessTopologyAppInbox;
+  readonly requireApiAuthSession: (
     req: { header(name: string): string | undefined },
   ) => Promise<IssuedAuthSession>;
-  adminClientIds: readonly string[];
-  readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
-  now: () => number;
-}>;
+  readonly adminClientIds: readonly string[];
+  readonly readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
+  readonly now: () => number;
+}
 
 interface WriteTopologyAppInboxCommandInput {
   readonly dependencies: GraphTopologyRouteDependencies;
@@ -192,10 +202,7 @@ export function registerGraphTopologyRoutes(
           deps,
           toGroupRef(c),
         );
-        const body = await readJsonBody<{
-          requestId?: string;
-          config: GroupTopologyConfigPatch;
-        }>(c);
+        const body = await readJsonBody(c, decodePutTopologyConfigBody);
         return c.json(
           await writeTopologyAppInboxCommand({
             dependencies: deps,
@@ -287,11 +294,7 @@ export function registerGraphTopologyRoutes(
           deps,
           toGroupRef(c),
         );
-        const body = await readOptionalJsonBody<{
-          requestId?: string;
-          options?: GroupTopologyConfigPatch;
-          publish?: boolean;
-        }>(c, {});
+        const body = await readOptionalJsonBody(c, {}, decodeReconfigureTopologyBody);
         return c.json(
           await writeTopologyAppInboxCommand({
             dependencies: deps,
@@ -322,12 +325,7 @@ async function handlePutTopologyOverride(
       dependencies,
       toGroupRef(context),
     );
-    const body = await readJsonBody<{
-      requestId?: string;
-      config: GroupTopologyConfigPatch;
-      ttlMs?: number;
-      expiresAtEpochMs?: number;
-    }>(context);
+    const body = await readJsonBody(context, decodePutTopologyOverrideBody);
     return context.json(
       await writeTopologyAppInboxCommand({
         dependencies,
@@ -414,7 +412,7 @@ async function assertCanManageGroupRef(
 }
 
 function toGraphDiagnosticResponse(
-  c: { json(value: unknown, status?: number): Response },
+  c: Context,
   result: Either<string, GraphDiagnosticReadResponse>,
 ): Response {
   if (result.left !== undefined) {
@@ -423,7 +421,7 @@ function toGraphDiagnosticResponse(
   return c.json(result.right);
 }
 
-function graphDiagnosticErrorStatus(message: string): number {
+function graphDiagnosticErrorStatus(message: string): 400 | 404 {
   return message.includes('No cached graph diagnostic') ||
       message.toLowerCase().includes('not found')
     ? 404
@@ -433,14 +431,11 @@ function graphDiagnosticErrorStatus(message: string): number {
 function readGraphOptions(c: {
   req: { query(name: string): string | undefined };
 }): GraphDiagnosticReadOptions {
-  const refresh = c.req.query('refresh') ?? 'if-missing';
-  if (!['never', 'if-missing', 'always'].includes(refresh)) {
-    throw new Error(`Invalid graph refresh mode: ${refresh}`);
-  }
+  const refresh = readGraphDiagnosticRefreshMode(c.req.query('refresh'));
 
   return {
     includeMeasured: readBooleanQuery(c.req.query('includeMeasured')),
-    refresh: refresh as GraphDiagnosticReadOptions['refresh'],
+    refresh,
   };
 }
 
@@ -448,54 +443,66 @@ function readBooleanQuery(value: string | undefined): boolean {
   return value?.trim().toLowerCase() === 'true' || value === '1';
 }
 
-async function readJsonBody<T>(c: {
-  req: { json(): Promise<unknown> };
-}): Promise<T> {
+async function readJsonBody<T>(
+  c: Context,
+  decode: (value: JsonWireValue) => T,
+): Promise<T> {
   try {
-    return await c.req.json() as T;
+    return decode(await c.req.json<JsonWireValue>());
   } catch {
-    const error = new Error('Malformed JSON request body') as Error & { status: number };
-    error.status = 400;
-    throw error;
+    throw topologyRequestError('Malformed JSON request body');
   }
 }
 
-async function readOptionalJsonBody<T>(c: {
-  req: { text(): Promise<string> };
-}, fallback: T): Promise<T> {
+async function readOptionalJsonBody<T>(
+  c: Context,
+  fallback: T,
+  decode: (value: JsonWireValue) => T,
+): Promise<T> {
   try {
     const raw = await c.req.text();
     if (raw.trim().length === 0) {
       return fallback;
     }
-    return JSON.parse(raw) as T;
+    const parsed: JsonWireValue = JSON.parse(raw);
+    return decode(parsed);
   } catch {
-    const error = new Error('Malformed JSON request body') as Error & { status: number };
-    error.status = 400;
-    throw error;
+    throw topologyRequestError('Malformed JSON request body');
   }
 }
 
 function requireRequestId(
-  c: { req: { header(name: string): string | undefined } },
-  body: { requestId?: unknown },
+  c: Context,
+  body: Readonly<{ requestId?: string }>,
 ): string {
   const requestId = c.req.header('Idempotency-Key')?.trim();
   if (!requestId) {
-    const error = new Error('Topology mutation requestId is required') as Error & {
-      status: number;
-    };
-    error.status = 400;
-    throw error;
+    throw topologyRequestError('Topology mutation requestId is required');
   }
   if (body.requestId !== undefined && body.requestId !== requestId) {
-    const error = new Error(
+    throw topologyRequestError(
       'Topology mutation body requestId must match Idempotency-Key',
-    ) as Error & { status: number };
-    error.status = 400;
-    throw error;
+    );
   }
   return requestId;
+}
+
+function readGraphDiagnosticRefreshMode(
+  value: string | undefined,
+): GraphDiagnosticReadOptions['refresh'] {
+  const refresh = value ?? 'if-missing';
+  switch (refresh) {
+    case 'never':
+    case 'if-missing':
+    case 'always':
+      return refresh;
+    default:
+      throw new Error(`Invalid graph refresh mode: ${value}`);
+  }
+}
+
+function topologyRequestError(message: string): Error & { status: number } {
+  return Object.assign(new Error(message), { status: 400 });
 }
 
 async function writeTopologyAppInboxCommand(

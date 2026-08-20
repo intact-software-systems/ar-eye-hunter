@@ -5,7 +5,6 @@ import {
   createAppInboxTestDatabase,
 } from '../../app-inbox-test-database.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -166,13 +165,7 @@ export async function runOperationMatrix(
   const compute = vi.spyOn(harness.groupStateService, 'compute');
   const validate = vi.spyOn(harness.groupStateService, 'validate');
   const write = vi.spyOn(harness.groupStateService, 'write');
-  const observeSnapshot = vi.spyOn(
-    harness.groupStateService as GroupStateService &
-      Readonly<{
-        observeSnapshot(snapshot: GroupSnapshot): Promise<GroupSnapshot>;
-      }>,
-    'observeSnapshot',
-  );
+  const observeSnapshot = vi.spyOn(harness.groupStateService, 'observeSnapshot');
   const authorityRead = vi.spyOn(harness.authSessions, 'findBySessionId');
   for (const testCase of cases) {
     read.mockClear();
@@ -259,8 +252,7 @@ export async function createAuthorityHarness(
     serviceId: 'server-12345678',
     now: () => nowEpochMs,
     authSessionRepository: authSessions,
-  } as Parameters<typeof createGroupStateService>[0] &
-    Readonly<{ authSessionRepository: AuthSessionRepository }>);
+  });
   return {
     nowEpochMs,
     runtimeRepository,
@@ -304,15 +296,19 @@ function createAuthorityAppInboxService(
   input: AuthorityAppInboxServiceInput,
 ): AppGroupInboxService {
   return new AppGroupInboxService(
-    input.reader,
-    input.queue as never,
-    input.results as never,
-    input.database,
-    input.groupStateService,
-    'server-12345678',
-    undefined,
-    input.serviceOptions,
-    input.wakeQueue,
+    {
+      inboxQueueReader: input.reader,
+      resourceInboxRepository: input.queue,
+      resourceInboxResultsRepository: input.results,
+      database: input.database,
+      groupStateService: input.groupStateService,
+    },
+    {
+      serviceId: 'server-12345678',
+      timing: undefined,
+      options: input.serviceOptions,
+      wakeOwningQueue: input.wakeQueue,
+    },
   );
 }
 
@@ -357,13 +353,13 @@ export async function processAuthenticated<V, R>(
   authority: IssuedAuthSession,
   input: AppInboxEnqueueInput<V>,
 ): Promise<Either<string, R>> {
-  const pending = authenticatedProcessor<V, R>(service)(input, authority);
+  const pending = service.processAuthenticatedEntryUntilCompletion<V, R>(input, authority);
   const outcome = await Promise.race([
     pending.then(
       () => 'settled' as const,
       () => 'settled' as const,
     ),
-    waitForQueueEntry(reader.inbox as unknown as InMemoryQueueBox).then(() => 'queued' as const),
+    waitForQueueEntry(reader.inbox).then(() => 'queued' as const),
   ]);
   if (outcome === 'queued') {
     await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
@@ -371,23 +367,12 @@ export async function processAuthenticated<V, R>(
   return await pending;
 }
 
-export function authenticatedProcessor<V, R>(
-  service: AppGroupInboxService,
-): (enqueue: AppInboxEnqueueInput<V>, authority: IssuedAuthSession) => Promise<Either<string, R>> {
-  return service.processAuthenticatedEntryUntilCompletion.bind(service) as unknown as (
-    enqueue: AppInboxEnqueueInput<V>,
-    authority: IssuedAuthSession,
-  ) => Promise<Either<string, R>>;
-}
-
-export async function waitForQueueEntry(queue: InMemoryQueueBox): Promise<void> {
+export async function waitForQueueEntry(
+  queue: Pick<InMemoryQueueBox, 'getAllKeys' | 'getItem'>,
+): Promise<void> {
   for (let attempt = 0; attempt < 50; attempt += 1) {
-    const data = (
-      queue as unknown as {
-        data: Map<string, ResourceEntry>;
-      }
-    ).data;
-    if (data.size > 0 && [...data.values()].some((entry) => entry.status === EntityStatus.NEW)) {
+    const entries = await Promise.all((await queue.getAllKeys()).map((key) => queue.getItem(key)));
+    if (entries.some((entry) => entry?.status === EntityStatus.NEW)) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 0));

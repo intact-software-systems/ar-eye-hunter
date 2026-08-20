@@ -14,8 +14,15 @@ import {
   SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
   SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/services/client-state-service.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+// prettier-ignore
+import {
+  ClientMutationIdempotencyConflictError,
+} from '@shared-server/rallar-system/services/client-state-service.ts';
+// prettier-ignore
+import type {
+  JsonWireObject,
+  JsonWireValue,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
@@ -56,8 +63,8 @@ describe('AppInboxService', () => {
     const service = new AppInboxService(
       {
         inboxQueueReader: reader,
-        resourceInboxRepository: queue as never,
-        resourceInboxResultsRepository: results as never,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
         database: createAppInboxTestDatabase(queue, results),
       },
       {
@@ -112,8 +119,8 @@ describe('AppInboxService', () => {
     const service = new AppInboxService(
       {
         inboxQueueReader: reader,
-        resourceInboxRepository: queue as never,
-        resourceInboxResultsRepository: results as never,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
         database: createAppInboxTestDatabase(queue, results),
       },
       {
@@ -177,8 +184,8 @@ describe('AppInboxService', () => {
     const service = new AppInboxService(
       {
         inboxQueueReader: reader,
-        resourceInboxRepository: queue as never,
-        resourceInboxResultsRepository: results as never,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
         database: createAppInboxTestDatabase(queue, results),
       },
       {
@@ -269,7 +276,7 @@ describe('AppInboxService', () => {
         data: { ...sparse.data, unsafe: [undefined] },
       } as never),
     ).rejects.toThrow(/JSON wire|array/u);
-    const cycle: Record<string, unknown> = {};
+    const cycle: Record<string, object> = {};
     cycle.self = cycle;
     for (const [resourceId, value] of [
       ['unsafe-function', () => undefined],
@@ -292,14 +299,12 @@ describe('AppInboxService', () => {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
-    const handler = vi.fn((data: Readonly<Record<string, unknown>>) =>
-      Promise.resolve({ accepted: data }),
-    );
+    const handler = vi.fn((data: ProtoPayload) => Promise.resolve({ accepted: data }));
     const service = new AppInboxService(
       {
         inboxQueueReader: reader,
-        resourceInboxRepository: queue as never,
-        resourceInboxResultsRepository: results as never,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
         database: createAppInboxTestDatabase(queue, results),
       },
       {
@@ -314,10 +319,10 @@ describe('AppInboxService', () => {
       },
     );
     service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
-    const firstData = JSON.parse(
+    const firstData: ProtoPayload = JSON.parse(
       '{"principalId":"alice","request":{"requestId":"proto-command",' +
         '"metadata":{"alpha":1,"__proto__":{"flag":"first"}}}}',
-    ) as Readonly<Record<string, unknown>>;
+    );
     const input = {
       type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
       resourceId: 'proto-command',
@@ -329,10 +334,10 @@ describe('AppInboxService', () => {
     const pending = service.processEntryUntilCompletion(input);
     await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
     const first = await pending;
-    const reorderedData = JSON.parse(
+    const reorderedData: ProtoPayload = JSON.parse(
       '{"request":{"metadata":{"__proto__":{"flag":"first"},"alpha":1},' +
         '"requestId":"proto-command"},"principalId":"alice"}',
-    ) as Readonly<Record<string, unknown>>;
+    );
 
     await expect(
       service.processEntryUntilCompletion({
@@ -340,10 +345,10 @@ describe('AppInboxService', () => {
         data: reorderedData,
       }),
     ).resolves.toEqual(first);
-    const changedData = JSON.parse(
+    const changedData: ProtoPayload = JSON.parse(
       '{"principalId":"alice","request":{"requestId":"proto-command",' +
         '"metadata":{"alpha":1,"__proto__":{"flag":"changed"}}}}',
-    ) as Readonly<Record<string, unknown>>;
+    );
     await expect(
       service.processEntryUntilCompletion({
         ...input,
@@ -352,17 +357,24 @@ describe('AppInboxService', () => {
     ).rejects.toMatchObject({ status: 409 });
 
     expect(handler).toHaveBeenCalledOnce();
-    const handled = handler.mock.calls[0]?.[0] as {
-      request: { metadata: Record<string, unknown> };
-    };
+    const handled = handler.mock.calls[0]?.[0];
+    expect(handled).toBeDefined();
+    if (handled === undefined) {
+      throw new Error('Expected the AppInbox handler to receive the first payload');
+    }
     const metadata = handled.request.metadata;
     expect(Object.hasOwn(metadata, '__proto__')).toBe(true);
     expect(metadata.__proto__).toEqual({ flag: 'first' });
     expect([Object.prototype, null]).toContain(Object.getPrototypeOf(metadata));
-    expect(({} as Record<string, unknown>).flag).toBeUndefined();
+    expect(Object.hasOwn({}, 'flag')).toBe(false);
+    const queuedEntry = await readOnlyEntry(queue);
+    expect(queuedEntry).toBeDefined();
+    if (queuedEntry === undefined) {
+      throw new Error('Expected the first AppInbox command to remain available for replay');
+    }
     const stored = readEnqueuedData<{
-      request: { metadata: Record<string, unknown> };
-    }>(readOnlyEntry(queue)!);
+      request: { metadata: JsonWireObject };
+    }>(queuedEntry);
     expect(Object.hasOwn(stored.request.metadata, '__proto__')).toBe(true);
     expect(stored.request.metadata.__proto__).toEqual({ flag: 'first' });
   });
@@ -375,8 +387,8 @@ describe('AppInboxService', () => {
     const service = new AppInboxService(
       {
         inboxQueueReader: reader,
-        resourceInboxRepository: queue as never,
-        resourceInboxResultsRepository: results as never,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
         database: createAppInboxTestDatabase(queue, results),
       },
       {
@@ -386,7 +398,7 @@ describe('AppInboxService', () => {
     );
     service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
     let getterCalls = 0;
-    const accessor: Record<string, unknown> = {};
+    const accessor: Record<string, string> = {};
     Object.defineProperty(accessor, 'value', {
       enumerable: true,
       get: () => {
@@ -394,7 +406,7 @@ describe('AppInboxService', () => {
         return 'unsafe';
       },
     });
-    const cycle: Record<string, unknown> = {};
+    const cycle: Record<string, object> = {};
     cycle.self = cycle;
     const unsafeValues = [accessor, cycle, 1n, () => undefined, Number.NaN, [undefined]] as const;
 
@@ -418,14 +430,12 @@ describe('AppInboxService', () => {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
-    const handler = vi.fn((data: Readonly<Record<string, unknown>>) =>
-      Promise.resolve({ accepted: data }),
-    );
+    const handler = vi.fn((data: JsonWireObject) => Promise.resolve({ accepted: data }));
     const service = new AppInboxService(
       {
         inboxQueueReader: reader,
-        resourceInboxRepository: queue as never,
-        resourceInboxResultsRepository: results as never,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
         database: createAppInboxTestDatabase(queue, results),
       },
       {
@@ -498,8 +508,8 @@ describe('AppInboxService', () => {
     const service = new AppInboxService(
       {
         inboxQueueReader: reader,
-        resourceInboxRepository: queue as never,
-        resourceInboxResultsRepository: results as never,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
         database: createAppInboxTestDatabase(queue, results),
       },
       {
@@ -538,8 +548,8 @@ describe('AppInboxService', () => {
       status: 409,
     });
     expect(handler).toHaveBeenCalledOnce();
-    expect(readOnlyEntry(queue)?.status).toBe(EntityStatus.FAILED);
-    expect(readOnlyEntry(queue)?.dequeueAudit.attempts).toBe(1);
+    expect((await readOnlyEntry(queue))?.status).toBe(EntityStatus.FAILED);
+    expect((await readOnlyEntry(queue))?.dequeueAudit.attempts).toBe(1);
   });
 
   it.each([
@@ -570,8 +580,8 @@ describe('AppInboxService', () => {
     const service = new AppInboxService(
       {
         inboxQueueReader: reader,
-        resourceInboxRepository: queue as never,
-        resourceInboxResultsRepository: results as never,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
         database: createAppInboxTestDatabase(queue, results),
       },
       {
@@ -599,8 +609,8 @@ describe('AppInboxService', () => {
 
     expect(JSON.parse(result.left ?? '{}')).toMatchObject({ code, status: 409 });
     expect(handler).toHaveBeenCalledOnce();
-    expect(readOnlyEntry(queue)?.status).toBe(EntityStatus.FAILED);
-    expect(readOnlyEntry(queue)?.dequeueAudit.attempts).toBe(1);
+    expect((await readOnlyEntry(queue))?.status).toBe(EntityStatus.FAILED);
+    expect((await readOnlyEntry(queue))?.dequeueAudit.attempts).toBe(1);
   });
 
   it('maps resource_inbox_results rows from ris columns into queue entries', () => {
@@ -711,12 +721,15 @@ function createResilience(): ResilienceDto {
   );
 }
 
-function readOnlyEntry(queue: InMemoryQueueBox): ResourceEntry | undefined {
-  const data = (
-    queue as unknown as {
-      data: Map<string, ResourceEntry>;
-    }
-  ).data;
-
-  return data.values().next().value;
+async function readOnlyEntry(queue: InMemoryQueueBox): Promise<ResourceEntry | undefined> {
+  const [key] = await queue.getAllKeys();
+  return key === undefined ? undefined : queue.getItem(key);
 }
+
+type ProtoPayload = Readonly<{
+  principalId: string;
+  request: Readonly<{
+    requestId: string;
+    metadata: JsonWireObject;
+  }>;
+}>;

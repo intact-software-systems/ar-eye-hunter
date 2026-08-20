@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+// prettier-ignore
+import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/\
+AuthSessionRepository.ts';
+// prettier-ignore
+import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/\
+StateEventStore.ts';
+// prettier-ignore
+import { ClientStateRepository } from '@shared-server/rallar-system/repositories/\
+ClientStateRepository.ts';
 import {
   AppClientInboxService,
   AppInboxType,
@@ -81,17 +87,21 @@ describe('AppClientInbox authentication', () => {
     const mallory = issuedSession('mallory', 'mallory-session');
     await authSessions.putSession(mallory);
     const service = new AppClientInboxService(
-      reader,
-      queue as never,
-      results as never,
-      database,
-      createClientStateService({
-        runtimeRepository,
-        formationDamping: 'damped',
-        createClientStateEventStore: () => new InMemoryClientStateEventStore(),
+      {
+        inboxQueueReader: reader,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
+        database: database,
+        clientStateService: createClientStateService({
+          runtimeRepository,
+          formationDamping: 'damped',
+          createClientStateEventStore: () => new InMemoryClientStateEventStore(),
+          serviceId: 'server-12345678',
+        }),
+      },
+      {
         serviceId: 'server-12345678',
-      }),
-      'server-12345678',
+      },
     );
 
     await expect(
@@ -185,17 +195,21 @@ async function createRevokedAuthorityRetryHarness() {
     },
   });
   const service = new AppClientInboxService(
-    reader,
-    queue as never,
-    results as never,
-    database,
-    createClientStateService({
-      runtimeRepository,
-      formationDamping: 'damped',
-      createClientStateEventStore: () => new InMemoryClientStateEventStore(),
+    {
+      inboxQueueReader: reader,
+      resourceInboxRepository: queue,
+      resourceInboxResultsRepository: results,
+      database: database,
+      clientStateService: createClientStateService({
+        runtimeRepository,
+        formationDamping: 'damped',
+        createClientStateEventStore: () => new InMemoryClientStateEventStore(),
+        serviceId: 'server-12345678',
+      }),
+    },
+    {
       serviceId: 'server-12345678',
-    }),
-    'server-12345678',
+    },
   );
   return { alice, database, queue, reader, runtimeRepository, service, wasRevoked: () => revoked };
 }

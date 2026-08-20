@@ -3,13 +3,20 @@ import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { AuthSessionRepository, hashAuthSecret } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import {
+  AuthSessionRepository,
+  hashAuthSecret,
+} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
-import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow, withPGliteSql } from './pglite-auth-test-harness.ts';
+import {
+  readPGliteDatabaseEpochMs,
+  waitForPGliteQueueRow,
+  withPGliteSql,
+} from './pglite-auth-test-harness.ts';
 
 import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
 
@@ -23,23 +30,27 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
     const credentialIssuer = createHmacAuthCredentialIssuer(secret);
     const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
     const appAuth = new AppAuthInboxService(
-      inboxReader,
-      resourceInbox,
-      resourceResults,
-      sql,
-      createAuthMutationService({
-        runtimeRepository: runtime,
-        serviceId: 'pglite-auth',
-      }),
-      credentialIssuer,
-      'pglite-auth',
-      undefined,
       {
-        waitMaxElapsedMsecs: 5_000,
-        waitRetryIntervalMsecs: 1,
-        waitMaxRetryIntervalMsecs: 4,
-        waitJitterRatio: 0,
-        nowEpochMs: () => nowEpochMs,
+        inboxQueueReader: inboxReader,
+        resourceInboxRepository: resourceInbox,
+        resourceInboxResultsRepository: resourceResults,
+        database: sql,
+        authMutationService: createAuthMutationService({
+          runtimeRepository: runtime,
+          serviceId: 'pglite-auth',
+        }),
+        credentialIssuer: credentialIssuer,
+      },
+      {
+        serviceId: 'pglite-auth',
+        timing: undefined,
+        options: {
+          waitMaxElapsedMsecs: 5_000,
+          waitRetryIntervalMsecs: 1,
+          waitMaxRetryIntervalMsecs: 4,
+          waitJitterRatio: 0,
+          nowEpochMs: () => nowEpochMs,
+        },
       },
     );
 
@@ -98,9 +109,11 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
     const ticket = issuedTicket.right.ticket;
     assert.ok(await new AuthSessionRepository(runtime).findBySessionId(session.sessionId));
     const ticketDigest = await hashAuthSecret(ticket);
-    assert.ok(await new AuthSessionRepository(runtime).findWebSocketTicketByDigestEntry(
-      ticketDigest,
-    ));
+    assert.ok(
+      await new AuthSessionRepository(runtime).findWebSocketTicketByDigestEntry(
+        ticketDigest,
+      ),
+    );
 
     const consumers = [
       appAuth.consumeWebSocketTicket({
@@ -175,25 +188,29 @@ Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async (
     const users = new AuthUserRepository(runtime);
     await users.putUser(user);
     const appAuth = new AppAuthInboxService(
-      inboxReader,
-      resourceInbox,
-      resourceResults,
-      sql,
-      createAuthMutationService({
-        runtimeRepository: runtime,
-        serviceId: 'pglite-auth-policy',
-      }),
-      createHmacAuthCredentialIssuer(
-        'pglite-auth-policy-secret-0123456789abcdef',
-      ),
-      'pglite-auth-policy',
-      undefined,
       {
-        waitMaxElapsedMsecs: 5_000,
-        waitRetryIntervalMsecs: 1,
-        waitMaxRetryIntervalMsecs: 4,
-        waitJitterRatio: 0,
-        nowEpochMs: () => nowEpochMs,
+        inboxQueueReader: inboxReader,
+        resourceInboxRepository: resourceInbox,
+        resourceInboxResultsRepository: resourceResults,
+        database: sql,
+        authMutationService: createAuthMutationService({
+          runtimeRepository: runtime,
+          serviceId: 'pglite-auth-policy',
+        }),
+        credentialIssuer: createHmacAuthCredentialIssuer(
+          'pglite-auth-policy-secret-0123456789abcdef',
+        ),
+      },
+      {
+        serviceId: 'pglite-auth-policy',
+        timing: undefined,
+        options: {
+          waitMaxElapsedMsecs: 5_000,
+          waitRetryIntervalMsecs: 1,
+          waitMaxRetryIntervalMsecs: 4,
+          waitJitterRatio: 0,
+          nowEpochMs: () => nowEpochMs,
+        },
       },
     );
     const pending = appAuth.issueSession({

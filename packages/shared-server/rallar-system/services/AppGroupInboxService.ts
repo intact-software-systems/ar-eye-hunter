@@ -4,32 +4,44 @@ import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import type { PSqlSql } from '../../postgres/PostgresSqlClient.ts';
-import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '../../postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { GroupMutationAuthorizationError } from '../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../group-state/group-state-service-contracts.ts';
+// prettier-ignore
 import type { GroupFormationGroupMutationSink } from '../formation-metrics.ts';
 import { GroupStateInboxHandler } from '../group-state/inbox/group-state-inbox-handler.ts';
+// prettier-ignore
 import { toGroupMutationDescriptor } from '../group-state/inbox/to-group-mutation-descriptor.ts';
 import {
   GROUP_MUTATION_INBOX_TYPES,
   isAuthenticatedGroupMutationEnqueue,
 } from '../group-state/inbox/group-state-inbox-contracts.ts';
-import type { GroupPresenceSessionCleanupAppInboxPayload } from '../group-state/presence/group-presence-session-cleanup-app-inbox-payload.ts';
+// prettier-ignore
+import type {
+  GroupPresenceSessionCleanupAppInboxPayload,
+} from '../group-state/presence/group-presence-session-cleanup-app-inbox-payload.ts';
 import {
   processGroupSessionCleanup,
   toExpiredPresenceEnqueue,
   toGroupSessionCleanupEnqueue,
 } from '../group-state/presence/group-presence-service.ts';
+// prettier-ignore
 import type { GroupMutationCommand } from '../group-state/mutation/group-mutation-contracts.ts';
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
-import type { RtcRttAppInboxDependencies } from '../rtc-topology/inbox/rtc-rtt-app-inbox-contracts.ts';
+// prettier-ignore
+import type {
+  RtcRttAppInboxDependencies,
+} from '../rtc-topology/inbox/rtc-rtt-app-inbox-contracts.ts';
 import { RtcRttAppInboxHandler } from '../rtc-topology/inbox/rtc-rtt-app-inbox-handler.ts';
 import {
+  decodeTopologyAppInboxResult,
   TopologyAppInboxHandler,
+  type TopologyAppInboxResult,
   type TopologyAppInboxMutationOwners,
 } from '../topology/inbox/topology-app-inbox-handler.ts';
-import type { GroupTopologyManagementService } from '../topology/group-topology-management-service.ts';
+// prettier-ignore
+import type {
+  GroupTopologyManagementService,
+} from '../topology/group-topology-management-service.ts';
 import {
   type AppInboxEnqueueInput,
   type AppInboxFailure,
@@ -40,7 +52,9 @@ import {
   AppInboxType,
   SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
 } from './AppInboxService.ts';
+import { toLegacyAppInboxFailure } from './app-inbox-legacy-failure.ts';
 import type { RallarTimingSink } from './timing.ts';
+import type { JsonWireValue } from './mutation-command-identity.ts';
 
 export {
   type AppInboxEnqueueInput,
@@ -72,7 +86,10 @@ export {
   type GroupUpdateAppInboxPayload,
 } from '../group-state/inbox/group-state-inbox-contracts.ts';
 
-export type { GroupPresenceSessionCleanupAppInboxPayload } from '../group-state/presence/group-presence-session-cleanup-app-inbox-payload.ts';
+// prettier-ignore
+export type {
+  GroupPresenceSessionCleanupAppInboxPayload,
+} from '../group-state/presence/group-presence-session-cleanup-app-inbox-payload.ts';
 
 export type {
   CreateTopologyAppInboxCommandInput,
@@ -110,6 +127,24 @@ function isTopologyConfigInboxType(type: AppInboxType): boolean {
   return (TOPOLOGY_CONFIG_INBOX_TYPES as readonly AppInboxType[]).includes(type);
 }
 
+export namespace AppGroupInboxService {
+  export interface Dependencies {
+    readonly inboxQueueReader: InboxQueueReader;
+    readonly resourceInboxRepository: AppInboxService.InboxRepository;
+    readonly resourceInboxResultsRepository: AppInboxService.ResultRepository;
+    readonly database: PSqlSql;
+    readonly groupStateService: GroupStateService;
+  }
+
+  export interface Config {
+    readonly serviceId: string;
+    readonly timing?: RallarTimingSink;
+    readonly options?: AppInboxServiceOptions;
+    readonly wakeOwningQueue?: () => void;
+    readonly formationMetrics?: GroupFormationGroupMutationSink;
+  }
+}
+
 class AppGroupInboxService extends AppInboxService {
   private readonly groupStateInboxHandler: GroupStateInboxHandler;
   private readonly topologyAppInboxHandler: TopologyAppInboxHandler;
@@ -121,41 +156,33 @@ class AppGroupInboxService extends AppInboxService {
   private readonly wakeQueue?: () => void;
 
   constructor(
-    inbox: InboxQueueReader,
-    resourceInbox: ResourceInboxRepository,
-    resourceInboxResults: ResourceInboxResultsRepository,
-    database: PSqlSql,
-    groupStateService: GroupStateService,
-    serviceId: string,
-    timing?: RallarTimingSink,
-    options?: AppInboxServiceOptions,
-    wakeQueue?: () => void,
-    formationMetrics?: GroupFormationGroupMutationSink,
+    dependencies: AppGroupInboxService.Dependencies,
+    config: AppGroupInboxService.Config,
   ) {
     super(
       {
-        inboxQueueReader: inbox,
-        resourceInboxRepository: resourceInbox,
-        resourceInboxResultsRepository: resourceInboxResults,
-        database,
+        inboxQueueReader: dependencies.inboxQueueReader,
+        resourceInboxRepository: dependencies.resourceInboxRepository,
+        resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+        database: dependencies.database,
       },
       {
-        serviceId,
+        serviceId: config.serviceId,
         defaultTopicId: SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
-        timing,
-        options,
-        wakeOwningQueue: wakeQueue,
+        timing: config.timing,
+        options: config.options,
+        wakeOwningQueue: config.wakeOwningQueue,
       },
     );
-    this.groupStateService = groupStateService;
-    this.wakeQueue = wakeQueue;
+    this.groupStateService = dependencies.groupStateService;
+    this.wakeQueue = config.wakeOwningQueue;
     this.groupStateInboxHandler = new GroupStateInboxHandler({
       mutationService: this.groupStateService,
       sessionGenerationLifecycle: this.groupStateService.sessionGenerationLifecycle,
       snapshotObserver: this.groupStateService,
       transactionWriter: this.transactionWriter,
       wakeQueue: this.wakeQueue,
-      formationMetrics,
+      formationMetrics: config.formationMetrics,
     });
     this.topologyAppInboxHandler = new TopologyAppInboxHandler({
       groupStateService: this.groupStateService,
@@ -244,11 +271,18 @@ class AppGroupInboxService extends AppInboxService {
   public async processAuthenticatedEntryUntilCompletion<V, R = V>(
     enqueue: AppInboxEnqueueInput<V>,
     authority: IssuedAuthSession,
-  ): Promise<Either<string, R>> {
+  ): Promise<Either<string, R>>;
+
+  public async processAuthenticatedEntryUntilCompletion<V, R = V>(
+    enqueue: AppInboxEnqueueInput<V>,
+    authority: IssuedAuthSession,
+  ): Promise<Either<string, R | TopologyAppInboxResult>> {
     if (isTopologyConfigInboxType(enqueue.type)) {
-      return await super.processEntryUntilCompletion<V, R>(
+      const result = await super.processEntryUntilCompletionResult(
         await this.topologyAppInboxHandler.createAuthenticatedEnqueue(enqueue, authority),
+        decodeTopologyAppInboxResult,
       );
+      return result.mapLeft(toLegacyAppInboxFailure);
     }
     const prepared = await this.prepareAuthenticatedGroupMutation(enqueue, authority);
     return await super.processEntryUntilCompletion<V, R>(prepared);
@@ -323,7 +357,7 @@ class AppGroupInboxService extends AppInboxService {
   }
 
   private registerGroupStateMessageHandlers(): void {
-    const processGroupMutation = async (_payload: unknown, context: AppInboxMessageContext) =>
+    const processGroupMutation = async (_payload: JsonWireValue, context: AppInboxMessageContext) =>
       await this.groupStateInboxHandler.processGroupStateMutation(context);
     for (const type of GROUP_MUTATION_INBOX_TYPES.filter(
       (candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,

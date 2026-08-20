@@ -40,7 +40,6 @@ createStateRepositories.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import {
   AppGroupInboxService,
-  type TopologyAppInboxCommand,
   type TopologyAppInboxRequestPayload,
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
@@ -52,55 +51,15 @@ import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import {
   createPGliteClientEventCollisionFixture,
 } from './pglite-client-event-collision-test-runtime.ts';
+import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import {
   submitPGliteTopologyCommand,
   topologyGroupSnapshot,
   topologyOverrideCommand,
-  waitForPGliteQueueRow,
-} from './pglite-sql-adapter-test-runtime.ts';
+} from './pglite-topology-test-runtime.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 const PAST_MS = Date.parse('2000-01-01T00:00:00.000Z');
-
-interface ResourceInboxStatusRow {
-  readonly ri_type_id: string;
-  readonly ri_status: string;
-}
-
-interface NumericCountRow {
-  readonly count: string | number;
-}
-
-interface StringCountRow {
-  readonly count: string;
-}
-
-interface ResourceInboxLifecycleRow {
-  readonly ri_resource_id: string;
-  readonly ri_topic_id: string;
-  readonly ri_type_id: string;
-  readonly ri_status: string;
-  readonly ri_resource: string;
-}
-
-interface ResourceInboxForeignKeyRow {
-  readonly ri_topic_id: string;
-  readonly ri_resource_id: string;
-  readonly fk_ext_bank_id: string;
-}
-
-interface ResourceInboxTopicTypeRow {
-  readonly ri_topic_id: string;
-  readonly ri_type_id: string;
-}
-
-interface NumericValueRow {
-  readonly value: number;
-}
-
-interface StringValueRow {
-  readonly value: string;
-}
 
 interface RuntimeStateExpiryRow {
   readonly store_key: string;
@@ -114,67 +73,6 @@ interface ResourceInboxAttemptStatusRow {
 
 interface ResourceInboxPayloadRow {
   readonly ri_resource: string;
-}
-
-interface EpochMillisecondsRow {
-  readonly epoch_ms: string | number;
-}
-
-interface GroupEventWorkspaceRow {
-  readonly workspace_key: string;
-}
-
-interface CreatedTimestampRow {
-  readonly created_ts: string;
-}
-
-interface ExpireTimestampRow {
-  readonly expire_ts: string;
-}
-
-interface StartTimestampRow {
-  readonly start_ts: string;
-}
-
-interface EndTimestampRow {
-  readonly end_ts: string;
-}
-
-interface TopologyCommandPayload {
-  readonly data: TopologyAppInboxCommand;
-}
-
-interface DurableTopologyAuthorityProof {
-  readonly principalId: string;
-  readonly sessionId: string;
-  readonly sessionIssuedAtEpochMs: number;
-}
-
-interface DurableTopologyAuthorityValue {
-  readonly proof: DurableTopologyAuthorityProof;
-}
-
-interface DurableTopologyAuthority {
-  readonly authority: DurableTopologyAuthorityValue;
-}
-
-interface ResourceInboxKeyFields {
-  readonly topicId: string;
-  readonly resourceId: string;
-  readonly contextId: string;
-}
-
-interface RtcTopologyDeliveryState {
-  readonly headSequence: number;
-  readonly sequences: readonly number[];
-}
-
-interface RtcTopologyDeliveryStreamRow {
-  readonly head_sequence: number;
-}
-
-interface RtcTopologyDeliveryEntryRow {
-  readonly sequence: number;
 }
 
 Deno.test(
@@ -828,19 +726,23 @@ Deno.test(
         now: () => nowEpochMs,
       });
       const appGroup = new AppGroupInboxService(
-        inboxReader,
-        resourceInbox,
-        new ResourceInboxResultsRepository(sql),
-        sql,
-        groupState,
-        'pglite-topology-cross-target',
-        undefined,
         {
-          waitMaxElapsedMsecs: 5_000,
-          waitRetryIntervalMsecs: 1,
-          waitMaxRetryIntervalMsecs: 4,
-          waitJitterRatio: 0,
-          nowEpochMs: () => nowEpochMs,
+          inboxQueueReader: inboxReader,
+          resourceInboxRepository: resourceInbox,
+          resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
+          database: sql,
+          groupStateService: groupState,
+        },
+        {
+          serviceId: 'pglite-topology-cross-target',
+          timing: undefined,
+          options: {
+            waitMaxElapsedMsecs: 5_000,
+            waitRetryIntervalMsecs: 1,
+            waitMaxRetryIntervalMsecs: 4,
+            waitJitterRatio: 0,
+            nowEpochMs: () => nowEpochMs,
+          },
         },
       );
       appGroup.setTopologyManagementService(topology);

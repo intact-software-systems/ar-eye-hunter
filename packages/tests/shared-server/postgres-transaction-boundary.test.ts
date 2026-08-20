@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
+import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -28,14 +29,24 @@ import {
   AppInboxService,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
+// prettier-ignore
+import type {
+  JsonWireValue,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 
-type RuntimeRow = Readonly<{
-  value: string;
-  expireAt: Date;
-  revision: number;
-}>;
+type SqlValue = Parameters<PSqlSql>[0][number];
 
-type InboxRow = {
+interface JsonRecord {
+  [key: string]: JsonWireValue;
+}
+
+interface RuntimeRow {
+  readonly value: string;
+  readonly expireAt: Date;
+  readonly revision: number;
+}
+
+interface InboxRow {
   ri_row_id: bigint;
   ri_resource_id: string;
   ri_topic_id: string;
@@ -51,28 +62,28 @@ type InboxRow = {
   end_ts: string | null;
   next_ts: string | null;
   ri_attempts: bigint;
-};
+}
 
-type ResultRow = Readonly<{
-  ris_row_id: bigint;
-  ris_resource_id: string;
-  ris_topic_id: string;
-  ris_resource: string;
-  ris_type_id: string;
-  ris_status: string;
-  fk_ext_bank_id: string;
-  system_date: string;
-  created_by: string;
-  created_ts: string;
-  expire_ts: string;
-}>;
+interface ResultRow {
+  readonly ris_row_id: bigint;
+  readonly ris_resource_id: string;
+  readonly ris_topic_id: string;
+  readonly ris_resource: string;
+  readonly ris_type_id: string;
+  readonly ris_status: string;
+  readonly fk_ext_bank_id: string;
+  readonly system_date: string;
+  readonly created_by: string;
+  readonly created_ts: string;
+  readonly expire_ts: string;
+}
 
-type TransactionState = {
-  runtime: Map<string, RuntimeRow>;
-  events: Map<string, ClientEvent>;
-  inbox: Map<string, InboxRow>;
-  results: Map<string, ResultRow>;
-};
+interface TransactionState {
+  readonly runtime: Map<string, RuntimeRow>;
+  readonly events: Set<string>;
+  readonly inbox: Map<string, InboxRow>;
+  readonly results: Map<string, ResultRow>;
+}
 
 describe('Postgres transaction write boundary', () => {
   it('binds every write repository to one database transaction', async () => {
@@ -100,7 +111,7 @@ describe('Postgres transaction write boundary', () => {
 
     expect(database.beginCalls).toBe(1);
     expect(database.committed.runtime.get('transaction-test::aggregate-1')).toBeUndefined();
-    expect(database.committed.events.get('event-1')).toBeUndefined();
+    expect(database.committed.events.has('event-1')).toBe(false);
     expect(database.committed.inbox.get(toKey(outboxEntry.key))).toBeUndefined();
     expect(database.committed.results.get(toKey(resultEntry.key))).toBeUndefined();
     expect(database.committed.inbox.get(toKey(incomingEntry.key))?.ri_status).toBe(
@@ -124,14 +135,24 @@ describe('Postgres transaction write boundary', () => {
       },
       { serviceId: 'server-1' },
     );
+    const enqueue = {
+      type: AppInboxType.GROUP_CREATE,
+      resourceId: incomingEntry.key.resourceId,
+      contextId: incomingEntry.key.contextId,
+      data: { requestId: incomingEntry.key.resourceId },
+    } as const;
     const context: AppInboxMessageContext = {
-      enqueue: {
-        type: AppInboxType.GROUP_CREATE,
-        resourceId: incomingEntry.key.resourceId,
-        contextId: incomingEntry.key.contextId,
-        data: { requestId: incomingEntry.key.resourceId },
-      },
-      message: {} as never,
+      enqueue,
+      message: newALUntargetedMessage(
+        'server-1',
+        newALRoute(
+          incomingEntry.key.topicId,
+          incomingEntry.key.contextId,
+          incomingEntry.key.resourceId,
+        ),
+        enqueue.type,
+        enqueue,
+      ),
       entry: incomingEntry,
     };
 
@@ -197,18 +218,25 @@ function createTransactionalDatabase(options: Readonly<{ failCompletion?: boolea
   let beginCalls = 0;
   const statementTransactions: PSqlTransactionSql[] = [];
 
-  const sql = (() => {
+  function outsideTransactionSql<T>(
+    _strings: TemplateStringsArray,
+    ..._values: SqlValue[]
+  ): Promise<T>;
+  function outsideTransactionSql(_values: readonly SqlValue[]): ReturnType<PSqlSql>;
+  function outsideTransactionSql(): never {
     throw new Error('SQL must run inside the transaction');
-  }) as unknown as PSqlSql;
+  }
 
-  sql.begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>): Promise<T> => {
-    beginCalls += 1;
-    const pending = cloneState(committed);
-    const transaction = createTransactionSql(pending, statementTransactions, options);
-    const result = await write(transaction);
-    committed = pending;
-    return result;
-  };
+  const sql: PSqlSql = Object.assign(outsideTransactionSql, {
+    begin: async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>): Promise<T> => {
+      beginCalls += 1;
+      const pending = cloneState(committed);
+      const transaction = createTransactionSql(pending, statementTransactions, options);
+      const result = await write(transaction);
+      committed = pending;
+      return result;
+    },
+  });
 
   return {
     sql,
@@ -227,30 +255,35 @@ function createTransactionSql(
   observed: PSqlTransactionSql[],
   options: Readonly<{ failCompletion?: boolean }>,
 ): PSqlTransactionSql {
-  const transaction = ((
-    stringsOrValues: TemplateStringsArray | readonly unknown[],
-    ...values: unknown[]
-  ): unknown => {
+  function executeTransaction<T>(strings: TemplateStringsArray, ...values: SqlValue[]): Promise<T>;
+  function executeTransaction(values: readonly SqlValue[]): ReturnType<PSqlSql>;
+  function executeTransaction(
+    stringsOrValues: TemplateStringsArray | readonly SqlValue[],
+    ...values: SqlValue[]
+  ): ReturnType<PSqlSql> {
     if (!isTemplateCall(stringsOrValues)) return stringsOrValues;
     observed.push(transaction);
     const query = normalizeQuery(stringsOrValues);
 
     if (query.includes('insert into runtime_state_store')) {
       const [namespace, key, value, expireAt] = values;
-      const storageKey = `${namespace}::${key}`;
+      const storageKey = `${readString(namespace, 'runtime namespace')}::${readString(
+        key,
+        'runtime key',
+      )}`;
       if (state.runtime.has(storageKey)) return [];
       state.runtime.set(storageKey, {
-        value: value as string,
-        expireAt: expireAt as Date,
+        value: readString(value, 'runtime value'),
+        expireAt: readDate(expireAt, 'runtime expiry'),
         revision: 0,
       });
       return [{ revision: 0 }];
     }
 
     if (query.includes('insert into client_state_events')) {
-      const event = JSON.parse(values[9] as string) as ClientEvent;
-      state.events.set(event.eventId, event);
-      return [{ event_id: event.eventId }];
+      const eventId = readJsonStringField(values[9], 'eventId');
+      state.events.add(eventId);
+      return [{ event_id: eventId }];
     }
 
     if (query.includes('insert into resource_inbox_results')) {
@@ -270,32 +303,37 @@ function createTransactionSql(
     if (query.includes('update resource_inbox') && query.includes("ri_status = 'reserved'")) {
       if (options.failCompletion) throw new Error('completion-failed');
       const [status, completedAt, topicId, resourceId, contextId, attempts] = values;
-      const row = state.inbox.get(`${contextId}::${topicId}::${resourceId}`);
+      const row = state.inbox.get(
+        `${readString(contextId, 'context id')}::${readString(
+          topicId,
+          'topic id',
+        )}::${readString(resourceId, 'resource id')}`,
+      );
       if (
         !row ||
         row.ri_status !== EntityStatus.RESERVED ||
-        row.ri_attempts !== BigInt(attempts as number)
+        row.ri_attempts !== BigInt(readNumber(attempts, 'attempt count'))
       )
         return [];
-      row.ri_status = status as string;
-      row.end_ts = (completedAt as Date).toISOString();
+      row.ri_status = readString(status, 'completion status');
+      row.end_ts = readDate(completedAt, 'completion time').toISOString();
       row.next_ts = null;
       return [{ ri_row_id: row.ri_row_id }];
     }
 
     throw new Error(`Unhandled transaction SQL: ${query}`);
-  }) as PSqlTransactionSql;
+  }
 
-  transaction.begin = async () => {
-    throw new Error('nested-transaction');
-  };
+  const transaction: PSqlTransactionSql = Object.assign(executeTransaction, {
+    begin: async () => await Promise.reject(new Error('nested-transaction')),
+  });
   return transaction;
 }
 
 function createState(): TransactionState {
   return {
     runtime: new Map(),
-    events: new Map(),
+    events: new Set(),
     inbox: new Map(),
     results: new Map(),
   };
@@ -304,7 +342,7 @@ function createState(): TransactionState {
 function cloneState(state: TransactionState): TransactionState {
   return {
     runtime: new Map(state.runtime),
-    events: new Map(state.events),
+    events: new Set(state.events),
     inbox: new Map([...state.inbox].map(([key, row]) => [key, { ...row }])),
     results: new Map(state.results),
   };
@@ -332,39 +370,39 @@ function toInboxRow(entry: ResourceEntry, rowId: bigint): InboxRow {
   );
 }
 
-function toInboxRowFromValues(values: readonly unknown[], rowId: bigint): InboxRow {
+function toInboxRowFromValues(values: readonly SqlValue[], rowId: bigint): InboxRow {
   return {
     ri_row_id: rowId,
-    ri_resource_id: values[0] as string,
-    ri_topic_id: values[1] as string,
-    ri_resource: values[2] as string,
-    ri_type_id: values[3] as string,
-    ri_status: values[4] as string,
-    fk_ext_bank_id: values[5] as string,
-    system_date: values[6] as string,
-    created_by: values[7] as string,
-    created_ts: (values[8] as string).replace(/Z$/u, ''),
-    expire_ts: (values[9] as string).replace(/Z$/u, ''),
-    start_ts: (values[10] as string | null)?.replace(/Z$/u, '') ?? null,
-    end_ts: (values[11] as string | null)?.replace(/Z$/u, '') ?? null,
-    next_ts: (values[12] as string | null)?.replace(/Z$/u, '') ?? null,
-    ri_attempts: BigInt(values[13] as number),
+    ri_resource_id: readString(values[0], 'inbox resource id'),
+    ri_topic_id: readString(values[1], 'inbox topic id'),
+    ri_resource: readString(values[2], 'inbox resource'),
+    ri_type_id: readString(values[3], 'inbox type id'),
+    ri_status: readString(values[4], 'inbox status'),
+    fk_ext_bank_id: readString(values[5], 'inbox context id'),
+    system_date: readString(values[6], 'inbox system date'),
+    created_by: readString(values[7], 'inbox creator'),
+    created_ts: readString(values[8], 'inbox created time').replace(/Z$/u, ''),
+    expire_ts: readString(values[9], 'inbox expiry time').replace(/Z$/u, ''),
+    start_ts: readNullableTimestamp(values[10], 'inbox start time'),
+    end_ts: readNullableTimestamp(values[11], 'inbox end time'),
+    next_ts: readNullableTimestamp(values[12], 'inbox next time'),
+    ri_attempts: BigInt(readNumber(values[13], 'inbox attempts')),
   };
 }
 
-function toResultRow(values: readonly unknown[], rowId: bigint): ResultRow {
+function toResultRow(values: readonly SqlValue[], rowId: bigint): ResultRow {
   return {
     ris_row_id: rowId,
-    ris_resource_id: values[0] as string,
-    ris_topic_id: values[1] as string,
-    ris_resource: values[2] as string,
-    ris_type_id: values[3] as string,
-    ris_status: values[4] as string,
-    fk_ext_bank_id: values[5] as string,
-    system_date: values[6] as string,
-    created_by: values[7] as string,
-    created_ts: (values[8] as string).replace(/Z$/u, ''),
-    expire_ts: (values[9] as string).replace(/Z$/u, ''),
+    ris_resource_id: readString(values[0], 'result resource id'),
+    ris_topic_id: readString(values[1], 'result topic id'),
+    ris_resource: readString(values[2], 'result resource'),
+    ris_type_id: readString(values[3], 'result type id'),
+    ris_status: readString(values[4], 'result status'),
+    fk_ext_bank_id: readString(values[5], 'result context id'),
+    system_date: readString(values[6], 'result system date'),
+    created_by: readString(values[7], 'result creator'),
+    created_ts: readString(values[8], 'result created time').replace(/Z$/u, ''),
+    expire_ts: readString(values[9], 'result expiry time').replace(/Z$/u, ''),
   };
 }
 
@@ -384,8 +422,46 @@ function normalizeQuery(strings: TemplateStringsArray): string {
   return strings.join(' ').replace(/\s+/gu, ' ').trim().toLowerCase();
 }
 
-function isTemplateCall(value: unknown): value is TemplateStringsArray {
+function isTemplateCall(value: SqlValue): value is TemplateStringsArray {
   return Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, 'raw');
+}
+
+function readString(value: SqlValue, label: string): string {
+  if (typeof value !== 'string') {
+    throw new TypeError(`Expected ${label} to be a string`);
+  }
+  return value;
+}
+
+function readNumber(value: SqlValue, label: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new TypeError(`Expected ${label} to be a finite number`);
+  }
+  return value;
+}
+
+function readDate(value: SqlValue, label: string): Date {
+  if (!(value instanceof Date)) {
+    throw new TypeError(`Expected ${label} to be a Date`);
+  }
+  return value;
+}
+
+function readNullableTimestamp(value: SqlValue, label: string): string | null {
+  return value === null ? null : readString(value, label).replace(/Z$/u, '');
+}
+
+function readJsonStringField(value: SqlValue, field: string): string {
+  const source = readString(value, `${field} JSON`);
+  const decoded: JsonWireValue = JSON.parse(source);
+  if (!isRecord(decoded)) {
+    throw new TypeError(`Expected ${field} JSON to be an object`);
+  }
+  return readString(decoded[field], field);
+}
+
+function isRecord(value: JsonWireValue): value is JsonRecord {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function createEntry(key: Key, typeId: string, status: EntityStatus, attempts = 0): ResourceEntry {

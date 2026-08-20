@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
   type AppInboxMessageContext,
@@ -16,6 +17,7 @@ import {
   type ResourceInboxRetryExhaustion,
   type ResourceInboxRetryExhaustionRecovery,
 } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { Reservator } from '@shared/queuebox/DequeueController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import {
   EntityStatus,
@@ -104,8 +106,8 @@ export function createRegisteredHandlerHarness(
   const service = new AtomicAppInboxService(
     {
       inboxQueueReader: reader,
-      resourceInboxRepository: queue as never,
-      resourceInboxResultsRepository: results as never,
+      resourceInboxRepository: queue,
+      resourceInboxResultsRepository: results,
       database: createAppInboxTestDatabase(queue, results),
     },
     {
@@ -329,11 +331,12 @@ export function createAtomicHarness(
   });
   const queue = new InMemoryQueueBox();
   const reader = new InboxQueueReader(queue);
+  const results = new RegisteredHandlerResults();
   const service = new AtomicAppInboxService(
     {
       inboxQueueReader: reader,
-      resourceInboxRepository: {} as never,
-      resourceInboxResultsRepository: {} as never,
+      resourceInboxRepository: queue,
+      resourceInboxResultsRepository: results,
       database: database.sql,
     },
     {
@@ -354,7 +357,12 @@ export function createAtomicHarness(
   } as const;
   const context: AppInboxMessageContext = {
     enqueue,
-    message: {} as never,
+    message: newALUntargetedMessage(
+      'server-1',
+      newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
+      enqueue.type,
+      enqueue,
+    ),
     entry,
   };
   return { context, database, entry, service };
@@ -467,7 +475,7 @@ export function toRecovery(
     entry,
     processingAttempts: 20,
     reservationAttempt,
-    lane: 'FINALIZATION' as never,
+    lane: Reservator.FINALIZATION,
     classification: 'retryable',
     exhausted: true,
     failure: { source: 'finalization-recovery' },
@@ -483,7 +491,7 @@ export function toExhaustion(entry: ResourceEntry): ResourceInboxRetryExhaustion
     entry,
     processingAttempts: 20,
     reservationAttempt: 20,
-    lane: 'NEW' as never,
+    lane: Reservator.NEW,
     classification: 'retryable',
     exhausted: true,
     failure: {

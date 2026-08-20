@@ -347,16 +347,20 @@ function createAppGroupInboxServiceFactory(
     });
 
     return new AppGroupInboxService(
-      inboxQueueReader,
-      input.resourceInboxRepository,
-      input.resourceInboxResultsRepository,
-      input.database,
-      groupStateService,
-      input.serviceId,
-      input.timing,
-      input.appInboxOptions,
-      wakeQueueEngine,
-      input.groupFormationMetrics.groupMutation,
+      {
+        inboxQueueReader: inboxQueueReader,
+        resourceInboxRepository: input.resourceInboxRepository,
+        resourceInboxResultsRepository: input.resourceInboxResultsRepository,
+        database: input.database,
+        groupStateService: groupStateService,
+      },
+      {
+        serviceId: input.serviceId,
+        timing: input.timing,
+        options: input.appInboxOptions,
+        wakeOwningQueue: wakeQueueEngine,
+        formationMetrics: input.groupFormationMetrics.groupMutation,
+      },
     );
   };
 }
@@ -377,15 +381,19 @@ function createAppClientInboxServiceFactory(
     });
 
     return new AppClientInboxService(
-      inboxQueueReader,
-      input.resourceInboxRepository,
-      input.resourceInboxResultsRepository,
-      input.database,
-      clientStateService,
-      input.serviceId,
-      input.timing,
-      input.appInboxOptions,
-      wakeQueueEngine,
+      {
+        inboxQueueReader: inboxQueueReader,
+        resourceInboxRepository: input.resourceInboxRepository,
+        resourceInboxResultsRepository: input.resourceInboxResultsRepository,
+        database: input.database,
+        clientStateService: clientStateService,
+      },
+      {
+        serviceId: input.serviceId,
+        timing: input.timing,
+        options: input.appInboxOptions,
+        wakeOwningQueue: wakeQueueEngine,
+      },
     );
   };
 }
@@ -397,19 +405,23 @@ function createAppAuthInboxServiceFactory(
 
   return ({ inboxQueueReader, wakeQueueEngine }) =>
     new AppAuthInboxService(
-      inboxQueueReader,
-      input.resourceInboxRepository,
-      input.resourceInboxResultsRepository,
-      input.database,
-      createAuthMutationService({
-        runtimeRepository: input.runtimeStateRepository,
+      {
+        inboxQueueReader: inboxQueueReader,
+        resourceInboxRepository: input.resourceInboxRepository,
+        resourceInboxResultsRepository: input.resourceInboxResultsRepository,
+        database: input.database,
+        authMutationService: createAuthMutationService({
+          runtimeRepository: input.runtimeStateRepository,
+          serviceId: input.serviceId,
+        }),
+        credentialIssuer: credentialIssuer,
+      },
+      {
         serviceId: input.serviceId,
-      }),
-      credentialIssuer,
-      input.serviceId,
-      input.timing,
-      input.appInboxOptions,
-      wakeQueueEngine,
+        timing: input.timing,
+        options: input.appInboxOptions,
+        wakeOwningQueue: wakeQueueEngine,
+      },
     );
 }
 

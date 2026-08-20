@@ -71,24 +71,32 @@ export function createPostgresAppInboxWorkerServices(
     serviceId: input.serviceId,
   });
   const client = new AppClientInboxService(
-    inbox,
-    resourceInbox,
-    resourceInboxResults,
-    input.transactionSql,
-    clientState,
-    input.serviceId,
-    undefined,
-    waitOptions,
+    {
+      inboxQueueReader: inbox,
+      resourceInboxRepository: resourceInbox,
+      resourceInboxResultsRepository: resourceInboxResults,
+      database: input.transactionSql,
+      clientStateService: clientState,
+    },
+    {
+      serviceId: input.serviceId,
+      timing: undefined,
+      options: waitOptions,
+    },
   );
   const group = new AppGroupInboxService(
-    inbox,
-    resourceInbox,
-    resourceInboxResults,
-    input.transactionSql,
-    groupState,
-    input.serviceId,
-    undefined,
-    waitOptions,
+    {
+      inboxQueueReader: inbox,
+      resourceInboxRepository: resourceInbox,
+      resourceInboxResultsRepository: resourceInboxResults,
+      database: input.transactionSql,
+      groupStateService: groupState,
+    },
+    {
+      serviceId: input.serviceId,
+      timing: undefined,
+      options: waitOptions,
+    },
   );
   group.setTopologyManagementService(
     new GroupTopologyManagementService({

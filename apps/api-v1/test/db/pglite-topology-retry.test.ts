@@ -36,7 +36,6 @@ createStateRepositories.ts';
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import {
   AppGroupInboxService,
-  type TopologyAppInboxCommand,
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
@@ -46,129 +45,18 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
+import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
+import { canonicalAuditStamp } from './pglite-state-mutation-test-runtime.ts';
 import {
-  canonicalAuditStamp,
   submitPGliteTopologyCommand,
   topologyConfigCommand,
   topologyGroupSnapshot,
-  waitForPGliteQueueRow,
-} from './pglite-sql-adapter-test-runtime.ts';
+} from './pglite-topology-test-runtime.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 
-interface ResourceInboxStatusRow {
-  readonly ri_type_id: string;
-  readonly ri_status: string;
-}
-
 interface NumericCountRow {
   readonly count: string | number;
-}
-
-interface StringCountRow {
-  readonly count: string;
-}
-
-interface ResourceInboxLifecycleRow {
-  readonly ri_resource_id: string;
-  readonly ri_topic_id: string;
-  readonly ri_type_id: string;
-  readonly ri_status: string;
-  readonly ri_resource: string;
-}
-
-interface ResourceInboxForeignKeyRow {
-  readonly ri_topic_id: string;
-  readonly ri_resource_id: string;
-  readonly fk_ext_bank_id: string;
-}
-
-interface ResourceInboxTopicTypeRow {
-  readonly ri_topic_id: string;
-  readonly ri_type_id: string;
-}
-
-interface NumericValueRow {
-  readonly value: number;
-}
-
-interface StringValueRow {
-  readonly value: string;
-}
-
-interface RuntimeStateExpiryRow {
-  readonly store_key: string;
-  readonly expire_at_ts: string;
-}
-
-interface ResourceInboxAttemptStatusRow {
-  readonly ri_attempts: string | number;
-  readonly ri_status: string;
-}
-
-interface ResourceInboxPayloadRow {
-  readonly ri_resource: string;
-}
-
-interface EpochMillisecondsRow {
-  readonly epoch_ms: string | number;
-}
-
-interface GroupEventWorkspaceRow {
-  readonly workspace_key: string;
-}
-
-interface CreatedTimestampRow {
-  readonly created_ts: string;
-}
-
-interface ExpireTimestampRow {
-  readonly expire_ts: string;
-}
-
-interface StartTimestampRow {
-  readonly start_ts: string;
-}
-
-interface EndTimestampRow {
-  readonly end_ts: string;
-}
-
-interface TopologyCommandPayload {
-  readonly data: TopologyAppInboxCommand;
-}
-
-interface DurableTopologyAuthorityProof {
-  readonly principalId: string;
-  readonly sessionId: string;
-  readonly sessionIssuedAtEpochMs: number;
-}
-
-interface DurableTopologyAuthorityValue {
-  readonly proof: DurableTopologyAuthorityProof;
-}
-
-interface DurableTopologyAuthority {
-  readonly authority: DurableTopologyAuthorityValue;
-}
-
-interface ResourceInboxKeyFields {
-  readonly topicId: string;
-  readonly resourceId: string;
-  readonly contextId: string;
-}
-
-interface RtcTopologyDeliveryState {
-  readonly headSequence: number;
-  readonly sequences: readonly number[];
-}
-
-interface RtcTopologyDeliveryStreamRow {
-  readonly head_sequence: number;
-}
-
-interface RtcTopologyDeliveryEntryRow {
-  readonly sequence: number;
 }
 
 Deno.test(
@@ -219,19 +107,23 @@ Deno.test(
       });
       const createAppGroup = (waitMaxElapsedMsecs: number) => {
         const service = new AppGroupInboxService(
-          inboxReader,
-          resourceInbox,
-          resourceResults,
-          sql,
-          groupState,
-          'pglite-topology-route-errors',
-          undefined,
           {
-            waitMaxElapsedMsecs,
-            waitRetryIntervalMsecs: 1,
-            waitMaxRetryIntervalMsecs: 4,
-            waitJitterRatio: 0,
-            nowEpochMs: () => nowEpochMs,
+            inboxQueueReader: inboxReader,
+            resourceInboxRepository: resourceInbox,
+            resourceInboxResultsRepository: resourceResults,
+            database: sql,
+            groupStateService: groupState,
+          },
+          {
+            serviceId: 'pglite-topology-route-errors',
+            timing: undefined,
+            options: {
+              waitMaxElapsedMsecs,
+              waitRetryIntervalMsecs: 1,
+              waitMaxRetryIntervalMsecs: 4,
+              waitJitterRatio: 0,
+              nowEpochMs: () => nowEpochMs,
+            },
           },
         );
         service.setTopologyManagementService(topology);
@@ -474,19 +366,23 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
       );
     };
     const appGroup = new AppGroupInboxService(
-      inboxReader,
-      resourceInbox,
-      new ResourceInboxResultsRepository(sql),
-      sql,
-      groupState,
-      'pglite-topology-retry',
-      undefined,
       {
-        waitMaxElapsedMsecs: 5_000,
-        waitRetryIntervalMsecs: 1,
-        waitMaxRetryIntervalMsecs: 4,
-        waitJitterRatio: 0,
-        nowEpochMs: () => nowEpochMs,
+        inboxQueueReader: inboxReader,
+        resourceInboxRepository: resourceInbox,
+        resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
+        database: sql,
+        groupStateService: groupState,
+      },
+      {
+        serviceId: 'pglite-topology-retry',
+        timing: undefined,
+        options: {
+          waitMaxElapsedMsecs: 5_000,
+          waitRetryIntervalMsecs: 1,
+          waitMaxRetryIntervalMsecs: 4,
+          waitJitterRatio: 0,
+          nowEpochMs: () => nowEpochMs,
+        },
       },
     );
     appGroup.setTopologyManagementService(topology);
@@ -527,7 +423,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
       toResilienceDto(),
     );
     const result = await pending;
-    assert.match(result.left ?? '', /active|archived|lifecycle|forbidden/i);
+    assert.match(result.left?.message ?? '', /active|archived|lifecycle|forbidden/i);
     assert.equal(retryReleaseCount, 1);
     assert.equal(staleReadCount, 1);
     assert.ok(readsAtFirstRetryRelease >= 1);

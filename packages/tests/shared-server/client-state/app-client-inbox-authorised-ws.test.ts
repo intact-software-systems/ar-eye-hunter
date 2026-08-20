@@ -228,17 +228,21 @@ interface CreateAuthorisedWsServiceInput {
 
 function createAuthorisedWsService(input: CreateAuthorisedWsServiceInput): AppClientInboxService {
   return new AppClientInboxService(
-    input.reader,
-    input.queue as never,
-    input.results as never,
-    input.database,
-    createClientStateService({
-      runtimeRepository: input.runtimeRepository,
-      formationDamping: 'damped',
-      createClientStateEventStore: () => input.database.clientEventStore,
+    {
+      inboxQueueReader: input.reader,
+      resourceInboxRepository: input.queue,
+      resourceInboxResultsRepository: input.results,
+      database: input.database,
+      clientStateService: createClientStateService({
+        runtimeRepository: input.runtimeRepository,
+        formationDamping: 'damped',
+        createClientStateEventStore: () => input.database.clientEventStore,
+        serviceId: SERVICE_ID,
+      }),
+    },
+    {
       serviceId: SERVICE_ID,
-    }),
-    SERVICE_ID,
+    },
   );
 }
 
@@ -293,8 +297,8 @@ async function processAppInboxMethod<R>(reader: InboxQueueReader, run: () => Pro
 
 function createPublisher() {
   return {
-    publishClientSnapshot: vi.fn(async (_snapshot: unknown, _senderId?: string) => undefined),
-    publishClientEvent: vi.fn(async (_event: unknown, _senderId?: string) => undefined),
+    publishClientSnapshot: vi.fn(async () => undefined),
+    publishClientEvent: vi.fn(async () => undefined),
   };
 }
 

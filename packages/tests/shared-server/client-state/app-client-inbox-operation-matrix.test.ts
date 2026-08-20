@@ -11,7 +11,9 @@ import type {
   ClientSessionDisconnectAppInboxPayload,
   ClientSessionHeartbeatAppInboxPayload,
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
-import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+// prettier-ignore
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/\
+app-client-inbox-service.ts';
 import type {
   ClientStateService,
   ClientStateWritten,
@@ -59,17 +61,19 @@ describe('AppClientInbox operation matrix', () => {
 });
 
 function createClientInboxServiceForRegistration(): AppClientInboxService {
-  const registrationService = {
-    sessionGenerationLifecycle: {} as ClientStateService['sessionGenerationLifecycle'],
-    formationDamping: 'damped' as const,
-  };
+  const queue = new TestResourceInbox();
+  const results = new TestResourceInboxResults();
   return new AppClientInboxService(
-    {} as InboxQueueReader,
-    {} as never,
-    {} as never,
-    {} as never,
-    registrationService as ClientStateService,
-    'client-registration-service',
+    {
+      inboxQueueReader: new InboxQueueReader(queue),
+      resourceInboxRepository: queue,
+      resourceInboxResultsRepository: results,
+      database: createAppInboxTestDatabase(queue, results),
+      clientStateService: createClientStateServiceStub(),
+    },
+    {
+      serviceId: 'client-registration-service',
+    },
   );
 }
 
@@ -96,16 +100,20 @@ describe('AppClientInbox mutation processing', () => {
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
     const service = new AppClientInboxService(
-      reader,
-      queue as never,
-      results as never,
-      createAppInboxTestDatabase(queue, results),
-      createClientStateServiceStub({
-        read: vi.fn(async () => {
-          throw new NonRetryableException('Client principal update failed');
+      {
+        inboxQueueReader: reader,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
+        database: createAppInboxTestDatabase(queue, results),
+        clientStateService: createClientStateServiceStub({
+          read: vi.fn(async () => {
+            throw new NonRetryableException('Client principal update failed');
+          }),
         }),
-      }),
-      'server-12345678',
+      },
+      {
+        serviceId: 'server-12345678',
+      },
     );
 
     const result = await processAppInbox<ClientPrincipalUpsertAppInboxPayload, ClientSnapshot>(
@@ -144,12 +152,16 @@ function createMutationProcessingHarness() {
     publisher,
     reader,
     service: new AppClientInboxService(
-      reader,
-      queue as never,
-      results as never,
-      database,
-      createAutoAuthorizingClientStateService(runtimeRepository, database),
-      'server-12345678',
+      {
+        inboxQueueReader: reader,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
+        database: database,
+        clientStateService: createAutoAuthorizingClientStateService(runtimeRepository, database),
+      },
+      {
+        serviceId: 'server-12345678',
+      },
     ),
   };
 }

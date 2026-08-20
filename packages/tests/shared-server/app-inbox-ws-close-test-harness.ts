@@ -1,11 +1,23 @@
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
-import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+// prettier-ignore
+import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/\
+AuthSessionRepository.ts';
+// prettier-ignore
+import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/\
+AuthSessionRepository.ts';
+// prettier-ignore
+import { ClientStateRepository } from '@shared-server/rallar-system/repositories/\
+ClientStateRepository.ts';
+// prettier-ignore
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/\
+GroupStateRepository.ts';
+// prettier-ignore
+import { AppClientInboxService } from '@shared-server/rallar-system/services/\
+AppClientInboxService.ts';
+// prettier-ignore
+import { AppGroupInboxService } from '@shared-server/rallar-system/services/\
+AppGroupInboxService.ts';
 import {
   type ClientStateService,
   createClientStateService,
@@ -56,14 +68,16 @@ export function createAuthorisedWsCloseFacts(
   };
 }
 
-export async function createAppInboxWsCloseHarness(options: Readonly<{
-  onRollback?: () => void;
-  onConditionalWrite?: (
-    operation: 'insertIfAbsent' | 'upsertIfRevision' | 'deleteIfRevision',
-    namespace: string,
-    key: string,
-  ) => void;
-}> = {}) {
+export async function createAppInboxWsCloseHarness(
+  options: Readonly<{
+    onRollback?: () => void;
+    onConditionalWrite?: (
+      operation: 'insertIfAbsent' | 'upsertIfRevision' | 'deleteIfRevision',
+      namespace: string,
+      key: string,
+    ) => void;
+  }> = {},
+) {
   const queue = new TestResourceInbox();
   const reader = new InboxQueueReader(queue);
   const secondReader = new InboxQueueReader(queue);
@@ -92,36 +106,52 @@ export async function createAppInboxWsCloseHarness(options: Readonly<{
     serviceId: 'server-12345678',
   });
   const client = new AppClientInboxService(
-    reader,
-    queue as never,
-    results as never,
-    database,
-    clientState,
-    'server-12345678',
+    {
+      inboxQueueReader: reader,
+      resourceInboxRepository: queue,
+      resourceInboxResultsRepository: results,
+      database: database,
+      clientStateService: clientState,
+    },
+    {
+      serviceId: 'server-12345678',
+    },
   );
   const group = new AppGroupInboxService(
-    reader,
-    queue as never,
-    results as never,
-    database,
-    groupState,
-    'server-12345678',
+    {
+      inboxQueueReader: reader,
+      resourceInboxRepository: queue,
+      resourceInboxResultsRepository: results,
+      database: database,
+      groupStateService: groupState,
+    },
+    {
+      serviceId: 'server-12345678',
+    },
   );
   new AppClientInboxService(
-    secondReader,
-    queue as never,
-    results as never,
-    database,
-    clientState,
-    'server-12345678',
+    {
+      inboxQueueReader: secondReader,
+      resourceInboxRepository: queue,
+      resourceInboxResultsRepository: results,
+      database: database,
+      clientStateService: clientState,
+    },
+    {
+      serviceId: 'server-12345678',
+    },
   );
   new AppGroupInboxService(
-    secondReader,
-    queue as never,
-    results as never,
-    database,
-    groupState,
-    'server-12345678',
+    {
+      inboxQueueReader: secondReader,
+      resourceInboxRepository: queue,
+      resourceInboxResultsRepository: results,
+      database: database,
+      groupStateService: groupState,
+    },
+    {
+      serviceId: 'server-12345678',
+    },
   );
   return {
     queue,
@@ -144,8 +174,8 @@ export function pauseNextLifecycleRead(
   const originalRead = lifecycle.read.bind(lifecycle);
   let release!: () => void;
   let announce!: () => void;
-  const reached = new Promise<void>((resolve) => announce = resolve);
-  const resumed = new Promise<void>((resolve) => release = resolve);
+  const reached = new Promise<void>((resolve) => (announce = resolve));
+  const resumed = new Promise<void>((resolve) => (release = resolve));
   let pause = true;
   lifecycle.read = async (identity) => {
     const read = await originalRead(identity);

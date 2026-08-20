@@ -1,13 +1,9 @@
-import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import {
   ResourceInboxRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import {
-  ResourceInboxResultsRepository,
-} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/postgres/rtc-topology/\
 p-sql-rtc-topology-delivery-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/\
@@ -25,25 +21,15 @@ import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repo
 RtcTopologySnapshotRepository.ts';
 import {
   AppGroupInboxService,
+  decodeTopologyAppInboxResult,
   type TopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import {
-  AppInboxService,
-  AppInboxType,
-} from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
   createRtcTopologyOutboxPublisher,
   createRtcTopologyWorkHandler,
   writeRtcTopologyOutbox,
 } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
-import {
-  type GroupMutationDescriptor,
-  type GroupMutationPreparation,
-  type GroupStateService,
-} from '@shared-server/rallar-system/services/group-state-service.ts';
-import {
-  type JsonWireValue,
-} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/\
 rallar-rtc-topology-service.ts';
 import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/services/\
@@ -58,134 +44,35 @@ import {
 } from '@shared-server/rallar-system/topology/\
 group-topology-management-service.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+// deno-fmt-ignore
+import {
+  validatePersistedALMessage,
+} from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { ClientEvent } from '@shared/api/client-types.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/\
 group-topology-config-canonical.ts';
-import type {
-  AuditStamp,
-  Group,
-  GroupEvent,
-  GroupRef,
-  GroupSnapshot,
-} from '@shared/api/group-types.ts';
+import type { Group, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
-import {
-  EntityStatus,
-  type ResourceEntry,
-  toResourceEntryWithUpdatedResource,
-} from '@shared/queuebox/ResourceEntry.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+// deno-fmt-ignore
+import type {
+  JsonWireValue,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
-import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
+import { readPGliteDatabaseEpochMs } from './pglite-app-inbox-test-runtime.ts';
+import { canonicalAuditStamp, groupFixture } from './pglite-state-mutation-test-runtime.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
-const FUTURE_INSTANT = Temporal.Instant.from('9999-12-31T23:59:59.999Z');
-const CREATED_TS = Temporal.PlainDateTime.from('2026-06-01T12:00:00');
-
-interface ResourceInboxStatusRow {
-  readonly ri_type_id: string;
-  readonly ri_status: string;
-}
-
-interface NumericCountRow {
-  readonly count: string | number;
-}
-
-interface StringCountRow {
-  readonly count: string;
-}
-
-interface ResourceInboxLifecycleRow {
-  readonly ri_resource_id: string;
-  readonly ri_topic_id: string;
-  readonly ri_type_id: string;
-  readonly ri_status: string;
-  readonly ri_resource: string;
-}
-
-interface ResourceInboxForeignKeyRow {
-  readonly ri_topic_id: string;
-  readonly ri_resource_id: string;
-  readonly fk_ext_bank_id: string;
-}
-
-interface ResourceInboxTopicTypeRow {
-  readonly ri_topic_id: string;
-  readonly ri_type_id: string;
-}
-
-interface NumericValueRow {
-  readonly value: number;
-}
-
-interface StringValueRow {
-  readonly value: string;
-}
-
-interface RuntimeStateExpiryRow {
-  readonly store_key: string;
-  readonly expire_at_ts: string;
-}
-
-interface ResourceInboxAttemptStatusRow {
-  readonly ri_attempts: string | number;
-  readonly ri_status: string;
-}
-
-interface ResourceInboxPayloadRow {
-  readonly ri_resource: string;
-}
-
-interface EpochMillisecondsRow {
-  readonly epoch_ms: string | number;
-}
-
-interface GroupEventWorkspaceRow {
-  readonly workspace_key: string;
-}
-
-interface CreatedTimestampRow {
-  readonly created_ts: string;
-}
-
-interface ExpireTimestampRow {
-  readonly expire_ts: string;
-}
-
-interface StartTimestampRow {
-  readonly start_ts: string;
-}
-
-interface EndTimestampRow {
-  readonly end_ts: string;
-}
-
-interface TopologyCommandPayload {
-  readonly data: TopologyAppInboxCommand;
-}
-
-interface DurableTopologyAuthorityProof {
-  readonly principalId: string;
-  readonly sessionId: string;
-  readonly sessionIssuedAtEpochMs: number;
-}
-
-interface DurableTopologyAuthorityValue {
-  readonly proof: DurableTopologyAuthorityProof;
-}
-
-interface DurableTopologyAuthority {
-  readonly authority: DurableTopologyAuthorityValue;
-}
-
 interface ResourceInboxKeyFields {
   readonly topicId: string;
   readonly resourceId: string;
   readonly contextId: string;
+}
+
+interface MutableJsonRecord {
+  [key: string]: JsonWireValue;
 }
 
 interface RtcTopologyDeliveryState {
@@ -200,22 +87,6 @@ interface RtcTopologyDeliveryStreamRow {
 interface RtcTopologyDeliveryEntryRow {
   readonly sequence: number;
 }
-export function groupFixture(ref: GroupRef, displayName: string): Group {
-  const audit = canonicalAuditStamp(1);
-  return createTestGroup({
-    ...ref,
-    displayName,
-    activeMemberCount: 1,
-    ownerPrincipalId: 'alice',
-    snapshotVersion: 1,
-    metadataVersion: 1,
-    rosterVersion: 1,
-    presenceVersion: 0,
-    created: audit,
-    updated: audit,
-  });
-}
-
 export function submitPGliteTopologyCommand(
   appGroup: AppGroupInboxService,
   authority: IssuedAuthSession,
@@ -230,17 +101,21 @@ export function submitPGliteTopologyCommand(
     : command.operation === 'deleteOverride'
     ? AppInboxType.TOPOLOGY_OVERRIDE_DELETE
     : AppInboxType.TOPOLOGY_RECONFIGURE;
-  return appGroup.processAuthenticatedEntryUntilCompletion({
-    type,
-    resourceId: command.requestId,
-    contextId: [
-      command.groupRef.applicationId,
-      command.groupRef.workspaceId,
-      command.groupRef.groupId,
-    ].map(encodeURIComponent).join(':'),
-    senderId: command.actor.principalId,
-    data: command,
-  }, authority);
+  return appGroup.processAuthenticatedEntryUntilCompletionResult(
+    {
+      type,
+      resourceId: command.requestId,
+      contextId: [
+        command.groupRef.applicationId,
+        command.groupRef.workspaceId,
+        command.groupRef.groupId,
+      ].map(encodeURIComponent).join(':'),
+      senderId: command.actor.principalId,
+      data: command,
+    },
+    authority,
+    decodeTopologyAppInboxResult,
+  );
 }
 
 export function topologyConfigCommand(
@@ -335,8 +210,8 @@ export async function createPGliteTopologyWorkFixture(
   `;
   const reserved = await resourceInbox.findAnyByKey(workEntry.key);
   assert.ok(reserved);
-  const message = JSON.parse(reserved.resource) as ALMessage;
-  const envelope = JSON.parse(message.payload.resource) as ResourceInboxKeyFields;
+  const message = readALMessage(reserved.resource);
+  const envelope = readResourceInboxKeyFields(message.payload.resource);
   const workId = [
     envelope.topicId,
     envelope.contextId,
@@ -441,8 +316,10 @@ export async function readRtcTopologyDeliveryState(
     where publisher_stream_id = ${publisherStreamId}
     order by sequence
   `;
+  const [stream] = streams;
+  assert.ok(stream);
   return {
-    headSequence: streams[0]!.head_sequence,
+    headSequence: stream.head_sequence,
     sequences: entries.map((entry) => entry.sequence),
   };
 }
@@ -538,7 +415,7 @@ export function topologyGroupSnapshotWithSessionIds(
   const activeSessions = sessionIds.map((sessionId, index) => ({
     ...groupRef,
     sessionId,
-    principalId: members[index]!.principalId,
+    principalId: readMemberPrincipalId(members, index),
     generationId: `generation-${sessionId}`,
     generationVersion: nowEpochMs - 100,
     connectedAtEpochMs: nowEpochMs - 100,
@@ -688,338 +565,75 @@ export async function createPGliteRemovalPlanningScenario(
   return { authority, previous, service };
 }
 
-export async function readPGliteDatabaseEpochMs(sql: PGliteSql): Promise<number> {
-  const [clock] = await sql<EpochMillisecondsRow[]>`
-    select floor(extract(epoch from now()) * 1000)::bigint as epoch_ms
-  `;
-  assert.ok(clock);
-  return Number(clock.epoch_ms);
-}
-
-export async function readPGliteAppInboxFailure(
-  sql: PGliteSql,
-  resourceId: string,
-  resource: JsonWireValue,
-) {
-  const inbox = new ResourceInboxRepository(sql);
-  const results = new ResourceInboxResultsRepository(sql);
-  const service = new AppInboxService(
-    {
-      inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(inbox)),
-      resourceInboxRepository: inbox,
-      resourceInboxResultsRepository: results,
-      database: sql,
-    },
-    {
-      serviceId: 'pglite-legacy-failure-reader',
-      options: {
-        waitMaxElapsedMsecs: 5_000,
-        waitRetryIntervalMsecs: 1,
-        waitMaxRetryIntervalMsecs: 2,
-        waitJitterRatio: 0,
-      },
-    },
-  );
-  const enqueue = {
-    type: AppInboxType.GROUP_CREATE,
-    resourceId,
-    contextId: 'legacy-context',
-    data: { requestId: resourceId },
-  } as const;
-  const typedPending = service.processEntryUntilCompletionResult(enqueue, (value) => value);
-  await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-  const key = {
-    topicId: 'app-inbox.group-state',
-    resourceId,
-    contextId: enqueue.contextId,
-  };
-  const entry = await inbox.findByKey(key);
-  assert.ok(entry);
-  const reserved = await inbox.startProcessingEntity(entry);
-  assert.ok(reserved.right);
-  await results.replace(
-    toResourceEntryWithUpdatedResource(
-      reserved.right,
-      EntityStatus.FAILED,
-      resource,
-    ),
-  );
-  assert.ok(
-    await inbox.finishReserved(
-      key,
-      reserved.right.dequeueAudit.attempts,
-      EntityStatus.FAILED,
-      new Date(),
-    ),
-  );
-  const typed = await typedPending;
-  const legacy = await service.processEntryUntilCompletion(enqueue);
-  return { typed, legacy };
-}
-
-export async function waitForPGliteQueueRow(
-  sql: PGliteSql,
-  typeId: string,
-  status: string,
-): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    const [row] = await sql<StringCountRow[]>`
-      select count(*) as count
-      from resource_inbox
-      where ri_type_id = ${typeId} and ri_status = ${status}
-    `;
-    if (Number(row?.count ?? 0) > 0) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-  throw new Error(`Timed out waiting for ${typeId} ${status} queue row`);
-}
-
-interface ApplyPGliteGroupMutationInput {
-  readonly sql: PGliteSql;
-  readonly service: GroupStateService;
-  readonly descriptor: GroupMutationDescriptor;
-  readonly authority: IssuedAuthSession;
-}
-
-export async function applyPGliteGroupMutation(
-  input: ApplyPGliteGroupMutationInput,
-): Promise<void> {
-  const { sql, service, descriptor, authority } = input;
-  await applyPreparedPGliteGroupMutation(
-    sql,
-    service,
-    await service.prepareMutation(descriptor, authority),
-  );
-}
-
-export async function applyPreparedPGliteGroupMutation(
-  sql: PGliteSql,
-  service: GroupStateService,
-  preparation: GroupMutationPreparation,
-): Promise<void> {
-  const command = {
-    ...preparation,
-    facts: { ...preparation.facts, attemptCount: 1 },
-  };
-  const read = await service.read(command);
-  const computed = service.compute(command, read);
-  service.validate(command, read, computed);
-  if (computed.outcome !== 'write') {
-    return;
-  }
-  await sql.begin(async (transaction) => {
-    await service.write(transaction, computed);
-  });
-}
-
-interface CreateClientStateEventInput {
-  readonly eventId: string;
-  readonly occurredAtEpochMs: number;
-  readonly snapshotVersion: number;
-  readonly eventType?: ClientEvent['eventType'];
-  readonly overrides?: Partial<ClientEvent>;
-}
-
-export function createClientStateEvent(input: CreateClientStateEventInput): ClientEvent {
-  const {
-    eventId,
-    occurredAtEpochMs,
-    snapshotVersion,
-    eventType = 'session-connected',
-    overrides = {},
-  } = input;
-  return {
-    applicationId: 'rallar-test',
-    workspaceId: 'main',
-    principalId: 'principal-1',
-    eventId,
-    eventType,
-    snapshotVersion,
-    occurredAtEpochMs,
-    clientInstanceId: 'instance-1',
-    sessionId: 'session-1',
-    actor: {
-      kind: 'service',
-      serviceId: 'pglite-test',
-    },
-    reason: null,
-    traceId: null,
-    requestId: null,
-    payload: {},
-    ...overrides,
-  };
-}
-
-interface CreateGroupStateEventInput {
-  readonly eventId: string;
-  readonly occurredAtEpochMs: number;
-  readonly snapshotVersion: number;
-  readonly eventType?: GroupEvent['eventType'];
-  readonly overrides?: Partial<GroupEvent>;
-}
-
-export function createGroupStateEvent(input: CreateGroupStateEventInput): GroupEvent {
-  const {
-    eventId,
-    occurredAtEpochMs,
-    snapshotVersion,
-    eventType = 'session-connected',
-    overrides = {},
-  } = input;
-  return {
-    applicationId: 'rallar-test',
-    workspaceId: 'main',
-    groupId: 'room-1',
-    eventId,
-    eventType,
-    snapshotVersion,
-    causalRevision: {
-      groupRevision: snapshotVersion,
-      presenceRevision: 0,
-    },
-    occurredAtEpochMs,
-    actor: {
-      kind: 'service',
-      serviceId: 'pglite-test',
-    },
-    reason: null,
-    traceId: null,
-    requestId: null,
-    payload: {},
-    ...overrides,
-  };
-}
-
-export function canonicalAuditStamp(atEpochMs: number): AuditStamp {
-  return {
-    atEpochMs,
-    actor: { kind: 'service', serviceId: 'pglite-test' },
-    reason: null,
-    traceId: null,
-    requestId: null,
-  };
-}
-
-const CRDT_ROOM_REF = {
-  applicationId: 'rallar-test',
-  workspaceId: 'main',
-  groupId: 'room-1',
-};
-
-export const CRDT_DOCUMENT_REF: RallarCrdtDocumentRef = {
-  applicationId: 'rallar-test',
-  workspaceId: 'main',
-  scope: 'room',
-  documentType: 'checklist',
-  documentId: 'room-1',
-  roomRef: CRDT_ROOM_REF,
-};
-
-interface CreateResourceEntryOptions {
-  readonly topicId?: string;
-  readonly contextId?: string;
-  readonly typeId?: string;
-  readonly status?: EntityStatus;
-  readonly payload?: JsonWireValue;
-  readonly expiryTs?: Temporal.Instant;
-}
-
-export function createResourceEntry(
-  resourceId: string,
-  options: CreateResourceEntryOptions = {},
-): ResourceEntry {
-  return {
-    key: {
-      topicId: options.topicId ?? 'topic-smoke',
-      resourceId,
-      contextId: options.contextId ?? 'ctx-smoke',
-    },
-    resource: JSON.stringify(options.payload ?? { resourceId }),
-    typeId: options.typeId ?? 'TYPE_A',
-    status: options.status ?? EntityStatus.NEW,
-    audit: {
-      date: CREATED_TS.toPlainTime(),
-      createdBy: 'tester',
-      createdTs: CREATED_TS,
-      expiryTs: options.expiryTs ?? FUTURE_INSTANT,
-    },
-    dequeueAudit: {
-      attempts: 0,
-    },
-  };
-}
-
-export class PGliteTestSocket extends EventTarget implements WebSocket {
-  readonly CONNECTING = WebSocket.CONNECTING;
-  readonly OPEN = WebSocket.OPEN;
-  readonly CLOSING = WebSocket.CLOSING;
-  readonly CLOSED = WebSocket.CLOSED;
-  readonly bufferedAmount = 0;
-  readonly extensions = '';
-  readonly protocol = '';
-  readonly readyState = WebSocket.OPEN;
-  readonly url = 'ws://pglite-test.invalid';
-  binaryType: BinaryType = 'blob';
-  onclose: ((this: WebSocket, event: CloseEvent) => void) | null = null;
-  onerror: ((this: WebSocket, event: Event) => void) | null = null;
-  onmessage: ((this: WebSocket, event: MessageEvent) => void) | null = null;
-  onopen: ((this: WebSocket, event: Event) => void) | null = null;
-  private readonly messageListeners = new Set<EventListenerOrEventListenerObject>();
-
-  override addEventListener(
-    type: string,
-    callback: EventListenerOrEventListenerObject | null,
-    options?: AddEventListenerOptions | boolean,
-  ): void {
-    if (type === 'message' && callback !== null) {
-      this.messageListeners.add(callback);
-      return;
-    }
-    super.addEventListener(type, callback, options);
-  }
-
-  override removeEventListener(
-    type: string,
-    callback: EventListenerOrEventListenerObject | null,
-    options?: EventListenerOptions | boolean,
-  ): void {
-    if (type === 'message' && callback !== null) {
-      this.messageListeners.delete(callback);
-      return;
-    }
-    super.removeEventListener(type, callback, options);
-  }
-
-  close(): void {}
-
-  send(): void {}
-
-  async dispatchMessage(message: ALMessage): Promise<void> {
-    const event = new MessageEvent('message', { data: JSON.stringify(message) });
-    for (const listener of this.messageListeners) {
-      if (typeof listener === 'function') {
-        await listener.call(this, event);
-      } else {
-        await listener.handleEvent(event);
-      }
-    }
-    await this.onmessage?.call(this, event);
-  }
-}
-
 export function advanceCoalescedGeneration(
   entry: ResourceEntry,
   generation: number,
 ): ResourceEntry {
-  const message = JSON.parse(entry.resource);
-  const envelope = JSON.parse(message.payload.resource);
-  envelope.data.__rallarCoalescedWork.generation = generation;
-  envelope.data.revision = generation;
-  message.payload.resource = JSON.stringify(envelope);
+  const message = readMutableJsonRecord(entry.resource, 'AL message');
+  const payload = readJsonRecord(message.payload, 'AL message payload');
+  if (typeof payload.resource !== 'string') {
+    throw new TypeError('Expected AL message payload resource');
+  }
+  const envelope = readMutableJsonRecord(payload.resource, 'AppInbox envelope');
+  const data = readJsonRecord(envelope.data, 'AppInbox envelope data');
+  const work = readJsonRecord(data.__rallarCoalescedWork, 'coalesced work');
+  work.generation = generation;
+  data.revision = generation;
   return {
     ...entry,
-    resource: JSON.stringify(message),
+    resource: JSON.stringify({
+      ...message,
+      payload: { ...payload, resource: JSON.stringify(envelope) },
+    }),
   };
+}
+
+function readALMessage(source: string): ALMessage {
+  const value = JSON.parse(source);
+  validatePersistedALMessage(value);
+  return value;
+}
+
+function readResourceInboxKeyFields(source: string): ResourceInboxKeyFields {
+  const value: JsonWireValue = JSON.parse(source);
+  if (
+    !isJsonRecord(value) ||
+    typeof value.topicId !== 'string' ||
+    typeof value.resourceId !== 'string' ||
+    typeof value.contextId !== 'string'
+  ) {
+    throw new TypeError('Expected resource inbox key fields');
+  }
+  return {
+    topicId: value.topicId,
+    resourceId: value.resourceId,
+    contextId: value.contextId,
+  };
+}
+
+function readMutableJsonRecord(source: string, label: string): MutableJsonRecord {
+  const value: JsonWireValue = JSON.parse(source);
+  return readJsonRecord(value, label);
+}
+
+function readJsonRecord(value: JsonWireValue, label: string): MutableJsonRecord {
+  if (!isJsonRecord(value)) {
+    throw new TypeError(`Expected ${label} to be an object`);
+  }
+  return value;
+}
+
+function isJsonRecord(value: JsonWireValue): value is MutableJsonRecord {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readMemberPrincipalId(
+  members: GroupSnapshot['members'],
+  index: number,
+): string {
+  const member = members[index];
+  if (member === undefined) {
+    throw new Error(`Expected topology member at index ${index}`);
+  }
+  return member.principalId;
 }

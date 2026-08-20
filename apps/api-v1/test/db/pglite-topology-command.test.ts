@@ -25,9 +25,6 @@ import { GroupTopologyManagementService } from '@shared-server/rallar-system/top
 group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/\
 rallar-rtc-topology-service.ts';
-import {
-  type TopologyAppInboxCommand,
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
@@ -39,129 +36,23 @@ import {
 
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
+import { canonicalAuditStamp } from './pglite-state-mutation-test-runtime.ts';
 import {
   activeTopologySnapshot,
-  canonicalAuditStamp,
   createPGliteRemovalPlanningScenario,
   createPGliteTopologyWorkFixture,
   readRtcTopologyDeliveryState,
   topologyGroupSnapshot,
   topologyGroupSnapshotWithSessionIds,
-} from './pglite-sql-adapter-test-runtime.ts';
-
-interface ResourceInboxStatusRow {
-  readonly ri_type_id: string;
-  readonly ri_status: string;
-}
+} from './pglite-topology-test-runtime.ts';
 
 interface NumericCountRow {
   readonly count: string | number;
 }
 
-interface StringCountRow {
-  readonly count: string;
-}
-
-interface ResourceInboxLifecycleRow {
-  readonly ri_resource_id: string;
-  readonly ri_topic_id: string;
-  readonly ri_type_id: string;
-  readonly ri_status: string;
-  readonly ri_resource: string;
-}
-
-interface ResourceInboxForeignKeyRow {
-  readonly ri_topic_id: string;
-  readonly ri_resource_id: string;
-  readonly fk_ext_bank_id: string;
-}
-
-interface ResourceInboxTopicTypeRow {
-  readonly ri_topic_id: string;
-  readonly ri_type_id: string;
-}
-
-interface NumericValueRow {
-  readonly value: number;
-}
-
-interface StringValueRow {
-  readonly value: string;
-}
-
-interface RuntimeStateExpiryRow {
-  readonly store_key: string;
-  readonly expire_at_ts: string;
-}
-
 interface ResourceInboxAttemptStatusRow {
   readonly ri_attempts: string | number;
   readonly ri_status: string;
-}
-
-interface ResourceInboxPayloadRow {
-  readonly ri_resource: string;
-}
-
-interface EpochMillisecondsRow {
-  readonly epoch_ms: string | number;
-}
-
-interface GroupEventWorkspaceRow {
-  readonly workspace_key: string;
-}
-
-interface CreatedTimestampRow {
-  readonly created_ts: string;
-}
-
-interface ExpireTimestampRow {
-  readonly expire_ts: string;
-}
-
-interface StartTimestampRow {
-  readonly start_ts: string;
-}
-
-interface EndTimestampRow {
-  readonly end_ts: string;
-}
-
-interface TopologyCommandPayload {
-  readonly data: TopologyAppInboxCommand;
-}
-
-interface DurableTopologyAuthorityProof {
-  readonly principalId: string;
-  readonly sessionId: string;
-  readonly sessionIssuedAtEpochMs: number;
-}
-
-interface DurableTopologyAuthorityValue {
-  readonly proof: DurableTopologyAuthorityProof;
-}
-
-interface DurableTopologyAuthority {
-  readonly authority: DurableTopologyAuthorityValue;
-}
-
-interface ResourceInboxKeyFields {
-  readonly topicId: string;
-  readonly resourceId: string;
-  readonly contextId: string;
-}
-
-interface RtcTopologyDeliveryState {
-  readonly headSequence: number;
-  readonly sequences: readonly number[];
-}
-
-interface RtcTopologyDeliveryStreamRow {
-  readonly head_sequence: number;
-}
-
-interface RtcTopologyDeliveryEntryRow {
-  readonly sequence: number;
 }
 
 Deno.test(

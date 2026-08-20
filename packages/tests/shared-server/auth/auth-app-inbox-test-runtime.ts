@@ -11,9 +11,15 @@ import {
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
-import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
-import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
+// prettier-ignore
+import { createAuthMutationService } from '@shared-server/rallar-system/auth/\
+auth-mutation-service.ts';
+// prettier-ignore
+import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/\
+auth-credential-issuer.ts';
+// prettier-ignore
+import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/\
+app-auth-inbox-service.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
@@ -42,7 +48,7 @@ interface CreateAuthInboxTestRuntimeInput {
   readonly databaseOptions?: AppInboxTestDatabaseOptions;
 }
 
-interface RunAuthInboxCommandInput<P extends Promise<Either<AppInboxFailure, unknown>>> {
+interface RunAuthInboxCommandInput<Result, P extends Promise<Either<AppInboxFailure, Result>>> {
   readonly pending: P;
   readonly queue: InMemoryQueueBox;
   readonly reader: InboxQueueReader;
@@ -102,13 +108,17 @@ export function createAuthInboxTestRuntime({
     runtimeRepository,
   });
   const service = new AppAuthInboxService(
-    reader,
-    queue as never,
-    results as never,
-    database,
-    createAuthMutationService({ runtimeRepository, serviceId }),
-    credentialIssuer,
-    serviceId,
+    {
+      inboxQueueReader: reader,
+      resourceInboxRepository: queue,
+      resourceInboxResultsRepository: results,
+      database: database,
+      authMutationService: createAuthMutationService({ runtimeRepository, serviceId }),
+      credentialIssuer: credentialIssuer,
+    },
+    {
+      serviceId: serviceId,
+    },
   );
   return { queue, results, reader, service, credentialIssuer, database };
 }
@@ -144,12 +154,15 @@ export async function waitForAuthInboxEntry(
   throw new Error('Auth AppInbox test entry was not enqueued');
 }
 
-export async function runAuthInboxCommand<P extends Promise<Either<AppInboxFailure, unknown>>>({
+export async function runAuthInboxCommand<
+  Result,
+  P extends Promise<Either<AppInboxFailure, Result>>,
+>({
   pending,
   queue,
   reader,
   minimumEntries = 1,
-}: RunAuthInboxCommandInput<P>): Promise<Awaited<P>> {
+}: RunAuthInboxCommandInput<Result, P>): Promise<Awaited<P>> {
   await waitForAuthInboxEntry(queue, minimumEntries);
   await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAuthInboxTestResilience());
   return await pending;
