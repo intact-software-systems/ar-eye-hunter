@@ -56,7 +56,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}",
+        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}-group-manager-succession",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -95,7 +95,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login/requests/bb-login-bob-002-{runId}",
+        "path": "/api/auth/login/requests/bb-login-bob-002-{runId}-group-manager-succession",
         "body": {
           "username": "{bobUsername}",
           "password": "{bobPassword}"

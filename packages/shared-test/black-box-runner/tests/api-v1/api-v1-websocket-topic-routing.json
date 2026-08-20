@@ -65,7 +65,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}",
+        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}-websocket-topic-routing",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -355,7 +355,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/logout/requests/bb-logout-alice-007-{runId}",
+        "path": "/api/auth/logout/requests/bb-logout-alice-007-{runId}-websocket-topic-routing",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"

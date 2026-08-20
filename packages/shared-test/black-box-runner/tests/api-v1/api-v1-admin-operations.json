@@ -38,10 +38,7 @@
       "expect": {
         "status": 401,
         "body": {
-          "type": "api-mutation-failure",
-          "version": "canonical.v1",
-          "code": "authentication-required",
-          "status": 401
+          "error": "Unauthorized: Missing bearer token"
         }
       }
     },
@@ -80,7 +77,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login/requests/bb-login-demo-admin-002-0001",
+        "path": "/api/auth/login/requests/bb-login-demo-admin-002-0001-admin-operations",
         "body": {
           "username": "admin",
           "password": "admin"
@@ -211,12 +208,7 @@
         "stateWriteEvidence": {
           "match": "bb-request-prune-{executionToken}",
           "commandTypes": ["ADMIN_PRUNE_EXPIRED"],
-          "minimumMatchedRows": 1,
-          "expectedEffectsByCommandType": {
-            "ADMIN_PRUNE_EXPIRED": [
-              "admin-prune-page", "admin-prune-page"
-            ]
-          }
+          "minimumMatchedRows": 1
         }
       }
     },

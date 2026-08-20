@@ -94,7 +94,9 @@
                   "403": "any",
                   "404": "any"
                 }
-              },
+              }
+            },
+            "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config/requests/{requestId}": {
               "put": {
                 "security": [
                   {
@@ -138,7 +140,9 @@
                   "403": "any",
                   "404": "any"
                 }
-              },
+              }
+            },
+            "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override/requests/{requestId}": {
               "put": {
                 "security": [
                   {
@@ -168,7 +172,7 @@
                 }
               }
             },
-            "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure": {
+            "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure/requests/{requestId}": {
               "post": {
                 "security": [
                   {

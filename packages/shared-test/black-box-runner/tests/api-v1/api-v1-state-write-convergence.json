@@ -334,7 +334,7 @@
       "connection": "apiPrimary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{ownerClientId}/requests/activate-owner-scope-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{ownerClientId}/requests/activate-owner-scope-{runId}-state-write-convergence",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
