@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { Either } from '@shared/resilience/Either.ts';
-import type { ApiMutationFailure } from '@shared/api/mutation/api-mutation.ts';
+import type { ApiMutationFailure } from '@shared/api/mutation/api-mutation-failure.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { authenticationRequired } from '../../src/services/request-auth-service.ts';
 

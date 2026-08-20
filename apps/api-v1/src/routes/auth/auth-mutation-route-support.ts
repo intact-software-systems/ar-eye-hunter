@@ -3,7 +3,7 @@ import type { Context } from 'jsr:@hono/hono@4.11.9';
 import type {
   ApiMutationFailureJsonObject,
   ApiMutationFailureJsonValue,
-} from '@shared/api/mutation/api-mutation.ts';
+} from '@shared/api/mutation/api-mutation-failure.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 

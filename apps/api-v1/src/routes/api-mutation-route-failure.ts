@@ -4,7 +4,7 @@ import type {
   ApiMutationFailureIssue,
   ApiMutationFailureJsonObject,
   ApiMutationFailureRetry,
-} from '@shared/api/mutation/api-mutation.ts';
+} from '@shared/api/mutation/api-mutation-failure.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 import { RequestAuthFailure } from '@shared-server/http/request-auth-service.ts';
 

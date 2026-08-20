@@ -4,7 +4,7 @@ import type {
     ConsumeAgentSessionTicketRequest,
     ConsumeAgentSessionTicketResponse,
 } from '@shared/api/api-config.ts';
-import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation.ts';
+import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
 import {
