@@ -156,10 +156,25 @@ export function createApiV1TopologyServices(
           overlaySnapshotsByGroupKey.set(toWebRtcGroupKey(group.group), snapshot);
         }
       }
+      // Acceptance must resolve the limit exactly as the read-side planning
+      // filter does (per-group effective config under the server reporting
+      // default), or evidence a raised per-group limit plans for is never
+      // stored and readiness can never cover the plan.
+      const groupDegreeLimits = await Promise.all(
+        candidateGroups.map(async (group) => {
+          const config = await topologyManagement.readConfig(group.group);
+          return rtcTopologyService.readRttReportingDegreeLimit({
+            ...config.effective,
+            rttReportingDegreeLimit: rtcTopologyOptions.rttReportingDegreeLimit,
+          });
+        }),
+      );
       return {
         candidateGroups,
         overlaySnapshotsByGroupKey,
-        degreeLimit: rtcTopologyService.readRttReportingDegreeLimit(),
+        degreeLimit: groupDegreeLimits.length > 0
+          ? Math.max(...groupDegreeLimits)
+          : rtcTopologyService.readRttReportingDegreeLimit(),
       };
     },
   });

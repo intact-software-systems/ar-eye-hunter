@@ -933,7 +933,7 @@
       "category": "api-v1-black-box",
       "mode": "run",
       "tier": 1,
-      "profiles": ["api-v1-black-box-cluster"],
+      "profiles": ["api-v1-black-box-cluster", "api-v1-black-box", "api-v1-black-box-recipes"],
       "expectedExitCode": 0,
       "artifactName": "api-v1-group-lifecycle-transitions",
       "requires": {
@@ -942,7 +942,7 @@
         },
         "httpServices": [
           {
-            "name": "Rallar API primary",
+            "name": "Rallar API",
             "env": "RALLAR_API_BASE_URL",
             "default": "http://127.0.0.1:18080"
           }
@@ -956,7 +956,7 @@
       "category": "api-v1-black-box",
       "mode": "run",
       "tier": 1,
-      "profiles": ["api-v1-black-box-cluster"],
+      "profiles": ["api-v1-black-box-cluster", "api-v1-black-box", "api-v1-black-box-recipes"],
       "expectedExitCode": 0,
       "artifactName": "api-v1-group-formation-criterion",
       "requires": {
@@ -965,7 +965,7 @@
         },
         "httpServices": [
           {
-            "name": "Rallar API primary",
+            "name": "Rallar API",
             "env": "RALLAR_API_BASE_URL",
             "default": "http://127.0.0.1:18080"
           }
@@ -979,9 +979,7 @@
       "category": "api-v1-black-box",
       "mode": "run",
       "tier": 1,
-      "profiles": [
-        "api-v1-black-box-cluster"
-      ],
+      "profiles": ["api-v1-black-box-cluster", "api-v1-black-box", "api-v1-black-box-recipes"],
       "expectedExitCode": 0,
       "artifactName": "api-v1-group-manager-succession",
       "requires": {
@@ -990,7 +988,7 @@
         },
         "httpServices": [
           {
-            "name": "Rallar API primary",
+            "name": "Rallar API",
             "env": "RALLAR_API_BASE_URL",
             "default": "http://127.0.0.1:18080"
           }
@@ -1004,7 +1002,7 @@
       "category": "api-v1-black-box",
       "mode": "run",
       "tier": 1,
-      "profiles": ["api-v1-black-box-cluster"],
+      "profiles": ["api-v1-black-box-cluster", "api-v1-black-box", "api-v1-black-box-recipes"],
       "expectedExitCode": 0,
       "artifactName": "api-v1-group-lifecycle-policy",
       "requires": {
@@ -1013,7 +1011,7 @@
         },
         "httpServices": [
           {
-            "name": "Rallar API primary",
+            "name": "Rallar API",
             "env": "RALLAR_API_BASE_URL",
             "default": "http://127.0.0.1:18080"
           }
@@ -1027,9 +1025,7 @@
       "category": "api-v1-black-box",
       "mode": "run",
       "tier": 1,
-      "profiles": [
-        "api-v1-black-box-cluster"
-      ],
+      "profiles": ["api-v1-black-box-cluster", "api-v1-black-box", "api-v1-black-box-recipes"],
       "expectedExitCode": 0,
       "artifactName": "api-v1-group-admission-approval",
       "requires": {
@@ -1038,7 +1034,7 @@
         },
         "httpServices": [
           {
-            "name": "Rallar API primary",
+            "name": "Rallar API",
             "env": "RALLAR_API_BASE_URL",
             "default": "http://127.0.0.1:18080"
           }
@@ -1052,9 +1048,7 @@
       "category": "api-v1-black-box",
       "mode": "run",
       "tier": 1,
-      "profiles": [
-        "api-v1-black-box-cluster"
-      ],
+      "profiles": ["api-v1-black-box-cluster", "api-v1-black-box", "api-v1-black-box-recipes"],
       "expectedExitCode": 0,
       "artifactName": "api-v1-group-admission-windows",
       "requires": {
@@ -1063,7 +1057,7 @@
         },
         "httpServices": [
           {
-            "name": "Rallar API primary",
+            "name": "Rallar API",
             "env": "RALLAR_API_BASE_URL",
             "default": "http://127.0.0.1:18080"
           }
@@ -1077,9 +1071,7 @@
       "category": "api-v1-black-box",
       "mode": "run",
       "tier": 1,
-      "profiles": [
-        "api-v1-black-box-cluster"
-      ],
+      "profiles": ["api-v1-black-box-cluster", "api-v1-black-box", "api-v1-black-box-recipes"],
       "expectedExitCode": 0,
       "artifactName": "api-v1-group-data-policy",
       "requires": {
@@ -1088,7 +1080,7 @@
         },
         "httpServices": [
           {
-            "name": "Rallar API primary",
+            "name": "Rallar API",
             "env": "RALLAR_API_BASE_URL",
             "default": "http://127.0.0.1:18080"
           }
@@ -1421,6 +1413,26 @@
       "description": "Formation-burst baseline medium tier: 20 clients join one group in a burst, converge, then hold a ~60s steady-state heartbeat window while admin group-formation metrics are captured at T0/T1/T2."
     },
     {
+      "id": "api-v1-group-formation-managed-burst-medium",
+      "recipe": "tests/api-v1/api-v1-group-formation-managed-burst-medium.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-formation-managed-burst-medium",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Managed threshold burst medium tier (N=20): 20 clients join a preset:managed phased group, the creator-manager establishes, readiness holds at zero observed edges, an all-pairs RTT burst covers the planned mesh, and activation fires only at threshold (outcome activated, observedRate 1)."
+    },
+    {
       "id": "api-v1-group-formation-burst-large",
       "recipe": "tests/api-v1/api-v1-group-formation-burst-large.json",
       "category": "api-v1-black-box",
@@ -1449,6 +1461,26 @@
         ]
       },
       "description": "Opt-in formation-burst baseline large tier: 50 clients join one group in a burst against the three-server PostgreSQL cluster, converge, then hold a ~60s steady-state heartbeat window while admin group-formation metrics are captured per server at T0/T1/T2."
+    },
+    {
+      "id": "api-v1-group-formation-managed-burst-large",
+      "recipe": "tests/api-v1/api-v1-group-formation-managed-burst-large.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": ["api-v1-black-box-formation-large"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-formation-managed-burst-large",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Managed threshold burst large tier (N=50): 50 clients join a preset:managed phased group, the creator-manager establishes, readiness holds at zero observed edges, an all-pairs RTT burst covers the planned mesh, and activation fires only at threshold (outcome activated, observedRate 1)."
     },
     {
       "id": "api-v1-group-formation-churn-large",

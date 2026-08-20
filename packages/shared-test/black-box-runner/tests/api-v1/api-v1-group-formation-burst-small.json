@@ -204,9 +204,7 @@
               "username": "formation-small-client-{i}-{runId}",
               "displayName": "Formation small client {i}",
               "status": "active",
-              "roles": [
-                "black-box"
-              ]
+              "roles": ["black-box"]
             }
           },
           "expect": {
@@ -230,12 +228,7 @@
             "retry": {
               "maxAttempts": 3,
               "backoffMs": 2000,
-              "onStatus": [
-                500,
-                502,
-                503,
-                504
-              ]
+              "onStatus": [500, 502, 503, 504]
             }
           },
           "expect": {
@@ -319,12 +312,7 @@
             "retry": {
               "maxAttempts": 3,
               "backoffMs": 2000,
-              "onStatus": [
-                500,
-                502,
-                503,
-                504
-              ]
+              "onStatus": [500, 502, 503, 504]
             }
           },
           "expect": {
@@ -412,12 +400,7 @@
             "retry": {
               "maxAttempts": 3,
               "backoffMs": 2000,
-              "onStatus": [
-                500,
-                502,
-                503,
-                504
-              ]
+              "onStatus": [500, 502, 503, 504]
             }
           },
           "expect": {
@@ -533,7 +516,10 @@
           "displayName": "{groupName}",
           "kind": "room",
           "joinMode": "open",
-          "createdByPrincipalId": "{creatorClientId}"
+          "createdByPrincipalId": "{creatorClientId}",
+          "lifecyclePolicy": {
+            "preset": "optimistic"
+          }
         }
       },
       "expect": {

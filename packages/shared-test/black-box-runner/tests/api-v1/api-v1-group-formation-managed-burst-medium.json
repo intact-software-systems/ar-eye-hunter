@@ -1,0 +1,3578 @@
+{
+  "description": "Managed threshold burst tier medium (N=20): 20 clients join a preset:managed phased group with open admission, the creator-manager establishes, readiness holds at zero observed edges, an all-pairs RTT burst covers every planned mesh edge, and activation fires only at threshold (outcome activated, observedRate 1).",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "applicationId": "managed-burst-medium-{runId}",
+    "workspaceId": "default",
+    "groupId": "managed-burst-medium-room-{runId}",
+    "groupName": "Managed burst medium {runId}",
+    "clientPassword": {
+      "env": "RALLAR_BB_CLIENT_PASSWORD",
+      "default": "black-box-secret",
+      "secret": true
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 45000
+    },
+    "ws-client-1": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-2": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-3": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-4": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-5": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-6": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-7": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-8": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-9": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-10": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-11": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-12": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-13": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-14": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-15": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-16": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-17": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-18": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-19": {
+      "type": "ws",
+      "timeoutMs": 30000
+    },
+    "ws-client-20": {
+      "type": "ws",
+      "timeoutMs": 30000
+    }
+  },
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ],
+  "fragments": {
+    "managed-client-flow": {
+      "steps": [
+        {
+          "name": "registerClient{i}",
+          "type": "http",
+          "connection": "api",
+          "request": {
+            "method": "POST",
+            "path": "/api/auth/register",
+            "headers": {
+              "x-forwarded-for": "{clientIp}"
+            },
+            "body": {
+              "username": "managed-burst-medium-client-{i}-{runId}",
+              "password": "{clientPassword}",
+              "displayName": "Managed medium client {i}"
+            }
+          },
+          "expect": {
+            "status": 201,
+            "body": {
+              "clientId": "string"
+            }
+          }
+        },
+        {
+          "name": "loginClient{i}",
+          "type": "http",
+          "connection": "api",
+          "request": {
+            "method": "POST",
+            "path": "/api/auth/login",
+            "headers": {
+              "x-forwarded-for": "{clientIp}"
+            },
+            "body": {
+              "username": "managed-burst-medium-client-{i}-{runId}",
+              "password": "{clientPassword}"
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "clientId": "string",
+              "accessToken": "string",
+              "sessionId": "string"
+            }
+          }
+        },
+        {
+          "name": "captureClient{i}ClientId",
+          "type": "set",
+          "output": "client{i}ClientId",
+          "transform": {
+            "path": "resultsByName.loginClient{i}.0.actual.body.clientId"
+          }
+        },
+        {
+          "name": "captureClient{i}SessionId",
+          "type": "set",
+          "output": "client{i}SessionId",
+          "transform": {
+            "path": "resultsByName.loginClient{i}.0.actual.body.sessionId"
+          }
+        },
+        {
+          "name": "deriveClient{i}AuthHeader",
+          "type": "set",
+          "output": "client{i}AuthHeader",
+          "secret": true,
+          "redactAs": "client{i}AuthHeader",
+          "transform": {
+            "concat": [
+              "Bearer ",
+              {
+                "path": "resultsByName.loginClient{i}.0.actual.body.accessToken"
+              }
+            ]
+          }
+        },
+        {
+          "name": "upsertClient{i}Principal",
+          "type": "http",
+          "connection": "api",
+          "request": {
+            "method": "PUT",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{client{i}ClientId}/principal",
+            "headers": {
+              "Authorization": "{client{i}AuthHeader}",
+              "x-client-id": "{client{i}ClientId}"
+            },
+            "body": {
+              "requestId": "principal-client-{i}-{runId}",
+              "username": "managed-burst-medium-client-{i}-{runId}",
+              "displayName": "Managed medium client {i}",
+              "status": "active",
+              "roles": ["black-box"]
+            }
+          },
+          "expect": {
+            "status": 200
+          }
+        },
+        {
+          "name": "joinClient{i}",
+          "type": "http",
+          "connection": "api",
+          "request": {
+            "method": "POST",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join",
+            "headers": {
+              "Authorization": "{client{i}AuthHeader}",
+              "x-client-id": "{client{i}ClientId}"
+            },
+            "body": {
+              "requestId": "join-client-{i}-{runId}"
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "group": {
+                "groupId": "{groupId}"
+              }
+            }
+          }
+        },
+        {
+          "name": "createClient{i}WsTicket",
+          "type": "http",
+          "connection": "api",
+          "request": {
+            "method": "POST",
+            "path": "/api/auth/ws-ticket",
+            "headers": {
+              "Authorization": "{client{i}AuthHeader}",
+              "x-client-id": "{client{i}ClientId}"
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "ticket": "string",
+              "sessionId": "{client{i}SessionId}"
+            }
+          }
+        },
+        {
+          "name": "deriveClient{i}WsUrl",
+          "type": "set",
+          "output": "client{i}WsUrl",
+          "secret": true,
+          "redactAs": "client{i}WsUrl",
+          "transform": {
+            "concat": [
+              {
+                "path": "variables.rallarWsBaseUrl"
+              },
+              "/api/ws/",
+              {
+                "path": "outputs.client{i}SessionId"
+              },
+              "?ticket=",
+              {
+                "urlEncode": {
+                  "path": "resultsByName.createClient{i}WsTicket.0.actual.body.ticket"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "openClient{i}Ws",
+          "type": "ws.open",
+          "connection": "ws-client-{i}",
+          "request": {
+            "url": "{client{i}WsUrl}",
+            "timeoutMs": 30000
+          }
+        },
+        {
+          "name": "connectClient{i}Presence",
+          "type": "http",
+          "connection": "api",
+          "request": {
+            "method": "PUT",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{client{i}SessionId}",
+            "headers": {
+              "Authorization": "{client{i}AuthHeader}",
+              "x-client-id": "{client{i}ClientId}"
+            },
+            "body": {
+              "requestId": "presence-client-{i}-{runId}",
+              "generationId": "generation-{runId}",
+              "principalId": "{client{i}ClientId}"
+            },
+            "retry": {
+              "maxAttempts": 3,
+              "backoffMs": 2000,
+              "onStatus": [500, 502, 503, 504]
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "group": {
+                "groupId": "{groupId}"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "report-rtt-pair": {
+      "steps": [
+        {
+          "name": "deriveRtt{i}x{j}Resource",
+          "type": "set",
+          "output": "rtt{i}x{j}Resource",
+          "transform": {
+            "concat": [
+              "{\"sessionIdFrom\":\"",
+              {
+                "path": "outputs.client{i}SessionId"
+              },
+              "\",\"sessionIdTo\":\"",
+              {
+                "path": "outputs.client{j}SessionId"
+              },
+              "\",\"rttMs\":42,\"createdAtEpochMs\":",
+              {
+                "path": "outputs.rttReportedAtEpochMs"
+              },
+              ",\"version\":1}"
+            ]
+          }
+        },
+        {
+          "name": "reportRtt{i}x{j}",
+          "type": "ws.send",
+          "connection": "ws-client-{i}",
+          "request": {
+            "send": {
+              "id": {
+                "v": 2,
+                "msgId": "rtt-{i}x{j}-{runId}",
+                "ts": 0,
+                "senderId": "{client{i}SessionId}",
+                "sessionId": "{client{i}SessionId}"
+              },
+              "route": {
+                "topicId": "rtt",
+                "resourceId": "rtt-{i}x{j}",
+                "contextId": "1"
+              },
+              "delivery": {
+                "reliability": "best-effort",
+                "ack": "none"
+              },
+              "payload": {
+                "typeId": "rtt",
+                "contentType": "application/json",
+                "resource": "{rtt{i}x{j}Resource}"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "steps": [
+    {
+      "name": "registerCreator",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "managed-burst-medium-creator-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "Managed burst medium creator"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginCreator",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "managed-burst-medium-creator-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "creatorClientId": "body.clientId",
+          "creatorAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "creatorSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveCreatorAuthHeader",
+      "type": "set",
+      "output": "creatorAuthHeader",
+      "secret": true,
+      "redactAs": "creatorAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.creatorAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createFormationGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{creatorAuthHeader}",
+          "x-client-id": "{creatorClientId}"
+        },
+        "body": {
+          "requestId": "create-{groupId}-{runId}",
+          "groupId": "{groupId}",
+          "displayName": "{groupName}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{creatorClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "admission": {
+              "mode": "open"
+            },
+            "activation": {
+              "deadlineMs": 30000,
+              "maxFormationAttempts": 1
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "kind": "room",
+            "lifecycleState": "forming",
+            "formationEpoch": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "liftRttReportingDegreeLimit",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
+        "headers": {
+          "Authorization": "{creatorAuthHeader}",
+          "x-client-id": "{creatorClientId}",
+          "Idempotency-Key": "topology-config-{groupId}-{runId}"
+        },
+        "body": {
+          "requestId": "topology-config-{groupId}-{runId}",
+          "config": {
+            "degreeLimit": 24
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "formationBurst",
+      "type": "parallel",
+      "maxConcurrency": 10,
+      "timeoutMs": 300000,
+      "groups": [
+        {
+          "name": "client-1",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 1,
+                  "clientIp": "10.31.1.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-2",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 2,
+                  "clientIp": "10.31.2.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-3",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 3,
+                  "clientIp": "10.31.3.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-4",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 4,
+                  "clientIp": "10.31.4.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-5",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 5,
+                  "clientIp": "10.31.5.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-6",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 6,
+                  "clientIp": "10.31.6.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-7",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 7,
+                  "clientIp": "10.31.7.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-8",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 8,
+                  "clientIp": "10.31.8.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-9",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 9,
+                  "clientIp": "10.31.9.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-10",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 10,
+                  "clientIp": "10.31.10.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-11",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 11,
+                  "clientIp": "10.31.11.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-12",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 12,
+                  "clientIp": "10.31.12.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-13",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 13,
+                  "clientIp": "10.31.13.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-14",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 14,
+                  "clientIp": "10.31.14.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-15",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 15,
+                  "clientIp": "10.31.15.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-16",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 16,
+                  "clientIp": "10.31.16.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 17,
+                  "clientIp": "10.31.17.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 18,
+                  "clientIp": "10.31.18.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 19,
+                  "clientIp": "10.31.19.1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "client-20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "managed-client-flow",
+                "variables": {
+                  "i": 20,
+                  "clientIp": "10.31.20.1"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "managerEstablishes",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/establish",
+        "headers": {
+          "Authorization": "{creatorAuthHeader}",
+          "x-client-id": "{creatorClientId}"
+        },
+        "body": {
+          "requestId": "establish-{groupId}-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "establishing",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "planningHoldsBelowThreshold",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation",
+        "headers": {
+          "Authorization": "{creatorAuthHeader}",
+          "x-client-id": "{creatorClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 30000,
+          "backoffMs": 250,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "establishing",
+          "readiness": {
+            "observedEdgeCount": 0,
+            "observedRate": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "captureRttReportedAt",
+      "type": "set",
+      "output": "rttReportedAtEpochMs",
+      "transform": {
+        "timestamp": true
+      }
+    },
+    {
+      "name": "rttBurst",
+      "type": "parallel",
+      "maxConcurrency": 10,
+      "timeoutMs": 300000,
+      "groups": [
+        {
+          "name": "rtt-1x2",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 2
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x3",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 3
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x4",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 4
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x5",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 5
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x6",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 6
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x7",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 7
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x8",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 8
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x9",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 9
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x10",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 10
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x11",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 11
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x12",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 12
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x13",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x14",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 14
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x15",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 15
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x16",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-1x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 1,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x3",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 3
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x4",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 4
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x5",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 5
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x6",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 6
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x7",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 7
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x8",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 8
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x9",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 9
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x10",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 10
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x11",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 11
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x12",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 12
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x13",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x14",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 14
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x15",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 15
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x16",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-2x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 2,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x4",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 4
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x5",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 5
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x6",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 6
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x7",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 7
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x8",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 8
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x9",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 9
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x10",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 10
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x11",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 11
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x12",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 12
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x13",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x14",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 14
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x15",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 15
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x16",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-3x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 3,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-4x5",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 4,
+                  "j": 5
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-4x6",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 4,
+                  "j": 6
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-4x7",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 4,
+                  "j": 7
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-4x8",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 4,
+                  "j": 8
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-4x9",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 4,
+                  "j": 9
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-4x10",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 4,
+                  "j": 10
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-4x11",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 4,
+                  "j": 11
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-4x12",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 4,
+                  "j": 12
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-4x13",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 4,
+                  "j": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-4x14",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 4,
+                  "j": 14
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-4x15",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 4,
+                  "j": 15
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-4x16",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 4,
+                  "j": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-4x17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 4,
+                  "j": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-4x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 4,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-4x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 4,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-4x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 4,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-5x6",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 5,
+                  "j": 6
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-5x7",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 5,
+                  "j": 7
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-5x8",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 5,
+                  "j": 8
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-5x9",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 5,
+                  "j": 9
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-5x10",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 5,
+                  "j": 10
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-5x11",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 5,
+                  "j": 11
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-5x12",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 5,
+                  "j": 12
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-5x13",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 5,
+                  "j": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-5x14",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 5,
+                  "j": 14
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-5x15",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 5,
+                  "j": 15
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-5x16",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 5,
+                  "j": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-5x17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 5,
+                  "j": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-5x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 5,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-5x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 5,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-5x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 5,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-6x7",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 6,
+                  "j": 7
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-6x8",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 6,
+                  "j": 8
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-6x9",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 6,
+                  "j": 9
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-6x10",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 6,
+                  "j": 10
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-6x11",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 6,
+                  "j": 11
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-6x12",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 6,
+                  "j": 12
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-6x13",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 6,
+                  "j": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-6x14",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 6,
+                  "j": 14
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-6x15",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 6,
+                  "j": 15
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-6x16",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 6,
+                  "j": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-6x17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 6,
+                  "j": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-6x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 6,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-6x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 6,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-6x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 6,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-7x8",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 7,
+                  "j": 8
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-7x9",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 7,
+                  "j": 9
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-7x10",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 7,
+                  "j": 10
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-7x11",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 7,
+                  "j": 11
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-7x12",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 7,
+                  "j": 12
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-7x13",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 7,
+                  "j": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-7x14",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 7,
+                  "j": 14
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-7x15",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 7,
+                  "j": 15
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-7x16",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 7,
+                  "j": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-7x17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 7,
+                  "j": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-7x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 7,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-7x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 7,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-7x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 7,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-8x9",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 8,
+                  "j": 9
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-8x10",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 8,
+                  "j": 10
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-8x11",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 8,
+                  "j": 11
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-8x12",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 8,
+                  "j": 12
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-8x13",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 8,
+                  "j": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-8x14",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 8,
+                  "j": 14
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-8x15",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 8,
+                  "j": 15
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-8x16",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 8,
+                  "j": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-8x17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 8,
+                  "j": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-8x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 8,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-8x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 8,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-8x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 8,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-9x10",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 9,
+                  "j": 10
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-9x11",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 9,
+                  "j": 11
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-9x12",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 9,
+                  "j": 12
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-9x13",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 9,
+                  "j": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-9x14",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 9,
+                  "j": 14
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-9x15",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 9,
+                  "j": 15
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-9x16",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 9,
+                  "j": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-9x17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 9,
+                  "j": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-9x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 9,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-9x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 9,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-9x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 9,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-10x11",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 10,
+                  "j": 11
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-10x12",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 10,
+                  "j": 12
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-10x13",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 10,
+                  "j": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-10x14",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 10,
+                  "j": 14
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-10x15",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 10,
+                  "j": 15
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-10x16",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 10,
+                  "j": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-10x17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 10,
+                  "j": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-10x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 10,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-10x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 10,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-10x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 10,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-11x12",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 11,
+                  "j": 12
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-11x13",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 11,
+                  "j": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-11x14",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 11,
+                  "j": 14
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-11x15",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 11,
+                  "j": 15
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-11x16",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 11,
+                  "j": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-11x17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 11,
+                  "j": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-11x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 11,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-11x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 11,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-11x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 11,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-12x13",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 12,
+                  "j": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-12x14",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 12,
+                  "j": 14
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-12x15",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 12,
+                  "j": 15
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-12x16",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 12,
+                  "j": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-12x17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 12,
+                  "j": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-12x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 12,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-12x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 12,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-12x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 12,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-13x14",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 13,
+                  "j": 14
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-13x15",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 13,
+                  "j": 15
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-13x16",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 13,
+                  "j": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-13x17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 13,
+                  "j": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-13x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 13,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-13x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 13,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-13x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 13,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-14x15",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 14,
+                  "j": 15
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-14x16",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 14,
+                  "j": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-14x17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 14,
+                  "j": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-14x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 14,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-14x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 14,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-14x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 14,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-15x16",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 15,
+                  "j": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-15x17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 15,
+                  "j": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-15x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 15,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-15x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 15,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-15x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 15,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-16x17",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 16,
+                  "j": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-16x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 16,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-16x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 16,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-16x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 16,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-17x18",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 17,
+                  "j": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-17x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 17,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-17x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 17,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-18x19",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 18,
+                  "j": 19
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-18x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 18,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "rtt-19x20",
+          "steps": [
+            {
+              "include": {
+                "fragment": "report-rtt-pair",
+                "variables": {
+                  "i": 19,
+                  "j": 20
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "thresholdActivatesAtScale",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation",
+        "headers": {
+          "Authorization": "{creatorAuthHeader}",
+          "x-client-id": "{creatorClientId}"
+        },
+        "poll": {
+          "maxAttempts": 90,
+          "maxDurationMs": 75000,
+          "backoffMs": 1000,
+          "backoffMultiplier": 1
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "active",
+          "lastFormationOutcome": {
+            "outcome": "activated",
+            "observedRate": 1
+          }
+        }
+      }
+    }
+  ]
+}

@@ -39,6 +39,13 @@ interface InitRtcRttTopicOptions {
       capturedAtEpochMs: number;
     }>,
   ) => Promise<ResourceEntry>;
+  /**
+   * Per-group reporting degree limit, resolved like the read-side planning
+   * filter (group's effective topology config under the server reporting
+   * default). Absent means the composition has no per-group topology config
+   * and the service-wide limit governs every report.
+   */
+  readonly readGroupRttReportingDegreeLimit?: (group: GroupSnapshot) => Promise<number>;
 }
 
 interface RtcRttPolicyInputs {
@@ -79,7 +86,7 @@ export function initRtcRttTopic(options: InitRtcRttTopicOptions): void {
             options.rtcTopologyService,
             options.runtimeState,
           ),
-          degreeLimit: options.rtcTopologyService.readRttReportingDegreeLimit(),
+          degreeLimit: await resolveAcceptanceDegreeLimit(candidateGroups, options),
         };
       };
       const acceptance = await acceptRtcRttMeasurementWithPolicy({
@@ -111,6 +118,23 @@ export function initRtcRttTopic(options: InitRtcRttTopicOptions): void {
       }
     },
   });
+}
+
+// Acceptance must resolve the limit the way the read-side planning filter
+// does, or evidence a raised per-group limit plans for is never stored and
+// readiness can never cover the plan. A report shared by several groups is
+// admitted at the widest of their limits; each group's read-side filter
+// still constrains what that group counts.
+async function resolveAcceptanceDegreeLimit(
+  candidateGroups: readonly GroupSnapshot[],
+  options: InitRtcRttTopicOptions,
+): Promise<number> {
+  const readGroupLimit = options.readGroupRttReportingDegreeLimit;
+  if (!readGroupLimit || candidateGroups.length === 0) {
+    return options.rtcTopologyService.readRttReportingDegreeLimit();
+  }
+  const limits = await Promise.all(candidateGroups.map((group) => readGroupLimit(group)));
+  return Math.max(...limits);
 }
 
 /**
