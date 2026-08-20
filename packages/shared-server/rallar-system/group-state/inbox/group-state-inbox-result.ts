@@ -3,11 +3,12 @@ import { Either } from '@shared/resilience/Either.ts';
 
 import type { GroupStateRepository } from '../persistence/group-state-repository.ts';
 import type { GroupMutationReceipt } from '../mutation/group-mutation-contracts.ts';
+import type { InactiveGroupPresenceResult } from '../presence/group-presence-service.ts';
 import type { GroupStateMutationCommand } from '../group-state-service-contracts.ts';
 import type { GroupJoinCodeWritten, GroupStateWritten } from '../group-state-service-contracts.ts';
 
 export type GroupStateInboxDurableResult =
-  GroupMutationReceipt | GroupJoinCodeWritten | GroupStateWritten;
+  GroupMutationReceipt | GroupJoinCodeWritten | GroupStateWritten | InactiveGroupPresenceResult;
 
 export interface GroupStateInboxResult {
   readonly durableResult: GroupStateInboxDurableResult;

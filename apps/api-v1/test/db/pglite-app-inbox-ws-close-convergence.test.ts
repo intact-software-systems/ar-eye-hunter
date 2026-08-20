@@ -5,21 +5,20 @@ import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInbo
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import {
-  type GroupCreateAppInboxPayload,
-  type GroupPresenceConnectAppInboxPayload,
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
-import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
+// deno-fmt-ignore
+import {
+  GroupPresenceSummaryWork,
+} from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
 // deno-fmt-ignore: This package import exceeds the repository's 100-column checker limit.
 import {
   APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC,
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
-import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/services/authorised-ws-client-app-inbox.ts';
+// deno-fmt-ignore
 import {
-  type GroupStateWritten,
-} from '@shared-server/rallar-system/services/group-state-service.ts';
+  toAuthorisedWsClientConnectEnqueue,
+} from '@shared-server/rallar-system/services/authorised-ws-client-app-inbox.ts';
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { FUTURE_MS, waitForPGliteQueueRow, withPGliteSql } from './pglite-auth-test-harness.ts';
@@ -83,10 +82,7 @@ Deno.test('PGlite group connect conflicts when cleanup commits after lifecycle r
     const wsStartedAtEpochMs = Date.now() - 900;
     const presenceGenerationId = crypto.randomUUID();
     const pause = pauseNextLifecycleRead(harness.groupState);
-    const pending = harness.group.processAuthenticatedEntryUntilCompletion<
-      GroupPresenceConnectAppInboxPayload,
-      GroupStateWritten
-    >({
+    const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
       type: AppInboxType.GROUP_PRESENCE_CONNECT,
       resourceId: `presence-${presenceGenerationId}`,
       contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
@@ -167,10 +163,7 @@ Deno.test('PGlite group presence completion can precede its causal summary revis
 
     const generationId = crypto.randomUUID();
     const connectedAtEpochMs = Date.now() - 100;
-    const pending = harness.group.processAuthenticatedEntryUntilCompletion<
-      GroupPresenceConnectAppInboxPayload,
-      GroupStateWritten
-    >({
+    const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
       type: AppInboxType.GROUP_PRESENCE_CONNECT,
       resourceId: `presence-${generationId}`,
       contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
@@ -262,10 +255,7 @@ Deno.test('PGlite group cleanup tombstone suppresses a delayed presence connect 
     const wsStartedAtEpochMs = Date.now() - 900;
     const presenceGenerationId = crypto.randomUUID();
     const presenceConnectedAtEpochMs = wsStartedAtEpochMs - 50;
-    const pending = harness.group.processAuthenticatedEntryUntilCompletion<
-      GroupPresenceConnectAppInboxPayload,
-      GroupStateWritten
-    >({
+    const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
       type: AppInboxType.GROUP_PRESENCE_CONNECT,
       resourceId: `presence-${presenceGenerationId}`,
       contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
@@ -321,10 +311,7 @@ Deno.test('PGlite lost-close group guard has bounded physical expiry before clea
     await createRoom(harness, groupId, sql);
     const wsStartedAtEpochMs = Date.now() - 500;
     const presenceGenerationId = crypto.randomUUID();
-    const pending = harness.group.processAuthenticatedEntryUntilCompletion<
-      GroupPresenceConnectAppInboxPayload,
-      GroupStateWritten
-    >({
+    const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
       type: AppInboxType.GROUP_PRESENCE_CONNECT,
       resourceId: `presence-${presenceGenerationId}`,
       contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
@@ -398,10 +385,7 @@ async function createRoom(
   groupId: string,
   sql: PGliteSql,
 ): Promise<void> {
-  const pending = harness.group.processAuthenticatedEntryUntilCompletion<
-    GroupCreateAppInboxPayload,
-    GroupStateWritten
-  >({
+  const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
     type: AppInboxType.GROUP_CREATE,
     resourceId: `create-${groupId}`,
     contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
@@ -433,7 +417,11 @@ async function processNextOutbox(reader: OutboxQueueReader): Promise<void> {
   await reader.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, toResilienceDto());
 }
 
-type QueueKey = Readonly<{ topicId: string; resourceId: string; contextId: string }>;
+interface QueueKey {
+  readonly topicId: string;
+  readonly resourceId: string;
+  readonly contextId: string;
+}
 
 async function waitForTypeKey(sql: PGliteSql, type: AppInboxType): Promise<QueueKey> {
   for (let attempt = 0; attempt < 100; attempt += 1) {

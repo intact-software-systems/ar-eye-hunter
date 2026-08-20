@@ -27,7 +27,6 @@ import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import {
-  decodeTopologyAppInboxResult,
   type TopologyAppInboxCommand,
   type TopologyAppInboxRequestPayload,
   type TopologyAppInboxResult,
@@ -36,7 +35,6 @@ import {
 import {
   type AppInboxEnqueueInput,
   type AppInboxFailure,
-  type AppInboxResultDecoder,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
@@ -55,11 +53,10 @@ export type ProcessTopologyAppInbox = (
 ) => Promise<TopologyAppInboxResult>;
 
 export interface GraphTopologyAppInboxService {
-  processAuthenticatedEntryUntilCompletionResult<V, R = V>(
+  processAuthenticatedTopologyEntryUntilCompletionResult<V>(
     enqueue: AppInboxEnqueueInput<V>,
     authority: IssuedAuthSession,
-    decodeResult: AppInboxResultDecoder<R>,
-  ): Promise<Either<AppInboxFailure, R>>;
+  ): Promise<Either<AppInboxFailure, TopologyAppInboxResult>>;
 }
 
 export interface GraphTopologyGroupStateService {
@@ -555,10 +552,9 @@ export async function processTopologyAppInbox(
   authority: IssuedAuthSession,
   enqueue: AppInboxEnqueueInput<TopologyAppInboxCommand>,
 ): Promise<TopologyAppInboxResult> {
-  const result = await service.processAuthenticatedEntryUntilCompletionResult(
+  const result = await service.processAuthenticatedTopologyEntryUntilCompletionResult(
     enqueue,
     authority,
-    decodeTopologyAppInboxResult,
   );
   return result.fold(
     (error) => {

@@ -13,9 +13,9 @@ import type { Sql } from 'postgres';
 import type { ProductionReceiptEvidence } from './api-v1-state-write-receipt-evidence.ts';
 import { mapWithConcurrency } from './map-with-concurrency.ts';
 
-export type StateWriteOutboxCommand = Readonly<{
-  commandId: string;
-  kind:
+export interface StateWriteOutboxCommand {
+  readonly commandId: string;
+  readonly kind:
     | 'profile-instance'
     | 'membership'
     | 'presence-connect'
@@ -23,31 +23,31 @@ export type StateWriteOutboxCommand = Readonly<{
     | 'presence-disconnect'
     | 'config'
     | 'topology-source';
-}>;
+}
 
-export type StateWriteResourceOutboxEvidence = Readonly<{
-  effectId: string;
-  resourceId: string;
-  outboxId: string;
-  commandId: string;
-  effectKind: string;
-  typeId: 'APP_OUTBOX' | 'WS_OUTBOX';
-  topicId: string;
-}>;
+export interface StateWriteResourceOutboxEvidence {
+  readonly effectId: string;
+  readonly resourceId: string;
+  readonly outboxId: string;
+  readonly commandId: string;
+  readonly effectKind: string;
+  readonly typeId: 'APP_OUTBOX' | 'WS_OUTBOX';
+  readonly topicId: string;
+}
 
-type ProductionOutboxRecord = Readonly<{
-  resourceId: string;
-  outboxId: string;
-  typeId: 'APP_OUTBOX' | 'WS_OUTBOX';
-  topicId: string;
-  effectKind: string;
-  canonicalCommandId?: string;
-  commandIds: readonly string[];
-}>;
+interface ProductionOutboxRecord {
+  readonly resourceId: string;
+  readonly outboxId: string;
+  readonly typeId: 'APP_OUTBOX' | 'WS_OUTBOX';
+  readonly topicId: string;
+  readonly effectKind: string;
+  readonly canonicalCommandId?: string;
+  readonly commandIds: readonly string[];
+}
 
-type ProductionOutboxRepository = Readonly<{
+interface ProductionOutboxRepository {
   find(outboxId: string): Promise<Readonly<{ record: ProductionOutboxRecord }> | undefined>;
-}>;
+}
 
 export async function readReferencedProductionOutboxRecords(
   repository: ProductionOutboxRepository,
@@ -158,12 +158,12 @@ function effectIdentityCommandIds(value: JsonWireValue | undefined): string[] {
   return [];
 }
 
-export type ProductionOutboxLookupIdsInput = Readonly<{
-  command: StateWriteOutboxCommand;
-  scope: StateScope;
-  groupCount: number;
-  receiptOutboxIds: readonly string[];
-}>;
+export interface ProductionOutboxLookupIdsInput {
+  readonly command: StateWriteOutboxCommand;
+  readonly scope: StateScope;
+  readonly groupCount: number;
+  readonly receiptOutboxIds: readonly string[];
+}
 
 export function computeProductionOutboxLookupIds({
   command,
@@ -194,11 +194,11 @@ export function productionCommandIdsForRaw(command: StateWriteOutboxCommand): re
     : [command.commandId];
 }
 
-export type ProjectProductionOutboxEvidenceInput = Readonly<{
-  commands: readonly StateWriteOutboxCommand[];
-  receipts: readonly ProductionReceiptEvidence[];
-  records: readonly ProductionOutboxRecord[];
-}>;
+export interface ProjectProductionOutboxEvidenceInput {
+  readonly commands: readonly StateWriteOutboxCommand[];
+  readonly receipts: readonly ProductionReceiptEvidence[];
+  readonly records: readonly ProductionOutboxRecord[];
+}
 
 export function computeProductionOutboxEvidence({
   commands,

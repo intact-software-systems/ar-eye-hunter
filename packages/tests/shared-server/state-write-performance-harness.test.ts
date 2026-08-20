@@ -3,7 +3,22 @@ import {
   compareStateWriteArtifacts,
   validateStateWriteArtifact,
 } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
-import { STATE_WRITE_REASONS } from '../../../scripts/perf/state-write/api-v1-state-write-regression-reasons.ts';
+// prettier-ignore
+import {
+  STATE_WRITE_REASONS,
+} from '../../../scripts/perf/state-write/api-v1-state-write-regression-reasons.ts';
+import { classifyBenchmarkSql } from '../../../scripts/perf/create-instrumented-state-write-sql.ts';
+import {
+  computeProductionOutboxEvidence,
+  computeProductionOutboxLookupIds,
+  readAllCommandIds,
+  readCanonicalEffectCommandId,
+  readResourceEffectKind,
+} from '../../../scripts/perf/api-v1-state-write-outbox-evidence.ts';
+// prettier-ignore
+import {
+  parseBenchmarkOptions,
+} from '../../../scripts/perf/state-write/api-v1-state-write-benchmark-options.ts';
 import {
   createStateWritePerformanceArtifact,
   refreshStateWritePerformanceWorkload,
@@ -263,11 +278,10 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
     );
   });
 
-  it('keeps setup and evidence reads outside measured mutation timing', async () => {
-    const bench = await import('../../../scripts/perf/api-v1-state-write-concurrency-bench.ts');
-    expect(bench.classifyBenchmarkSql('select * from resource_inbox', [])).toBe('read');
+  it('keeps setup and evidence reads outside measured mutation timing', () => {
+    expect(classifyBenchmarkSql('select * from resource_inbox', [])).toBe('read');
     expect(
-      bench.readResourceEffectKind({
+      readResourceEffectKind({
         ri_resource_id: 'command:principal-state:event:revision=1',
         ri_topic_id: 'client-state.event',
         ri_type_id: 'WS_OUTBOX',
@@ -275,10 +289,10 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       }),
     ).toBe('principal-state:event');
     expect(
-      bench.readAllCommandIds(queueResource({ request: { requestId: 'nested-command' } })),
+      readAllCommandIds(queueResource({ request: { requestId: 'nested-command' } })),
     ).toContain('nested-command');
     expect(
-      bench.readAllCommandIds(
+      readAllCommandIds(
         queueResource(
           { event: { requestId: 'stale-command' } },
           'raw-command:rtc-topology-recompute:group-revision:group=1;presence=0',
@@ -286,7 +300,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       )[0],
     ).toBe('raw-command');
     expect(
-      bench.readCanonicalEffectCommandId(
+      readCanonicalEffectCommandId(
         queueResource(
           { event: { requestId: 'config-command' } },
           'topology-command:rtc-topology-recompute:group-revision:group=1;presence=0',
@@ -310,9 +324,9 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       commandIds: ['topology-command', 'config-command'],
     } as const;
     expect(
-      bench.projectProductionOutboxEvidence(
-        [topologyCommand],
-        [
+      computeProductionOutboxEvidence({
+        commands: [topologyCommand],
+        receipts: [
           {
             commandId: 'topology-command',
             receiptIds: ['topology-command'],
@@ -321,25 +335,26 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             resultBindings: [binding(topologyCommand, 'command')],
           },
         ],
-        [topologyRecord],
-      )[0],
+        records: [topologyRecord],
+      })[0],
     ).toMatchObject({
       commandId: 'topology-command',
       effectId: topologyRecord.outboxId,
       resourceId: 'stored-effect',
       outboxId: topologyRecord.outboxId,
     });
-    expect(bench.projectProductionOutboxEvidence([topologyCommand], [], [topologyRecord])).toEqual(
-      [],
-    );
     expect(
-      bench.productionOutboxLookupIds({
+      computeProductionOutboxEvidence({
+        commands: [topologyCommand],
+        receipts: [],
+        records: [topologyRecord],
+      }),
+    ).toEqual([]);
+    expect(
+      computeProductionOutboxLookupIds({
         command: {
           kind: 'topology-source',
           commandId: 'bench:topology-source:7',
-          stackIndex: 0,
-          latencyMs: 1,
-          status: 'accepted',
         },
         scope: { applicationId: 'app', workspaceId: 'workspace' },
         groupCount: 5,
@@ -349,7 +364,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       })[0],
     ).toMatch(/^bench-topology-source--[a-z0-9]+$/);
     expect(
-      bench.parseBenchmarkOptions([
+      parseBenchmarkOptions([
         '--backend=postgres',
         '--warmup=1',
         '--runs=3',

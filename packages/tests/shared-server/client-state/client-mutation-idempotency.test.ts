@@ -1,26 +1,46 @@
 import { describe, expect, it } from 'vitest';
 
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import type { ClientPrincipalUpsertAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
-import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+// prettier-ignore
+import type {
+  ClientPrincipalUpsertAppInboxPayload,
+} from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
+// prettier-ignore
+import {
+  AppClientInboxService,
+} from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+// prettier-ignore
+import {
+  computeClientMutation,
+} from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
+// prettier-ignore
+import {
+  ClientStateRepository,
+} from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+// prettier-ignore
+import type {
+  ClientStateWritten,
+} from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/services/client-state-service.ts';
+// prettier-ignore
+import {
+  ClientMutationIdempotencyConflictError,
+} from '@shared-server/rallar-system/services/client-state-service.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {
   CLIENT_STATE_TEST_SCOPE as APP_SCOPE,
-  TestResourceInbox,
-  TestResourceInboxResults,
   createAutoAuthorizingClientStateService,
   createPublisher,
   processAppInbox,
   requireRightSnapshot,
   requireRightWritten,
 } from './app-client-inbox-mutation-test-harness.ts';
+import {
+  TestResourceInbox,
+  TestResourceInboxResults,
+} from './app-client-inbox-resource-fixtures.ts';
 
 import {
   emptyRead,
@@ -43,7 +63,7 @@ import {
   CLIENT_MUTATION_TEST_SCOPE as SCOPE,
   clientMutationPrincipalRef as principalRef,
 } from './client-mutation-validation-test-fixtures.ts';
-import { createLegacyClientStateTestDriver as createClientStateService } from './client-state-test-runtime.ts';
+import { createLegacyClientStateTestDriver } from './client-state-test-runtime.ts';
 
 describe('client mutation idempotency compute', () => {
   it('replays the exact stored receipt, snapshot, and event', async () => {
@@ -88,49 +108,41 @@ describe('client mutation AppInbox idempotency', () => {
   it('replays stored idempotent mutation results without direct publication', async () => {
     const { publisher, reader, service } = createAppInboxIdempotencyHarness();
 
-    const first = await processAppInbox<ClientPrincipalUpsertAppInboxPayload, ClientStateWritten>(
-      service,
-      reader,
-      {
-        type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-        resourceId: 'upsert-client-alice-first',
-        contextId: `${APP_SCOPE.applicationId}:${APP_SCOPE.workspaceId}:alice`,
-        senderId: 'alice',
-        data: {
-          scope: APP_SCOPE,
-          principalId: 'alice',
-          request: {
-            username: 'alice',
-            displayName: 'Alice',
-            actorPrincipalId: 'alice',
-            requestId: 'upsert-client-alice',
-          },
+    const first = await processAppInbox<ClientPrincipalUpsertAppInboxPayload>(service, reader, {
+      type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+      resourceId: 'upsert-client-alice-first',
+      contextId: `${APP_SCOPE.applicationId}:${APP_SCOPE.workspaceId}:alice`,
+      senderId: 'alice',
+      data: {
+        scope: APP_SCOPE,
+        principalId: 'alice',
+        request: {
+          username: 'alice',
+          displayName: 'Alice',
+          actorPrincipalId: 'alice',
+          requestId: 'upsert-client-alice',
         },
       },
-    );
+    });
     vi.mocked(publisher.publishClientSnapshot).mockClear();
     vi.mocked(publisher.publishClientEvent).mockClear();
 
-    const replay = await processAppInbox<ClientPrincipalUpsertAppInboxPayload, ClientStateWritten>(
-      service,
-      reader,
-      {
-        type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-        resourceId: 'upsert-client-alice-replay',
-        contextId: `${APP_SCOPE.applicationId}:${APP_SCOPE.workspaceId}:alice`,
-        senderId: 'alice',
-        data: {
-          scope: APP_SCOPE,
-          principalId: 'alice',
-          request: {
-            username: 'alice',
-            displayName: 'Alice',
-            actorPrincipalId: 'alice',
-            requestId: 'upsert-client-alice',
-          },
+    const replay = await processAppInbox<ClientPrincipalUpsertAppInboxPayload>(service, reader, {
+      type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+      resourceId: 'upsert-client-alice-replay',
+      contextId: `${APP_SCOPE.applicationId}:${APP_SCOPE.workspaceId}:alice`,
+      senderId: 'alice',
+      data: {
+        scope: APP_SCOPE,
+        principalId: 'alice',
+        request: {
+          username: 'alice',
+          displayName: 'Alice',
+          actorPrincipalId: 'alice',
+          requestId: 'upsert-client-alice',
         },
       },
-    );
+    });
 
     expect(requireRightSnapshot(replay).principal.displayName).toBe('Alice');
     expect(requireRightWritten(replay).event).toEqual(requireRightWritten(first).event);
@@ -167,7 +179,7 @@ function createAppInboxIdempotencyHarness() {
 describe('client mutation service idempotency', () => {
   it('makes a semantic no-op receipt first-writer-wins', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
-    const service = createClientStateService({
+    const service = createLegacyClientStateTestDriver({
       runtimeRepository,
       syncPublisher: createServicePublisher(),
       now: () => 1_000,
@@ -200,7 +212,7 @@ describe('client mutation service idempotency', () => {
   it('rejects the same requestId with different semantic content', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const publisher = createServicePublisher();
-    const service = createClientStateService({
+    const service = createLegacyClientStateTestDriver({
       runtimeRepository,
       syncPublisher: publisher,
       now: () => 1_000,
@@ -239,55 +251,57 @@ describe('client mutation service idempotency', () => {
 });
 
 describe('client mutation idempotency convergence', () => {
-  it('makes equal request races first-writer-wins and rejects different semantic content', async () => {
-    const runtime = new AggregateBarrierRepository();
-    const request = {
-      username: 'alice',
-      displayName: 'Alice',
-      metadata: { one: 1, two: 2 },
-      requestId: 'same-request',
-    } as const;
-    runtime.armPrincipalReadBarrier(2);
-    const [first, second] = await Promise.all([
-      createService(runtime, 1_000).upsertPrincipal(SCOPE, 'alice', request),
-      createService(runtime, 9_000).upsertPrincipal(SCOPE, 'alice', {
-        requestId: 'same-request',
-        metadata: { two: 2, one: 1 },
-        displayName: 'Alice',
+  it(
+    'makes equal request races first-writer-wins ' + 'and rejects different semantic content',
+    async () => {
+      const runtime = new AggregateBarrierRepository();
+      const request = {
         username: 'alice',
-      }),
-    ]);
+        displayName: 'Alice',
+        metadata: { one: 1, two: 2 },
+        requestId: 'same-request',
+      } as const;
+      runtime.armPrincipalReadBarrier(2);
+      const [first, second] = await Promise.all([
+        createService(runtime, 1_000).upsertPrincipal(SCOPE, 'alice', request),
+        createService(runtime, 9_000).upsertPrincipal(SCOPE, 'alice', {
+          requestId: 'same-request',
+          metadata: { two: 2, one: 1 },
+          displayName: 'Alice',
+          username: 'alice',
+        }),
+      ]);
 
-    expect(second.result.right?.event).toEqual(first.result.right?.event);
-    const idempotent = await new ClientStateRepository(runtime).findIdempotentClientMutationReceipt(
-      principalRef('alice'),
-      'same-request',
-    );
-    expect(idempotent?.commandHash).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(idempotent?.receipt.commandHash).toBe(idempotent?.commandHash);
-    const records = await outboxFor(runtime, ['same-request']);
-    expect(records).toHaveLength(2);
-    expect(idempotent?.receipt.outboxIds).toEqual(records.map((record) => record.key.resourceId));
+      expect(second.result.right?.event).toEqual(first.result.right?.event);
+      const idempotent = await new ClientStateRepository(
+        runtime,
+      ).findIdempotentClientMutationReceipt(principalRef('alice'), 'same-request');
+      expect(idempotent?.commandHash).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(idempotent?.receipt.commandHash).toBe(idempotent?.commandHash);
+      const records = await outboxFor(runtime, ['same-request']);
+      expect(records).toHaveLength(2);
+      expect(idempotent?.receipt.outboxIds).toEqual(records.map((record) => record.key.resourceId));
 
-    const conflictRuntime = new AggregateBarrierRepository();
-    conflictRuntime.armPrincipalReadBarrier(2);
-    const results = await Promise.allSettled([
-      createService(conflictRuntime, 1_000).upsertPrincipal(SCOPE, 'bob', {
-        username: 'bob',
-        displayName: 'First',
-        requestId: 'different-content',
-      }),
-      createService(conflictRuntime, 1_001).upsertPrincipal(SCOPE, 'bob', {
-        username: 'bob',
-        displayName: 'Second',
-        requestId: 'different-content',
-      }),
-    ]);
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    const rejected = results.find((result) => result.status === 'rejected');
-    expect(rejected).toMatchObject({
-      reason: expect.any(ClientMutationIdempotencyConflictError),
-    });
-    expect(await outboxFor(conflictRuntime, ['different-content'])).toHaveLength(2);
-  });
+      const conflictRuntime = new AggregateBarrierRepository();
+      conflictRuntime.armPrincipalReadBarrier(2);
+      const results = await Promise.allSettled([
+        createService(conflictRuntime, 1_000).upsertPrincipal(SCOPE, 'bob', {
+          username: 'bob',
+          displayName: 'First',
+          requestId: 'different-content',
+        }),
+        createService(conflictRuntime, 1_001).upsertPrincipal(SCOPE, 'bob', {
+          username: 'bob',
+          displayName: 'Second',
+          requestId: 'different-content',
+        }),
+      ]);
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      const rejected = results.find((result) => result.status === 'rejected');
+      expect(rejected).toMatchObject({
+        reason: expect.any(ClientMutationIdempotencyConflictError),
+      });
+      expect(await outboxFor(conflictRuntime, ['different-content'])).toHaveLength(2);
+    },
+  );
 });

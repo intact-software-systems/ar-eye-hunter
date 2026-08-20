@@ -31,6 +31,7 @@ import {
 import {
   type AppInboxErrorClassification,
   classifyAppInboxError,
+  toAppInboxErrorCode,
 } from './app-inbox-error-classification.ts';
 import {
   AppInboxTransactionWriter,
@@ -199,16 +200,22 @@ export class AppInboxService {
   }
 
   public processEntryNoWaiting<V>(enqueue: AppInboxEnqueueInput<V>): void {
-    this.processEntryUntilCompletionInternal(enqueue, false, true, async (key, wireEnqueue) => {
-      return await this.inbox.enqueueIfAbsent(
-        newALUntargetedMessage(
-          toAppInboxQueueCreatedBy(this.serviceId),
-          newALRoute(key.topicId, key.contextId, key.resourceId),
-          wireEnqueue.type.toString(),
-          wireEnqueue,
-        ),
-      );
-    }).catch((err) => {
+    this.processEntryUntilCompletionInternal(
+      enqueue,
+      false,
+      true,
+      async (key, wireEnqueue) => {
+        return await this.inbox.enqueueIfAbsent(
+          newALUntargetedMessage(
+            toAppInboxQueueCreatedBy(this.serviceId),
+            newALRoute(key.topicId, key.contextId, key.resourceId),
+            wireEnqueue.type.toString(),
+            wireEnqueue,
+          ),
+        );
+      },
+      decodeJsonWireResult,
+    ).catch((err) => {
       console.error(`Error processing entry without waiting: ${err}`);
     });
   }
@@ -235,25 +242,31 @@ export class AppInboxService {
     enqueue: AppInboxEnqueueInput<V>,
     enqueueIf: (entry: ResourceEntry) => boolean,
   ): void {
-    this.processEntryUntilCompletionInternal(enqueue, false, false, async (key, wireEnqueue) => {
-      return await this.inbox.enqueueIf(
-        newALUntargetedMessage(
-          toAppInboxQueueCreatedBy(this.serviceId),
-          newALRoute(key.topicId, key.contextId, key.resourceId),
-          wireEnqueue.type.toString(),
-          wireEnqueue,
-        ),
-        enqueueIf,
-      );
-    }).catch((err) => {
+    this.processEntryUntilCompletionInternal(
+      enqueue,
+      false,
+      false,
+      async (key, wireEnqueue) => {
+        return await this.inbox.enqueueIf(
+          newALUntargetedMessage(
+            toAppInboxQueueCreatedBy(this.serviceId),
+            newALRoute(key.topicId, key.contextId, key.resourceId),
+            wireEnqueue.type.toString(),
+            wireEnqueue,
+          ),
+          enqueueIf,
+        );
+      },
+      decodeJsonWireResult,
+    ).catch((err) => {
       console.error(`Error processing entry without waiting: ${err}`);
     });
   }
 
-  public async processEntryUntilCompletion<V, R = V>(
+  public async processEntryUntilCompletion<V>(
     enqueue: AppInboxEnqueueInput<V>,
-  ): Promise<Either<string, R>> {
-    const result = await this.processEntryUntilCompletionInternal<V, R>(
+  ): Promise<Either<string, JsonWireValue>> {
+    const result = await this.processEntryUntilCompletionInternal(
       enqueue,
       true,
       true,
@@ -267,6 +280,7 @@ export class AppInboxService {
           ),
         );
       },
+      decodeJsonWireResult,
     );
     return result.mapLeft(toLegacyAppInboxFailure);
   }
@@ -293,11 +307,11 @@ export class AppInboxService {
     );
   }
 
-  public async processEntryUntilCompletionIf<V, R = V>(
+  public async processEntryUntilCompletionIf<V>(
     enqueue: AppInboxEnqueueInput<V>,
     enqueueIf: (entry: ResourceEntry) => boolean,
-  ): Promise<Either<string, R>> {
-    const result = await this.processEntryUntilCompletionInternal<V, R>(
+  ): Promise<Either<string, JsonWireValue>> {
+    const result = await this.processEntryUntilCompletionInternal(
       enqueue,
       true,
       false,
@@ -312,8 +326,33 @@ export class AppInboxService {
           enqueueIf,
         );
       },
+      decodeJsonWireResult,
     );
     return result.mapLeft(toLegacyAppInboxFailure);
+  }
+
+  protected async processEntryUntilCompletionIfResult<V, R>(
+    enqueue: AppInboxEnqueueInput<V>,
+    enqueueIf: (entry: ResourceEntry) => boolean,
+    decodeResult: AppInboxResultDecoder<R>,
+  ): Promise<Either<AppInboxFailure, R>> {
+    return await this.processEntryUntilCompletionInternal(
+      enqueue,
+      true,
+      false,
+      async (key, wireEnqueue) => {
+        return await this.inbox.enqueueIf(
+          newALUntargetedMessage(
+            toAppInboxQueueCreatedBy(this.serviceId),
+            newALRoute(key.topicId, key.contextId, key.resourceId),
+            wireEnqueue.type.toString(),
+            wireEnqueue,
+          ),
+          enqueueIf,
+        );
+      },
+      decodeResult,
+    );
   }
 
   private async processEntryUntilCompletionInternal<V, R = V>(
@@ -324,7 +363,7 @@ export class AppInboxService {
       key: Key,
       wireEnqueue: AppInboxEnqueueInput<V>,
     ) => Promise<ResourceEntry | undefined>,
-    decodeResult?: AppInboxResultDecoder<R>,
+    decodeResult: AppInboxResultDecoder<R>,
   ): Promise<Either<AppInboxFailure, R>> {
     const wireEnqueue = toJsonWireAppInboxEnqueue(enqueue);
     const key: Key = this.toKey(wireEnqueue);
@@ -385,7 +424,7 @@ export class AppInboxService {
 
   private async findByKeyAndReturnEither<R>(
     key: Key,
-    decodeResult?: AppInboxResultDecoder<R>,
+    decodeResult: AppInboxResultDecoder<R>,
   ): Promise<Either<AppInboxFailure, R>> {
     const result = await this.resourceInboxResults.findByKey(key);
     if (result === undefined) {
@@ -405,11 +444,12 @@ export class AppInboxService {
       return Either.ofLeft(toUnavailableAppInboxFailure());
     }
 
-    if (decodeResult === undefined) {
-      return Either.ofRight(JSON.parse(result.resource));
+    try {
+      const parsed: JsonWireValue = JSON.parse(result.resource);
+      return Either.ofRight(decodeResult(parsed));
+    } catch (error) {
+      return Either.ofLeft(toTerminalAppInboxFailure(error, toAppInboxErrorCode(error)));
     }
-    const parsed: JsonWireValue = JSON.parse(result.resource);
-    return Either.ofRight(decodeResult(parsed));
   }
 
   private async waitForCompletion<V>(enqueue: AppInboxEnqueueInput<V>, key: Key): Promise<boolean> {
@@ -697,6 +737,10 @@ export class AppInboxService {
 
 function toNonNegativeFiniteNumber(value: number | undefined, fallback: number): number {
   return value === undefined || !Number.isFinite(value) || value < 0 ? fallback : value;
+}
+
+function decodeJsonWireResult(value: JsonWireValue): JsonWireValue {
+  return value;
 }
 
 function toRatio(value: number | undefined, fallback: number): number {

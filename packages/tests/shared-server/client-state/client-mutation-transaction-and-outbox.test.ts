@@ -2,16 +2,23 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-import { toUpsertPrincipalCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+// prettier-ignore
+import {
+  AppClientInboxService,
+} from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+// prettier-ignore
+import {
+  toUpsertPrincipalCommandInput,
+} from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+// prettier-ignore
+import {
+  RuntimeStateWriteConflictError,
+} from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {
-  TestResourceInbox,
-  TestResourceInboxResults,
   createAutoAuthorizingClientStateService,
   createClientStateServiceStub,
   createResilience,
@@ -20,6 +27,10 @@ import {
   processAuthenticatedClientMutation,
   readEntries,
 } from './app-client-inbox-mutation-test-harness.ts';
+import {
+  TestResourceInbox,
+  TestResourceInboxResults,
+} from './app-client-inbox-resource-fixtures.ts';
 import { createHandlerHarness } from './client-mutation-transaction-boundary-fixture.ts';
 import {
   createRollbackHarness,

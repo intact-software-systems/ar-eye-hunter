@@ -21,9 +21,7 @@ import {
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-// prettier-ignore
-import type { RallarTimingSink } from '@shared-server/rallar-system/services/\
-timing.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 import {
   createStateWriteBenchmarkArtifact,
   readBenchmarkGitIdentity,
@@ -69,27 +67,7 @@ import {
   readStateWriteWalDifference,
   startStateWriteLockWaitSampler,
 } from './read-state-write-postgres-counters.ts';
-export { deriveAppInboxAttemptObservations } from './api-v1-state-write-attempt-evidence.ts';
-export { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
-export { parseGroupTopologyRegressionReasons };
-export { parseBenchmarkOptions };
-export { selectStateWriteRegressionReasons };
-export { classifyBenchmarkSql } from './create-instrumented-state-write-sql.ts';
-export { mapWithConcurrency } from './map-with-concurrency.ts';
-export {
-  createProductionOutboxRepository,
-  computeProductionOutboxLookupIds as productionOutboxLookupIds,
-  readAllCommandIds,
-  readCanonicalEffectCommandId,
-  readReferencedProductionOutboxRecords,
-  readResourceEffectKind,
-} from './api-v1-state-write-outbox-evidence.ts';
-import {
-  computeProductionOutboxEvidence,
-  type StateWriteOutboxCommand,
-  type StateWriteResourceOutboxEvidence,
-} from './api-v1-state-write-outbox-evidence.ts';
-import type { ProductionReceiptEvidence } from './api-v1-state-write-receipt-evidence.ts';
+import { computeProductionOutboxEvidence } from './api-v1-state-write-outbox-evidence.ts';
 
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
 const CLIENT_COUNT = 100;
@@ -110,7 +88,7 @@ const WORKLOADS = [
   { name: 'hot', clients: CLIENT_COUNT, groups: 1 },
 ] as const;
 
-type CorrectnessMetrics = {
+interface CorrectnessMetrics {
   acceptedCommandCount: number;
   receiptCount: number;
   effectfulCommandCount: number;
@@ -118,39 +96,43 @@ type CorrectnessMetrics = {
   outboxIntentCount: number;
   atomicCompletionFailures: number;
   dbwFindings: string[];
-};
+}
 
-type OutcomeMetrics = {
+interface OutcomeMetrics {
   accepted: number;
   conflicted: number;
   transientRetries: number;
   exhausted: number;
   attempts: number;
-};
+}
 
-type LatencySummary = { p50: number; p95: number; p99: number };
+interface LatencySummary {
+  p50: number;
+  p95: number;
+  p99: number;
+}
 type SqlArtifactMetrics = Pick<
   StateWriteSqlMetrics,
   'statements' | 'rowsRead' | 'serializedResultBytes'
 >;
-type PostgresArtifactMetrics = {
+interface PostgresArtifactMetrics {
   transactionDurationMs: number;
   lockWaitMs: number;
   cpuTimeMs: number;
   sharedBufferHits: number;
   sharedBufferReads: number;
   walBytes: number;
-};
-type TimingArtifactMetrics = {
+}
+interface TimingArtifactMetrics {
   read: number;
   compute: number;
   validate: number;
   write: number;
   transaction: number;
   outbox: number;
-};
+}
 type OutcomeArtifactMetrics = OutcomeMetrics & { attemptsPerAcceptedMutation: number };
-type RunSample = {
+interface RunSample {
   runIndex: number;
   durationMs: number;
   throughputPerSecond: number;
@@ -165,7 +147,7 @@ type RunSample = {
   attemptObservations: AppInboxAttemptObservation[];
   stackCommandCounts: [number, number];
   durableEvidence: StateWriteDurableEvidence;
-};
+}
 type WorkloadSummary = Pick<
   RunSample,
   | 'throughputPerSecond'
@@ -177,11 +159,11 @@ type WorkloadSummary = Pick<
   | 'correctness'
 >;
 
-type MutationCommand = {
+interface MutationCommand {
   kind: (typeof MUTATION_MIX)[number];
   clientIndex: number;
   groupIndex: number;
-};
+}
 
 export function createBenchmarkAuthSession(
   scope: StateScope,
@@ -357,10 +339,12 @@ async function runWorkloadPhase(input: {
         input.concurrency,
         async (command, commandIndex) => {
           const stackIndex = selectServiceStack(commandIndex, runtimes.length);
+          const runtime = runtimes[stackIndex];
+          if (!runtime) throw new Error(`Missing service runtime at stack ${stackIndex}`);
           const commandId = commandIdentifier(scope, command);
           const commandStartedAt = performance.now();
           await executeMeasuredCommand({
-            runtime: runtimes[stackIndex]!,
+            runtime,
             scope,
             command,
             requestId: commandId,
@@ -486,12 +470,12 @@ export function createInstrumentedSql(
   return createInstrumentedStateWriteSql({ sql, metrics: context.sql, timing });
 }
 
-type ExecuteMeasuredCommandInput = Readonly<{
-  runtime: StateWriteServiceRuntime;
-  scope: StateScope;
-  command: MutationCommand;
-  requestId: string;
-}>;
+interface ExecuteMeasuredCommandInput {
+  readonly runtime: StateWriteServiceRuntime;
+  readonly scope: StateScope;
+  readonly command: MutationCommand;
+  readonly requestId: string;
+}
 
 async function executeMeasuredCommand({
   runtime,
@@ -530,11 +514,11 @@ async function executeMeasuredCommand({
   });
 }
 
-type ExecuteMutationInput = Readonly<{
-  runtime: StateWriteServiceRuntime;
-  scope: StateScope;
-  kind: (typeof MUTATION_MIX)[number];
-  command: Readonly<{
+interface ExecuteMutationInput {
+  readonly runtime: StateWriteServiceRuntime;
+  readonly scope: StateScope;
+  readonly kind: (typeof MUTATION_MIX)[number];
+  readonly command: Readonly<{
     requestId: string;
     principalId: string;
     instanceId: string;
@@ -546,7 +530,7 @@ type ExecuteMutationInput = Readonly<{
     clientAuthority: IssuedAuthSession;
     ownerAuthority: IssuedAuthSession;
   }>;
-}>;
+}
 
 async function executeMutation({
   runtime,
@@ -612,7 +596,7 @@ async function executeMutation({
     }
     case 'membership': {
       await runAppInboxMutation(runtime, () =>
-        runtime.group.processAuthenticatedEntryUntilCompletion(
+        runtime.group.processAuthenticatedGroupEntryUntilCompletion(
           {
             type: AppInboxType.GROUP_MEMBER_UPSERT,
             resourceId: command.requestId,
@@ -695,7 +679,7 @@ async function executeMutation({
     }
     case 'config': {
       await runAppInboxMutation(runtime, () =>
-        runtime.group.processAuthenticatedEntryUntilCompletion(
+        runtime.group.processAuthenticatedGroupEntryUntilCompletion(
           {
             type: AppInboxType.GROUP_UPDATE,
             resourceId: command.requestId,
@@ -734,7 +718,7 @@ async function executeMutation({
         },
       });
       await runAppInboxMutation(runtime, () =>
-        runtime.group.processAuthenticatedEntryUntilCompletion(
+        runtime.group.processAuthenticatedTopologyEntryUntilCompletion(
           {
             type: AppInboxType.TOPOLOGY_CONFIG_PUT,
             resourceId: command.requestId,
@@ -750,14 +734,17 @@ async function executeMutation({
   }
 }
 
-type RunGroupPresenceMutationInput = Readonly<{
-  runtime: StateWriteServiceRuntime;
-  command: ExecuteMutationInput['command'];
-  scope: StateScope;
-  contextId: string;
-  type: AppInboxType;
-  request: JsonWireObject;
-}>;
+interface RunGroupPresenceMutationInput {
+  readonly runtime: StateWriteServiceRuntime;
+  readonly command: ExecuteMutationInput['command'];
+  readonly scope: StateScope;
+  readonly contextId: string;
+  readonly type:
+    | typeof AppInboxType.GROUP_PRESENCE_CONNECT
+    | typeof AppInboxType.GROUP_PRESENCE_HEARTBEAT
+    | typeof AppInboxType.GROUP_PRESENCE_DISCONNECT;
+  readonly request: JsonWireObject;
+}
 
 async function runGroupPresenceMutation({
   runtime,
@@ -768,7 +755,7 @@ async function runGroupPresenceMutation({
   request,
 }: RunGroupPresenceMutationInput): Promise<void> {
   await runAppInboxMutation(runtime, () =>
-    runtime.group.processAuthenticatedEntryUntilCompletion(
+    runtime.group.processAuthenticatedGroupEntryUntilCompletion(
       {
         type,
         resourceId: command.requestId,
@@ -832,7 +819,7 @@ async function seedCompleteState(
       await authSessionRepository.putSession(authority);
       const groupId = `group-${groupIndex}`;
       await runAppInboxMutation(runtime, () =>
-        runtime.group.processAuthenticatedEntryUntilCompletion(
+        runtime.group.processAuthenticatedGroupEntryUntilCompletion(
           {
             type: AppInboxType.GROUP_CREATE,
             resourceId: `seed-group-${groupIndex}`,
@@ -946,14 +933,6 @@ export function selectServiceStack(commandIndex: number, stackCount: number): nu
   return commandIndex % stackCount;
 }
 
-export function projectProductionOutboxEvidence(
-  commands: readonly StateWriteOutboxCommand[],
-  receipts: readonly ProductionReceiptEvidence[],
-  records: Parameters<typeof computeProductionOutboxEvidence>[0]['records'],
-): readonly StateWriteResourceOutboxEvidence[] {
-  return computeProductionOutboxEvidence({ commands, receipts, records });
-}
-
 function deriveCorrectness(
   commands: readonly StateWriteBenchmarkCommand[],
   durable: StateWriteDurableEvidence,
@@ -1032,9 +1011,9 @@ function summarizeSamples(samples: readonly RunSample[]): WorkloadSummary {
       attempts,
       attemptsPerAcceptedMutation: accepted === 0 ? attempts : attempts / accepted,
     },
-    sql: medianObject(samples.map((sample) => sample.sql)),
-    postgres: medianObject(samples.map((sample) => sample.postgres)),
-    timingsMs: medianObject(samples.map((sample) => sample.timingsMs)),
+    sql: medianSqlMetrics(samples),
+    postgres: medianPostgresMetrics(samples),
+    timingsMs: medianTimingMetrics(samples),
     correctness: {
       acceptedCommandCount: sum(samples.map((sample) => sample.correctness.acceptedCommandCount)),
       receiptCount: sum(samples.map((sample) => sample.correctness.receiptCount)),
@@ -1064,20 +1043,50 @@ function percentile(samples: readonly number[], percentileValue: number): number
     return 0;
   }
   const sorted = [...samples].sort((left, right) => left - right);
-  return sorted[Math.ceil(percentileValue * sorted.length) - 1]!;
+  const value = sorted[Math.ceil(percentileValue * sorted.length) - 1];
+  if (value === undefined) throw new Error('Percentile index is outside the sample set');
+  return value;
 }
 
-function medianObject<T extends object>(values: readonly T[]): T {
-  const keys = Object.keys(values[0] ?? {}) as (keyof T)[];
-  return Object.fromEntries(
-    keys.map((key) => [String(key), median(values.map((value) => Number(value[key])))]),
-  ) as T;
+function medianSqlMetrics(samples: readonly RunSample[]): SqlArtifactMetrics {
+  return {
+    statements: median(samples.map((sample) => sample.sql.statements)),
+    rowsRead: median(samples.map((sample) => sample.sql.rowsRead)),
+    serializedResultBytes: median(samples.map((sample) => sample.sql.serializedResultBytes)),
+  };
+}
+
+function medianPostgresMetrics(samples: readonly RunSample[]): PostgresArtifactMetrics {
+  return {
+    transactionDurationMs: median(samples.map((sample) => sample.postgres.transactionDurationMs)),
+    lockWaitMs: median(samples.map((sample) => sample.postgres.lockWaitMs)),
+    cpuTimeMs: median(samples.map((sample) => sample.postgres.cpuTimeMs)),
+    sharedBufferHits: median(samples.map((sample) => sample.postgres.sharedBufferHits)),
+    sharedBufferReads: median(samples.map((sample) => sample.postgres.sharedBufferReads)),
+    walBytes: median(samples.map((sample) => sample.postgres.walBytes)),
+  };
+}
+
+function medianTimingMetrics(samples: readonly RunSample[]): TimingArtifactMetrics {
+  return {
+    read: median(samples.map((sample) => sample.timingsMs.read)),
+    compute: median(samples.map((sample) => sample.timingsMs.compute)),
+    validate: median(samples.map((sample) => sample.timingsMs.validate)),
+    write: median(samples.map((sample) => sample.timingsMs.write)),
+    transaction: median(samples.map((sample) => sample.timingsMs.transaction)),
+    outbox: median(samples.map((sample) => sample.timingsMs.outbox)),
+  };
 }
 
 function median(values: readonly number[]): number {
   const sorted = [...values].sort((left, right) => left - right);
   const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!;
+  const upper = sorted[middle];
+  if (upper === undefined) throw new Error('Median requires at least one value');
+  if (sorted.length % 2 !== 0) return upper;
+  const lower = sorted[middle - 1];
+  if (lower === undefined) throw new Error('Median pair is incomplete');
+  return (lower + upper) / 2;
 }
 
 function sum(values: readonly number[]): number {

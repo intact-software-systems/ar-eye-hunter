@@ -12,6 +12,8 @@ import {
   AppInboxType,
   SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
 } from '../../services/AppInboxService.ts';
+import { toLegacyAppInboxFailure } from '../../services/app-inbox-legacy-failure.ts';
+import type { JsonWireValue } from '../../services/mutation-command-identity.ts';
 import type { RallarTimingSink } from '../../services/timing.ts';
 import {
   toClientMutationIssuedSessionAuthority,
@@ -46,6 +48,12 @@ import {
   type ToAuthorisedWsClientDisconnectEnqueueInput,
 } from './authorised-ws-client-app-inbox.ts';
 import { ClientStateInboxHandler } from './client-state-inbox-handler.ts';
+import {
+  type AuthorisedWsClientMutationResult,
+  decodeAuthorisedWsClientMutationResult,
+  decodeClientStateWritten,
+  decodeExpiredClientSessionsResult,
+} from './client-state-inbox-result-codec.ts';
 
 export namespace AppClientInboxService {
   export interface Dependencies {
@@ -101,19 +109,19 @@ export class AppClientInboxService extends AppInboxService {
     this.registerClientStateMessages();
   }
 
-  public override processEntryUntilCompletion<V, R = V>(
+  public override processEntryUntilCompletion<V>(
     enqueue: AppInboxEnqueueInput<V>,
-  ): Promise<Either<string, R>> {
+  ): Promise<Either<string, JsonWireValue>> {
     void enqueue;
     return Promise.reject(
       new NonRetryableException('Authenticated client mutation authority is required.'),
     );
   }
 
-  public override processEntryUntilCompletionIf<V, R = V>(
+  public override processEntryUntilCompletionIf<V>(
     enqueue: AppInboxEnqueueInput<V>,
     enqueueIf: (entry: ResourceEntry) => boolean,
-  ): Promise<Either<string, R>> {
+  ): Promise<Either<string, JsonWireValue>> {
     void enqueue;
     void enqueueIf;
     return Promise.reject(
@@ -121,27 +129,34 @@ export class AppClientInboxService extends AppInboxService {
     );
   }
 
-  public async processAuthenticatedEntryUntilCompletion<V, R = V>(
+  public async processAuthenticatedEntryUntilCompletion<V>(
     enqueue: AppInboxEnqueueInput<V>,
     authority: IssuedAuthSession,
-  ): Promise<Either<string, R>> {
+  ): Promise<Either<string, ClientStateWritten>> {
     const ingress = readAuthenticatedClientMutationIngress(enqueue);
     validateIssuedClientMutationIngress(authority, ingress);
-    return await super.processEntryUntilCompletion<V, R>({
-      ...enqueue,
-      authority: toClientMutationIssuedSessionAuthority(
-        authority,
-        ingress.scope,
-        ingress.operation,
-      ),
-    });
+    const result = await super.processEntryUntilCompletionResult(
+      {
+        ...enqueue,
+        authority: toClientMutationIssuedSessionAuthority(
+          authority,
+          ingress.scope,
+          ingress.operation,
+        ),
+      },
+      decodeClientStateWritten,
+    );
+    return result.mapLeft(toLegacyAppInboxFailure);
   }
 
-  public async processAuthorisedWsClientConnect(input: ToAuthorisedWsClientConnectEnqueueInput) {
-    return await super.processEntryUntilCompletion<
-      ClientAuthorisedWsSessionConnectAppInboxPayload,
-      ClientStateWritten
-    >(toAuthorisedWsClientConnectEnqueue(input));
+  public async processAuthorisedWsClientConnect(
+    input: ToAuthorisedWsClientConnectEnqueueInput,
+  ): Promise<Either<string, AuthorisedWsClientMutationResult>> {
+    const result = await super.processEntryUntilCompletionResult(
+      toAuthorisedWsClientConnectEnqueue(input),
+      decodeAuthorisedWsClientMutationResult,
+    );
+    return result.mapLeft(toLegacyAppInboxFailure);
   }
 
   public async enqueueAuthorisedWsClientConnect(input: ToAuthorisedWsClientConnectEnqueueInput) {
@@ -150,11 +165,12 @@ export class AppClientInboxService extends AppInboxService {
 
   public async processAuthorisedWsClientDisconnect(
     input: ToAuthorisedWsClientDisconnectEnqueueInput,
-  ) {
-    return await super.processEntryUntilCompletion<
-      ClientAuthorisedWsSessionDisconnectAppInboxPayload,
-      ClientStateWritten
-    >(toAuthorisedWsClientDisconnectEnqueue(input));
+  ): Promise<Either<string, AuthorisedWsClientMutationResult>> {
+    const result = await super.processEntryUntilCompletionResult(
+      toAuthorisedWsClientDisconnectEnqueue(input),
+      decodeAuthorisedWsClientMutationResult,
+    );
+    return result.mapLeft(toLegacyAppInboxFailure);
   }
 
   public async enqueueAuthorisedWsClientDisconnect(
@@ -163,11 +179,15 @@ export class AppClientInboxService extends AppInboxService {
     return await super.enqueue(toAuthorisedWsClientDisconnectEnqueue(input));
   }
 
-  public async processExpiredSessions(atEpochMs: number = Date.now()) {
-    return await super.processEntryUntilCompletionIf<
-      ClientExpiredSessionsAppInboxPayload,
-      readonly ClientStateWritten[]
-    >(this.toExpiredSessionsEnqueue(atEpochMs), (entry) => isCompletedOrFailed(entry.status));
+  public async processExpiredSessions(
+    atEpochMs: number = Date.now(),
+  ): Promise<Either<string, readonly ClientStateWritten[]>> {
+    const result = await super.processEntryUntilCompletionIfResult(
+      this.toExpiredSessionsEnqueue(atEpochMs),
+      (entry) => isCompletedOrFailed(entry.status),
+      decodeExpiredClientSessionsResult,
+    );
+    return result.mapLeft(toLegacyAppInboxFailure);
   }
 
   public async enqueueExpiredSessions(atEpochMs: number = Date.now()) {

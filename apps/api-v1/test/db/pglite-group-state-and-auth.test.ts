@@ -17,9 +17,6 @@ import { ClientStateRepository } from '@shared-server/rallar-system/repositories
 ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/\
 GroupStateRepository.ts';
-import type {
-  GroupStateWritten,
-} from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import {
   createClientStateService,
   requiresClientWrite,
@@ -41,7 +38,6 @@ import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-
 createStateRepositories.ts';
 import {
   AppGroupInboxService,
-  type GroupCreateAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -332,10 +328,7 @@ Deno.test(
         { onMessage: () => Promise.resolve() },
       );
 
-      const pending = appGroup.processAuthenticatedEntryUntilCompletion<
-        GroupCreateAppInboxPayload,
-        GroupStateWritten
-      >({
+      const pending = appGroup.processAuthenticatedGroupEntryUntilCompletion({
         type: AppInboxType.GROUP_CREATE,
         resourceId: 'pglite-app-group-create',
         contextId: 'vertical-app:main:vertical-group',
@@ -473,10 +466,7 @@ Deno.test(
           },
         },
       );
-      const pending = appGroup.processAuthenticatedEntryUntilCompletion<
-        GroupCreateAppInboxPayload,
-        GroupStateWritten
-      >({
+      const pending = appGroup.processAuthenticatedGroupEntryUntilCompletion({
         type: AppInboxType.GROUP_CREATE,
         resourceId: 'pglite-summary-fence-create',
         contextId: 'fence-app:main:fence-group',

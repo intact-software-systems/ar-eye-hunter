@@ -2,16 +2,35 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { computeRtcTopologyEntry } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
+// prettier-ignore
+import {
+  ResourceInboxRepository,
+} from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+// prettier-ignore
+import {
+  GroupTopologyConfigRepository,
+} from
+  '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+// prettier-ignore
+import {
+  GroupTopologyManagementService,
+} from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+// prettier-ignore
+import {
+  RallarRtcTopologyService,
+} from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+// prettier-ignore
+import {
+  computeRtcTopologyEntry,
+} from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
 import {
   type AppInboxMessageContext,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
+// prettier-ignore
+import {
+  createAuthenticatedTopologyEnqueue,
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
 import {
   toTopologyAppInboxCommand,
   toTopologyConfigMutationCommand,
@@ -45,12 +64,12 @@ describe('topology AppInbox transaction and idempotency', () => {
     const command = await topologyCommand('same-request', 4);
     const enqueue = topologyEnqueue(command);
 
-    const first = harness.service.processAuthenticatedEntryUntilCompletion(
+    const first = harness.service.processAuthenticatedTopologyEntryUntilCompletion(
       enqueue,
       harness.sessions.owner,
     );
     await waitForQueueEntry(harness.queue);
-    const second = harness.service.processAuthenticatedEntryUntilCompletion(
+    const second = harness.service.processAuthenticatedTopologyEntryUntilCompletion(
       structuredClone(enqueue),
       harness.sessions.owner,
     );
@@ -75,14 +94,14 @@ describe('topology AppInbox transaction and idempotency', () => {
     configureTopology(harness);
     const firstCommand = await topologyCommand('divergent-request', 4);
     const secondCommand = await topologyCommand('divergent-request', 7);
-    const first = harness.service.processAuthenticatedEntryUntilCompletion(
+    const first = harness.service.processAuthenticatedTopologyEntryUntilCompletion(
       topologyEnqueue(firstCommand),
       harness.sessions.owner,
     );
     await waitForQueueEntry(harness.queue);
 
     await expect(
-      harness.service.processAuthenticatedEntryUntilCompletion(
+      harness.service.processAuthenticatedTopologyEntryUntilCompletion(
         topologyEnqueue(secondCommand),
         harness.sessions.owner,
       ),

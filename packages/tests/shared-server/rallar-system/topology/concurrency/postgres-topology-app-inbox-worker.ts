@@ -27,9 +27,6 @@ import {
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 // prettier-ignore
 import {
-  decodeTopologyAppInboxResult,
-} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
-import {
   createPostgresAppInboxWorkerRuntime,
   type PostgresAppInboxWorkerRuntime,
   type PostgresAppInboxWorkerTrace,
@@ -162,10 +159,7 @@ async function writeTopologyAppInboxCommand(
   });
   runtime.armBarrier();
   const result = await runtime.runUntilCompletion(() =>
-    runtime.group.processAuthenticatedEntryUntilCompletionResult<
-      typeof data,
-      GroupTopologyConfigMutationExecution
-    >(
+    runtime.group.processAuthenticatedTopologyEntryUntilCompletionResult(
       {
         type:
           input.command === 'put-config'
@@ -183,16 +177,14 @@ async function writeTopologyAppInboxCommand(
         data,
       },
       authority,
-      (value) => {
-        const decoded = decodeTopologyAppInboxResult(value);
-        if (!('receipt' in decoded)) {
-          throw new TypeError('Expected topology config mutation result');
-        }
-        return decoded;
-      },
     ),
   );
-  return result;
+  return result.mapRight((value) => {
+    if (!('receipt' in value)) {
+      throw new TypeError('Expected topology config mutation result');
+    }
+    return value;
+  });
 }
 
 async function readRequestAttemptCount(sql: PSqlSql, requestId: string): Promise<number> {

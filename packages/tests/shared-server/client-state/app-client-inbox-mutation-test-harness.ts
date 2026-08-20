@@ -5,13 +5,7 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import {
-  EntityStatus,
-  isExpiredResourceEntry,
-  type Key,
-  type ResourceEntry,
-  toKeyAsString,
-} from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
@@ -39,6 +33,10 @@ import {
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import {
+  TestResourceInbox,
+  TestResourceInboxResults,
+} from './app-client-inbox-resource-fixtures.ts';
 
 export const CLIENT_STATE_TEST_SCOPE: StateScope = {
   applicationId: 'ar-eye-hunter',
@@ -46,12 +44,6 @@ export const CLIENT_STATE_TEST_SCOPE: StateScope = {
 };
 const TEST_AUTHORITIES = new WeakMap<AppClientInboxService, Map<string, IssuedAuthSession>>();
 
-export class TestResourceInbox extends InMemoryQueueBox {
-  async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
-    const entry = await this.getItem(key);
-    return entry !== undefined && statuses.includes(entry.status);
-  }
-}
 export function requireRightSnapshot(result: Either<string, ClientStateWritten>): ClientSnapshot {
   if (!result.right) {
     throw new Error(result.left ?? 'Expected client app-inbox right result');
@@ -98,32 +90,7 @@ function requireClientMutationWritten(written: ClientStateWritten): ClientMutati
   throw new Error(result.left ?? 'Client mutation failed');
 }
 
-export class TestResourceInboxResults {
-  private readonly data = new Map<string, ResourceEntry>();
-
-  async replace(entry: ResourceEntry): Promise<ResourceEntry> {
-    this.data.set(toKeyAsString(entry.key), entry);
-    return entry;
-  }
-
-  async writeIfAbsentOrReplaceExpired(entry: ResourceEntry): Promise<ResourceEntry> {
-    const key = toKeyAsString(entry.key);
-    const existing = this.data.get(key);
-    if (existing !== undefined && !isExpiredResourceEntry(existing)) {
-      return existing;
-    }
-
-    this.data.set(key, entry);
-    return entry;
-  }
-
-  async findByKey(key: Key): Promise<ResourceEntry | undefined> {
-    const entry = this.data.get(toKeyAsString(key));
-    return entry === undefined || isExpiredResourceEntry(entry) ? undefined : entry;
-  }
-}
-
-export async function processAppInbox<V, R>(
+export async function processAppInbox<V>(
   service: AppClientInboxService,
   reader: InboxQueueReader,
   input: {
@@ -134,8 +101,8 @@ export async function processAppInbox<V, R>(
     senderId?: string;
     data: V;
   },
-): Promise<Either<string, R>> {
-  const resultPromise = service.processAuthenticatedEntryUntilCompletion<V, R>(
+): Promise<Either<string, ClientStateWritten>> {
+  const resultPromise = service.processAuthenticatedEntryUntilCompletion(
     input,
     toTestIssuedAuthority(service, input),
   );
@@ -180,7 +147,7 @@ function toTestIssuedAuthority<V>(
   return created;
 }
 
-export async function processAuthenticatedClientMutation<V, R = ClientStateWritten>(
+export async function processAuthenticatedClientMutation<V>(
   service: AppClientInboxService,
   input: {
     type: AppInboxType;
@@ -191,8 +158,8 @@ export async function processAuthenticatedClientMutation<V, R = ClientStateWritt
     data: V;
   },
   authority: IssuedAuthSession,
-): Promise<Either<string, R>> {
-  return await service.processAuthenticatedEntryUntilCompletion<V, R>(input, authority);
+): Promise<Either<string, ClientStateWritten>> {
+  return await service.processAuthenticatedEntryUntilCompletion(input, authority);
 }
 
 export function issuedSession(clientId: string, sessionId: string): IssuedAuthSession {

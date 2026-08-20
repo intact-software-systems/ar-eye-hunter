@@ -23,8 +23,11 @@ import type {
   CachedGroupStateService,
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import type {
-  AppInboxEnqueueInput,
-} from '@shared-server/rallar-system/services/AppInboxService.ts';
+  AuthenticatedGroupMutationEnqueue,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+import type {
+  GroupStateInboxDurableResult,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import type {
   StateSyncCacheHydrationInput,
   StateSyncCacheHydrationResult,
@@ -254,10 +257,10 @@ export type GroupStateRouteCommandInput =
     }>
   );
 
-export type ProcessGroupAppInbox = <V, R>(
+export type ProcessGroupAppInbox = (
   authority: GroupStateRouteAuthSession,
-  enqueue: AppInboxEnqueueInput<V>,
-) => Promise<R>;
+  enqueue: AuthenticatedGroupMutationEnqueue,
+) => Promise<GroupStateInboxDurableResult>;
 
 export interface GroupStateRouteRequest {
   header(name: string): string | undefined;
