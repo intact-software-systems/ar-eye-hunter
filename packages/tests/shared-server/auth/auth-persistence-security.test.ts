@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
-import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+// prettier-ignore
+import { createAuthMutationService } from '@shared-server/rallar-system/auth/\
+auth-mutation-service.ts';
+// prettier-ignore
+import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/\
+auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
-import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+// prettier-ignore
+import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/\
+app-auth-inbox-service.ts';
+// prettier-ignore
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/\
+auth-session-repository.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
@@ -205,24 +213,28 @@ function createCutoffSession(capturedAtEpochMs: number) {
   };
 }
 
-async function runCutoffOperation(
-  operation: (service: AppAuthInboxService) => Promise<unknown>,
-): Promise<unknown> {
+async function runCutoffOperation<Result>(
+  operation: (service: AppAuthInboxService) => Promise<Result>,
+): Promise<Result> {
   const queue = new TestResourceInbox();
   const results = new TestResourceInboxResults();
   const reader = new InboxQueueReader(queue);
   const runtime = new FakeRuntimeStateRepository();
   const service = new AppAuthInboxService(
-    reader,
-    queue as never,
-    results as never,
-    createAppInboxTestDatabase(queue, results, { runtimeRepository: runtime }),
-    createAuthMutationService({
-      runtimeRepository: runtime,
+    {
+      inboxQueueReader: reader,
+      resourceInboxRepository: queue,
+      resourceInboxResultsRepository: results,
+      database: createAppInboxTestDatabase(queue, results, { runtimeRepository: runtime }),
+      authMutationService: createAuthMutationService({
+        runtimeRepository: runtime,
+        serviceId: 'cutoff-auth-service',
+      }),
+      credentialIssuer: createHmacAuthCredentialIssuer('cutoff-auth-secret-0123456789abcdef'),
+    },
+    {
       serviceId: 'cutoff-auth-service',
-    }),
-    createHmacAuthCredentialIssuer('cutoff-auth-secret-0123456789abcdef'),
-    'cutoff-auth-service',
+    },
   );
   const pending = operation(service);
   await waitForQueuedEntry(queue);

@@ -169,12 +169,16 @@ function createRetryHarness() {
     reader,
     state,
     service: new AppClientInboxService(
-      reader,
-      queue as never,
-      results as never,
-      createAppInboxTestDatabase(queue, results),
-      createRetryClientState(state),
-      'server-12345678',
+      {
+        inboxQueueReader: reader,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
+        database: createAppInboxTestDatabase(queue, results),
+        clientStateService: createRetryClientState(state),
+      },
+      {
+        serviceId: 'server-12345678',
+      },
     ),
   };
 }

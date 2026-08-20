@@ -1,13 +1,25 @@
 import { describe, expect, it } from 'vitest';
 
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
-import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+// prettier-ignore
+import { createAuthMutationService } from '@shared-server/rallar-system/auth/\
+auth-mutation-service.ts';
+// prettier-ignore
+import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/\
+auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
-import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
-import type { IssueAuthWsTicketCommand } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
-import { captureAuthMutationFacts } from '@shared-server/rallar-system/auth/mutation/read/capture-auth-mutation-facts.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+// prettier-ignore
+import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/\
+app-auth-inbox-service.ts';
+// prettier-ignore
+import type { IssueAuthWsTicketCommand } from '@shared-server/rallar-system/auth/mutation/\
+auth-mutation-contracts.ts';
+// prettier-ignore
+import { captureAuthMutationFacts } from '@shared-server/rallar-system/auth/mutation/read/\
+capture-auth-mutation-facts.ts';
+// prettier-ignore
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/\
+auth-session-repository.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
@@ -291,18 +303,22 @@ it('rechecks the parent session before issuing agent credentials', async () => {
     'agent-authority-secret-0123456789abcdef',
   );
   const service = new AppAuthInboxService(
-    reader,
-    queue as never,
-    results as never,
-    createAppInboxTestDatabase(queue, results, {
-      runtimeRepository: runtime,
-    }),
-    createAuthMutationService({
-      runtimeRepository: runtime,
+    {
+      inboxQueueReader: reader,
+      resourceInboxRepository: queue,
+      resourceInboxResultsRepository: results,
+      database: createAppInboxTestDatabase(queue, results, {
+        runtimeRepository: runtime,
+      }),
+      authMutationService: createAuthMutationService({
+        runtimeRepository: runtime,
+        serviceId: 'auth-test-service',
+      }),
+      credentialIssuer: credentialIssuer,
+    },
+    {
       serviceId: 'auth-test-service',
-    }),
-    credentialIssuer,
-    'auth-test-service',
+    },
   );
   const now = Date.now();
 

@@ -1,14 +1,26 @@
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
-import { readPersistedAppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
+// prettier-ignore
+import {
+  readPersistedAppInboxFailure,
+} from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 import {
   AppInboxReservationConflictError,
   AppInboxType,
   classifyAppInboxError,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { GroupMutationAuthorizationError } from '@shared-server/rallar-system/services/group-state-service.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+// prettier-ignore
+import {
+  GroupMutationAuthorizationError,
+} from '@shared-server/rallar-system/services/group-state-service.ts';
+// prettier-ignore
+import type {
+  JsonWireValue,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
-import { GroupTopologyConfigValidationError } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
+// prettier-ignore
+import {
+  GroupTopologyConfigValidationError,
+} from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { describe, expect, it, vi } from 'vitest';

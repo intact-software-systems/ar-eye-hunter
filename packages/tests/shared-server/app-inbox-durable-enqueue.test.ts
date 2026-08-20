@@ -1,20 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import {
   AppInboxService,
   SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import {
-  type AppInboxEnqueueInput,
-  AppInboxType,
-} from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
-
-interface DurableAppInbox {
-  enqueue<V>(command: AppInboxEnqueueInput<V>): Promise<ResourceEntry>;
-}
+import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 
 const COMMAND = {
   type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
@@ -29,7 +23,7 @@ describe('AppInbox durable enqueue', () => {
     const queue = new InMemoryQueueBox(new Map());
     const service = createService(queue);
 
-    const entry = await asDurable(service).enqueue(COMMAND);
+    const entry = await service.enqueue(COMMAND);
 
     expect(entry).toBe(await queue.getItem(entry.key));
     expect(entry.key).toEqual({
@@ -49,7 +43,7 @@ describe('AppInbox durable enqueue', () => {
     const queue = new FailingQueueBox(failure);
     const service = createService(queue);
 
-    await expect(asDurable(service).enqueue(COMMAND)).rejects.toBe(failure);
+    await expect(service.enqueue(COMMAND)).rejects.toBe(failure);
   });
 
   it('wakes the owning queue after durable enqueue and idempotent reuse', async () => {
@@ -57,8 +51,8 @@ describe('AppInbox durable enqueue', () => {
     const wakeQueue = vi.fn();
     const service = createService(queue, wakeQueue);
 
-    const first = await asDurable(service).enqueue(COMMAND);
-    const duplicate = await asDurable(service).enqueue(COMMAND);
+    const first = await service.enqueue(COMMAND);
+    const duplicate = await service.enqueue(COMMAND);
 
     expect(duplicate).toBe(first);
     expect(wakeQueue).toHaveBeenCalledTimes(2);
@@ -69,9 +63,12 @@ function createService(queue: InMemoryQueueBox, wakeQueue?: () => void): AppInbo
   return new AppInboxService(
     {
       inboxQueueReader: new InboxQueueReader(queue),
-      resourceInboxRepository: queue as never,
-      resourceInboxResultsRepository: {} as never,
-      database: {} as never,
+      resourceInboxRepository: queue,
+      resourceInboxResultsRepository: {
+        replace: async (entry) => entry,
+        findByKey: (_key: Key) => Promise.resolve(undefined),
+      },
+      database: createAppInboxTestDatabase().sql,
     },
     {
       serviceId: 'server-12345678',
@@ -79,10 +76,6 @@ function createService(queue: InMemoryQueueBox, wakeQueue?: () => void): AppInbo
       wakeOwningQueue: wakeQueue,
     },
   );
-}
-
-function asDurable(service: AppInboxService): DurableAppInbox {
-  return service as unknown as DurableAppInbox;
 }
 
 class FailingQueueBox extends InMemoryQueueBox {

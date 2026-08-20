@@ -4,7 +4,13 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import {
   ADMIN_PRUNE_EXPIRED_CATEGORIES,
   type AdminPruneExpiredCategory,
+  type AdminPruneExpiredRequest,
 } from '@shared/api/admin-operations-types.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+// prettier-ignore
+import type {
+  JsonWireValue,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
@@ -373,16 +379,16 @@ describe('AppAdminInboxService initial prune command', () => {
   it('restarts read and write after an optimistic transaction conflict', async () => {
     const harness = createAdminInboxHarness({ conflictFirstTransaction: true });
 
-    await completePrune(
+    await completePruneAttempts({
       harness,
-      createAdminSession('admin', 'admin-session'),
-      {
+      adminSession: createAdminSession('admin', 'admin-session'),
+      request: {
         requestId: 'retry-full-phase-sequence',
         categories: ['runtime-state'],
         dryRun: true,
       },
-      2,
-    );
+      dequeueAttempts: 2,
+    });
 
     expect(harness.readAuthority).toHaveBeenCalledTimes(2);
     expect(harness.pruner.countExpired).toHaveBeenCalledTimes(2);
@@ -580,8 +586,8 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
   const service = new AppAdminInboxService(
     {
       inboxQueueReader: reader,
-      resourceInboxRepository: queue as never,
-      resourceInboxResultsRepository: resultRepository as never,
+      resourceInboxRepository: queue,
+      resourceInboxResultsRepository: resultRepository,
       database: observedDatabase,
       pruner,
       readAuthority,
@@ -655,7 +661,7 @@ function createObservedDatabase(
     recordDurableResultLookup(): void;
   }>,
 ): PSqlSql {
-  const observed = ((strings: TemplateStringsArray, ...values: unknown[]) =>
+  const observed = ((strings: TemplateStringsArray, ...values: Parameters<PSqlSql>[0]) =>
     database(strings, ...values)) as PSqlSql;
   Object.defineProperties(observed, Object.getOwnPropertyDescriptors(database));
   observed.begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>): Promise<T> =>
@@ -674,7 +680,7 @@ function createObservedTransaction(
     recordDurableResultLookup(): void;
   }>,
 ): PSqlTransactionSql {
-  const observed = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
+  const observed = (async (strings: TemplateStringsArray, ...values: Parameters<PSqlSql>[0]) => {
     const query = strings.join(' ').replace(/\s+/gu, ' ').trim().toLowerCase();
     if (query.includes('from resource_inbox') && query.includes('limit 1')) {
       lookupRecorder.recordOutboxWinnerLookup();
@@ -723,9 +729,24 @@ function createAdminSession(clientId: string, sessionId: string): AuthSession {
 async function completePrune(
   harness: AdminInboxHarness,
   adminSession: AuthSession,
-  request: unknown,
-  dequeueAttempts = 1,
+  request: AdminPruneExpiredRequest,
 ) {
+  return await completePruneAttempts({ harness, adminSession, request, dequeueAttempts: 1 });
+}
+
+interface CompletePruneAttemptsInput {
+  readonly harness: AdminInboxHarness;
+  readonly adminSession: AuthSession;
+  readonly request: AdminPruneExpiredRequest;
+  readonly dequeueAttempts: number;
+}
+
+async function completePruneAttempts({
+  harness,
+  adminSession,
+  request,
+  dequeueAttempts,
+}: CompletePruneAttemptsInput) {
   const pending = harness.service.pruneExpired({ adminSession, request });
   for (let attempt = 0; attempt < dequeueAttempts; attempt += 1) {
     if (attempt === 0) {
@@ -764,8 +785,8 @@ async function listCommands(
     .filter((entry) => requestId === undefined || entry.key.resourceId === requestId)
     .filter((entry) => clientId === undefined || entry.key.contextId === clientId)
     .map((entry) => {
-      const message = JSON.parse(entry.resource) as { payload: { resource: string } };
-      const enqueue = JSON.parse(message.payload.resource) as { data: unknown };
+      const message: ALMessage = JSON.parse(entry.resource);
+      const enqueue: { data: JsonWireValue } = JSON.parse(message.payload.resource);
       return decodeAdminPruneCommand(enqueue.data);
     });
 }

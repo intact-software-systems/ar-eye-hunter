@@ -13,14 +13,6 @@ import {
 import { Either } from '@shared/resilience/Either.ts';
 import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-// prettier-ignore
-import {
-  ResourceInboxRepository,
-} from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-// prettier-ignore
-import {
-  ResourceInboxResultsRepository,
-} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
   type RallarTimingDetails,
@@ -105,10 +97,19 @@ interface NormalizedAppInboxServiceOptions {
 }
 
 export namespace AppInboxService {
+  export interface InboxRepository {
+    isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean>;
+  }
+
+  export interface ResultRepository {
+    replace(entry: ResourceEntry): Promise<ResourceEntry>;
+    findByKey(key: Key): Promise<ResourceEntry | undefined>;
+  }
+
   export interface Dependencies {
     readonly inboxQueueReader: InboxQueueReader;
-    readonly resourceInboxRepository: ResourceInboxRepository;
-    readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
+    readonly resourceInboxRepository: InboxRepository;
+    readonly resourceInboxResultsRepository: ResultRepository;
     readonly database: PSqlSql;
   }
 
@@ -131,8 +132,8 @@ export class AppInboxService {
   private readonly optionsInput: AppInboxServiceOptions;
   protected readonly transactionWriter: AppInboxTransactionWriter;
   public readonly inbox: InboxQueueReader;
-  public readonly resourceInbox: ResourceInboxRepository;
-  public readonly resourceInboxResults: ResourceInboxResultsRepository;
+  public readonly resourceInbox: AppInboxService.InboxRepository;
+  public readonly resourceInboxResults: AppInboxService.ResultRepository;
   protected readonly database: PSqlSql;
   public readonly serviceId: string;
   private readonly defaultTopicId: string;

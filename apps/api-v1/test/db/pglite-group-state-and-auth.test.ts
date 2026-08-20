@@ -42,7 +42,6 @@ createStateRepositories.ts';
 import {
   AppGroupInboxService,
   type GroupCreateAppInboxPayload,
-  type TopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -64,7 +63,7 @@ import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import {
   readPGliteAppInboxFailure,
   waitForPGliteQueueRow,
-} from './pglite-sql-adapter-test-runtime.ts';
+} from './pglite-app-inbox-test-runtime.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 const PAST_MS = Date.parse('2000-01-01T00:00:00.000Z');
@@ -107,81 +106,6 @@ interface NumericValueRow {
 
 interface StringValueRow {
   readonly value: string;
-}
-
-interface RuntimeStateExpiryRow {
-  readonly store_key: string;
-  readonly expire_at_ts: string;
-}
-
-interface ResourceInboxAttemptStatusRow {
-  readonly ri_attempts: string | number;
-  readonly ri_status: string;
-}
-
-interface ResourceInboxPayloadRow {
-  readonly ri_resource: string;
-}
-
-interface EpochMillisecondsRow {
-  readonly epoch_ms: string | number;
-}
-
-interface GroupEventWorkspaceRow {
-  readonly workspace_key: string;
-}
-
-interface CreatedTimestampRow {
-  readonly created_ts: string;
-}
-
-interface ExpireTimestampRow {
-  readonly expire_ts: string;
-}
-
-interface StartTimestampRow {
-  readonly start_ts: string;
-}
-
-interface EndTimestampRow {
-  readonly end_ts: string;
-}
-
-interface TopologyCommandPayload {
-  readonly data: TopologyAppInboxCommand;
-}
-
-interface DurableTopologyAuthorityProof {
-  readonly principalId: string;
-  readonly sessionId: string;
-  readonly sessionIssuedAtEpochMs: number;
-}
-
-interface DurableTopologyAuthorityValue {
-  readonly proof: DurableTopologyAuthorityProof;
-}
-
-interface DurableTopologyAuthority {
-  readonly authority: DurableTopologyAuthorityValue;
-}
-
-interface ResourceInboxKeyFields {
-  readonly topicId: string;
-  readonly resourceId: string;
-  readonly contextId: string;
-}
-
-interface RtcTopologyDeliveryState {
-  readonly headSequence: number;
-  readonly sequences: readonly number[];
-}
-
-interface RtcTopologyDeliveryStreamRow {
-  readonly head_sequence: number;
-}
-
-interface RtcTopologyDeliveryEntryRow {
-  readonly sequence: number;
 }
 
 Deno.test(
@@ -369,19 +293,23 @@ Deno.test(
         now: () => nowEpochMs,
       });
       const appGroup = new AppGroupInboxService(
-        inboxReader,
-        resourceInbox,
-        resourceResults,
-        sql,
-        groupState,
-        'pglite-group-service',
-        undefined,
         {
-          waitMaxElapsedMsecs: 5_000,
-          waitRetryIntervalMsecs: 1,
-          waitMaxRetryIntervalMsecs: 4,
-          waitJitterRatio: 0,
-          nowEpochMs: () => nowEpochMs,
+          inboxQueueReader: inboxReader,
+          resourceInboxRepository: resourceInbox,
+          resourceInboxResultsRepository: resourceResults,
+          database: sql,
+          groupStateService: groupState,
+        },
+        {
+          serviceId: 'pglite-group-service',
+          timing: undefined,
+          options: {
+            waitMaxElapsedMsecs: 5_000,
+            waitRetryIntervalMsecs: 1,
+            waitMaxRetryIntervalMsecs: 4,
+            waitJitterRatio: 0,
+            nowEpochMs: () => nowEpochMs,
+          },
         },
       );
       const summaryWork = new GroupPresenceSummaryWork({
@@ -526,19 +454,23 @@ Deno.test(
         now: () => nowEpochMs,
       });
       const appGroup = new AppGroupInboxService(
-        inboxReader,
-        resourceInbox,
-        resourceResults,
-        sql,
-        groupState,
-        'pglite-summary-fence',
-        undefined,
         {
-          waitMaxElapsedMsecs: 5_000,
-          waitRetryIntervalMsecs: 1,
-          waitMaxRetryIntervalMsecs: 4,
-          waitJitterRatio: 0,
-          nowEpochMs: () => nowEpochMs,
+          inboxQueueReader: inboxReader,
+          resourceInboxRepository: resourceInbox,
+          resourceInboxResultsRepository: resourceResults,
+          database: sql,
+          groupStateService: groupState,
+        },
+        {
+          serviceId: 'pglite-summary-fence',
+          timing: undefined,
+          options: {
+            waitMaxElapsedMsecs: 5_000,
+            waitRetryIntervalMsecs: 1,
+            waitMaxRetryIntervalMsecs: 4,
+            waitJitterRatio: 0,
+            nowEpochMs: () => nowEpochMs,
+          },
         },
       );
       const pending = appGroup.processAuthenticatedEntryUntilCompletion<

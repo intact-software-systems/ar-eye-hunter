@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import {
   AppGroupInboxService,
@@ -21,7 +21,6 @@ import {
   type AuthorityHarness,
   TestResourceInbox,
   TestResourceInboxResults,
-  authenticatedProcessor,
   createAuthorityHarness,
   createResilience,
   createRoom,
@@ -119,12 +118,16 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
       }),
     };
     const service = new AppGroupInboxService(
-      reader,
-      queue as never,
-      results as never,
-      createAppInboxTestDatabase(queue, results),
-      phaseService as never,
-      'server-12345678',
+      {
+        inboxQueueReader: reader,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
+        database: createAppInboxTestDatabase(queue, results),
+        groupStateService: phaseService as never,
+      },
+      {
+        serviceId: 'server-12345678',
+      },
     );
     const authority = authSession({
       clientId: 'owner',
@@ -132,7 +135,10 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
       accessToken: 'owner-token',
       nowEpochMs,
     });
-    const pending = authenticatedProcessor<GroupUpdateAppInboxPayload, GroupStateWritten>(service)(
+    const pending = service.processAuthenticatedEntryUntilCompletion<
+      GroupUpdateAppInboxPayload,
+      GroupStateWritten
+    >(
       {
         type: AppInboxType.GROUP_UPDATE,
         resourceId: 'outer-retry-authority-change',
@@ -319,9 +325,10 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
         },
       },
     };
-    const pending = authenticatedProcessor<GroupUpdateAppInboxPayload, GroupStateWritten>(
-      harness.service,
-    )(input, harness.sessions.owner);
+    const pending = harness.service.processAuthenticatedEntryUntilCompletion<
+      GroupUpdateAppInboxPayload,
+      GroupStateWritten
+    >(input, harness.sessions.owner);
     await waitForQueueEntry(harness.queue);
     await harness.authSessions.deleteSession(harness.sessions.owner);
 
@@ -358,15 +365,18 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
         },
       },
     };
-    const process = authenticatedProcessor<GroupUpdateAppInboxPayload, GroupStateWritten>(
-      harness.service,
-    );
-    const first = process(input, harness.sessions.owner);
-    const second = process(input, harness.sessions.owner);
+    const first = harness.service.processAuthenticatedEntryUntilCompletion<
+      GroupUpdateAppInboxPayload,
+      GroupStateWritten
+    >(input, harness.sessions.owner);
+    const second = harness.service.processAuthenticatedEntryUntilCompletion<
+      GroupUpdateAppInboxPayload,
+      GroupStateWritten
+    >(input, harness.sessions.owner);
     await waitForQueueEntry(harness.queue);
-    const newEntries = [
-      ...(harness.queue as unknown as { data: Map<string, ResourceEntry> }).data.values(),
-    ].filter((entry) => entry.status === EntityStatus.NEW);
+    const newEntries = (await harness.queueEntries()).filter(
+      (entry) => entry.status === EntityStatus.NEW,
+    );
     expect(newEntries).toHaveLength(1);
 
     await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());

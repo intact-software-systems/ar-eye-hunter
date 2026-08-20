@@ -10,8 +10,6 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import type { AuthMutationService } from '../auth-mutation-service.ts';
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
 import { hashAuthSecret } from '../credentials/hash-auth-secret.ts';
@@ -19,7 +17,13 @@ import type {
   AuthMutationCommand,
   AuthMutationPublicResult,
   AuthMutationResult,
+  ConsumeAuthAgentTicketCommand,
+  ConsumeAuthWsTicketCommand,
+  IssueAuthAgentTicketsCommand,
   IssueAuthSessionCommand,
+  IssueAuthWsTicketCommand,
+  LogoutAuthSessionCommand,
+  RegisterAuthUserCommand,
 } from '../mutation/auth-mutation-contracts.ts';
 import { decodeAuthMutationCommand } from '../mutation/decode-auth-mutation-command.ts';
 import { decodeAuthMutationResult } from '../mutation/decode-auth-mutation-result.ts';
@@ -44,11 +48,6 @@ import { AuthInboxHandler } from './auth-inbox-handler.ts';
 
 export { AUTH_STATE_APP_INBOX_TOPIC, toAuthAppInboxType } from './auth-app-inbox-routing.ts';
 
-type AuthRequestFacts = Readonly<{
-  requestId: string;
-  capturedAtEpochMs: number;
-}>;
-
 const AUTH_TYPES = [
   AppInboxType.AUTH_USER_REGISTER,
   AppInboxType.AUTH_SESSION_ISSUE,
@@ -59,48 +58,60 @@ const AUTH_TYPES = [
   AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME,
 ] as const;
 
+export namespace AppAuthInboxService {
+  export interface Dependencies {
+    readonly inboxQueueReader: InboxQueueReader;
+    readonly resourceInboxRepository: AppInboxService.InboxRepository;
+    readonly resourceInboxResultsRepository: AppInboxService.ResultRepository;
+    readonly database: PSqlSql;
+    readonly authMutationService: AuthMutationService;
+    readonly credentialIssuer: AuthCredentialIssuer;
+  }
+
+  export interface Config {
+    readonly serviceId: string;
+    readonly timing?: RallarTimingSink;
+    readonly options?: AppInboxServiceOptions;
+    readonly wakeOwningQueue?: () => void;
+  }
+
+  export interface RequestFacts {
+    readonly requestId: string;
+    readonly capturedAtEpochMs: number;
+  }
+}
+
 export class AppAuthInboxService extends AppInboxService {
   private readonly authInboxHandler: AuthInboxHandler;
 
   public readonly authMutationService: AuthMutationService;
   public readonly credentialIssuer: AuthCredentialIssuer;
 
-  constructor(
-    inbox: InboxQueueReader,
-    resourceInbox: ResourceInboxRepository,
-    resourceInboxResults: ResourceInboxResultsRepository,
-    database: PSqlSql,
-    authMutationService: AuthMutationService,
-    credentialIssuer: AuthCredentialIssuer,
-    serviceId: string,
-    timing?: RallarTimingSink,
-    options?: AppInboxServiceOptions,
-    wakeQueue?: () => void,
-  ) {
+  constructor(dependencies: AppAuthInboxService.Dependencies, config: AppAuthInboxService.Config) {
     super(
       {
-        inboxQueueReader: inbox,
-        resourceInboxRepository: resourceInbox,
-        resourceInboxResultsRepository: resourceInboxResults,
-        database,
+        inboxQueueReader: dependencies.inboxQueueReader,
+        resourceInboxRepository: dependencies.resourceInboxRepository,
+        resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+        database: dependencies.database,
       },
       {
-        serviceId,
+        serviceId: config.serviceId,
         defaultTopicId: AUTH_STATE_APP_INBOX_TOPIC,
-        timing,
-        options,
-        wakeOwningQueue: wakeQueue,
+        timing: config.timing,
+        options: config.options,
+        wakeOwningQueue: config.wakeOwningQueue,
       },
     );
-    this.authMutationService = authMutationService;
-    this.credentialIssuer = credentialIssuer;
+    this.authMutationService = dependencies.authMutationService;
+    this.credentialIssuer = dependencies.credentialIssuer;
     this.authInboxHandler = new AuthInboxHandler({
-      mutationService: authMutationService,
-      credentialIssuer,
+      mutationService: dependencies.authMutationService,
+      credentialIssuer: dependencies.credentialIssuer,
       transactionWriter: this.transactionWriter,
     });
     for (const type of AUTH_TYPES) {
-      this.onStateMessage<unknown>(
+      this.onStateMessage<Parameters<AuthInboxHandler['processAuthMutation']>[0]>(
         type,
         async (command, context) =>
           await this.authInboxHandler.processAuthMutation(command, context),
@@ -108,9 +119,33 @@ export class AppAuthInboxService extends AppInboxService {
     }
   }
 
-  async processAuthCommandUntilCompletion<R extends AuthMutationPublicResult>(
+  async processAuthCommandUntilCompletion(
+    command: RegisterAuthUserCommand,
+  ): Promise<Either<AppInboxFailure, RegisterResponse>>;
+  async processAuthCommandUntilCompletion(
+    command: IssueAuthSessionCommand,
+  ): Promise<Either<AppInboxFailure, LoginResponse>>;
+  async processAuthCommandUntilCompletion(
+    command: LogoutAuthSessionCommand,
+  ): Promise<Either<AppInboxFailure, LogoutResponse>>;
+  async processAuthCommandUntilCompletion(
+    command: IssueAuthWsTicketCommand,
+  ): Promise<Either<AppInboxFailure, WebSocketTicketResponse>>;
+  async processAuthCommandUntilCompletion(
+    command: ConsumeAuthWsTicketCommand,
+  ): Promise<Either<AppInboxFailure, IssuedAuthSession>>;
+  async processAuthCommandUntilCompletion(
+    command: IssueAuthAgentTicketsCommand,
+  ): Promise<Either<AppInboxFailure, AgentSessionTicketResponse>>;
+  async processAuthCommandUntilCompletion(
+    command: ConsumeAuthAgentTicketCommand,
+  ): Promise<Either<AppInboxFailure, ConsumeAgentSessionTicketResponse>>;
+  async processAuthCommandUntilCompletion(
     command: AuthMutationCommand,
-  ): Promise<Either<AppInboxFailure, R>> {
+  ): Promise<Either<AppInboxFailure, AuthMutationPublicResult>>;
+  async processAuthCommandUntilCompletion(
+    command: AuthMutationCommand,
+  ): Promise<Either<AppInboxFailure, AuthMutationPublicResult>> {
     const decoded = decodeAuthMutationCommand(command);
     let persisted: Either<AppInboxFailure, AuthMutationResult>;
     try {
@@ -134,12 +169,12 @@ export class AppAuthInboxService extends AppInboxService {
     if (persisted.left !== undefined) return Either.ofLeft(persisted.left);
     if (persisted.right === undefined) throw new Error('Auth AppInbox result is missing');
     return Either.ofRight(
-      (await toAuthMutationPublicResult(decoded, persisted.right, this.credentialIssuer)) as R,
+      await toAuthMutationPublicResult(decoded, persisted.right, this.credentialIssuer),
     );
   }
 
   async registerUser(
-    input: AuthRequestFacts & Readonly<{ user: AuthUser }>,
+    input: AppAuthInboxService.RequestFacts & Readonly<{ user: AuthUser }>,
   ): Promise<Either<AppInboxFailure, RegisterResponse>> {
     return await this.processAuthCommandUntilCompletion({
       version: 1,
@@ -149,7 +184,7 @@ export class AppAuthInboxService extends AppInboxService {
   }
 
   async issueSession(
-    input: AuthRequestFacts &
+    input: AppAuthInboxService.RequestFacts &
       Readonly<{
         clientId: string;
         username: string;
@@ -177,7 +212,7 @@ export class AppAuthInboxService extends AppInboxService {
   }
 
   async logoutSession(
-    input: AuthRequestFacts & Readonly<{ session: IssuedAuthSession }>,
+    input: AppAuthInboxService.RequestFacts & Readonly<{ session: IssuedAuthSession }>,
   ): Promise<Either<AppInboxFailure, LogoutResponse>> {
     return await this.processAuthCommandUntilCompletion({
       version: 1,
@@ -196,7 +231,7 @@ export class AppAuthInboxService extends AppInboxService {
   }
 
   async issueWebSocketTicket(
-    input: AuthRequestFacts &
+    input: AppAuthInboxService.RequestFacts &
       Readonly<{
         session: IssuedAuthSession;
         expiresAtEpochMs: number;
@@ -223,7 +258,7 @@ export class AppAuthInboxService extends AppInboxService {
   }
 
   async consumeWebSocketTicket(
-    input: AuthRequestFacts &
+    input: AppAuthInboxService.RequestFacts &
       Readonly<{
         ticket: string;
         expectedSessionId: string;
@@ -240,7 +275,7 @@ export class AppAuthInboxService extends AppInboxService {
   }
 
   async issueAgentSessionTickets(
-    input: AuthRequestFacts &
+    input: AppAuthInboxService.RequestFacts &
       Readonly<{
         session: IssuedAuthSession;
         sessionExpiresAtEpochMs: number;
@@ -287,7 +322,7 @@ export class AppAuthInboxService extends AppInboxService {
   }
 
   async consumeAgentSessionTicket(
-    input: AuthRequestFacts & Readonly<{ ticket: string }>,
+    input: AppAuthInboxService.RequestFacts & Readonly<{ ticket: string }>,
   ): Promise<Either<AppInboxFailure, ConsumeAgentSessionTicketResponse>> {
     return await this.processAuthCommandUntilCompletion({
       version: 1,

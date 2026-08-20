@@ -3,11 +3,19 @@ import { describe, expect, it, vi } from 'vitest';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
-import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+// prettier-ignore
+import { createAuthMutationService } from '@shared-server/rallar-system/auth/\
+auth-mutation-service.ts';
+// prettier-ignore
+import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/\
+auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
-import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
-import type { IssueAuthSessionCommand } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
+// prettier-ignore
+import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/\
+app-auth-inbox-service.ts';
+// prettier-ignore
+import type { IssueAuthSessionCommand } from '@shared-server/rallar-system/auth/mutation/\
+auth-mutation-contracts.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
@@ -42,13 +50,19 @@ describe('AppAuthInboxService registration', () => {
     });
     const read = vi.spyOn(mutationService, 'read');
     const service = new AppAuthInboxService(
-      reader,
-      queue as never,
-      results as never,
-      createAppInboxTestDatabase(queue, results, { runtimeRepository: runtime }),
-      mutationService,
-      createHmacAuthCredentialIssuer('auth-registration-secret-0123456789abcdef'),
-      'auth-registration-service',
+      {
+        inboxQueueReader: reader,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
+        database: createAppInboxTestDatabase(queue, results, { runtimeRepository: runtime }),
+        authMutationService: mutationService,
+        credentialIssuer: createHmacAuthCredentialIssuer(
+          'auth-registration-secret-0123456789abcdef',
+        ),
+      },
+      {
+        serviceId: 'auth-registration-service',
+      },
     );
 
     expect(registrations.mock.calls.map(([type]) => type)).toEqual(
@@ -185,7 +199,7 @@ async function observeMalformedOutcome(
   const firstOutcome = await Promise.race([
     pending.then(
       (value) => ({ kind: 'settled' as const, value }),
-      (error: unknown) => ({ kind: 'rejected' as const, error }),
+      (error) => ({ kind: 'rejected' as const, error }),
     ),
     waitForQueuedEntry(auth.queue).then(() => ({ kind: 'queued' as const })),
   ]);

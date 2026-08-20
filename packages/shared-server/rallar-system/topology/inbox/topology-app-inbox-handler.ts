@@ -32,7 +32,7 @@ import { toTopologyConfigMutationCommand } from './topology-app-inbox-command.ts
 import type { TopologyReconfigureAppInboxAuthority } from './topology-app-inbox-contracts.ts';
 
 export interface TopologyAppInboxHandlerDependencies {
-  readonly groupStateService: GroupStateService;
+  readonly groupStateService: Pick<GroupStateService, 'readIssuedAuthSession'>;
   readonly transactionWriter: Pick<AppInboxMutationTransactionWriter, 'writeMutation'>;
   readonly nowEpochMs: () => number;
   readonly wakeQueue?: () => void;

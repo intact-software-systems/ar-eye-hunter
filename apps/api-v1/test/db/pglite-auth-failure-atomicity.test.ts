@@ -9,7 +9,11 @@ import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAu
 import { createAuthMutationService } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
-import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow, withPGliteSql } from './pglite-auth-test-harness.ts';
+import {
+  readPGliteDatabaseEpochMs,
+  waitForPGliteQueueRow,
+  withPGliteSql,
+} from './pglite-auth-test-harness.ts';
 
 import { createResourceEntry } from './pglite-auth-test-harness.ts';
 
@@ -24,23 +28,27 @@ Deno.test('PGlite logout outbox collision rolls back session deletion and succes
     );
     const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
     const appAuth = new AppAuthInboxService(
-      inboxReader,
-      resourceInbox,
-      resourceResults,
-      sql,
-      createAuthMutationService({
-        runtimeRepository: runtime,
-        serviceId: 'pglite-auth',
-      }),
-      credentialIssuer,
-      'pglite-auth',
-      undefined,
       {
-        waitMaxElapsedMsecs: 5_000,
-        waitRetryIntervalMsecs: 1,
-        waitMaxRetryIntervalMsecs: 4,
-        waitJitterRatio: 0,
-        nowEpochMs: () => nowEpochMs,
+        inboxQueueReader: inboxReader,
+        resourceInboxRepository: resourceInbox,
+        resourceInboxResultsRepository: resourceResults,
+        database: sql,
+        authMutationService: createAuthMutationService({
+          runtimeRepository: runtime,
+          serviceId: 'pglite-auth',
+        }),
+        credentialIssuer: credentialIssuer,
+      },
+      {
+        serviceId: 'pglite-auth',
+        timing: undefined,
+        options: {
+          waitMaxElapsedMsecs: 5_000,
+          waitRetryIntervalMsecs: 1,
+          waitMaxRetryIntervalMsecs: 4,
+          waitJitterRatio: 0,
+          nowEpochMs: () => nowEpochMs,
+        },
       },
     );
     const accessToken = await credentialIssuer.issueAccessToken('logout-session');
@@ -105,23 +113,27 @@ Deno.test('PGlite auth finalization fence rolls back state and result through re
     );
     const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
     const appAuth = new AppAuthInboxService(
-      inboxReader,
-      resourceInbox,
-      resourceResults,
-      sql,
-      createAuthMutationService({
-        runtimeRepository: runtime,
-        serviceId: 'pglite-auth',
-      }),
-      credentialIssuer,
-      'pglite-auth',
-      undefined,
       {
-        waitMaxElapsedMsecs: 5_000,
-        waitRetryIntervalMsecs: 1,
-        waitMaxRetryIntervalMsecs: 4,
-        waitJitterRatio: 0,
-        nowEpochMs: () => nowEpochMs,
+        inboxQueueReader: inboxReader,
+        resourceInboxRepository: resourceInbox,
+        resourceInboxResultsRepository: resourceResults,
+        database: sql,
+        authMutationService: createAuthMutationService({
+          runtimeRepository: runtime,
+          serviceId: 'pglite-auth',
+        }),
+        credentialIssuer: credentialIssuer,
+      },
+      {
+        serviceId: 'pglite-auth',
+        timing: undefined,
+        options: {
+          waitMaxElapsedMsecs: 5_000,
+          waitRetryIntervalMsecs: 1,
+          waitMaxRetryIntervalMsecs: 4,
+          waitJitterRatio: 0,
+          nowEpochMs: () => nowEpochMs,
+        },
       },
     );
     await sql`

@@ -8,10 +8,7 @@ import {
   createStateWritePerformanceArtifact,
   refreshStateWritePerformanceWorkload,
 } from './state-write-performance-artifact-fixture.ts';
-import {
-  binding,
-  swapCompleteDurableResults,
-} from './state-write-performance-result-fixture.ts';
+import { binding, swapCompleteDurableResults } from './state-write-performance-result-fixture.ts';
 
 describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () => {
   it('accepts a complete AppInbox/ResourceInbox artifact for both comparison roles', () => {
@@ -214,9 +211,9 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
     const authorized = createStateWritePerformanceArtifact();
     setResourceAdverseRatio(authorized, 0.06);
     authorized.regressionReasons = [...STATE_WRITE_REASONS];
-    expect(
-      compareStateWriteArtifacts(createStateWritePerformanceArtifact(), authorized),
-    ).toEqual([]);
+    expect(compareStateWriteArtifacts(createStateWritePerformanceArtifact(), authorized)).toEqual(
+      [],
+    );
   });
 
   it('preserves scale, retry-exhaustion, latency, throughput, and resource gates', () => {
@@ -336,18 +333,20 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       [],
     );
     expect(
-      bench.productionOutboxLookupIds(
-        {
+      bench.productionOutboxLookupIds({
+        command: {
           kind: 'topology-source',
           commandId: 'bench:topology-source:7',
           stackIndex: 0,
           latencyMs: 1,
           status: 'accepted',
         },
-        { applicationId: 'app', workspaceId: 'workspace' },
-        5,
-        ['bench:topology-source:7:rtc-topology-recompute:group-revision:group=1;presence=0'],
-      )[0],
+        scope: { applicationId: 'app', workspaceId: 'workspace' },
+        groupCount: 5,
+        receiptOutboxIds: [
+          'bench:topology-source:7:rtc-topology-recompute:group-revision:group=1;presence=0',
+        ],
+      })[0],
     ).toMatch(/^bench-topology-source--[a-z0-9]+$/);
     expect(
       bench.parseBenchmarkOptions([
@@ -416,9 +415,7 @@ function queueResource(data: object, msgId?: string): string {
 function setResourceAdverseRatio(artifact: any, ratio: number): void {
   for (const workload of artifact.workloads) {
     for (const sample of workload.samples) {
-      sample.sql.serializedResultBytes = Math.round(
-        sample.sql.serializedResultBytes * (1 + ratio),
-      );
+      sample.sql.serializedResultBytes = Math.round(sample.sql.serializedResultBytes * (1 + ratio));
     }
     refreshStateWritePerformanceWorkload(workload);
   }

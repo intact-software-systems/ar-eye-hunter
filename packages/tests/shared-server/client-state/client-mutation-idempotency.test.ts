@@ -150,12 +150,16 @@ function createAppInboxIdempotencyHarness() {
     publisher,
     reader,
     service: new AppClientInboxService(
-      reader,
-      queue as never,
-      results as never,
-      database,
-      createAutoAuthorizingClientStateService(runtimeRepository, database),
-      'server-12345678',
+      {
+        inboxQueueReader: reader,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
+        database: database,
+        clientStateService: createAutoAuthorizingClientStateService(runtimeRepository, database),
+      },
+      {
+        serviceId: 'server-12345678',
+      },
     ),
   };
 }
