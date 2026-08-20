@@ -46,10 +46,14 @@ export class ApiV1RtcTopologyProofApi {
       wsBaseUrl: string;
     }>,
   ): Promise<ProofSession> {
-    const body = await requestJson(input.apiBaseUrl, '/api/auth/login', {
-      method: 'POST',
-      body: this.#credentials[input.principal],
-    });
+    const body = await requestJson(
+      input.apiBaseUrl,
+      strictMutationPath('/api/auth/login', crypto.randomUUID()),
+      {
+        method: 'POST',
+        body: this.#credentials[input.principal],
+      },
+    );
     return {
       ...input,
       clientId: requireString(body.clientId, 'login client ID'),
@@ -59,19 +63,25 @@ export class ApiV1RtcTopologyProofApi {
   }
 
   async createGroup(input: ProofGroupInput & Readonly<{ owner: ProofSession }>): Promise<void> {
-    await requestJson(input.owner.apiBaseUrl, groupCollectionPath(input), {
-      method: 'POST',
-      session: input.owner,
-      body: {
-        requestId: `${input.proofId}-create-group`,
-        groupId: input.groupId,
-        displayName: 'RTC topology durable replay proof',
-        kind: 'room',
-        joinMode: 'open',
-        createdByPrincipalId: input.owner.clientId,
+    await requestJson(
+      input.owner.apiBaseUrl,
+      strictMutationPath(
+        groupCollectionPath(input),
+        `${input.proofId}-create-group`,
+      ),
+      {
+        method: 'POST',
+        session: input.owner,
+        body: {
+          groupId: input.groupId,
+          displayName: 'RTC topology durable replay proof',
+          kind: 'room',
+          joinMode: 'open',
+          createdByPrincipalId: input.owner.clientId,
+        },
+        expectedStatus: 201,
       },
-      expectedStatus: 201,
-    });
+    );
   }
 
   async activateMember(
@@ -79,12 +89,14 @@ export class ApiV1RtcTopologyProofApi {
   ): Promise<void> {
     await requestJson(
       input.actor.apiBaseUrl,
-      `${groupPath(input)}/members/${encodeURIComponent(input.memberClientId)}`,
+      strictMutationPath(
+        `${groupPath(input)}/members/${encodeURIComponent(input.memberClientId)}`,
+        `${input.proofId}-activate-${input.memberClientId}`,
+      ),
       {
         method: 'PUT',
         session: input.actor,
         body: {
-          requestId: `${input.proofId}-activate-${input.memberClientId}`,
           status: 'active',
         },
       },
@@ -96,12 +108,14 @@ export class ApiV1RtcTopologyProofApi {
   ): Promise<ProofCausalRevision> {
     const body = await requestJson(
       input.actor.apiBaseUrl,
-      `${groupPath(input)}/sessions/${encodeURIComponent(input.actor.sessionId)}`,
+      strictMutationPath(
+        `${groupPath(input)}/sessions/${encodeURIComponent(input.actor.sessionId)}`,
+        `${input.proofId}-presence-${input.actor.label}`,
+      ),
       {
         method: 'PUT',
         session: input.actor,
         body: {
-          requestId: `${input.proofId}-presence-${input.actor.label}`,
           generationId: `${input.proofId}-generation-${input.actor.label}`,
           principalId: input.actor.clientId,
         },
@@ -113,15 +127,18 @@ export class ApiV1RtcTopologyProofApi {
   async establishBaseline(
     input: ProofGroupInput & Readonly<{ actor: ProofSession }>,
   ): Promise<void> {
-    await requestJson(input.actor.apiBaseUrl, `${groupPath(input)}/topology/reconfigure`, {
-      method: 'POST',
-      session: input.actor,
-      headers: { 'Idempotency-Key': `${input.proofId}-baseline` },
-      body: {
-        requestId: `${input.proofId}-baseline`,
-        publish: false,
+    await requestJson(
+      input.actor.apiBaseUrl,
+      strictMutationPath(
+        `${groupPath(input)}/topology/reconfigure`,
+        `${input.proofId}-baseline`,
+      ),
+      {
+        method: 'POST',
+        session: input.actor,
+        body: { publish: false },
       },
-    });
+    );
   }
 
   async readCurrentTopology(
@@ -146,8 +163,9 @@ export class ApiV1RtcTopologyProofApi {
   }
 
   async updateMemberRole(
-    input: ProofGroupInput &
-      Readonly<{
+    input:
+      & ProofGroupInput
+      & Readonly<{
         actor: ProofSession;
         memberClientId: string;
         role: 'admin' | 'member';
@@ -156,12 +174,14 @@ export class ApiV1RtcTopologyProofApi {
   ): Promise<ProofCausalRevision> {
     const body = await requestJson(
       input.actor.apiBaseUrl,
-      `${groupPath(input)}/members/${encodeURIComponent(input.memberClientId)}/role`,
+      strictMutationPath(
+        `${groupPath(input)}/members/${encodeURIComponent(input.memberClientId)}/role`,
+        `${input.proofId}-${input.phase}-role`,
+      ),
       {
         method: 'PUT',
         session: input.actor,
         body: {
-          requestId: `${input.proofId}-${input.phase}-role`,
           role: input.role,
         },
       },
@@ -172,14 +192,20 @@ export class ApiV1RtcTopologyProofApi {
   async updateDescription(
     input: ProofGroupInput & Readonly<{ actor: ProofSession; phase: string }>,
   ): Promise<ProofCausalRevision> {
-    const body = await requestJson(input.actor.apiBaseUrl, groupPath(input), {
-      method: 'PUT',
-      session: input.actor,
-      body: {
-        requestId: `${input.proofId}-${input.phase}-description`,
-        description: `RTC topology replay ${input.phase}`,
+    const body = await requestJson(
+      input.actor.apiBaseUrl,
+      strictMutationPath(
+        groupPath(input),
+        `${input.proofId}-${input.phase}-description`,
+      ),
+      {
+        method: 'PUT',
+        session: input.actor,
+        body: {
+          description: `RTC topology replay ${input.phase}`,
+        },
       },
-    });
+    );
     return readCausalRevision(body);
   }
 
@@ -192,14 +218,20 @@ export class ApiV1RtcTopologyProofApi {
   async updateDisplayName(
     input: ProofGroupInput & Readonly<{ actor: ProofSession; phase: string }>,
   ): Promise<ProofCausalRevision> {
-    const body = await requestJson(input.actor.apiBaseUrl, groupPath(input), {
-      method: 'PUT',
-      session: input.actor,
-      body: {
-        requestId: `${input.proofId}-${input.phase}-display-name`,
-        displayName: `RTC topology replay ${input.phase}`,
+    const body = await requestJson(
+      input.actor.apiBaseUrl,
+      strictMutationPath(
+        groupPath(input),
+        `${input.proofId}-${input.phase}-display-name`,
+      ),
+      {
+        method: 'PUT',
+        session: input.actor,
+        body: {
+          displayName: `RTC topology replay ${input.phase}`,
+        },
       },
-    });
+    );
     return readCausalRevision(body);
   }
 
@@ -207,10 +239,14 @@ export class ApiV1RtcTopologyProofApi {
     session: ProofSession,
     apiBaseUrl = session.apiBaseUrl,
   ): Promise<string> {
-    const body = await requestJson(apiBaseUrl, '/api/auth/ws-ticket', {
-      method: 'POST',
-      session,
-    });
+    const body = await requestJson(
+      apiBaseUrl,
+      strictMutationPath('/api/auth/ws-ticket', crypto.randomUUID()),
+      {
+        method: 'POST',
+        session,
+      },
+    );
     if (requireString(body.sessionId, 'ticket session ID') !== session.sessionId) {
       throw new Error(`WebSocket ticket changed session identity for ${session.label}.`);
     }
@@ -262,9 +298,9 @@ async function requestJson(
       ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
       ...(options.session
         ? {
-            Authorization: `Bearer ${options.session.accessToken}`,
-            'x-client-id': options.session.clientId,
-          }
+          Authorization: `Bearer ${options.session.accessToken}`,
+          'x-client-id': options.session.clientId,
+        }
         : {}),
       ...options.headers,
     },
@@ -285,6 +321,10 @@ function groupCollectionPath(input: ProofGroupInput): string {
     `/api/state/apps/${encodeURIComponent(input.applicationId)}` +
     `/workspaces/${encodeURIComponent(input.workspaceId)}/groups`
   );
+}
+
+function strictMutationPath(path: string, requestId: string): string {
+  return `${path}/requests/${encodeURIComponent(requestId)}`;
 }
 
 function groupPath(input: ProofGroupInput): string {

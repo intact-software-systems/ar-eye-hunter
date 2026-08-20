@@ -188,6 +188,41 @@ describe('API-v1 medium-scale recipe', () => {
 
     const churnIndex = steps.findIndex((step) => step.name === 'runMediumScaleStateChurn');
     const afterChurn = steps.slice(churnIndex + 1);
+    const equalDuplicateWave = afterChurn.find((step) =>
+      step.name === 'runBoundedEqualDuplicateWave'
+    );
+    const changedDuplicateWave = afterChurn.find((step) =>
+      step.name === 'runBoundedChangedDuplicateWave'
+    );
+    expect(equalDuplicateWave).toMatchObject({
+      type: 'parallel',
+      maxConcurrency: 3,
+      timeoutMs: 30_000,
+      groups: expect.any(Array),
+    });
+    expect(changedDuplicateWave).toMatchObject({
+      type: 'parallel',
+      maxConcurrency: 2,
+      timeoutMs: 30_000,
+      groups: expect.any(Array),
+    });
+    const equalPaths = flattenRecipeSteps([equalDuplicateWave!])
+      .filter((step) => String(step.name).startsWith('equalDuplicate'))
+      .map((step) => (step.request as { path?: string }).path);
+    const changedPaths = flattenRecipeSteps([changedDuplicateWave!])
+      .filter((step) => String(step.name).startsWith('changedDuplicate'))
+      .map((step) => (step.request as { path?: string }).path);
+    expect(new Set(equalPaths)).toEqual(new Set([
+      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupOneId}/' +
+      'requests/medium-scale-equal-duplicate-wave-{runId}',
+    ]));
+    expect(new Set(changedPaths)).toEqual(new Set([
+      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupTwoId}/' +
+      'requests/medium-scale-changed-duplicate-wave-{runId}',
+    ]));
+    expect(afterChurn.find((step) => step.name === 'assertChangedDuplicateWave')).toMatchObject({
+      expect: { anyOf: [{ statuses: [200, 409] }, { statuses: [409, 200] }] },
+    });
     const pollDelays = afterChurn.filter((step) =>
       String(step.name).startsWith('delayBeforeConvergencePoll'),
     );

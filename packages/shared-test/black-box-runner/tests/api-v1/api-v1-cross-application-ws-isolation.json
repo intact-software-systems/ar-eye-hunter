@@ -82,7 +82,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -128,7 +128,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-bob-002-{runId}",
         "body": {
           "username": "{bobUsername}",
           "password": "{bobPassword}"
@@ -174,13 +174,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{scopeAApplicationId}/workspaces/{scopeAWorkspaceId}/groups",
+        "path": "/api/state/apps/{scopeAApplicationId}/workspaces/{scopeAWorkspaceId}/groups/requests/create-ws-iso-a-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "create-ws-iso-a-{sharedGroupId}-{runId}",
           "groupId": "{sharedGroupId}",
           "displayName": "WS isolation scope A {runId}",
           "kind": "room",
@@ -213,13 +212,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{scopeAApplicationId}/workspaces/{scopeAWorkspaceId}/groups/{sharedGroupId}/members/{aliceClientId}",
+        "path": "/api/state/apps/{scopeAApplicationId}/workspaces/{scopeAWorkspaceId}/groups/{sharedGroupId}/members/{aliceClientId}/requests/join-ws-iso-a-scope-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "join-ws-iso-a-{sharedGroupId}-{aliceClientId}-{runId}",
           "status": "active"
         }
       },
@@ -246,13 +244,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{scopeBApplicationId}/workspaces/{scopeBWorkspaceId}/groups",
+        "path": "/api/state/apps/{scopeBApplicationId}/workspaces/{scopeBWorkspaceId}/groups/requests/create-ws-iso-b-scope-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "create-ws-iso-b-{sharedGroupId}-{runId}",
           "groupId": "{sharedGroupId}",
           "displayName": "WS isolation scope B {runId}",
           "kind": "room",
@@ -285,13 +282,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{scopeBApplicationId}/workspaces/{scopeBWorkspaceId}/groups/{sharedGroupId}/members/{bobClientId}",
+        "path": "/api/state/apps/{scopeBApplicationId}/workspaces/{scopeBWorkspaceId}/groups/{sharedGroupId}/members/{bobClientId}/requests/join-ws-iso-b-scope-scope-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "join-ws-iso-b-{sharedGroupId}-{bobClientId}-{runId}",
           "status": "active"
         }
       },
@@ -318,7 +314,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-create-alice-web-socket-ticket-007-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -378,7 +374,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-create-bob-web-socket-ticket-008-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -438,13 +434,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{scopeBApplicationId}/workspaces/{scopeBWorkspaceId}/groups/{sharedGroupId}/sessions/{bobSessionId}",
+        "path": "/api/state/apps/{scopeBApplicationId}/workspaces/{scopeBWorkspaceId}/groups/{sharedGroupId}/sessions/{bobSessionId}/requests/presence-ws-iso-b-scope-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "presence-ws-iso-b-{bobSessionId}-{runId}",
           "generationId": "generation-ws-iso-{runId}",
           "principalId": "{bobClientId}"
         }
@@ -526,13 +521,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{scopeAApplicationId}/workspaces/{scopeAWorkspaceId}/groups/{sharedGroupId}/sessions/{aliceSessionId}",
+        "path": "/api/state/apps/{scopeAApplicationId}/workspaces/{scopeAWorkspaceId}/groups/{sharedGroupId}/sessions/{aliceSessionId}/requests/presence-ws-iso-a-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "presence-ws-iso-a-{aliceSessionId}-{runId}",
           "generationId": "generation-ws-iso-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -668,13 +662,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{scopeAApplicationId}/workspaces/{scopeAWorkspaceId}/groups/{sharedGroupId}/sessions/{aliceSessionId}/disconnect",
+        "path": "/api/state/apps/{scopeAApplicationId}/workspaces/{scopeAWorkspaceId}/groups/{sharedGroupId}/sessions/{aliceSessionId}/disconnect/requests/disconnect-ws-iso-a-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "disconnect-ws-iso-a-{aliceSessionId}-{runId}",
           "generationId": "generation-ws-iso-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -694,13 +687,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{scopeBApplicationId}/workspaces/{scopeBWorkspaceId}/groups/{sharedGroupId}/sessions/{bobSessionId}/disconnect",
+        "path": "/api/state/apps/{scopeBApplicationId}/workspaces/{scopeBWorkspaceId}/groups/{sharedGroupId}/sessions/{bobSessionId}/disconnect/requests/disconnect-ws-iso-b-scope-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "disconnect-ws-iso-b-{bobSessionId}-{runId}",
           "generationId": "generation-ws-iso-{runId}",
           "principalId": "{bobClientId}"
         }
@@ -720,7 +712,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/logout",
+        "path": "/api/auth/logout/requests/bb-logout-alice-013-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -739,7 +731,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/logout",
+        "path": "/api/auth/logout/requests/bb-logout-bob-014-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"

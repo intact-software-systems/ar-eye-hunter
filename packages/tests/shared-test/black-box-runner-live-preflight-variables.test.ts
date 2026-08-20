@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { runBlackBoxRunnerLivePreflight } from '../../shared-test/black-box-runner/preflight/live-preflight.ts'
+import { runBlackBoxRunnerLivePreflight } from
+    '../../shared-test/black-box-runner/preflight/live-preflight.ts'
 import { resolveVariableByEnv } from
     '../../shared-test/black-box-runner/preflight/resolve-variable-by-env.ts'
 
@@ -99,17 +100,20 @@ describe('black-box runner live preflight variables', () => {
                 if (path === '/api/config') {
                     return Promise.resolve(jsonResponse({ ok: true }))
                 }
-                if (path === '/api/auth/login') {
+                if (path.startsWith('/api/auth/login/requests/')) {
                     return Promise.resolve(jsonResponse({
                         accessToken: 'access-token',
                         clientId: 'alice-client',
                         sessionId: 'alice-session',
                     }))
                 }
-                if (init?.method === 'POST' && path.endsWith('/groups')) {
+                if (init?.method === 'POST' && /\/groups\/requests\/[^/]+$/.test(path)) {
                     return Promise.resolve(jsonResponse({ group: { groupId: 'group' } }, 201))
                 }
-                if (init?.method === 'PUT' && path.endsWith('/members/alice-client')) {
+                if (
+                    init?.method === 'PUT' &&
+                    /\/members\/alice-client\/requests\/[^/]+$/.test(path)
+                ) {
                     return Promise.resolve(jsonResponse({ members: [] }))
                 }
                 throw new Error(`Unexpected preflight request: ${init?.method ?? 'GET'} ${path}`)
@@ -117,9 +121,12 @@ describe('black-box runner live preflight variables', () => {
         })
 
         expect(report.ok).toBe(true)
-        expect(requestPaths).toContain(
-            '/api/state/apps/api-v1-medium-scale-explicit-run/workspaces/workspace/groups',
-        )
+        expect(requestPaths).toEqual(expect.arrayContaining([
+            expect.stringMatching(new RegExp(
+                '^/api/state/apps/api-v1-medium-scale-explicit-run/' +
+                'workspaces/workspace/groups/requests/[^/]+$',
+            )),
+        ]))
         expect(requestPaths.some(path => path.includes('%7BrunId%7D'))).toBe(false)
     })
 
@@ -176,17 +183,20 @@ describe('black-box runner live preflight variables', () => {
                 if (path === '/api/config') {
                     return Promise.resolve(jsonResponse({ ok: true }))
                 }
-                if (path === '/api/auth/login') {
+                if (path.startsWith('/api/auth/login/requests/')) {
                     return Promise.resolve(jsonResponse({
                         accessToken: 'access-token',
                         clientId: 'alice-client',
                         sessionId: 'alice-session',
                     }))
                 }
-                if (init?.method === 'POST' && path.endsWith('/groups')) {
+                if (init?.method === 'POST' && /\/groups\/requests\/[^/]+$/.test(path)) {
                     return Promise.resolve(jsonResponse({ group: { groupId: 'group' } }, 201))
                 }
-                if (init?.method === 'PUT' && path.endsWith('/members/alice-client')) {
+                if (
+                    init?.method === 'PUT' &&
+                    /\/members\/alice-client\/requests\/[^/]+$/.test(path)
+                ) {
                     return Promise.resolve(jsonResponse({ members: [] }))
                 }
                 throw new Error(`Unexpected preflight request: ${init?.method ?? 'GET'} ${path}`)
@@ -194,9 +204,12 @@ describe('black-box runner live preflight variables', () => {
         })
 
         expect(report.ok).toBe(true)
-        expect(requestPaths).toContain(
-            '/api/state/apps/black-box-app/workspaces/workspace/groups',
-        )
+        expect(requestPaths).toEqual(expect.arrayContaining([
+            expect.stringMatching(new RegExp(
+                '^/api/state/apps/black-box-app/workspaces/workspace/' +
+                'groups/requests/[^/]+$',
+            )),
+        ]))
         expect(requestPaths.some(path => path.includes('%7BrunId%7D'))).toBe(false)
     })
 })

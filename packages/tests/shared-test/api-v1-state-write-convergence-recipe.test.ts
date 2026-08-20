@@ -39,7 +39,7 @@ describe('API-v1 state-write convergence recipe', () => {
       );
       expect(register?.request).toMatchObject({
         method: 'POST',
-        path: '/api/auth/register',
+        path: expect.stringMatching(/^\/api\/auth\/register\/requests\/[^/]+$/),
         outputs: {
           [`${contender.toLowerCase()}ContenderClientId`]: 'body.clientId',
         },
@@ -50,7 +50,7 @@ describe('API-v1 state-write convergence recipe', () => {
       });
       expect(login?.request).toMatchObject({
         method: 'POST',
-        path: '/api/auth/login',
+        path: expect.stringMatching(/^\/api\/auth\/login\/requests\/[^/]+$/),
         outputs: {
           [`${contender.toLowerCase()}ContenderAccessToken`]: {
             path: 'body.accessToken',

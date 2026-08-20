@@ -83,13 +83,13 @@ function createGroupCommand(commandId: string): RallarBlackBoxTestCommand {
         label: 'Create group',
         request: {
             method: 'POST',
-            path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/groups',
+            path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/groups' +
+                '/requests/{{apiMutationRequestId}}',
             headers: {
                 authorization: 'Bearer {auth.accessToken}',
                 'x-client-id': '{auth.clientId}',
             },
             body: {
-                requestId: 'flow-create-{{groupId}}',
                 groupId: '{{groupId}}',
                 displayName: '{{groupId}}',
                 kind: 'room',
@@ -159,7 +159,7 @@ function defaultFlow(): FlowBuilderDefinition {
                     label: 'Flow login request',
                     request: {
                         method: 'POST',
-                        path: '/api/auth/login',
+                        path: '/api/auth/login/requests/{{apiMutationRequestId}}',
                         body: {
                             username: '{{username}}',
                             password: '{{password}}',
@@ -475,6 +475,24 @@ function commandWithFlowMetadata(
     } as RallarBlackBoxTestCommand;
 }
 
+function withFlowMutationRequestId(
+    command: RallarBlackBoxTestCommand,
+): RallarBlackBoxTestCommand {
+    if (command.kind !== 'http.request' || !command.request.path) {
+        return command;
+    }
+    return {
+        ...command,
+        request: {
+            ...command.request,
+            path: command.request.path.replace(
+                '{{apiMutationRequestId}}',
+                crypto.randomUUID(),
+            ),
+        },
+    };
+}
+
 export function flowBuilderVariables(
     flow: FlowBuilderDefinition,
     overrides: Readonly<Record<string, unknown>> = {},
@@ -506,10 +524,10 @@ export function buildFlowBuilderRecipe(
         }
 
         return (step.commands ?? []).map((command, index) =>
-            applyFlowBuilderVariables(
+            withFlowMutationRequestId(applyFlowBuilderVariables(
                 commandWithFlowMetadata(flow, step, command, index),
                 variables,
-            ) as RallarBlackBoxTestCommand
+            ) as RallarBlackBoxTestCommand)
         );
     });
 
@@ -847,7 +865,7 @@ function newStepCommand(kind: FlowBuilderStepKind, index: number): FlowBuilderSt
                     commandId: `flow-login-${suffix}`,
                     request: {
                         method: 'POST',
-                        path: '/api/auth/login',
+                        path: '/api/auth/login/requests/{{apiMutationRequestId}}',
                         body: {
                             username: '{{username}}',
                             password: '{{password}}',

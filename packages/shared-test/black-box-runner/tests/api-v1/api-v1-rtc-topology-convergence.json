@@ -106,7 +106,7 @@
       "connection": "apiPrimary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-alice-on-primary-001-{runId}",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -150,7 +150,7 @@
       "connection": "apiSecondary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-bob-on-secondary-002-{runId}",
         "body": {
           "username": "{bobUsername}",
           "password": "{bobPassword}"
@@ -194,13 +194,12 @@
       "connection": "apiPrimary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-topology-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "create-topology-{groupId}-{runId}",
           "groupId": "{groupId}",
           "displayName": "{groupName}",
           "kind": "room",
@@ -231,13 +230,12 @@
       "connection": "apiPrimary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{aliceClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{aliceClientId}/requests/activate-alice-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "activate-alice-{groupId}-{runId}",
           "status": "active"
         }
       },
@@ -257,13 +255,12 @@
       "connection": "apiSecondary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/activate-bob-scope-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "activate-bob-{groupId}-{runId}",
           "status": "active"
         }
       },
@@ -283,13 +280,12 @@
       "connection": "apiPrimary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/presence-alice-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "presence-alice-{groupId}-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -310,13 +306,12 @@
       "connection": "apiSecondary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/presence-bob-scope-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "presence-bob-{groupId}-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{bobClientId}"
         }
@@ -337,14 +332,12 @@
       "connection": "apiPrimary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure/requests/baseline-topology-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}",
-          "Idempotency-Key": "baseline-topology-{groupId}-{runId}"
+          "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "baseline-topology-{groupId}-{runId}",
           "publish": false
         }
       },
@@ -368,7 +361,7 @@
       "connection": "apiPrimary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-create-alice-web-socket-ticket-on-primary-009-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -447,7 +440,7 @@
       "connection": "apiTertiary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-create-bob-web-socket-ticket-on-tertiary-010-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -556,13 +549,12 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "PUT",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/role",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/role/requests/promote-bob-scope-{runId}",
                 "headers": {
                   "Authorization": "{aliceAuthHeader}",
                   "x-client-id": "{aliceClientId}"
                 },
                 "body": {
-                  "requestId": "promote-bob-{groupId}-{runId}",
                   "role": "admin"
                 },
                 "outputs": {
@@ -611,13 +603,12 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "PUT",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/update-group-scope-{runId}",
                 "headers": {
                   "Authorization": "{aliceAuthHeader}",
                   "x-client-id": "{aliceClientId}"
                 },
                 "body": {
-                  "requestId": "update-group-{groupId}-{runId}",
                   "description": "Concurrent update from the secondary API server"
                 },
                 "outputs": {
@@ -870,7 +861,7 @@
       "connection": "apiPrimary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/logout",
+        "path": "/api/auth/logout/requests/bb-logout-alice-through-primary-013-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -889,7 +880,7 @@
       "connection": "apiSecondary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/logout",
+        "path": "/api/auth/logout/requests/bb-logout-bob-through-secondary-014-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"

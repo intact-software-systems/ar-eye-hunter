@@ -34,7 +34,10 @@
       "expect": {
         "status": 401,
         "body": {
-          "error": "Unauthorized: Missing bearer token"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "authentication-required",
+          "status": 401
         }
       }
     },
@@ -44,7 +47,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/agent-session-tickets",
+        "path": "/api/auth/agent-session-tickets/requests/bb-reject-missing-agent-ticket-auth-001-0001",
         "body": {
           "agentIds": ["controller-01"]
         }
@@ -52,7 +55,10 @@
       "expect": {
         "status": 401,
         "body": {
-          "error": "Unauthorized: Missing bearer token"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "authentication-required",
+          "status": 401
         }
       }
     },
@@ -62,7 +68,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-demo-admin-002-0001",
         "body": {
           "username": "admin",
           "password": "admin"
@@ -136,7 +142,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/agent-session-tickets",
+        "path": "/api/auth/agent-session-tickets/requests/bb-issue-agent-session-tickets-003-0001",
         "headers": {
           "Authorization": "{adminAuthHeader}",
           "x-client-id": "{adminClientId}"
@@ -178,7 +184,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/agent-session-tickets/consume",
+        "path": "/api/auth/agent-session-tickets/consume/requests/bb-consume-first-agent-session-ticket-004-0001",
         "body": {
           "ticket": "{firstAgentTicket}"
         }
@@ -200,7 +206,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/agent-session-tickets/consume",
+        "path": "/api/auth/agent-session-tickets/consume/requests/bb-reject-consumed-agent-session-ticket-005-0001",
         "body": {
           "ticket": "{firstAgentTicket}"
         }
@@ -208,7 +214,10 @@
       "expect": {
         "status": 404,
         "body": {
-          "error": "Auth ticket is invalid or consumed"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "agent-session-ticket-invalid",
+          "status": 404
         }
       }
     },
@@ -240,7 +249,7 @@
                 }
               }
             },
-            "/api/auth/agent-session-tickets": {
+            "/api/auth/agent-session-tickets/requests/{requestId}": {
               "post": {
                 "security": [
                   {
@@ -255,7 +264,7 @@
                 }
               }
             },
-            "/api/auth/agent-session-tickets/consume": {
+            "/api/auth/agent-session-tickets/consume/requests/{requestId}": {
               "post": {
                 "responses": {
                   "200": "any",

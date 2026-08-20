@@ -48,9 +48,8 @@
             },
             "request": {
               "method": "POST",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/rtc-messages-all-peer-ensure-group-{runId}",
               "body": {
-                "requestId": "rtc-messages-all-peer:ensure-group:rallar-server:default:world-fleet-room:{auth.sessionId}",
                 "groupId": "world-fleet-room",
                 "displayName": "world-fleet-room",
                 "kind": "room",
@@ -81,9 +80,8 @@
             },
             "request": {
               "method": "PUT",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/world-fleet-room/members/{auth.clientId}",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/world-fleet-room/members/{auth.clientId}/requests/rtc-messages-all-peer-ensure-member-{runId}",
               "body": {
-                "requestId": "rtc-messages-all-peer:ensure-member:rallar-server:default:world-fleet-room:{auth.clientId}:{auth.sessionId}",
                 "status": "active"
               }
             },

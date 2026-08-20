@@ -116,7 +116,7 @@
           "connection": "api",
           "request": {
             "method": "POST",
-            "path": "/api/auth/register",
+            "path": "/api/auth/register/requests/bb-register-client-token0-token-001-{runId}",
             "headers": {
               "x-forwarded-for": "{clientIp}"
             },
@@ -139,7 +139,7 @@
           "connection": "api",
           "request": {
             "method": "POST",
-            "path": "/api/auth/login",
+            "path": "/api/auth/login/requests/bb-login-client-token0-token-002-{runId}",
             "headers": {
               "x-forwarded-for": "{clientIp}"
             },
@@ -194,13 +194,12 @@
           "connection": "api",
           "request": {
             "method": "PUT",
-            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{client{i}ClientId}/principal",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{client{i}ClientId}/principal/requests/principal-client-{i}-{runId}",
             "headers": {
               "Authorization": "{client{i}AuthHeader}",
               "x-client-id": "{client{i}ClientId}"
             },
             "body": {
-              "requestId": "principal-client-{i}-{runId}",
               "username": "formation-small-client-{i}-{runId}",
               "displayName": "Formation small client {i}",
               "status": "active",
@@ -217,13 +216,13 @@
           "connection": "api",
           "request": {
             "method": "POST",
-            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/join-client-{i}-{runId}",
             "headers": {
               "Authorization": "{client{i}AuthHeader}",
               "x-client-id": "{client{i}ClientId}"
             },
             "body": {
-              "requestId": "join-client-{i}-{runId}"
+
             },
             "retry": {
               "maxAttempts": 3,
@@ -246,7 +245,7 @@
           "connection": "api",
           "request": {
             "method": "POST",
-            "path": "/api/auth/ws-ticket",
+            "path": "/api/auth/ws-ticket/requests/bb-create-client-token0-tokenws-ticket-005-{runId}",
             "headers": {
               "Authorization": "{client{i}AuthHeader}",
               "x-client-id": "{client{i}ClientId}"
@@ -299,13 +298,12 @@
           "connection": "api",
           "request": {
             "method": "PUT",
-            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{client{i}SessionId}",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{client{i}SessionId}/requests/presence-client-{i}-{runId}",
             "headers": {
               "Authorization": "{client{i}AuthHeader}",
               "x-client-id": "{client{i}ClientId}"
             },
             "body": {
-              "requestId": "presence-client-{i}-{runId}",
               "generationId": "generation-{runId}",
               "principalId": "{client{i}ClientId}"
             },
@@ -387,13 +385,12 @@
           "connection": "api",
           "request": {
             "method": "POST",
-            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{client{i}SessionId}/heartbeat",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{client{i}SessionId}/heartbeat/requests/heartbeat-client-{i}-round-{round}-{runId}",
             "headers": {
               "Authorization": "{client{i}AuthHeader}",
               "x-client-id": "{client{i}ClientId}"
             },
             "body": {
-              "requestId": "heartbeat-client-{i}-round-{round}-{runId}",
               "generationId": "generation-{runId}",
               "principalId": "{client{i}ClientId}"
             },
@@ -441,7 +438,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-register-creator-008-{runId}",
         "body": {
           "username": "formation-small-creator-{runId}",
           "password": "{clientPassword}",
@@ -461,7 +458,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-creator-009-{runId}",
         "body": {
           "username": "formation-small-creator-{runId}",
           "password": "{clientPassword}"
@@ -505,13 +502,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-scope-{runId}",
         "headers": {
           "Authorization": "{creatorAuthHeader}",
           "x-client-id": "{creatorClientId}"
         },
         "body": {
-          "requestId": "create-{groupId}-{runId}",
           "groupId": "{groupId}",
           "displayName": "{groupName}",
           "kind": "room",
@@ -538,7 +534,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-admin-011-{runId}",
         "body": {
           "username": "{adminUsername}",
           "password": "{adminPassword}"

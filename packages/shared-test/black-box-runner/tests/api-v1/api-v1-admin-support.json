@@ -51,7 +51,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-demo-admin-001-0001",
         "body": {
           "username": "admin",
           "password": "admin"

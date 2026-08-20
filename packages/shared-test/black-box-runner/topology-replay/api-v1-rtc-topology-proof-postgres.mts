@@ -119,6 +119,20 @@ export function assertPublisherHeadsAdvanced(
   return advanced;
 }
 
+export function assertPublisherHeadsUnchanged(
+  state: ProofDurableState,
+  priorHeads: Readonly<Record<string, number>>,
+): Readonly<Record<string, number>> {
+  assertAppOutboxDrained(state);
+  for (const [streamId, priorHead] of Object.entries(priorHeads)) {
+    const stream = state.streams.find((candidate) => candidate.streamId === streamId);
+    if (!stream || stream.headSequence !== priorHead) {
+      throw new Error(`Publisher ${streamId} changed during topology mutation replay.`);
+    }
+  }
+  return priorHeads;
+}
+
 export function assertSinglePublisherHeadAdvanced(
   input: Readonly<{
     state: ProofDurableState;
@@ -211,12 +225,11 @@ function assertConsumerCaughtUp(
 }
 
 function toSafeSequence(value: ProofDatabaseScalar, label: string): number {
-  const number =
-    typeof value === 'bigint'
-      ? Number(value)
-      : typeof value === 'string' && /^[0-9]+$/.test(value)
-        ? Number(value)
-        : value;
+  const number = typeof value === 'bigint'
+    ? Number(value)
+    : typeof value === 'string' && /^[0-9]+$/.test(value)
+    ? Number(value)
+    : value;
   if (typeof number !== 'number' || !Number.isSafeInteger(number) || number < 0) {
     throw new TypeError(`${label} is not a non-negative safe integer.`);
   }

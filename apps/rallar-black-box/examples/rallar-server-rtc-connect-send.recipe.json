@@ -20,10 +20,9 @@
       "commandId": "bb-rtc-group-create",
       "label": "Create bb-group if missing",
       "request": {
-        "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups",
+        "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups/requests/rallar-black-box-bb-rtc-ensure-group",
         "method": "POST",
         "body": {
-          "requestId": "rallar-black-box:bb-rtc:ensure-group",
           "groupId": "bb-group",
           "displayName": "bb-group",
           "description": "Created by rallar-black-box RTC example recipe",
@@ -46,10 +45,9 @@
       "commandId": "bb-rtc-group-join-current-user",
       "label": "Join bb-group as logged-in user",
       "request": {
-        "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/members/{auth.clientId}",
+        "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/members/{auth.clientId}/requests/rallar-black-box-bb-rtc-ensure-member-scope",
         "method": "PUT",
         "body": {
-          "requestId": "rallar-black-box:bb-rtc:ensure-member:{auth.clientId}",
           "status": "active"
         }
       },
@@ -63,10 +61,9 @@
       "commandId": "bb-rtc-group-connect-current-session",
       "label": "Attach logged-in session to bb-group",
       "request": {
-        "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/sessions/{auth.sessionId}",
+        "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/sessions/{auth.sessionId}/requests/rallar-black-box-bb-rtc-ensure-session-scope",
         "method": "PUT",
         "body": {
-          "requestId": "rallar-black-box:bb-rtc:ensure-session:{auth.sessionId}",
           "principalId": "{auth.clientId}"
         }
       },

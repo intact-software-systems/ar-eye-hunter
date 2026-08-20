@@ -5,6 +5,8 @@ import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types
 
 const CONTROL_TOPIC = 'black-box.absence.control';
 const LEAK_PROBE_TOPIC = 'black-box.absence.leak-probe';
+const ENSURE_GROUP_REQUEST_ID = 'd23699bb-0a36-4076-8fab-10c942115141-{runId}';
+const ENSURE_MEMBER_REQUEST_ID = '595968fc-482e-4ef5-8125-565007433507-{runId}';
 
 // The Hetzner isolation contract pins every identity in a manifest to one
 // effective group, so the absence claims stay inside that room: the delivered
@@ -18,7 +20,6 @@ export function createHetznerRtcAbsenceWaitRecipe(
         workspaceId: group.workspaceId,
         groupId: group.groupId,
     };
-    const scopedGroup = `${group.applicationId}:${group.workspaceId}:${group.groupId}`;
     const statePrefix = `/api/state/apps/${group.applicationId}/workspaces/${group.workspaceId}`;
 
     return {
@@ -41,9 +42,8 @@ export function createHetznerRtcAbsenceWaitRecipe(
                 },
                 request: {
                     method: 'POST',
-                    path: `${statePrefix}/groups`,
+                    path: `${statePrefix}/groups/requests/${ENSURE_GROUP_REQUEST_ID}`,
                     body: {
-                        requestId: `rtc-absence:ensure-group:${scopedGroup}:{auth.sessionId}`,
                         groupId: group.groupId,
                         displayName: group.groupId,
                         kind: 'room',
@@ -67,10 +67,9 @@ export function createHetznerRtcAbsenceWaitRecipe(
                 },
                 request: {
                     method: 'PUT',
-                    path: `${statePrefix}/groups/${group.groupId}/members/{auth.clientId}`,
+                    path: `${statePrefix}/groups/${group.groupId}/members/{auth.clientId}` +
+                        `/requests/${ENSURE_MEMBER_REQUEST_ID}`,
                     body: {
-                        requestId: `rtc-absence:ensure-member:${scopedGroup}` +
-                            ':{auth.clientId}:{auth.sessionId}',
                         status: 'active',
                     },
                 },

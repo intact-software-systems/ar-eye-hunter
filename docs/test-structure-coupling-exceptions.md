@@ -967,9 +967,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#points every entry at a catalog recipe file"
     },
     {
-      "id": "test-structure-coupling-fb291a422405f9f0",
+      "id": "test-structure-coupling-f68c92200afa2946",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
-      "line": 154,
+      "line": 155,
       "column": 17,
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--forbids-literal-set-values-from-claiming-durable-state-write-evi",
@@ -1006,9 +1006,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts#rejects a CRDT type removed from its imported live registration collection"
     },
     {
-      "id": "test-structure-coupling-10bbdc381d374820",
+      "id": "test-structure-coupling-558da2d0bceb0f27",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
-      "line": 42,
+      "line": 43,
       "column": 35,
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--executes-the-topology-exact-revision-assertions-before-every-cle",
@@ -1019,9 +1019,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#executes the topology exact-revision assertions before every cleanup step"
     },
     {
-      "id": "test-structure-coupling-10cf089f85a7c952",
+      "id": "test-structure-coupling-a202d6ff0e97749b",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
-      "line": 28,
+      "line": 29,
       "column": 35,
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--selects-auth-ticket-races-by-the-redacted-secret-and-exact-durab",
@@ -1591,9 +1591,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts#rejects GROUP_CREATE removed from the imported live group registration collection"
     },
     {
-      "id": "test-structure-coupling-37eab7de5df607a3",
+      "id": "test-structure-coupling-992799e238b4dc23",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
-      "line": 169,
+      "line": 170,
       "column": 35,
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--uses-one-bounded-execution-identity-for-the-command-and-its-evid",
@@ -1604,9 +1604,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#uses one bounded execution identity for the command and its evidence"
     },
     {
-      "id": "test-structure-coupling-34419725117cff44",
+      "id": "test-structure-coupling-5940ed1d753085dd",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
-      "line": 130,
+      "line": 131,
       "column": 17,
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--observes-committed-socket-authorization-before-clustered-ws-effe",

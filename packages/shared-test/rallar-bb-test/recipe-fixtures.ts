@@ -411,14 +411,14 @@ export function createRallarBlackBoxEnsureGroupRequestId(input: Readonly<{
     requestPrefix: string;
     group: RallarBlackBoxDistributedGroupRef;
 }>): string {
-    return [
-        input.requestPrefix,
-        'ensure-group',
-        input.group.applicationId,
-        input.group.workspaceId,
-        input.group.groupId,
-        '{auth.sessionId}',
-    ].join(':');
+    return ensureGroupRequestId(input.requestPrefix, 'group');
+}
+
+function ensureGroupRequestId(
+    requestPrefix: string,
+    operation: 'group' | 'member',
+): string {
+    return `${requestPrefix}-ensure-${operation}-{runId}`;
 }
 
 function createRallarBlackBoxEnsureGroupCommands(input: Readonly<{
@@ -437,15 +437,7 @@ function createRallarBlackBoxEnsureGroupCommands(input: Readonly<{
     const groupMemberPath =
         `${groupStatePath}/${encodedGroupId}/members/${actorPathSegment}`;
     const groupRequestKey = createRallarBlackBoxEnsureGroupRequestId(input);
-    const memberRequestKey = [
-        input.requestPrefix,
-        'ensure-member',
-        input.group.applicationId,
-        input.group.workspaceId,
-        input.group.groupId,
-        actor,
-        '{auth.sessionId}',
-    ].join(':');
+    const memberRequestKey = ensureGroupRequestId(input.requestPrefix, 'member');
 
     return [
         {
@@ -459,9 +451,8 @@ function createRallarBlackBoxEnsureGroupCommands(input: Readonly<{
             },
             request: {
                 method: 'POST',
-                path: groupStatePath,
+                path: `${groupStatePath}/requests/${groupRequestKey}`,
                 body: {
-                    requestId: groupRequestKey,
                     groupId: input.group.groupId,
                     displayName: input.group.groupId,
                     kind: 'room',
@@ -484,9 +475,8 @@ function createRallarBlackBoxEnsureGroupCommands(input: Readonly<{
             },
             request: {
                 method: 'PUT',
-                path: groupMemberPath,
+                path: `${groupMemberPath}/requests/${memberRequestKey}`,
                 body: {
-                    requestId: memberRequestKey,
                     status: 'active',
                 },
             },

@@ -107,7 +107,26 @@ describe('rallar-black-box flow builder helpers', () => {
         expect(recipe.commands[2]).toMatchObject({
             kind: 'http.request',
             request: {
-                path: '/api/state/apps/app-1/workspaces/workspace-1/groups',
+                path: expect.stringMatching(
+                    /^\/api\/state\/apps\/app-1\/workspaces\/workspace-1\/groups\/requests\/[^/]+$/,
+                ),
+            },
+        });
+        expect(recipe.commands[2]).not.toMatchObject({
+            request: {
+                body: {
+                    requestId: expect.anything(),
+                },
+            },
+        });
+        const replayRecipe = buildFlowBuilderRecipe(flow, {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'group-1',
+        });
+        expect(replayRecipe.commands[2]).not.toMatchObject({
+            request: {
+                path: (recipe.commands[2] as { request?: { path?: string } }).request?.path,
             },
         });
         expect(recipe.commands[6]).toMatchObject({
@@ -162,6 +181,15 @@ describe('rallar-black-box flow builder helpers', () => {
         expect(next.steps.at(-1)).toMatchObject({
             kind: 'rtc.send',
             label: 'Send RTC',
+        });
+
+        const withLogin = addFlowBuilderStep(parsed.flow, 'auth.login');
+        const loginCommand = withLogin.steps.at(-1)?.commands?.[0];
+        expect(loginCommand).toMatchObject({
+            kind: 'http.request',
+            request: {
+                path: '/api/auth/login/requests/{{apiMutationRequestId}}',
+            },
         });
     });
 

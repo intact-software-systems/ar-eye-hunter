@@ -60,7 +60,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-register-alice-001-{runId}",
         "body": {
           "username": "{aliceUsername}",
           "password": "api-v1-spa-stats-password-{runId}",
@@ -85,7 +85,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-register-bob-002-{runId}",
         "body": {
           "username": "{bobUsername}",
           "password": "api-v1-spa-stats-password-{runId}",
@@ -110,7 +110,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-alice-003-{runId}",
         "body": {
           "username": "{aliceUsername}",
           "password": "api-v1-spa-stats-password-{runId}"
@@ -141,7 +141,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-bob-004-{runId}",
         "body": {
           "username": "{bobUsername}",
           "password": "api-v1-spa-stats-password-{runId}"
@@ -217,13 +217,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-spa-stats-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "create-spa-stats-{groupId}-{runId}",
           "groupId": "{groupId}",
           "displayName": "{groupName}",
           "kind": "room",
@@ -249,13 +248,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/presence-spa-stats-scope-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "presence-spa-stats-{aliceSessionId}-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{aliceClientId}"
         }

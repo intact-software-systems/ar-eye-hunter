@@ -2,6 +2,15 @@ import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import { init, resolvePublicServerUrl } from '../src/routes/swagger-routes.ts';
 
+const SCOPED_GROUP_PATH = '/api/state/apps/{applicationId}/workspaces/{workspaceId}' +
+  '/groups/{groupId}';
+const TOPOLOGY_CONFIG_PATH = `${SCOPED_GROUP_PATH}/topology/config`;
+const TOPOLOGY_CONFIG_MUTATION_PATH = `${TOPOLOGY_CONFIG_PATH}/requests/{requestId}`;
+const TOPOLOGY_OVERRIDE_PATH = `${SCOPED_GROUP_PATH}/topology/override`;
+const TOPOLOGY_OVERRIDE_MUTATION_PATH = `${TOPOLOGY_OVERRIDE_PATH}/requests/{requestId}`;
+const TOPOLOGY_RECONFIGURE_MUTATION_PATH =
+  `${SCOPED_GROUP_PATH}/topology/reconfigure/requests/{requestId}`;
+
 Deno.test('swagger public server URL trusts proxy HTTPS headers', () => {
   const request = new Request('http://internal-api:8080/swagger-ui', {
     headers: {
@@ -58,19 +67,22 @@ Deno.test('OpenAPI JSON includes black-box auth support contracts', async () => 
   );
   assertAuthContract(
     'POST agent session tickets',
-    json.paths['/api/auth/agent-session-tickets']?.post,
+    json.paths['/api/auth/agent-session-tickets/requests/{requestId}']?.post,
     ['200', '400', '401'],
   );
   assert.ok(
-    json.paths['/api/auth/agent-session-tickets/consume']?.post?.responses?.['200'],
+    json.paths['/api/auth/agent-session-tickets/consume/requests/{requestId}']?.post
+      ?.responses?.['200'],
     'POST consume agent session ticket missing response 200',
   );
   assert.ok(
-    json.paths['/api/auth/agent-session-tickets/consume']?.post?.responses?.['400'],
+    json.paths['/api/auth/agent-session-tickets/consume/requests/{requestId}']?.post
+      ?.responses?.['400'],
     'POST consume agent session ticket missing response 400',
   );
   assert.ok(
-    json.paths['/api/auth/agent-session-tickets/consume']?.post?.responses?.['404'],
+    json.paths['/api/auth/agent-session-tickets/consume/requests/{requestId}']?.post
+      ?.responses?.['404'],
     'POST consume agent session ticket missing response 404',
   );
   assert.deepEqual(
@@ -235,9 +247,11 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
       '/api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global',
       '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest',
       '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology',
-      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config',
-      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override',
-      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure',
+      TOPOLOGY_CONFIG_PATH,
+      TOPOLOGY_CONFIG_MUTATION_PATH,
+      TOPOLOGY_OVERRIDE_PATH,
+      TOPOLOGY_OVERRIDE_MUTATION_PATH,
+      TOPOLOGY_RECONFIGURE_MUTATION_PATH,
     ]
   ) {
     assert.ok(json.paths[path], `missing OpenAPI path ${path}`);
@@ -317,12 +331,19 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
     'outboxId',
   ]);
   assert.deepEqual(reconfigureResponse.properties.status.enum, ['queued']);
-  assert.deepEqual(json.components.parameters.IdempotencyKey, {
-    name: 'Idempotency-Key',
-    in: 'header',
+  assert.equal(json.components.parameters.IdempotencyKey, undefined);
+  assert.deepEqual(json.components.parameters.ApiMutationRequestId, {
+    name: 'requestId',
+    in: 'path',
     required: true,
-    description: 'Stable request identifier for replaying an immutable topology mutation result.',
-    schema: { type: 'string', minLength: 1 },
+    description: 'Case-sensitive mutation request identity. ' +
+      'It must contain 20 to 128 letters, digits, underscores, or hyphens.',
+    schema: {
+      type: 'string',
+      minLength: 20,
+      maxLength: 128,
+      pattern: '^[A-Za-z0-9_-]+$',
+    },
   });
   for (
     const schemaName of [
@@ -335,8 +356,8 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
       required?: string[];
       properties: { requestId?: { type?: string; minLength?: number } };
     };
-    assert.ok(schema.required?.includes('requestId'), schemaName);
-    assert.deepEqual(schema.properties.requestId, { type: 'string', minLength: 1 });
+    assert.equal(schema.required?.includes('requestId'), false, schemaName);
+    assert.equal(schema.properties.requestId, undefined, schemaName);
   }
   const topologyPatch = json.components.schemas.GroupTopologyConfigPatch as {
     properties: Record<string, { nullable?: boolean }>;
@@ -353,8 +374,8 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
     assert.equal(topologyPatch.properties[field]?.nullable, true, `${field} clear contract`);
   }
   assert.deepEqual(
-    json.components.schemas.TopologyMutationFailureResponse.required,
-    ['error', 'code', 'message', 'issues', 'denial', 'retry'],
+    json.components.schemas.ApiMutationFailure.required,
+    ['type', 'version', 'code', 'status', 'message', 'issues', 'denial', 'retry'],
   );
 
   assertAuthContract(
@@ -379,45 +400,31 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
       ],
       [
         'GET durable group topology config',
-        json.paths[
-          '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config'
-        ].get,
+        json.paths[TOPOLOGY_CONFIG_PATH].get,
       ],
       [
         'PUT durable group topology config',
-        json.paths[
-          '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config'
-        ].put,
+        json.paths[TOPOLOGY_CONFIG_MUTATION_PATH].put,
       ],
       [
         'DELETE durable group topology config',
-        json.paths[
-          '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config'
-        ].delete,
+        json.paths[TOPOLOGY_CONFIG_MUTATION_PATH].delete,
       ],
       [
         'GET temporary group topology override',
-        json.paths[
-          '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override'
-        ].get,
+        json.paths[TOPOLOGY_OVERRIDE_PATH].get,
       ],
       [
         'PUT temporary group topology override',
-        json.paths[
-          '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override'
-        ].put,
+        json.paths[TOPOLOGY_OVERRIDE_MUTATION_PATH].put,
       ],
       [
         'DELETE temporary group topology override',
-        json.paths[
-          '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override'
-        ].delete,
+        json.paths[TOPOLOGY_OVERRIDE_MUTATION_PATH].delete,
       ],
       [
         'POST group topology reconfigure',
-        json.paths[
-          '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure'
-        ].post,
+        json.paths[TOPOLOGY_RECONFIGURE_MUTATION_PATH].post,
       ],
     ] satisfies readonly (readonly [string, OpenApiOperation | undefined])[]
   ) {
@@ -451,33 +458,23 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
     ],
   );
   const mutationOperations = [
-    json.paths[
-      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config'
-    ].put,
-    json.paths[
-      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config'
-    ].delete,
-    json.paths[
-      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override'
-    ].put,
-    json.paths[
-      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override'
-    ].delete,
-    json.paths[
-      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure'
-    ].post,
+    json.paths[TOPOLOGY_CONFIG_MUTATION_PATH].put,
+    json.paths[TOPOLOGY_CONFIG_MUTATION_PATH].delete,
+    json.paths[TOPOLOGY_OVERRIDE_MUTATION_PATH].put,
+    json.paths[TOPOLOGY_OVERRIDE_MUTATION_PATH].delete,
+    json.paths[TOPOLOGY_RECONFIGURE_MUTATION_PATH].post,
   ];
   for (const operation of mutationOperations) {
     assert.deepEqual(parameterRefs(operation), [
       '#/components/parameters/ApplicationId',
       '#/components/parameters/WorkspaceId',
       '#/components/parameters/GroupId',
-      '#/components/parameters/IdempotencyKey',
+      '#/components/parameters/ApiMutationRequestId',
     ]);
     for (const code of ['403', '409', '422', '503']) {
       assert.equal(
         operation?.responses?.[code]?.$ref,
-        '#/components/responses/TopologyMutationFailure',
+        '#/components/responses/ApiMutationFailure',
         `topology mutation response ${code}`,
       );
     }
@@ -514,13 +511,13 @@ Deno.test('OpenAPI JSON includes admin operations contracts', async () => {
       ['/api/admin/operations/crdt/apps/{applicationId}/workspaces/{workspaceId}', 'get'],
       ['/api/admin/operations/system', 'get'],
       ['/api/admin/operations/metrics/reset', 'post'],
-      ['/api/admin/operations/topology/recompute', 'post'],
-      ['/api/admin/operations/maintenance/prune-expired', 'post'],
+      ['/api/admin/operations/topology/recompute/requests/{requestId}', 'post'],
+      ['/api/admin/operations/maintenance/prune-expired/requests/{requestId}', 'post'],
       ['/api/admin/operations/crdt/integrity', 'post'],
       ['/api/admin/operations/crdt/debug-export', 'post'],
-      ['/api/admin/operations/crdt/compact', 'post'],
-      ['/api/admin/operations/crdt/lifecycle', 'post'],
-      ['/api/admin/operations/crdt/erase', 'post'],
+      ['/api/admin/operations/crdt/compact/requests/{requestId}', 'post'],
+      ['/api/admin/operations/crdt/lifecycle/requests/{requestId}', 'post'],
+      ['/api/admin/operations/crdt/erase/requests/{requestId}', 'post'],
     ] as const
   ) {
     assert.ok(json.paths[path]?.[method], `missing ${method.toUpperCase()} ${path}`);
@@ -648,49 +645,58 @@ Deno.test('OpenAPI JSON includes SPA statistics contracts', async () => {
   assert.equal(groupStatsGroup?.properties?.groupRef, undefined);
 });
 
-Deno.test('graph topology product docs describe implemented REST and recompute behavior', async () => {
-  const apiReference = await Deno.readTextFile(
-    new URL('../../../docs/rallar-api-reference.md', import.meta.url),
-  );
-  const rttDoc = await Deno.readTextFile(
-    new URL('../../../docs/rallar-rtc-rtt-reporting.md', import.meta.url),
-  );
+Deno.test(
+  'graph topology product docs describe implemented REST and recompute behavior',
+  async () => {
+    const apiReference = await Deno.readTextFile(
+      new URL('../../../docs/rallar-api-reference.md', import.meta.url),
+    );
+    const rttDoc = await Deno.readTextFile(
+      new URL('../../../docs/rallar-rtc-rtt-reporting.md', import.meta.url),
+    );
 
-  assert.match(apiReference, /\/graphs\/global/);
-  assert.match(apiReference, /\/topology\/reconfigure/);
-  assert.match(rttDoc, /REST reconfigure/i);
-  assert.match(rttDoc, /shared recompute path/i);
-});
+    assert.match(apiReference, /\/graphs\/global/);
+    assert.match(apiReference, /\/topology\/reconfigure/);
+    assert.match(rttDoc, /REST reconfigure/i);
+    assert.match(rttDoc, /shared recompute path/i);
+  },
+);
 
-Deno.test('admin operations product docs describe implemented REST auth and safety behavior', async () => {
-  const apiReference = await Deno.readTextFile(
-    new URL('../../../docs/rallar-api-reference.md', import.meta.url),
-  );
-  const envDocs = await Deno.readTextFile(
-    new URL('../../../docs/environment-variables.md', import.meta.url),
-  );
+Deno.test(
+  'admin operations product docs describe implemented REST auth and safety behavior',
+  async () => {
+    const apiReference = await Deno.readTextFile(
+      new URL('../../../docs/rallar-api-reference.md', import.meta.url),
+    );
+    const envDocs = await Deno.readTextFile(
+      new URL('../../../docs/environment-variables.md', import.meta.url),
+    );
 
-  assert.match(apiReference, /\/api\/admin\/operations\/overview/);
-  assert.match(apiReference, /\/api\/admin\/operations\/maintenance\/prune-expired/);
-  assert.match(apiReference, /payloads redacted/i);
-  assert.match(envDocs, /admin operations/);
-  assert.match(envDocs, /platform-admin allow-list/i);
-});
+    assert.match(apiReference, /\/api\/admin\/operations\/overview/);
+    assert.match(apiReference, /\/api\/admin\/operations\/maintenance\/prune-expired/);
+    assert.match(apiReference, /payloads redacted/i);
+    assert.match(envDocs, /admin operations/);
+    assert.match(envDocs, /platform-admin allow-list/i);
+  },
+);
 
-Deno.test('SPA statistics product docs describe implemented REST auth and safety behavior', async () => {
-  const apiReference = await Deno.readTextFile(
-    new URL('../../../docs/rallar-api-reference.md', import.meta.url),
-  );
-  const envDocs = await Deno.readTextFile(
-    new URL('../../../docs/environment-variables.md', import.meta.url),
-  );
+Deno.test(
+  'SPA statistics product docs describe implemented REST auth and safety behavior',
+  async () => {
+    const apiReference = await Deno.readTextFile(
+      new URL('../../../docs/rallar-api-reference.md', import.meta.url),
+    );
+    const envDocs = await Deno.readTextFile(
+      new URL('../../../docs/environment-variables.md', import.meta.url),
+    );
 
-  assert.match(apiReference, /\/stats\/summary/);
-  assert.match(apiReference, /\/stats\/me\/realtime/);
-  assert.match(apiReference, /strict read auth independent/i);
-  assert.match(apiReference, /does not expose admin operations/i);
-  assert.match(envDocs, /SPA statistics/i);
-});
+    assert.match(apiReference, /\/stats\/summary/);
+    assert.match(apiReference, /\/stats\/me\/realtime/);
+    assert.match(apiReference, /strict read auth independent/i);
+    assert.match(apiReference, /does not expose admin operations/i);
+    assert.match(envDocs, /SPA statistics/i);
+  },
+);
 
 type OpenApiOperation = {
   deprecated?: boolean;

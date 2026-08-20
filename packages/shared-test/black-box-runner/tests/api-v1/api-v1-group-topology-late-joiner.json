@@ -57,7 +57,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-register-founder-001-{runId}",
         "body": {
           "username": "latejoin-founder-{runId}",
           "password": "{clientPassword}",
@@ -77,7 +77,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-founder-002-{runId}",
         "body": {
           "username": "latejoin-founder-{runId}",
           "password": "{clientPassword}"
@@ -121,7 +121,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-register-member-003-{runId}",
         "body": {
           "username": "latejoin-member-{runId}",
           "password": "{clientPassword}",
@@ -141,7 +141,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-member-004-{runId}",
         "body": {
           "username": "latejoin-member-{runId}",
           "password": "{clientPassword}"
@@ -185,7 +185,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-register-late-005-{runId}",
         "body": {
           "username": "latejoin-late-{runId}",
           "password": "{clientPassword}",
@@ -205,7 +205,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-late-006-{runId}",
         "body": {
           "username": "latejoin-late-{runId}",
           "password": "{clientPassword}"
@@ -249,13 +249,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-latejoin-{runId}",
         "headers": {
           "Authorization": "{founderAuthHeader}",
           "x-client-id": "{founderClientId}"
         },
         "body": {
-          "requestId": "create-latejoin-{runId}",
           "groupId": "{groupId}",
           "displayName": "Late joiner group {runId}",
           "kind": "room",
@@ -278,13 +277,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{founderClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{founderClientId}/requests/join-latejoin-founder-{runId}",
         "headers": {
           "Authorization": "{founderAuthHeader}",
           "x-client-id": "{founderClientId}"
         },
         "body": {
-          "requestId": "join-latejoin-founder-{runId}",
           "status": "active"
         }
       },
@@ -303,13 +301,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{memberClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{memberClientId}/requests/join-latejoin-member-{runId}",
         "headers": {
           "Authorization": "{memberAuthHeader}",
           "x-client-id": "{memberClientId}"
         },
         "body": {
-          "requestId": "join-latejoin-member-{runId}",
           "status": "active"
         }
       },
@@ -328,7 +325,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-create-founder-ws-ticket-010-{runId}",
         "headers": {
           "Authorization": "{founderAuthHeader}",
           "x-client-id": "{founderClientId}"
@@ -387,13 +384,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{founderSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{founderSessionId}/requests/presence-latejoin-founder-{runId}",
         "headers": {
           "Authorization": "{founderAuthHeader}",
           "x-client-id": "{founderClientId}"
         },
         "body": {
-          "requestId": "presence-latejoin-founder-{runId}",
           "generationId": "generation-latejoin-founder-{runId}",
           "principalId": "{founderClientId}"
         }
@@ -413,13 +409,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{memberSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{memberSessionId}/requests/presence-latejoin-member-{runId}",
         "headers": {
           "Authorization": "{memberAuthHeader}",
           "x-client-id": "{memberClientId}"
         },
         "body": {
-          "requestId": "presence-latejoin-member-{runId}",
           "generationId": "generation-latejoin-member-{runId}",
           "principalId": "{memberClientId}"
         }
@@ -484,13 +479,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{lateClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{lateClientId}/requests/join-latejoin-late-{runId}",
         "headers": {
           "Authorization": "{lateAuthHeader}",
           "x-client-id": "{lateClientId}"
         },
         "body": {
-          "requestId": "join-latejoin-late-{runId}",
           "status": "active"
         }
       },

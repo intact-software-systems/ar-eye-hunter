@@ -21,6 +21,7 @@ const taskRecipes = [
     'api-v1-auth-session.json',
     'api-v1-admin-operations.json',
     'api-v1-crdt-app-inbox.json',
+    'api-v1-idempotency-contract.json',
 ];
 
 describe('API-v1 state-write recipe evidence', () => {
@@ -180,10 +181,14 @@ describe('API-v1 state-write recipe evidence', () => {
             step.output === 'stateWriteEvidence'
         );
 
-        expect(boundedPrune?.request.body.requestId)
-            .toBe('prune-{executionToken}');
+        expect(boundedPrune?.request.path)
+            .toBe(
+                '/api/admin/operations/maintenance/prune-expired/requests/' +
+                'bb-request-prune-{executionToken}',
+            );
+        expect(boundedPrune?.request.body).not.toHaveProperty('requestId');
         expect(evidence?.request.stateWriteEvidence.match)
-            .toBe('prune-{executionToken}');
+            .toBe('bb-request-prune-{executionToken}');
         expect(recipe.variables.executionToken).toEqual({
             env: 'RALLAR_BB_EXECUTION_TOKEN',
             required: true,

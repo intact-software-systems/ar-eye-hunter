@@ -391,13 +391,15 @@ export function manualCreateGroupCommand(
     const groupId = clean(values.groupId) ?? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.roomId;
     const applicationId = clean(values.applicationId) ?? DEFAULT_STATE_APPLICATION_ID;
     const workspaceId = clean(values.workspaceId) ?? DEFAULT_STATE_WORKSPACE_ID;
+    const requestId = crypto.randomUUID();
     return {
         kind: 'http.request',
         commandId: commandId('group-create', sequence),
         label: 'Create manual Rallar group',
         request: {
             method: 'POST',
-            path: `/api/state/apps/${pathSegment(applicationId)}/workspaces/${pathSegment(workspaceId)}/groups`,
+            path: `/api/state/apps/${pathSegment(applicationId)}/workspaces/${pathSegment(workspaceId)}` +
+                `/groups/requests/${requestId}`,
             body: {
                 groupId,
                 displayName: groupId,

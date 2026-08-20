@@ -325,16 +325,17 @@ export async function runBlackBoxRunnerLivePreflight(
                 recordSkipped(checks, 'auth-login', 'auth-login', 'Configured user credentials', missingPair)
             } else {
                 for (const pair of credentialPairs) {
+                    const loginPath = mutationPath('/api/auth/login', crypto.randomUUID())
                     const result = await recordAsyncCheck(
                         checks,
                         issues,
                         'auth-login',
                         `auth-login:${pair.id}`,
                         `Rallar auth login for ${pair.id}`,
-                        urlJoin(rallarApiBaseUrl, '/api/auth/login'),
+                        urlJoin(rallarApiBaseUrl, loginPath),
                         now,
                         async () => {
-                            const response = await fetchResponse(fetchImplementation, urlJoin(rallarApiBaseUrl, '/api/auth/login'), {
+                            const response = await fetchResponse(fetchImplementation, urlJoin(rallarApiBaseUrl, loginPath), {
                                 method: 'POST',
                                 headers: jsonHeaders(),
                                 body: JSON.stringify({
@@ -394,11 +395,11 @@ export async function runBlackBoxRunnerLivePreflight(
                         const createPath = `/api/state/apps/${encodeURIComponent(group.applicationId)}/workspaces/${
                             encodeURIComponent(group.workspaceId)
                         }/groups`
-                        const createResponse = await fetchResponse(fetchImplementation, urlJoin(rallarApiBaseUrl, createPath), {
+                        const createMutationPath = mutationPath(createPath, crypto.randomUUID())
+                        const createResponse = await fetchResponse(fetchImplementation, urlJoin(rallarApiBaseUrl, createMutationPath), {
                             method: 'POST',
                             headers: authHeaders(primarySession),
                             body: JSON.stringify({
-                                requestId: `black-box-preflight-create-${group.groupId}`,
                                 groupId: group.groupId,
                                 displayName: group.groupName,
                                 kind: 'room',
@@ -416,11 +417,11 @@ export async function runBlackBoxRunnerLivePreflight(
                         const joinPath = `${createPath}/${encodeURIComponent(group.groupId)}/members/${
                             encodeURIComponent(primarySession.clientId)
                         }`
-                        const joinResponse = await fetchResponse(fetchImplementation, urlJoin(rallarApiBaseUrl, joinPath), {
+                        const joinMutationPath = mutationPath(joinPath, crypto.randomUUID())
+                        const joinResponse = await fetchResponse(fetchImplementation, urlJoin(rallarApiBaseUrl, joinMutationPath), {
                             method: 'PUT',
                             headers: authHeaders(primarySession),
                             body: JSON.stringify({
-                                requestId: `black-box-preflight-join-${group.groupId}-${primarySession.clientId}`,
                                 status: 'active',
                             }),
                         }, timeoutMs)
@@ -440,16 +441,17 @@ export async function runBlackBoxRunnerLivePreflight(
             if (!primarySession) {
                 recordSkipped(checks, 'ws-ticket', 'ws-ticket', 'WebSocket ticket', 'No authenticated session available.')
             } else {
+                const wsTicketPath = mutationPath('/api/auth/ws-ticket', crypto.randomUUID())
                 const result = await recordAsyncCheck(
                     checks,
                     issues,
                     'ws-ticket',
                     'ws-ticket',
                     'WebSocket ticket',
-                    urlJoin(rallarApiBaseUrl, '/api/auth/ws-ticket'),
+                    urlJoin(rallarApiBaseUrl, wsTicketPath),
                     now,
                     async () => {
-                        const response = await fetchResponse(fetchImplementation, urlJoin(rallarApiBaseUrl, '/api/auth/ws-ticket'), {
+                        const response = await fetchResponse(fetchImplementation, urlJoin(rallarApiBaseUrl, wsTicketPath), {
                             method: 'POST',
                             headers: authHeaders(primarySession),
                             body: JSON.stringify({}),
@@ -633,6 +635,10 @@ export async function runBlackBoxRunnerLivePreflight(
         issues,
         skipReasons: issues.map(issue => issue.message),
     }
+}
+
+function mutationPath(path: string, requestId: string): string {
+    return `${path}/requests/${encodeURIComponent(requestId)}`
 }
 
 function livePreflightSpec(config: JsonRecord, requires: BlackBoxRunnerLivePreflightMatrixRequirement): JsonRecord {

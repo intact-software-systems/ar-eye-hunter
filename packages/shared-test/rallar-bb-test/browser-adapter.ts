@@ -722,7 +722,8 @@ async function requestWebSocketTicket(
         throw new Error('Cannot request websocket ticket without configured apiBaseUrl.');
     }
 
-    const response = await fetchFn(new URL('/api/auth/ws-ticket', `${apiBaseUrl}/`).toString(), {
+    const ticketPath = `/api/auth/ws-ticket/requests/${encodeURIComponent(crypto.randomUUID())}`;
+    const response = await fetchFn(new URL(ticketPath, `${apiBaseUrl}/`).toString(), {
         method: 'POST',
         headers: withRallarAuthHeaders(undefined, session),
     });

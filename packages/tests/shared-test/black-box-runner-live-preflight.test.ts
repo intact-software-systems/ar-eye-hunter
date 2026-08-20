@@ -120,7 +120,7 @@ function standardConfig(): BlackBoxRunnerLivePreflightInput {
                     name: 'createWebSocketTicket',
                     type: 'http',
                     request: {
-                        path: '/api/auth/ws-ticket',
+                        path: '/api/auth/ws-ticket/requests/example-request-id',
                     },
                 },
             ],
@@ -215,7 +215,7 @@ describe('black-box runner live preflight', () => {
                         },
                     });
                 }
-                if (String(url).endsWith('/api/auth/login')) {
+                if (new URL(String(url)).pathname.startsWith('/api/auth/login/requests/')) {
                     return jsonResponse({ error: 'Invalid username or password' }, { status: 401 });
                 }
                 throw new Error(`unexpected fetch ${String(url)} ${init?.method}`);
@@ -242,7 +242,7 @@ describe('black-box runner live preflight', () => {
                     {
                         type: 'http',
                         request: {
-                            path: '/api/auth/ws-ticket',
+                            path: '/api/auth/ws-ticket/requests/example-request-id',
                         },
                     },
                 ],
@@ -256,14 +256,14 @@ describe('black-box runner live preflight', () => {
                         },
                     });
                 }
-                if (path === '/api/auth/login') {
+                if (path.startsWith('/api/auth/login/requests/')) {
                     return jsonResponse({
                         clientId: 'alice-client',
                         sessionId: 'alice-session',
                         accessToken: 'alice-token',
                     });
                 }
-                if (path === '/api/auth/ws-ticket') {
+                if (path.startsWith('/api/auth/ws-ticket/requests/')) {
                     return jsonResponse({
                         ticket: 'super-secret-ticket',
                         sessionId: 'alice-session',
@@ -306,20 +306,25 @@ describe('black-box runner live preflight', () => {
                         },
                     });
                 }
-                if (parsed.pathname === '/api/auth/login') {
+                if (parsed.pathname.startsWith('/api/auth/login/requests/')) {
                     return jsonResponse({
                         clientId: 'alice-client',
                         sessionId: 'alice-session',
                         accessToken: 'alice-token',
                     });
                 }
-                if (parsed.pathname.endsWith('/groups') && init?.method === 'POST') {
+                if (/\/groups\/requests\/[^/]+$/.test(parsed.pathname) && init?.method === 'POST') {
                     return jsonResponse({ group: { groupId: body.groupId } }, { status: 201 });
                 }
-                if (parsed.pathname.includes('/members/') && init?.method === 'PUT') {
-                    return jsonResponse({ members: [{ principalId: 'alice-client', status: 'active' }] });
+                if (
+                    /\/members\/[^/]+\/requests\/[^/]+$/.test(parsed.pathname) &&
+                    init?.method === 'PUT'
+                ) {
+                    return jsonResponse({
+                        members: [{ principalId: 'alice-client', status: 'active' }],
+                    });
                 }
-                if (parsed.pathname === '/api/auth/ws-ticket') {
+                if (parsed.pathname.startsWith('/api/auth/ws-ticket/requests/')) {
                     return jsonResponse({
                         ticket: 'super-secret-ticket',
                         sessionId: 'alice-session',
@@ -353,8 +358,28 @@ describe('black-box runner live preflight', () => {
         ]));
         expect(report.checks.every(check => check.status === 'passed')).toBe(true);
         expect(calls.some(call => call.url.endsWith('/api/webrtc/ice'))).toBe(true);
+        const mutationCalls = calls.filter(call =>
+            call.method === 'POST' || call.method === 'PUT'
+        );
+        expect(mutationCalls).toHaveLength(4);
+        expect(mutationCalls.every(call =>
+            /\/requests\/[^/]+$/.test(new URL(call.url).pathname)
+        )).toBe(true);
+        expect(mutationCalls.every(call =>
+            !call.body ||
+            typeof call.body !== 'object' ||
+            !Object.hasOwn(call.body, 'requestId')
+        )).toBe(true);
+        const requestIds = mutationCalls.map(call => new URL(call.url).pathname.split('/').at(-1));
+        expect(new Set(requestIds).size).toBe(mutationCalls.length);
+        expect(requestIds.every(requestId =>
+            typeof requestId === 'string' &&
+            !requestId.includes('recipe-group') &&
+            !requestId.includes('alice-client') &&
+            !requestId.includes('alice-session')
+        )).toBe(true);
         const createGroup = calls.find(call =>
-            call.method === 'POST' && call.url.endsWith('/groups')
+            call.method === 'POST' && /\/groups\/requests\/[^/]+$/.test(new URL(call.url).pathname)
         );
         expect(createGroup?.body).toMatchObject({
             groupId: 'bb-live-preflight-live-entry-run-123',

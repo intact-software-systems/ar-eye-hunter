@@ -2,14 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   assertLivePassiveConsumerState,
-  assertSinglePublisherHeadAdvanced,
   assertPublisherHeadsAdvanced,
+  assertPublisherHeadsUnchanged,
   assertReplacementConsumerSeeded,
+  assertSinglePublisherHeadAdvanced,
   type ProofDurableState,
 } from '@shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-postgres.mts';
 import {
-  ApiV1RtcTopologyProofSocket,
+  ApiV1RtcTopologyProofApi,
+} from '@shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-api.mts';
+import {
   adoptProofTopologyObservations,
+  ApiV1RtcTopologyProofSocket,
   causallyIncludes,
   decodeTopologyObservation,
   matchesProofTopologyExpectation,
@@ -30,6 +34,48 @@ describe('API-v1 RTC topology replay proof semantics', () => {
       vi.useRealTimers();
     }
     vi.unstubAllGlobals();
+  });
+
+  it('replays topology after restart through one strict path identity', async () => {
+    const requests: Array<{ url: string; init: RequestInit | undefined }> = [];
+    vi.stubGlobal('fetch', (url: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(url), init });
+      return Promise.resolve(new Response('{}'));
+    });
+    const api = new ApiV1RtcTopologyProofApi({
+      alice: { username: 'alice', password: 'secret' },
+      bob: { username: 'bob', password: 'secret' },
+      admin: { username: 'admin', password: 'admin' },
+    });
+    const input = {
+      proofId: 'rtc-replay-0123456789abcdef01234567',
+      applicationId: 'app',
+      workspaceId: 'workspace',
+      groupId: 'group',
+      actor: {
+        label: 'N1',
+        principal: 'alice' as const,
+        clientId: 'alice-client',
+        sessionId: 'alice-session',
+        accessToken: 'secret-token',
+        apiBaseUrl: 'http://127.0.0.1:18080',
+        wsBaseUrl: 'ws://127.0.0.1:18080',
+      },
+    };
+
+    await api.establishBaseline(input);
+    await api.establishBaseline(input);
+
+    expect(requests.map((request) => request.url)).toEqual(
+      Array(2).fill(
+        'http://127.0.0.1:18080/api/state/apps/app/workspaces/workspace/groups/group/' +
+          'topology/reconfigure/requests/rtc-replay-0123456789abcdef01234567-baseline',
+      ),
+    );
+    for (const request of requests) {
+      expect(request.init?.headers).not.toHaveProperty('Idempotency-Key');
+      expect(JSON.parse(String(request.init?.body))).toEqual({ publish: false });
+    }
   });
 
   it('accepts current topology that causally dominates the triggering mutation', () => {
@@ -60,9 +106,9 @@ describe('API-v1 RTC topology replay proof semantics', () => {
       passiveConsumerStreamId: 'consumer-c',
       publisherHeads: { 'publisher-a': 10, 'publisher-b': 20 },
     });
-    expect(() =>
-      assertLivePassiveConsumerState({ ...live, unresolvedAppOutboxCount: 1 }),
-    ).toThrow('unresolved APP_OUTBOX');
+    expect(() => assertLivePassiveConsumerState({ ...live, unresolvedAppOutboxCount: 1 })).toThrow(
+      'unresolved APP_OUTBOX',
+    );
 
     const afterLiveA = durableState(
       [
@@ -143,8 +189,34 @@ describe('API-v1 RTC topology replay proof semantics', () => {
         state,
         consumerStreamId: 'consumer-c',
         priorHeads: { 'publisher-a': 10, 'publisher-b': 20 },
-      }),
+      })
     ).toThrow('exactly one publisher');
+  });
+
+  it('rejects any duplicate topology publication after replay', () => {
+    const priorHeads = { 'publisher-a': 11, 'publisher-b': 21 };
+    expect(assertPublisherHeadsUnchanged(
+      durableState(
+        [
+          { streamId: 'publisher-a', headSequence: 11 },
+          { streamId: 'publisher-b', headSequence: 21 },
+        ],
+        [],
+      ),
+      priorHeads,
+    )).toEqual(priorHeads);
+    expect(() =>
+      assertPublisherHeadsUnchanged(
+        durableState(
+          [
+            { streamId: 'publisher-a', headSequence: 12 },
+            { streamId: 'publisher-b', headSequence: 21 },
+          ],
+          [],
+        ),
+        priorHeads,
+      )
+    ).toThrow('changed during topology mutation replay');
   });
 
   it('retains delivery identity and matches exact publication or hydration observations', () => {
@@ -196,7 +268,7 @@ describe('API-v1 RTC topology replay proof semantics', () => {
       adoptProofTopologyObservations([
         first,
         topologyObservation({ groupRevision: 8, presenceRevision: 8 }, 13),
-      ]),
+      ])
     ).toThrow('incomparable');
   });
 
@@ -218,9 +290,9 @@ describe('API-v1 RTC topology replay proof semantics', () => {
       localCommitWakes: 0,
       replayedEntryCount: 2,
     });
-    expect(() =>
-      assertPollDrivenReplayMetricDelta(before, replayMetrics(9, 0, 0, 13)),
-    ).toThrow('exactly two');
+    expect(() => assertPollDrivenReplayMetricDelta(before, replayMetrics(9, 0, 0, 13))).toThrow(
+      'exactly two',
+    );
   });
 
   it('records one shared publication identity across both passive sockets', () => {
@@ -236,7 +308,7 @@ describe('API-v1 RTC topology replay proof semantics', () => {
       assertSharedPublicationIdentity([
         observations[0]!,
         { ...observations[1]!, messageId: JSON.stringify(['rtc-topology-publication', 'other']) },
-      ]),
+      ])
     ).toThrow('distinct publication ids');
   });
 

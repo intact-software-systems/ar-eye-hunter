@@ -197,8 +197,11 @@ Deno.test(
     const document = await response.json() as OpenApiDocument;
 
     for (const expected of GROUP_OPERATION_CONTRACTS) {
-      const operation = document.paths[expected.path]?.[expected.method];
-      assert.ok(operation, `${expected.method.toUpperCase()} ${expected.path}`);
+      const routePath = expected.method === 'get'
+        ? expected.path
+        : `${expected.path}/requests/{requestId}`;
+      const operation = document.paths[routePath]?.[expected.method];
+      assert.ok(operation, `${expected.method.toUpperCase()} ${routePath}`);
       assert.deepEqual(operation.security, [{ bearerAuth: [], clientIdHeader: [] }]);
       assertOpenApiRequestSchema(operation, expected);
       assertOpenApiResponseSchema(operation, expected);

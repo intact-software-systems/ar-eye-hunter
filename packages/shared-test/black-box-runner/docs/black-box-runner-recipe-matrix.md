@@ -115,6 +115,21 @@ HEADs, C cursor pairs at those HEADs, later advancement of both publishers, a
 new C' stream seeded at the advanced HEADs, and current-state hydration for the
 same N5/N6 authenticated sessions without a mutation after C' starts.
 
+The `api-v1-idempotency-contract` matrix entry is the focused three-node
+strict-mutation gate. Run it against an already provisioned cluster with:
+
+```bash
+deno run -A packages/shared-test/black-box-runner/recipe-matrix.mts \
+  --profile=api-v1-black-box-cluster \
+  --id=api-v1-idempotency-contract \
+  --require-gates \
+  --artifact-dir=tmp/api-v1-black-box/idempotency-contract
+```
+
+It uses the existing state-write evidence collector; its request-ID selector
+is non-secret, while authentication tokens and one-time tickets remain marked
+secret in runner outputs.
+
 These commands write artifacts under `.artifacts/api-v1-black-box/*` instead of
 the generic `.artifacts/shared-test/recipe-matrix/*` path because the helper
 also captures `apps/api-v1` server logs.

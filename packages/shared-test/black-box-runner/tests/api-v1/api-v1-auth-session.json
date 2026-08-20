@@ -46,7 +46,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-register-disposable-user-001-{runId}",
         "body": {
           "username": "{disposableUsername}",
           "password": "api-v1-bb-password-{runId}",
@@ -71,7 +71,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-disposable-user-002-{runId}",
         "body": {
           "username": "{disposableUsername}",
           "password": "api-v1-bb-password-{runId}"
@@ -117,7 +117,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/agent-session-tickets",
+        "path": "/api/auth/agent-session-tickets/requests/bb-issue-single-use-agent-ticket-003-{runId}",
         "headers": {
           "Authorization": "{disposableAuthHeader}",
           "x-client-id": "{disposableClientId}"
@@ -143,7 +143,7 @@
             "connection": "api",
             "request": {
               "method": "POST",
-              "path": "/api/auth/agent-session-tickets/consume",
+              "path": "/api/auth/agent-session-tickets/consume/requests/bb-consume-single-use-agent-ticket-one-004-{runId}",
               "body": { "ticket": "{singleUseAgentTicket}" }
             },
             "expect": { "statusCode": [200, 404] }
@@ -157,7 +157,7 @@
             "connection": "api",
             "request": {
               "method": "POST",
-              "path": "/api/auth/agent-session-tickets/consume",
+              "path": "/api/auth/agent-session-tickets/consume/requests/bb-consume-single-use-agent-ticket-two-005-{runId}",
               "body": { "ticket": "{singleUseAgentTicket}" }
             },
             "expect": { "statusCode": [200, 404] }
@@ -215,7 +215,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/logout",
+        "path": "/api/auth/logout/requests/bb-logout-disposable-user-006-{runId}",
         "headers": {
           "Authorization": "{disposableAuthHeader}",
           "x-client-id": "{disposableClientId}"
@@ -234,7 +234,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-reject-wrong-password-007-{runId}",
         "body": {
           "username": "{disposableUsername}",
           "password": "wrong-password-{runId}"
@@ -243,7 +243,10 @@
       "expect": {
         "status": 401,
         "body": {
-          "error": "Invalid username or password"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "authentication-required",
+          "status": 401
         }
       }
     },
@@ -258,7 +261,10 @@
       "expect": {
         "status": 401,
         "body": {
-          "error": "Unauthorized: Missing bearer token"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "authentication-required",
+          "status": 401
         }
       }
     },
@@ -286,12 +292,15 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket"
+        "path": "/api/auth/ws-ticket/requests/bb-reject-web-socket-ticket-without-auth-008-{runId}"
       },
       "expect": {
         "status": 401,
         "body": {
-          "error": "Unauthorized: Missing bearer token"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "authentication-required",
+          "status": 401
         }
       }
     }

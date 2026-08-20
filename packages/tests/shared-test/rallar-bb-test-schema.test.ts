@@ -233,9 +233,9 @@ describe('rallar-bb-test capability and schema contract', () => {
             kind: 'http.request',
             request: {
                 method: 'POST',
-                path: '/api/state/apps/ar-eye-hunter/workspaces/default/groups',
+                path: '/api/state/apps/ar-eye-hunter/workspaces/default/groups/requests/' +
+                    'rallar-black-box-bb-rtc-ensure-group',
                 body: {
-                    requestId: 'rallar-black-box:bb-rtc:ensure-group',
                     groupId: 'bb-group',
                     joinMode: 'open',
                 },
@@ -245,9 +245,9 @@ describe('rallar-bb-test capability and schema contract', () => {
             kind: 'http.request',
             request: {
                 method: 'PUT',
-                path: '/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/members/{auth.clientId}',
+                path: '/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/' +
+                    'members/{auth.clientId}/requests/rallar-black-box-bb-rtc-ensure-member-scope',
                 body: {
-                    requestId: 'rallar-black-box:bb-rtc:ensure-member:{auth.clientId}',
                     status: 'active',
                 },
             },
@@ -256,9 +256,9 @@ describe('rallar-bb-test capability and schema contract', () => {
             kind: 'http.request',
             request: {
                 method: 'PUT',
-                path: '/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/sessions/{auth.sessionId}',
+                path: '/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/' +
+                    'sessions/{auth.sessionId}/requests/rallar-black-box-bb-rtc-ensure-session-scope',
                 body: {
-                    requestId: 'rallar-black-box:bb-rtc:ensure-session:{auth.sessionId}',
                     principalId: '{auth.clientId}',
                 },
             },

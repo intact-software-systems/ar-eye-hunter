@@ -65,7 +65,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-register-alpha-001-{runId}",
         "body": {
           "username": "reconnect-alpha-{runId}",
           "password": "{clientPassword}",
@@ -85,7 +85,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-alpha-002-{runId}",
         "body": {
           "username": "reconnect-alpha-{runId}",
           "password": "{clientPassword}"
@@ -129,7 +129,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-register-beta-003-{runId}",
         "body": {
           "username": "reconnect-beta-{runId}",
           "password": "{clientPassword}",
@@ -149,7 +149,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-login-beta-004-{runId}",
         "body": {
           "username": "reconnect-beta-{runId}",
           "password": "{clientPassword}"
@@ -193,13 +193,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-reconnect-{runId}",
         "headers": {
           "Authorization": "{alphaAuthHeader}",
           "x-client-id": "{alphaClientId}"
         },
         "body": {
-          "requestId": "create-reconnect-{runId}",
           "groupId": "{groupId}",
           "displayName": "Reconnect group {runId}",
           "kind": "room",
@@ -222,13 +221,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{alphaClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{alphaClientId}/requests/join-reconnect-alpha-{runId}",
         "headers": {
           "Authorization": "{alphaAuthHeader}",
           "x-client-id": "{alphaClientId}"
         },
         "body": {
-          "requestId": "join-reconnect-alpha-{runId}",
           "status": "active"
         }
       },
@@ -247,13 +245,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{betaClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{betaClientId}/requests/join-reconnect-beta-{runId}",
         "headers": {
           "Authorization": "{betaAuthHeader}",
           "x-client-id": "{betaClientId}"
         },
         "body": {
-          "requestId": "join-reconnect-beta-{runId}",
           "status": "active"
         }
       },
@@ -272,7 +269,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-create-alpha-ws-ticket-first-008-{runId}",
         "headers": {
           "Authorization": "{alphaAuthHeader}",
           "x-client-id": "{alphaClientId}"
@@ -322,7 +319,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-create-beta-ws-ticket-009-{runId}",
         "headers": {
           "Authorization": "{betaAuthHeader}",
           "x-client-id": "{betaClientId}"
@@ -390,13 +387,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{alphaSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{alphaSessionId}/requests/presence-reconnect-alpha-{runId}",
         "headers": {
           "Authorization": "{alphaAuthHeader}",
           "x-client-id": "{alphaClientId}"
         },
         "body": {
-          "requestId": "presence-reconnect-alpha-{runId}",
           "generationId": "generation-reconnect-alpha-{runId}",
           "principalId": "{alphaClientId}"
         }
@@ -416,13 +412,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{betaSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{betaSessionId}/requests/presence-reconnect-beta-{runId}",
         "headers": {
           "Authorization": "{betaAuthHeader}",
           "x-client-id": "{betaClientId}"
         },
         "body": {
-          "requestId": "presence-reconnect-beta-{runId}",
           "generationId": "generation-reconnect-beta-{runId}",
           "principalId": "{betaClientId}"
         }
@@ -483,13 +478,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/offline-update-{runId}",
         "headers": {
           "Authorization": "{alphaAuthHeader}",
           "x-client-id": "{alphaClientId}"
         },
         "body": {
-          "requestId": "offline-update-{runId}",
           "displayName": "Reconnect group updated {runId}"
         }
       },
@@ -576,7 +570,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-create-alpha-ws-ticket-second-013-{runId}",
         "headers": {
           "Authorization": "{alphaAuthHeader}",
           "x-client-id": "{alphaClientId}"
