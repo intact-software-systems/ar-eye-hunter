@@ -467,3 +467,82 @@ task-specific follow-up remains.
 - Deno formatting/lint, browser bundle measurement, changed-style, structure, coupling, and diff
   checks showed that the final source remains buildable, reviewable, and within existing package
   boundaries.
+
+## Fix round 3
+
+Fix base: `b9da4038ed5484465fa95f336274609c301bdeb9`.
+
+### Finding verified and corrected
+
+The durable-result mapper for agent-ticket issuance checked only ordered agent IDs and then trusted
+each receipt's `sessionId`. A substituted receipt could therefore carry a credential digest that
+was self-consistent for a session outside the reserved semantic intent. The adjacent session-issue
+mapper had the same gap: intent-based replay checked client and username but trusted the durable
+session ID.
+
+The deterministic auth mutation ID derivation is now one cohesive owner shared by worker
+materialization and public-result reconstruction. For semantic session intent, replay derives the
+expected session ID from request ID, normalized username, and client ID. For every semantic agent
+intent, it derives the expected ordered agent/session pair from request ID, authenticated client
+ID, and agent ID. Receipt cardinality, order, agent identity, and session identity are all checked
+before any access token or ticket is reconstructed. Missing, duplicate, reordered, and substituted
+agent receipts therefore fail closed without a partial plaintext result. The retained
+materialized-command compatibility input continues to bind against its already-materialized exact
+session/ticket identities.
+
+No AppInbox tuple, schema, persisted command/result format, transaction boundary, credential
+algorithm, route, or public response shape changed. A positive literal-ID test pins the established
+deterministic algorithm independently of the producer and replay mapper sharing the new owner.
+
+### TDD RED evidence
+
+- `npx vitest run packages/tests/shared-server/auth/auth-public-result.test.ts` — RED: 1 test file,
+  2 failed and 3 passed. The issue-session case resolved and exposed the access token for
+  `substituted-session`; the agent case resolved and exposed both tickets when the second durable
+  receipt used `substituted-agent-session` with its own matching digest. The recording credential
+  issuer proved reconstruction had occurred rather than the mapper rejecting the identity first.
+- The same RED test matrix already rejected missing, duplicate, and reordered agent receipts. This
+  isolated the regression to the unbound durable session identity rather than result cardinality or
+  ordering.
+
+### GREEN behavior evidence
+
+- `npx vitest run packages/tests/shared-server/auth/auth-public-result.test.ts` — 1 file, 6/6
+  passed. Both substituted-session cases now reject before the recording issuer sees a plaintext
+  derivation call; missing, duplicate, reordered, and substituted agent receipts all return no
+  partial secrets. Valid literal deterministic session and agent-session identities still
+  reconstruct the exact credentials.
+- `npx vitest run packages/tests/shared-server/auth` — 31 files, 135/135 passed.
+- `cd apps/api-v1 && deno test -A test/db/pglite-auth-app-inbox.test.ts` — 3/3 passed. The expected
+  failed-entry diagnostics came from the deliberate consumed-ticket and post-enqueue-policy cases;
+  the command exited 0 and delayed worker/exact replay coverage remained green.
+
+### GREEN static and repository evidence
+
+- `npx tsc -p packages/shared-server/tsconfig.json --noEmit` — passed with no diagnostics.
+- `cd apps/api-v1 && deno task check` — `deno check src/main.ts` passed.
+- `node scripts/check-changed-repo-style.mjs
+  407251f258180c2d19da1feb5ebe535eecdb4328 WORKTREE` — final PASS with zero new findings. An
+  intermediate rerun found one 116-character type-only test import; removing the unnecessary
+  annotation/import cleared it without a formatter escape.
+- `npm run check:repo-structure -- --base
+  407251f258180c2d19da1feb5ebe535eecdb4328` — PASS with the same 12 review-level branch findings
+  already dispositioned in prior rounds and no new auth mutation owner finding.
+- `git diff --check` — clean after final formatting and test cleanup.
+
+### Fix-round self-review and disposition
+
+All four changed human-authored files were reviewed in full after formatting. The review verified
+that worker materialization and replay use the exact same physical identity inputs, every receipt
+identity is validated before credential reconstruction, the helper remains a pure deterministic
+hash owner, and no durable or public contract changed. The previously passing reconnect and
+worker-time ownership findings were not touched. No task-specific follow-up remains.
+
+### Commands executed and what they taught us (Fix round 3)
+
+- Focused RED/GREEN public-result tests showed that a matching credential digest does not establish
+  authority: durable session identity must also be derived from and bound to the reserved intent.
+- The full auth and PGlite suites showed that centralizing deterministic ID derivation preserves
+  worker-time materialization, exact replay, credential digests, and AppInbox atomicity.
+- Shared-server/API checks plus changed-style, structure, and diff checks showed that the new owner
+  is internal, navigable, and introduces no package-surface or repository-shape regression.

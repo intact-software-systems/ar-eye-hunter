@@ -6,6 +6,7 @@ import type {
   AuthMutationFacts,
   AuthMutationIntent,
 } from './auth-mutation-contracts.ts';
+import { deriveAuthMutationId } from './derive-auth-mutation-id.ts';
 
 export interface AuthMutationMaterialization {
   readonly command: AuthMutationCommand;
@@ -41,11 +42,10 @@ async function materializeAuthMutationCommand(
         requestId: intent.requestId,
         capturedAtEpochMs,
         user: materializeAuthUserRegistration(intent.registration, {
-          clientId: await toAuthServiceDeterministicId(
-            'user',
+          clientId: await deriveAuthMutationId('user', [
             intent.requestId,
             intent.registration.normalizedUsername,
-          ),
+          ]),
           capturedAtEpochMs,
         }),
       };
@@ -60,11 +60,7 @@ async function materializeAuthMutationCommand(
         expected: intent.expected,
       };
     case 'issue-ws-ticket':
-      return await materializeWebSocketTicketCommand(
-        intent,
-        capturedAtEpochMs,
-        credentialIssuer,
-      );
+      return await materializeWebSocketTicketCommand(intent, capturedAtEpochMs, credentialIssuer);
     case 'consume-ws-ticket':
       return {
         version: 1,
@@ -75,11 +71,7 @@ async function materializeAuthMutationCommand(
         expectedSessionId: intent.expectedSessionId,
       };
     case 'issue-agent-tickets':
-      return await materializeAgentTicketCommand(
-        intent,
-        capturedAtEpochMs,
-        credentialIssuer,
-      );
+      return await materializeAgentTicketCommand(intent, capturedAtEpochMs, credentialIssuer);
     case 'consume-agent-ticket':
       return {
         version: 1,
@@ -96,12 +88,11 @@ async function materializeSessionCommand(
   capturedAtEpochMs: number,
   credentialIssuer: AuthCredentialIssuer,
 ): Promise<Extract<AuthMutationCommand, { kind: 'issue-session' }>> {
-  const sessionId = await toAuthServiceDeterministicId(
-    'session',
+  const sessionId = await deriveAuthMutationId('session', [
     intent.requestId,
     intent.authority.normalizedUsername,
     intent.clientId,
-  );
+  ]);
   const accessToken = await credentialIssuer.issueAccessToken(sessionId);
   return {
     version: 1,
@@ -152,18 +143,13 @@ async function materializeAgentTicketCommand(
 ): Promise<Extract<AuthMutationCommand, { kind: 'issue-agent-tickets' }>> {
   const tickets = [];
   for (const agentId of intent.agentIds) {
-    const sessionId = await toAuthServiceDeterministicId(
-      'agent-session',
+    const sessionId = await deriveAuthMutationId('agent-session', [
       intent.requestId,
       intent.authority.clientId,
       agentId,
-    );
+    ]);
     const accessToken = await credentialIssuer.issueAccessToken(sessionId);
-    const ticket = await credentialIssuer.issueAgentTicket(
-      intent.requestId,
-      agentId,
-      sessionId,
-    );
+    const ticket = await credentialIssuer.issueAgentTicket(intent.requestId, agentId, sessionId);
     tickets.push({
       agentId,
       sessionId,
@@ -187,12 +173,4 @@ async function materializeAgentTicketCommand(
     authority: intent.authority,
     tickets,
   };
-}
-
-async function toAuthServiceDeterministicId(
-  kind: 'user' | 'session' | 'agent-session',
-  ...identity: readonly string[]
-): Promise<string> {
-  const digest = await hashAuthSecret(JSON.stringify([kind, ...identity]));
-  return `${kind}-${digest.slice(0, 24)}`;
 }
