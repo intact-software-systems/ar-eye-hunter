@@ -11,10 +11,10 @@ import {
 import { isGroupAdmissionRateLimitedError } from '../services/group-admission-rate-limit.ts';
 import {
   createApiMutationFailure,
-  toApiMutationFailureJsonObject,
   toApiMutationFailureResponse,
   toApiMutationRateLimitResponse,
 } from '../routes/api-mutation-route-failure.ts';
+import { toApiMutationFailureJsonObject } from '../routes/to-api-mutation-failure-json-object.ts';
 
 interface GroupAppInboxRouteFailure {
   readonly code: string;
@@ -102,7 +102,7 @@ export function toGroupMutationErrorResponse<Failure>(
       denial: {
         code: error.denial.code,
         message: error.denial.message,
-        details: toApiMutationFailureJsonObject(JSON.stringify(error.denial.details)),
+        details: toApiMutationFailureJsonObject(error.denial.details),
       },
     });
     return context.json(failure, failure.status);

@@ -2,15 +2,12 @@ import type {
   ApiMutationFailure,
   ApiMutationFailureDenial,
   ApiMutationFailureIssue,
-  ApiMutationFailureJsonObject,
   ApiMutationFailureRetry,
 } from '@shared/api/mutation/api-mutation-failure.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
-import type {
-  JsonWireObject,
-  JsonWireValue,
-} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import { RequestAuthFailure } from '@shared-server/http/request-auth-service.ts';
+
+import { toApiMutationFailureJsonObject } from './to-api-mutation-failure-json-object.ts';
 
 interface ApiMutationFailureResponseWriter {
   json(value: ApiMutationFailure, status?: number): Response;
@@ -57,13 +54,13 @@ export function toApiMutationRouteFailure(failure: AppInboxFailure): ApiMutation
       code: issue.code,
       path: issue.path,
       message: issue.message,
-      details: toApiMutationFailureJsonObject(JSON.stringify(issue.details)),
+      details: toApiMutationFailureJsonObject(issue.details),
     })) ?? null,
     denial: failure.denial
       ? {
         code: failure.denial.code,
         message: failure.denial.message,
-        details: toApiMutationFailureJsonObject(JSON.stringify(failure.denial.details)),
+        details: toApiMutationFailureJsonObject(failure.denial.details),
       }
       : failure.status === 401 || failure.status === 403
       ? { code: failure.code, message: failure.message, details: null }
@@ -79,20 +76,6 @@ export function toApiMutationRouteFailure(failure: AppInboxFailure): ApiMutation
       }
       : null,
   }));
-}
-
-export function toApiMutationFailureJsonObject(
-  serializedValue: string | undefined,
-): ApiMutationFailureJsonObject | null {
-  if (serializedValue === undefined) {
-    return null;
-  }
-  const value: JsonWireValue = JSON.parse(serializedValue);
-  return isJsonWireObject(value) ? value : null;
-}
-
-function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function toApiMutationFailureResponse(
