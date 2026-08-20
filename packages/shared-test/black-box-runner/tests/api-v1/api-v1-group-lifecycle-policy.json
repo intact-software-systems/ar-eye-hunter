@@ -20,6 +20,18 @@
     "runId": {
       "env": "RALLAR_BB_RUN_ID",
       "default": "local"
+    },
+    "optimisticGroupId": "optimistic-room-{runId}",
+    "strictGroupId": "strict-room-{runId}",
+    "noneManagerGroupId": "none-manager-room-{runId}",
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
     }
   },
   "execution": {
@@ -74,6 +86,44 @@
           "Bearer ",
           {
             "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
           }
         ]
       }
@@ -156,7 +206,261 @@
         }
       },
       "expect": {
-        "status": 201
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{plainGroupId}",
+            "lifecycleState": "active",
+            "formationEpoch": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "createGroupWithOptimisticPreset",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "group-create-optimistic-{runId}",
+          "groupId": "{optimisticGroupId}",
+          "displayName": "Optimistic group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "optimistic"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{optimisticGroupId}",
+            "lifecycleState": "active",
+            "formationEpoch": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "optimisticFormationViewMatchesTheDefault",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{optimisticGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "active",
+          "formationEpoch": 0,
+          "formationAttemptCount": 0,
+          "lastFormationOutcome": null,
+          "establishmentStartedAtEpochMs": null,
+          "readiness": {
+            "plannedEdgeCount": 0,
+            "observedEdgeCount": 0,
+            "observedRate": 1
+          },
+          "managerPrincipalIds": []
+        }
+      }
+    },
+    {
+      "name": "absentPolicyFormationViewMatchesOptimistic",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{plainGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "active",
+          "formationEpoch": 0,
+          "formationAttemptCount": 0,
+          "lastFormationOutcome": null,
+          "establishmentStartedAtEpochMs": null,
+          "readiness": {
+            "plannedEdgeCount": 0,
+            "observedEdgeCount": 0,
+            "observedRate": 1
+          },
+          "managerPrincipalIds": []
+        }
+      }
+    },
+    {
+      "name": "optimisticJoinAdmitsInstantly",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{optimisticGroupId}/join",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "join-bob-optimistic-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "absentPolicyJoinAdmitsInstantly",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{plainGroupId}/join",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "join-bob-plain-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "strictConfirmationIsRejected",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "group-create-strict-{runId}",
+          "groupId": "{strictGroupId}",
+          "displayName": "Strict confirmation group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "activation": {
+              "strictConfirmation": true
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "app-inbox-malformed-command"
+        }
+      }
+    },
+    {
+      "name": "strictConfirmationGroupWasNotCreated",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{strictGroupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 404
+      }
+    },
+    {
+      "name": "managerInitiatorWithoutManagerIsRejected",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "group-create-none-manager-{runId}",
+          "groupId": "{noneManagerGroupId}",
+          "displayName": "None manager group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "manager": {
+              "selection": "none",
+              "assignedPrincipalIds": [],
+              "count": 1,
+              "succession": "none"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "app-inbox-malformed-command"
+        }
+      }
+    },
+    {
+      "name": "noneManagerGroupWasNotCreated",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{noneManagerGroupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 404
       }
     }
   ]
