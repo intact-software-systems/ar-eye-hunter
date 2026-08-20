@@ -9,10 +9,6 @@ import type {
 import type {
   AuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-import type {
-  GroupStateWritten,
-} from '@shared-server/rallar-system/services/group-state-service.ts';
-
 import { type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import {
   type GroupStateRouteDependencies,
@@ -49,10 +45,7 @@ function registerStartGroupEstablishmentRoute(
         const authSession = await dependencies.requireApiAuthSession(context.req);
         const written = toGroupStateResponse({
           kind: 'mutation',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupStateWritten
-          >(
+          written: await dependencies.processGroupAppInbox(
             authSession,
             toGroupStateCommand({
               operation: 'start-group-establishment',
@@ -83,10 +76,7 @@ function registerActivateGroupRoute(
         const authSession = await dependencies.requireApiAuthSession(context.req);
         const written = toGroupStateResponse({
           kind: 'mutation',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupStateWritten
-          >(
+          written: await dependencies.processGroupAppInbox(
             authSession,
             toGroupStateCommand({
               operation: 'activate-group',
@@ -117,10 +107,7 @@ function registerReopenGroupEstablishmentRoute(
         const authSession = await dependencies.requireApiAuthSession(context.req);
         const written = toGroupStateResponse({
           kind: 'mutation',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupStateWritten
-          >(
+          written: await dependencies.processGroupAppInbox(
             authSession,
             toGroupStateCommand({
               operation: 'reopen-group-establishment',
@@ -152,10 +139,7 @@ function registerCreateGroupRoute(
         const scope = toGroupStateRouteScope(context);
         const written = toGroupStateResponse({
           kind: 'mutation',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupStateWritten
-          >(
+          written: await dependencies.processGroupAppInbox(
             authSession,
             toGroupStateCommand({
               operation: 'create-group',
@@ -189,10 +173,7 @@ function registerUpdateGroupRoute(
         await authorization.assertCanUpdateGroup(authSession.clientId, { ...scope, groupId });
         const written = toGroupStateResponse({
           kind: 'mutation',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupStateWritten
-          >(
+          written: await dependencies.processGroupAppInbox(
             authSession,
             toGroupStateCommand({
               operation: 'update-group',
@@ -224,10 +205,7 @@ function registerAppointGroupDirectorRoute(
         const groupId = context.req.param('groupId');
         const written = toGroupStateResponse({
           kind: 'mutation',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupStateWritten
-          >(
+          written: await dependencies.processGroupAppInbox(
             authSession,
             toGroupStateCommand({
               operation: 'appoint-group-director',

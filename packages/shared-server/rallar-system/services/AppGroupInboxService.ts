@@ -10,10 +10,23 @@ import type { GroupStateService } from '../group-state/group-state-service-contr
 import type { GroupFormationGroupMutationSink } from '../formation-metrics.ts';
 import { GroupStateInboxHandler } from '../group-state/inbox/group-state-inbox-handler.ts';
 // prettier-ignore
+import type {
+  GroupStateInboxDurableResult,
+} from '../group-state/inbox/group-state-inbox-result.ts';
+// prettier-ignore
+import {
+  decodeGroupStateInboxDurableResult,
+} from '../group-state/inbox/group-state-inbox-result-codec.ts';
+// prettier-ignore
 import { toGroupMutationDescriptor } from '../group-state/inbox/to-group-mutation-descriptor.ts';
 import {
   GROUP_MUTATION_INBOX_TYPES,
   isAuthenticatedGroupMutationEnqueue,
+} from '../group-state/inbox/group-state-inbox-contracts.ts';
+import type {
+  AuthenticatedGroupMutationEnqueue,
+  AuthenticatedGroupMutationInboxType,
+  AuthenticatedGroupMutationPayloadByType,
 } from '../group-state/inbox/group-state-inbox-contracts.ts';
 // prettier-ignore
 import type {
@@ -46,7 +59,6 @@ import {
   type AppInboxEnqueueInput,
   type AppInboxFailure,
   type AppInboxMessageContext,
-  type AppInboxResultDecoder,
   AppInboxService,
   type AppInboxServiceOptions,
   AppInboxType,
@@ -230,14 +242,14 @@ class AppGroupInboxService extends AppInboxService {
     return 1;
   }
 
-  public override processEntryNoWaiting<V, R = V>(enqueue: AppInboxEnqueueInput<V>): void {
+  public override processEntryNoWaiting<V>(enqueue: AppInboxEnqueueInput<V>): void {
     void enqueue;
     throw new GroupMutationAuthorizationError(
       'Authenticated group mutation authority is required.',
     );
   }
 
-  public override processEntryNoWaitingIf<V, R = V>(
+  public override processEntryNoWaitingIf<V>(
     enqueue: AppInboxEnqueueInput<V>,
     enqueueIf: (entry: ResourceEntry) => boolean,
   ): void {
@@ -248,19 +260,19 @@ class AppGroupInboxService extends AppInboxService {
     );
   }
 
-  public override processEntryUntilCompletion<V, R = V>(
+  public override processEntryUntilCompletion<V>(
     enqueue: AppInboxEnqueueInput<V>,
-  ): Promise<Either<string, R>> {
+  ): Promise<Either<string, JsonWireValue>> {
     void enqueue;
     return Promise.reject(
       new GroupMutationAuthorizationError('Authenticated group mutation authority is required.'),
     );
   }
 
-  public override processEntryUntilCompletionIf<V, R = V>(
+  public override processEntryUntilCompletionIf<V>(
     enqueue: AppInboxEnqueueInput<V>,
     enqueueIf: (entry: ResourceEntry) => boolean,
-  ): Promise<Either<string, R>> {
+  ): Promise<Either<string, JsonWireValue>> {
     void enqueue;
     void enqueueIf;
     return Promise.reject(
@@ -268,39 +280,43 @@ class AppGroupInboxService extends AppInboxService {
     );
   }
 
-  public async processAuthenticatedEntryUntilCompletion<V, R = V>(
-    enqueue: AppInboxEnqueueInput<V>,
+  public async processAuthenticatedGroupEntryUntilCompletion(
+    enqueue: AuthenticatedGroupMutationEnqueue,
     authority: IssuedAuthSession,
-  ): Promise<Either<string, R>>;
-
-  public async processAuthenticatedEntryUntilCompletion<V, R = V>(
-    enqueue: AppInboxEnqueueInput<V>,
-    authority: IssuedAuthSession,
-  ): Promise<Either<string, R | TopologyAppInboxResult>> {
+  ): Promise<Either<string, GroupStateInboxDurableResult>> {
     if (isTopologyConfigInboxType(enqueue.type)) {
-      const result = await super.processEntryUntilCompletionResult(
-        await this.topologyAppInboxHandler.createAuthenticatedEnqueue(enqueue, authority),
-        decodeTopologyAppInboxResult,
-      );
-      return result.mapLeft(toLegacyAppInboxFailure);
+      throw new TypeError('Authenticated group mutation type is required');
     }
     const prepared = await this.prepareAuthenticatedGroupMutation(enqueue, authority);
-    return await super.processEntryUntilCompletion<V, R>(prepared);
+    const result = await super.processEntryUntilCompletionResult<
+      AuthenticatedGroupMutationPayloadByType[AuthenticatedGroupMutationInboxType],
+      GroupStateInboxDurableResult
+    >(prepared, (value) => decodeGroupStateInboxDurableResult(value, enqueue.type));
+    return result.mapLeft(toLegacyAppInboxFailure);
   }
 
-  public async processAuthenticatedEntryUntilCompletionResult<V, R = V>(
+  public async processAuthenticatedTopologyEntryUntilCompletion<V>(
     enqueue: AppInboxEnqueueInput<V>,
     authority: IssuedAuthSession,
-    decodeResult: AppInboxResultDecoder<R>,
-  ): Promise<Either<AppInboxFailure, R>> {
-    if (isTopologyConfigInboxType(enqueue.type)) {
-      return await super.processEntryUntilCompletionResult<V, R>(
-        await this.topologyAppInboxHandler.createAuthenticatedEnqueue(enqueue, authority),
-        decodeResult,
-      );
+  ): Promise<Either<string, TopologyAppInboxResult>> {
+    const result = await this.processAuthenticatedTopologyEntryUntilCompletionResult(
+      enqueue,
+      authority,
+    );
+    return result.mapLeft(toLegacyAppInboxFailure);
+  }
+
+  public async processAuthenticatedTopologyEntryUntilCompletionResult<V>(
+    enqueue: AppInboxEnqueueInput<V>,
+    authority: IssuedAuthSession,
+  ): Promise<Either<AppInboxFailure, TopologyAppInboxResult>> {
+    if (!isTopologyConfigInboxType(enqueue.type)) {
+      throw new TypeError('Topology AppInbox type is required');
     }
-    const prepared = await this.prepareAuthenticatedGroupMutation(enqueue, authority);
-    return await super.processEntryUntilCompletionResult<V, R>(prepared, decodeResult);
+    return await super.processEntryUntilCompletionResult(
+      await this.topologyAppInboxHandler.createAuthenticatedEnqueue(enqueue, authority),
+      decodeTopologyAppInboxResult,
+    );
   }
 
   setTopologyManagementService(service: GroupTopologyManagementService): void {
@@ -336,10 +352,10 @@ class AppGroupInboxService extends AppInboxService {
     return await super.enqueue(await this.rtcRttAppInboxHandler.createEnqueue(input));
   }
 
-  private async prepareAuthenticatedGroupMutation<V>(
-    enqueue: AppInboxEnqueueInput<V>,
+  private async prepareAuthenticatedGroupMutation(
+    enqueue: AuthenticatedGroupMutationEnqueue,
     authority: IssuedAuthSession,
-  ): Promise<AppInboxEnqueueInput<V>> {
+  ): Promise<AuthenticatedGroupMutationEnqueue> {
     if (!isAuthenticatedGroupMutationEnqueue(enqueue)) {
       throw new GroupMutationAuthorizationError(
         'App inbox type is not an authenticated group mutation.',

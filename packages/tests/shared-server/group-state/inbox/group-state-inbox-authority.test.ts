@@ -7,8 +7,18 @@ import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+// prettier-ignore
+import {
+  AuthSessionRepository,
+} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+// prettier-ignore
+import {
+  GroupStateRepository,
+} from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+// prettier-ignore
+import type {
+  AuthenticatedGroupMutationEnqueue,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import {
   AppGroupInboxService,
   AppInboxService,
@@ -24,7 +34,10 @@ import {
   createGroupStateService,
   type GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
-import type { GroupMutationReceipt } from '@shared-server/rallar-system/services/group-state-mutations.ts';
+// prettier-ignore
+import type {
+  GroupMutationReceipt,
+} from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 import {
@@ -35,6 +48,7 @@ import {
   createResilience,
   createRoom,
   processAuthenticated,
+  requireGroupStateResult,
   waitForQueueEntry,
 } from './group-state-inbox-test-runtime.ts';
 
@@ -200,11 +214,11 @@ describe('AppGroupInboxService authenticated authority', () => {
       },
     );
 
-    const created = await processAuthenticated<GroupCreateAppInboxPayload, GroupStateWritten>(
+    const created = await processAuthenticated({
       service,
       reader,
-      owner,
-      {
+      authority: owner,
+      input: {
         type: AppInboxType.GROUP_CREATE,
         resourceId: 'create-authority-room',
         contextId: 'ar-eye-hunter:default:authority-room',
@@ -223,15 +237,15 @@ describe('AppGroupInboxService authenticated authority', () => {
           },
         },
       },
-    );
-    expect(created.right?.status).toBe('created');
+    });
+    expect(requireGroupStateResult(created).status).toBe('created');
 
     await expect(
-      processAuthenticated<GroupUpdateAppInboxPayload, GroupStateWritten>(
+      processAuthenticated({
         service,
         reader,
-        attacker,
-        {
+        authority: attacker,
+        input: {
           type: AppInboxType.GROUP_UPDATE,
           resourceId: 'forged-owner-update',
           contextId: 'ar-eye-hunter:default:authority-room',
@@ -247,7 +261,7 @@ describe('AppGroupInboxService authenticated authority', () => {
             },
           },
         },
-      ),
+      }),
     ).rejects.toMatchObject({ status: 403 });
     const repository = new GroupStateRepository(runtimeRepository);
     const snapshot = await repository.readSnapshot({
@@ -278,11 +292,11 @@ describe('AppGroupInboxService authenticated authority', () => {
   it('rejects an attacker bearer mutating another principal presence session', async () => {
     const harness = await createAuthorityHarness(['owner', 'victim', 'attacker']);
     await createRoom(harness, 'presence-authority-room', 'Presence Authority Room');
-    await processAuthenticated<GroupMemberUpsertAppInboxPayload, GroupStateWritten>(
-      harness.service,
-      harness.reader,
-      harness.sessions.owner,
-      {
+    await processAuthenticated({
+      service: harness.service,
+      reader: harness.reader,
+      authority: harness.sessions.owner,
+      input: {
         type: AppInboxType.GROUP_MEMBER_UPSERT,
         resourceId: 'activate-victim',
         contextId: 'ar-eye-hunter:default:presence-authority-room',
@@ -299,12 +313,12 @@ describe('AppGroupInboxService authenticated authority', () => {
           },
         },
       },
-    );
-    await processAuthenticated<GroupPresenceConnectAppInboxPayload, GroupMutationReceipt>(
-      harness.service,
-      harness.reader,
-      harness.sessions.victim,
-      {
+    });
+    await processAuthenticated({
+      service: harness.service,
+      reader: harness.reader,
+      authority: harness.sessions.victim,
+      input: {
         type: AppInboxType.GROUP_PRESENCE_CONNECT,
         resourceId: 'connect-victim',
         contextId: 'ar-eye-hunter:default:presence-authority-room',
@@ -325,14 +339,14 @@ describe('AppGroupInboxService authenticated authority', () => {
           },
         },
       },
-    );
+    });
 
     await expect(
-      processAuthenticated<GroupPresenceHeartbeatAppInboxPayload, GroupMutationReceipt>(
-        harness.service,
-        harness.reader,
-        harness.sessions.attacker,
-        {
+      processAuthenticated({
+        service: harness.service,
+        reader: harness.reader,
+        authority: harness.sessions.attacker,
+        input: {
           type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
           resourceId: 'forged-victim-heartbeat',
           contextId: 'ar-eye-hunter:default:presence-authority-room',
@@ -352,7 +366,7 @@ describe('AppGroupInboxService authenticated authority', () => {
             },
           },
         },
-      ),
+      }),
     ).rejects.toMatchObject({ status: 403 });
     expect(
       await harness.repository.findPresenceSession({
@@ -369,7 +383,7 @@ describe('AppGroupInboxService authenticated authority', () => {
   it('queues a verifiable authority proof without serializing the bearer token', async () => {
     const harness = await createAuthorityHarness(['owner']);
     await createRoom(harness, 'proof-wire-room', 'Before Wire Proof');
-    const input: AppInboxEnqueueInput<GroupUpdateAppInboxPayload> = {
+    const input: AuthenticatedGroupMutationEnqueue = {
       type: AppInboxType.GROUP_UPDATE,
       resourceId: 'proof-wire-update',
       contextId: 'ar-eye-hunter:default:proof-wire-room',
@@ -385,10 +399,10 @@ describe('AppGroupInboxService authenticated authority', () => {
         },
       },
     };
-    const pending = harness.service.processAuthenticatedEntryUntilCompletion<
-      GroupUpdateAppInboxPayload,
-      GroupStateWritten
-    >(input, harness.sessions.owner);
+    const pending = harness.service.processAuthenticatedGroupEntryUntilCompletion(
+      input,
+      harness.sessions.owner,
+    );
     await waitForQueueEntry(harness.queue);
     const queuedWire = JSON.stringify(await harness.queueEntries());
     expect(queuedWire).not.toContain(harness.sessions.owner.accessToken);
@@ -396,6 +410,6 @@ describe('AppGroupInboxService authenticated authority', () => {
     expect(queuedWire).toContain('commandMac');
 
     await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-    expect((await pending).right?.status).toBe('ok');
+    expect(requireGroupStateResult(await pending).status).toBe('ok');
   });
 });

@@ -14,7 +14,6 @@ import type {
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 import {
   type AppGroupInboxService,
-  decodeTopologyReconfigureInboxResult,
   type TopologyReconfigureInboxResult,
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
@@ -29,8 +28,8 @@ export interface ApiAdminPruneMutationPort {
 }
 
 export interface ApiTopologyRecomputeMutationPort {
-  readonly processAuthenticatedEntryUntilCompletionResult:
-    AppGroupInboxService['processAuthenticatedEntryUntilCompletionResult'];
+  readonly processAuthenticatedTopologyEntryUntilCompletionResult:
+    AppGroupInboxService['processAuthenticatedTopologyEntryUntilCompletionResult'];
 }
 
 export interface CreateApiAdminMutationGatewayInput {
@@ -59,10 +58,7 @@ export function createApiAdminMutationGateway(
           publish: request.publish ?? true,
         },
       });
-      const result = await input.appGroup.processAuthenticatedEntryUntilCompletionResult<
-        typeof command,
-        TopologyReconfigureInboxResult
-      >(
+      const result = await input.appGroup.processAuthenticatedTopologyEntryUntilCompletionResult(
         {
           type: AppInboxType.TOPOLOGY_RECONFIGURE,
           resourceId: command.requestId,
@@ -76,10 +72,9 @@ export function createApiAdminMutationGateway(
           data: command,
         },
         toIssuedAuthSession(adminSession, input.now()),
-        decodeTopologyReconfigureInboxResult,
       );
       if (result.right !== undefined) {
-        return result.right;
+        return requireTopologyReconfigureResult(result.right);
       }
       throw new Error(result.left?.message ?? 'Admin topology AppInbox processing failed');
     },
@@ -122,6 +117,21 @@ export function createApiAdminMutationGateway(
         }),
       ),
   };
+}
+
+function requireTopologyReconfigureResult(
+  result: Awaited<
+    ReturnType<
+      ApiTopologyRecomputeMutationPort[
+        'processAuthenticatedTopologyEntryUntilCompletionResult'
+      ]
+    >
+  >['right'],
+): TopologyReconfigureInboxResult {
+  if (result === undefined || !('status' in result) || result.status !== 'queued') {
+    throw new TypeError('Admin topology reconfigure result is invalid');
+  }
+  return result;
 }
 
 function toIssuedAuthSession(session: AuthSession, issuedAtEpochMs: number): IssuedAuthSession {

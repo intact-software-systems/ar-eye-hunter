@@ -18,17 +18,18 @@ import {
   type GroupPresenceHeartbeatAppInboxPayload,
   type GroupUpdateAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import * as AppGroupInboxModule from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+// prettier-ignore
+import * as AppGroupInboxModule
+  from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import {
-  SCOPE,
-  createAuthorityHarness,
   createGovernedOperationCase,
   createInviteOperationCase,
   readMatrixMember,
   readMatrixPresenceSession,
   runOperationMatrix,
   type OperationMatrixCase,
-} from './group-state-inbox-test-runtime.ts';
+} from './group-state-inbox-operation-matrix-runtime.ts';
+import { SCOPE, createAuthorityHarness } from './group-state-inbox-test-runtime.ts';
 
 describe('AppGroupInboxService authenticated authority', () => {
   it('exposes transaction-injected mutation phases without direct mutation bypasses', async () => {

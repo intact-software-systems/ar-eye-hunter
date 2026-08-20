@@ -8,10 +8,6 @@ import type {
 import type {
   AuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-import type {
-  GroupMutationReceipt,
-} from '@shared-server/rallar-system/services/group-state-mutations.ts';
-
 import { requireGroupAdmissionQuota } from '../services/group-admission-rate-limit.ts';
 import { type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import {
@@ -87,10 +83,7 @@ async function handleConnectGroupPresenceRoute(
       authSession.clientId,
     );
     authorization.assertSelfSession(authSession, sessionId);
-    const receipt = await dependencies.processGroupAppInbox<
-      GroupStateRouteCommandPayload,
-      GroupMutationReceipt
-    >(
+    const receipt = await dependencies.processGroupAppInbox(
       authSession,
       toGroupStateCommand({
         operation: 'connect-group-presence',
@@ -125,10 +118,7 @@ async function handleHeartbeatGroupPresenceRoute(
     const groupId = context.req.param('groupId');
     const sessionId = context.req.param('sessionId');
     authorization.assertSelfSession(authSession, sessionId);
-    const receipt = await dependencies.processGroupAppInbox<
-      GroupStateRouteCommandPayload,
-      GroupMutationReceipt
-    >(
+    const receipt = await dependencies.processGroupAppInbox(
       authSession,
       toGroupStateCommand({
         operation: 'heartbeat-group-presence',
@@ -163,10 +153,7 @@ async function handleDisconnectGroupPresenceRoute(
     const groupId = context.req.param('groupId');
     const sessionId = context.req.param('sessionId');
     authorization.assertSelfSession(authSession, sessionId);
-    const receipt = await dependencies.processGroupAppInbox<
-      GroupStateRouteCommandPayload,
-      GroupMutationReceipt
-    >(
+    const receipt = await dependencies.processGroupAppInbox(
       authSession,
       toGroupStateCommand({
         operation: 'disconnect-group-presence',

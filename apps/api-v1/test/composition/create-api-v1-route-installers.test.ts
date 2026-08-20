@@ -86,8 +86,8 @@ function createInput(): CreateApiV1RouteInstallersInput<
         processAuthenticatedEntryUntilCompletion: rejectUnusedOperation,
       },
       appGroupInboxService: {
-        processAuthenticatedEntryUntilCompletion: rejectUnusedOperation,
-        processAuthenticatedEntryUntilCompletionResult: rejectUnusedOperation,
+        processAuthenticatedGroupEntryUntilCompletion: rejectUnusedOperation,
+        processAuthenticatedTopologyEntryUntilCompletionResult: rejectUnusedOperation,
       },
       clientStateService: {
         listEventPage: rejectUnusedOperation,

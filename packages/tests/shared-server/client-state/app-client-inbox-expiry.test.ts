@@ -301,10 +301,7 @@ async function seedClientExpirySession(
     'alice',
     'alice-session',
   );
-  const seeded = service.processAuthenticatedEntryUntilCompletion<
-    ClientSessionConnectAppInboxPayload,
-    ClientStateWritten
-  >(
+  const seeded = service.processAuthenticatedEntryUntilCompletion(
     {
       type: AppInboxType.CLIENT_SESSION_CONNECT,
       resourceId: 'seed-client-expiry-session',

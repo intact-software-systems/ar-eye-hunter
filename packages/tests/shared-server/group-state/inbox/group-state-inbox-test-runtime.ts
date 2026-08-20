@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { expect, vi } from 'vitest';
+import { expect } from 'vitest';
 import {
   type AppInboxTestDatabase,
   createAppInboxTestDatabase,
@@ -11,9 +11,30 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+// prettier-ignore
+import type {
+  IssuedAuthSession,
+} from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+// prettier-ignore
+import type {
+  AuthenticatedGroupMutationEnqueue,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+// prettier-ignore
+import {
+  requireGroupStateWritten,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
+// prettier-ignore
+import type {
+  GroupStateInboxDurableResult,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
+// prettier-ignore
+import {
+  AuthSessionRepository,
+} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+// prettier-ignore
+import {
+  GroupStateRepository,
+} from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import {
   AppGroupInboxService,
   AppInboxService,
@@ -21,9 +42,6 @@ import {
   type AppInboxServiceOptions,
   AppInboxType,
   type GroupCreateAppInboxPayload,
-  type GroupInviteCreateAppInboxPayload,
-  type GroupMemberBanAppInboxPayload,
-  type GroupMemberUnbanAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import {
   createGroupStateService,
@@ -44,180 +62,27 @@ export const SCOPE: StateScope = {
   workspaceId: 'default',
 };
 
-export type AuthorityHarness = Readonly<{
-  nowEpochMs: number;
-  runtimeRepository: FakeRuntimeStateRepository;
-  repository: GroupStateRepository;
-  authSessions: AuthSessionRepository;
-  groupStateService: GroupStateService;
-  service: AppGroupInboxService;
-  database: AppInboxTestDatabase;
-  reader: InboxQueueReader;
-  queue: TestResourceInbox;
-  results: TestResourceInboxResults;
-  sessions: Readonly<Record<string, IssuedAuthSession>>;
+export interface AuthorityHarness {
+  readonly nowEpochMs: number;
+  readonly runtimeRepository: FakeRuntimeStateRepository;
+  readonly repository: GroupStateRepository;
+  readonly authSessions: AuthSessionRepository;
+  readonly groupStateService: GroupStateService;
+  readonly service: AppGroupInboxService;
+  readonly database: AppInboxTestDatabase;
+  readonly reader: InboxQueueReader;
+  readonly queue: TestResourceInbox;
+  readonly results: TestResourceInboxResults;
+  readonly sessions: Readonly<Record<string, IssuedAuthSession>>;
   queueEntries(): Promise<readonly ResourceEntry[]>;
-}>;
-type HarnessOptions = Readonly<{ wakeQueue?: () => void; serviceOptions?: AppInboxServiceOptions }>;
-
-export type OperationMatrixCase = Readonly<{
-  type: AppInboxType;
-  operation: string;
-  authority: IssuedAuthSession;
-  data: unknown;
-  assertDomain(): Promise<void>;
-}>;
-
-export function createInviteOperationCase(
-  input: Readonly<{
-    harness: AuthorityHarness;
-    groupId: string;
-    ownerActor: Readonly<{
-      actorPrincipalId: string;
-      actorSessionId: string;
-    }>;
-    requestId: string;
-    assertDomain: () => Promise<void>;
-  }>,
-): OperationMatrixCase {
-  return {
-    type: AppInboxType.GROUP_INVITE_CREATE,
-    operation: 'createGroupInvite',
-    authority: input.harness.sessions.owner,
-    data: {
-      scope: SCOPE,
-      groupId: input.groupId,
-      principalId: 'charlie',
-      request: {
-        invitationExpiresAtEpochMs: input.harness.nowEpochMs + 60_000,
-        ...input.ownerActor,
-        requestId: input.requestId,
-      },
-    } satisfies GroupInviteCreateAppInboxPayload,
-    assertDomain: input.assertDomain,
-  };
 }
-
-export function createGovernedOperationCase(
-  input: Readonly<{
-    harness: AuthorityHarness;
-    groupId: string;
-    ownerActor: Readonly<{
-      actorPrincipalId: string;
-      actorSessionId: string;
-    }>;
-    type: typeof AppInboxType.GROUP_MEMBER_BAN | typeof AppInboxType.GROUP_MEMBER_UNBAN;
-    operation: 'banGroupMember' | 'unbanGroupMember';
-    requestId: string;
-    status: 'banned' | 'left';
-  }>,
-): OperationMatrixCase {
-  return {
-    type: input.type,
-    operation: input.operation,
-    authority: input.harness.sessions.owner,
-    data: {
-      scope: SCOPE,
-      groupId: input.groupId,
-      principalId: 'charlie',
-      request: { ...input.ownerActor, requestId: input.requestId },
-    } satisfies GroupMemberBanAppInboxPayload | GroupMemberUnbanAppInboxPayload,
-    assertDomain: async () => {
-      expect(
-        (
-          await input.harness.repository.readSnapshot({
-            ...SCOPE,
-            groupId: input.groupId,
-          })
-        )?.members.find((member) => member.principalId === 'charlie'),
-      ).toMatchObject({ status: input.status });
-    },
-  };
-}
-
-export async function readMatrixMember(
-  harness: AuthorityHarness,
-  groupId: string,
-  principalId: string,
-) {
-  const snapshot = await harness.repository.readSnapshot({ ...SCOPE, groupId });
-  return snapshot?.members.find((member) => member.principalId === principalId);
-}
-
-export async function readMatrixPresenceSession(
-  harness: AuthorityHarness,
-  groupId: string,
-  sessionId: string,
-) {
-  return await harness.repository.findPresenceSession({ ...SCOPE, groupId, sessionId });
+interface HarnessOptions {
+  readonly wakeQueue?: () => void;
+  readonly serviceOptions?: AppInboxServiceOptions;
 }
 
 export function listRoomEvents(harness: AuthorityHarness, groupId: string) {
   return harness.repository.listEvents({ ...SCOPE, groupId });
-}
-
-export async function runOperationMatrix(
-  harness: AuthorityHarness,
-  groupId: string,
-  cases: readonly OperationMatrixCase[],
-): Promise<void> {
-  const read = vi.spyOn(harness.groupStateService, 'read');
-  const compute = vi.spyOn(harness.groupStateService, 'compute');
-  const validate = vi.spyOn(harness.groupStateService, 'validate');
-  const write = vi.spyOn(harness.groupStateService, 'write');
-  const observeSnapshot = vi.spyOn(harness.groupStateService, 'observeSnapshot');
-  const authorityRead = vi.spyOn(harness.authSessions, 'findBySessionId');
-  for (const testCase of cases) {
-    read.mockClear();
-    compute.mockClear();
-    validate.mockClear();
-    write.mockClear();
-    authorityRead.mockClear();
-    const previousOutboxCount = harness.database.outboxEntries.size;
-    const requestId = (testCase.data as { request: { requestId: string } }).request.requestId;
-    const caseGroupId =
-      (testCase.data as { groupId?: string; request?: { groupId?: string } }).groupId ??
-      (testCase.data as { request?: { groupId?: string } }).request?.groupId ??
-      groupId;
-    const result = await processAuthenticated(harness.service, harness.reader, testCase.authority, {
-      type: testCase.type,
-      resourceId: requestId,
-      contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${caseGroupId}`,
-      senderId: testCase.authority.clientId,
-      data: testCase.data,
-    });
-
-    expect(
-      result.right,
-      `${testCase.operation} result: ${result.left ? JSON.stringify(result.left) : ''}`,
-    ).toBeDefined();
-    expect(read).toHaveBeenCalledOnce();
-    expect(compute).toHaveBeenCalledOnce();
-    expect(validate).toHaveBeenCalledOnce();
-    expect(write).toHaveBeenCalledOnce();
-    expect(authorityRead).toHaveBeenCalled();
-    const command = read.mock.calls[0]?.[0];
-    expect(command?.command.operation).toBe(testCase.operation);
-    expect(command?.facts).toMatchObject({
-      attemptCount: 1,
-      serviceId: 'server-12345678',
-      internalAuthority: 'none',
-      authenticatedAuthority: {
-        principalId: testCase.authority.clientId,
-        sessionId: testCase.authority.sessionId,
-      },
-    });
-    expect(command?.facts.eventId).toMatch(/^group-event:/u);
-    expect(command?.facts.commandHash).toMatch(/^sha256:/u);
-    expect(harness.database.outboxEntries.size).toBe(previousOutboxCount + 1);
-    expect(
-      (await harness.queueEntries()).some(
-        (entry) => entry.status === EntityStatus.COMPLETED && entry.dequeueAudit.attempts === 1,
-      ),
-    ).toBe(true);
-    await testCase.assertDomain();
-  }
-  await vi.waitFor(() => expect(observeSnapshot).toHaveBeenCalledTimes(cases.length));
 }
 
 export async function createAuthorityHarness(
@@ -318,11 +183,11 @@ export async function createRoom(
   displayName: string,
 ): Promise<GroupStateWritten> {
   const owner = harness.sessions.owner;
-  const created = await processAuthenticated<GroupCreateAppInboxPayload, GroupStateWritten>(
-    harness.service,
-    harness.reader,
-    owner,
-    {
+  const created = await processAuthenticated({
+    service: harness.service,
+    reader: harness.reader,
+    authority: owner,
+    input: {
       type: AppInboxType.GROUP_CREATE,
       resourceId: `create-${groupId}`,
       contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
@@ -341,30 +206,46 @@ export async function createRoom(
         },
       },
     },
-  );
-  expect(created.right?.status).toBe('created');
+  });
   if (!created.right) throw new Error('Expected authenticated group creation result');
-  return created.right;
+  const written = requireGroupStateWritten(created.right);
+  expect(written.status).toBe('created');
+  return written;
 }
 
-export async function processAuthenticated<V, R>(
-  service: AppGroupInboxService,
-  reader: InboxQueueReader,
-  authority: IssuedAuthSession,
-  input: AppInboxEnqueueInput<V>,
-): Promise<Either<string, R>> {
-  const pending = service.processAuthenticatedEntryUntilCompletion<V, R>(input, authority);
+interface ProcessAuthenticatedInput {
+  readonly service: AppGroupInboxService;
+  readonly reader: InboxQueueReader;
+  readonly authority: IssuedAuthSession;
+  readonly input: AuthenticatedGroupMutationEnqueue;
+}
+
+export async function processAuthenticated(
+  request: ProcessAuthenticatedInput,
+): ReturnType<AppGroupInboxService['processAuthenticatedGroupEntryUntilCompletion']> {
+  const pending = request.service.processAuthenticatedGroupEntryUntilCompletion(
+    request.input,
+    request.authority,
+  );
   const outcome = await Promise.race([
     pending.then(
       () => 'settled' as const,
       () => 'settled' as const,
     ),
-    waitForQueueEntry(reader.inbox).then(() => 'queued' as const),
+    waitForQueueEntry(request.reader.inbox).then(() => 'queued' as const),
   ]);
   if (outcome === 'queued') {
-    await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+    await request.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
   }
   return await pending;
+}
+
+export function requireGroupStateResult(
+  result: Either<string, GroupStateInboxDurableResult>,
+): GroupStateWritten {
+  return result.fold((error) => {
+    throw new Error(error);
+  }, requireGroupStateWritten);
 }
 
 export async function waitForQueueEntry(

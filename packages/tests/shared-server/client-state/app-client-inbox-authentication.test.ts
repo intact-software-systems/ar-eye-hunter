@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 // prettier-ignore
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/\
@@ -25,15 +26,81 @@ import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {
   CLIENT_STATE_TEST_SCOPE as SCOPE,
-  TestResourceInbox,
-  TestResourceInboxResults,
+  createClientStateServiceStub,
   createResilience,
   issuedSession,
   processAuthenticatedClientMutation,
   readEntries,
 } from './app-client-inbox-mutation-test-harness.ts';
+import {
+  TestResourceInbox,
+  TestResourceInboxResults,
+} from './app-client-inbox-resource-fixtures.ts';
 
 describe('AppClientInbox authentication', () => {
+  it('returns the exact terminal left for a malformed completed client result', async () => {
+    const queue = new TestResourceInbox();
+    const reader = new InboxQueueReader(queue);
+    const results = new TestResourceInboxResults();
+    const database = createAppInboxTestDatabase(queue, results);
+    const service = new AppClientInboxService(
+      {
+        inboxQueueReader: reader,
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: results,
+        database,
+        clientStateService: createClientStateServiceStub(),
+      },
+      { serviceId: 'server-12345678' },
+    );
+    const authority = issuedSession('alice', 'alice-session');
+    const pending = service.processAuthenticatedEntryUntilCompletion(
+      {
+        type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+        resourceId: 'malformed-client-result',
+        contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
+        senderId: authority.clientId,
+        data: {
+          scope: SCOPE,
+          principalId: 'alice',
+          request: {
+            username: 'alice',
+            actorPrincipalId: authority.clientId,
+            actorSessionId: authority.sessionId,
+            requestId: 'malformed-client-result',
+          },
+        },
+      },
+      authority,
+    );
+
+    await vi.waitFor(async () => expect(await readEntries(queue)).toHaveLength(1));
+    const [queued] = await readEntries(queue);
+    if (queued === undefined) {
+      throw new Error('Expected a durable client queue entry');
+    }
+    const completed = {
+      ...queued,
+      resource: JSON.stringify({ status: 'ok' }),
+      status: EntityStatus.COMPLETED,
+    };
+    await results.replace(completed);
+    await queue.enqueue(completed);
+
+    const result = await pending;
+    expect(result.right).toBeUndefined();
+    expect(JSON.parse(result.left ?? '{}')).toEqual({
+      type: 'app-inbox-failure',
+      version: 'canonical.v2',
+      code: 'TypeError',
+      status: 400,
+      message: 'Client state result fields are invalid',
+      issues: null,
+      denial: null,
+      retry: null,
+    });
+  });
+
   it('does not trust a persisted Mallory actor claim for Alice authority', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const authSessions = new AuthSessionRepository(runtimeRepository);

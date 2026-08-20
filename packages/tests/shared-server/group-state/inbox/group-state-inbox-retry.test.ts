@@ -2,19 +2,22 @@ import { describe, expect, it, vi } from 'vitest';
 import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+// prettier-ignore
+import type {
+  AuthenticatedGroupMutationEnqueue,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import {
   AppGroupInboxService,
-  type AppInboxEnqueueInput,
   AppInboxType,
-  type GroupMemberRoleSetAppInboxPayload,
-  type GroupMemberUpsertAppInboxPayload,
-  type GroupUpdateAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import {
   GroupMutationAuthorizationError,
   type GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+// prettier-ignore
+import {
+  RuntimeStateWriteConflictError,
+} from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 import {
   SCOPE,
@@ -26,6 +29,7 @@ import {
   createRoom,
   listRoomEvents,
   processAuthenticated,
+  requireGroupStateResult,
   waitForQueueEntry,
 } from './group-state-inbox-test-runtime.ts';
 
@@ -36,148 +40,150 @@ interface RetryAttempt {
 }
 
 describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, () => {
-  it('restarts the AppInbox group operation and denies a retry after authority changes', async () => {
-    const nowEpochMs = Date.now();
-    const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue);
-    const results = new TestResourceInboxResults();
-    const attempts: RetryAttempt[] = [];
-    let authorized = true;
-    const phaseService = {
-      prepareMutation: vi.fn(async () => ({
-        authorityProof: {
-          version: 1,
-          principalId: 'owner',
-          sessionId: 'owner-session',
-          sessionIssuedAtEpochMs: nowEpochMs - 1_000,
-          sessionExpiresAtEpochMs: nowEpochMs + 60_000,
-          commandMac: 'a'.repeat(64),
-        },
-        descriptor: {
-          operation: 'updateGroup',
-          scope: SCOPE,
-          groupId: 'outer-retry-room',
-          targetPrincipalId: null,
-          sessionId: null,
-          request: {
-            displayName: 'Must Not Apply',
-            actorPrincipalId: 'owner',
-            actorSessionId: 'owner-session',
-            requestId: 'outer-retry-authority-change',
-          },
-        },
-        command: {
-          operation: 'updateGroup',
-          aggregateRef: { ...SCOPE, groupId: 'outer-retry-room' },
-          commandId: 'outer-retry-authority-change',
-          requestId: 'outer-retry-authority-change',
-          input: {},
-        },
-        facts: {
-          nowEpochMs,
-          expireAtEpochMs: nowEpochMs + 60_000,
-          serviceId: 'server-12345678',
-          eventId: 'outer-retry-event',
-          commandHash: `sha256:${'a'.repeat(64)}`,
-          resolvedJoinCode: null,
-          joinCodeVerifier: null,
-          internalAuthority: 'none',
-          formationDamping: 'legacy',
-          authenticatedAuthority: {
+  it(
+    'restarts the AppInbox group operation ' + 'and denies a retry after authority changes',
+    async () => {
+      const nowEpochMs = Date.now();
+      const queue = new TestResourceInbox();
+      const reader = new InboxQueueReader(queue);
+      const results = new TestResourceInboxResults();
+      const attempts: RetryAttempt[] = [];
+      let authorized = true;
+      const phaseService = {
+        prepareMutation: vi.fn(async () => ({
+          authorityProof: {
+            version: 1,
             principalId: 'owner',
             sessionId: 'owner-session',
+            sessionIssuedAtEpochMs: nowEpochMs - 1_000,
+            sessionExpiresAtEpochMs: nowEpochMs + 60_000,
+            commandMac: 'a'.repeat(64),
           },
-        },
-        causalToken: 'causal-token',
-        queueResourceId: 'outer-retry-authority-change',
-      })),
-      read: vi.fn(async (command: Readonly<{ facts: { attemptCount: number } }>) => ({
-        authorized,
-        command,
-      })),
-      compute: vi.fn((_command, read) => ({
-        outcome: 'write',
-        receipt: { commandId: 'outer-retry-authority-change' },
-        read,
-      })),
-      validate: vi.fn((_command, _read, computed) => {
-        if (!computed.read.authorized) {
-          attempts.push({
-            attempt: computed.read.command.facts.attemptCount,
-            outcome: 'denied',
-            authorized: false,
-          });
-          throw new GroupMutationAuthorizationError('Authenticated session changed before retry.');
-        }
-      }),
-      write: vi.fn(async (_transaction, computed) => {
-        const attempt = computed.read.command.facts.attemptCount as number;
-        attempts.push({ attempt, outcome: 'conflict', authorized: true });
-        authorized = false;
-        throw new RuntimeStateWriteConflictError();
-      }),
-    };
-    const service = new AppGroupInboxService(
-      {
-        inboxQueueReader: reader,
-        resourceInboxRepository: queue,
-        resourceInboxResultsRepository: results,
-        database: createAppInboxTestDatabase(queue, results),
-        groupStateService: phaseService as never,
-      },
-      {
-        serviceId: 'server-12345678',
-      },
-    );
-    const authority = authSession({
-      clientId: 'owner',
-      sessionId: 'owner-session',
-      accessToken: 'owner-token',
-      nowEpochMs,
-    });
-    const pending = service.processAuthenticatedEntryUntilCompletion<
-      GroupUpdateAppInboxPayload,
-      GroupStateWritten
-    >(
-      {
-        type: AppInboxType.GROUP_UPDATE,
-        resourceId: 'outer-retry-authority-change',
-        contextId: 'ar-eye-hunter:default:outer-retry-room',
-        senderId: 'owner',
-        data: {
-          scope: SCOPE,
-          groupId: 'outer-retry-room',
-          request: {
-            displayName: 'Must Not Apply',
-            actorPrincipalId: 'owner',
-            actorSessionId: 'owner-session',
+          descriptor: {
+            operation: 'updateGroup',
+            scope: SCOPE,
+            groupId: 'outer-retry-room',
+            targetPrincipalId: null,
+            sessionId: null,
+            request: {
+              displayName: 'Must Not Apply',
+              actorPrincipalId: 'owner',
+              actorSessionId: 'owner-session',
+              requestId: 'outer-retry-authority-change',
+            },
+          },
+          command: {
+            operation: 'updateGroup',
+            aggregateRef: { ...SCOPE, groupId: 'outer-retry-room' },
+            commandId: 'outer-retry-authority-change',
             requestId: 'outer-retry-authority-change',
+            input: {},
+          },
+          facts: {
+            nowEpochMs,
+            expireAtEpochMs: nowEpochMs + 60_000,
+            serviceId: 'server-12345678',
+            eventId: 'outer-retry-event',
+            commandHash: `sha256:${'a'.repeat(64)}`,
+            resolvedJoinCode: null,
+            joinCodeVerifier: null,
+            internalAuthority: 'none',
+            formationDamping: 'legacy',
+            authenticatedAuthority: {
+              principalId: 'owner',
+              sessionId: 'owner-session',
+            },
+          },
+          causalToken: 'causal-token',
+          queueResourceId: 'outer-retry-authority-change',
+        })),
+        read: vi.fn(async (command: Readonly<{ facts: { attemptCount: number } }>) => ({
+          authorized,
+          command,
+        })),
+        compute: vi.fn((_command, read) => ({
+          outcome: 'write',
+          receipt: { commandId: 'outer-retry-authority-change' },
+          read,
+        })),
+        validate: vi.fn((_command, _read, computed) => {
+          if (!computed.read.authorized) {
+            attempts.push({
+              attempt: computed.read.command.facts.attemptCount,
+              outcome: 'denied',
+              authorized: false,
+            });
+            throw new GroupMutationAuthorizationError(
+              'Authenticated session changed before retry.',
+            );
+          }
+        }),
+        write: vi.fn(async (_transaction, computed) => {
+          const attempt = computed.read.command.facts.attemptCount as number;
+          attempts.push({ attempt, outcome: 'conflict', authorized: true });
+          authorized = false;
+          throw new RuntimeStateWriteConflictError();
+        }),
+      };
+      const service = new AppGroupInboxService(
+        {
+          inboxQueueReader: reader,
+          resourceInboxRepository: queue,
+          resourceInboxResultsRepository: results,
+          database: createAppInboxTestDatabase(queue, results),
+          groupStateService: phaseService as never,
+        },
+        {
+          serviceId: 'server-12345678',
+        },
+      );
+      const authority = authSession({
+        clientId: 'owner',
+        sessionId: 'owner-session',
+        accessToken: 'owner-token',
+        nowEpochMs,
+      });
+      const pending = service.processAuthenticatedGroupEntryUntilCompletion(
+        {
+          type: AppInboxType.GROUP_UPDATE,
+          resourceId: 'outer-retry-authority-change',
+          contextId: 'ar-eye-hunter:default:outer-retry-room',
+          senderId: 'owner',
+          data: {
+            scope: SCOPE,
+            groupId: 'outer-retry-room',
+            request: {
+              displayName: 'Must Not Apply',
+              actorPrincipalId: 'owner',
+              actorSessionId: 'owner-session',
+              requestId: 'outer-retry-authority-change',
+            },
           },
         },
-      },
-      authority,
-    );
+        authority,
+      );
 
-    await waitForQueueEntry(queue);
-    await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+      await waitForQueueEntry(queue);
+      await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
-    expect((await pending).left).toContain('Forbidden:');
-    expect(attempts).toEqual([
-      { attempt: 1, outcome: 'conflict', authorized: true },
-      { attempt: 2, outcome: 'denied', authorized: false },
-    ]);
-    expect(phaseService.read).toHaveBeenCalledTimes(2);
-    expect(phaseService.compute).toHaveBeenCalledTimes(2);
-    expect(phaseService.validate).toHaveBeenCalledTimes(2);
-    expect(phaseService.write).toHaveBeenCalledTimes(1);
-  });
+      expect((await pending).left).toContain('Forbidden:');
+      expect(attempts).toEqual([
+        { attempt: 1, outcome: 'conflict', authorized: true },
+        { attempt: 2, outcome: 'denied', authorized: false },
+      ]);
+      expect(phaseService.read).toHaveBeenCalledTimes(2);
+      expect(phaseService.compute).toHaveBeenCalledTimes(2);
+      expect(phaseService.validate).toHaveBeenCalledTimes(2);
+      expect(phaseService.write).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('re-evaluates the exact denied request after the actor is promoted', async () => {
     const harness = await createAuthorityHarness(['owner', 'member']);
     await createRoom(harness, 'causal-denial-room', 'Causal Denial Room');
-    await processAs<GroupMemberUpsertAppInboxPayload>(harness, 'owner', {
+    await processAs(harness, 'owner', {
       type: AppInboxType.GROUP_MEMBER_UPSERT,
       resourceId: 'activate-member',
       contextId: 'ar-eye-hunter:default:causal-denial-room',
@@ -194,7 +200,7 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
         },
       },
     });
-    const updateInput: AppInboxEnqueueInput<GroupUpdateAppInboxPayload> = {
+    const updateInput: AuthenticatedGroupMutationEnqueue = {
       type: AppInboxType.GROUP_UPDATE,
       resourceId: 'member-update-after-promotion',
       contextId: 'ar-eye-hunter:default:causal-denial-room',
@@ -210,10 +216,10 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
         },
       },
     };
-    const denied = await processAs<GroupUpdateAppInboxPayload>(harness, 'member', updateInput);
+    const denied = await processAs(harness, 'member', updateInput);
     expect(denied.left).toContain('Forbidden:');
 
-    await processAs<GroupMemberRoleSetAppInboxPayload>(harness, 'owner', {
+    await processAs(harness, 'owner', {
       type: AppInboxType.GROUP_MEMBER_ROLE_SET,
       resourceId: 'promote-member',
       contextId: 'ar-eye-hunter:default:causal-denial-room',
@@ -231,15 +237,17 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
       },
     });
 
-    const retried = await processAs<GroupUpdateAppInboxPayload>(harness, 'member', updateInput);
-    expect(retried.right?.result.right?.snapshot.group.displayName).toBe('Member Updated Room');
+    const retried = await processAs(harness, 'member', updateInput);
+    expect(requireGroupStateResult(retried).result.right?.snapshot.group.displayName).toBe(
+      'Member Updated Room',
+    );
     expect(await readDisplayName(harness, 'causal-denial-room')).toBe('Member Updated Room');
   });
 
   it('re-evaluates the exact no-op request after relevant state changes', async () => {
     const harness = await createAuthorityHarness(['owner']);
     await createRoom(harness, 'causal-noop-room', 'Target Name');
-    const targetInput: AppInboxEnqueueInput<GroupUpdateAppInboxPayload> = {
+    const targetInput: AuthenticatedGroupMutationEnqueue = {
       type: AppInboxType.GROUP_UPDATE,
       resourceId: 'restore-target-name',
       contextId: 'ar-eye-hunter:default:causal-noop-room',
@@ -255,10 +263,10 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
         },
       },
     };
-    const initialNoOp = await processAs<GroupUpdateAppInboxPayload>(harness, 'owner', targetInput);
-    expect(initialNoOp.right?.result.right?.event).toBeNull();
+    const initialNoOp = await processAs(harness, 'owner', targetInput);
+    expect(requireGroupStateResult(initialNoOp).result.right?.event).toBeNull();
 
-    await processAs<GroupUpdateAppInboxPayload>(harness, 'owner', {
+    await processAs(harness, 'owner', {
       ...targetInput,
       resourceId: 'change-away-from-target',
       data: {
@@ -271,15 +279,15 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
       },
     });
 
-    const retried = await processAs<GroupUpdateAppInboxPayload>(harness, 'owner', targetInput);
-    expect(retried.right?.result.right?.event?.eventType).toBe('group-updated');
+    const retried = await processAs(harness, 'owner', targetInput);
+    expect(requireGroupStateResult(retried).result.right?.event?.eventType).toBe('group-updated');
     expect(await readDisplayName(harness, 'causal-noop-room')).toBe('Target Name');
   });
 
   it('rechecks a revoked session before replaying a completed queue result', async () => {
     const harness = await createAuthorityHarness(['owner']);
     await createRoom(harness, 'revoked-replay-room', 'Before Replay');
-    const input: AppInboxEnqueueInput<GroupUpdateAppInboxPayload> = {
+    const input: AuthenticatedGroupMutationEnqueue = {
       type: AppInboxType.GROUP_UPDATE,
       resourceId: 'revoked-session-update',
       contextId: 'ar-eye-hunter:default:revoked-replay-room',
@@ -295,21 +303,19 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
         },
       },
     };
-    const first = await processAs<GroupUpdateAppInboxPayload>(harness, 'owner', input);
-    expect(first.right?.status).toBe('ok');
+    const first = await processAs(harness, 'owner', input);
+    expect(requireGroupStateResult(first).status).toBe('ok');
 
     await harness.authSessions.deleteSession(harness.sessions.owner);
 
-    await expect(
-      processAs<GroupUpdateAppInboxPayload>(harness, 'owner', input),
-    ).rejects.toMatchObject({ status: 403 });
+    await expect(processAs(harness, 'owner', input)).rejects.toMatchObject({ status: 403 });
     expect(await listRoomEvents(harness, 'revoked-replay-room')).toHaveLength(2);
   });
 
   it('rechecks authority after dequeue and rejects a session revoked while queued', async () => {
     const harness = await createAuthorityHarness(['owner']);
     await createRoom(harness, 'queued-revocation-room', 'Before Revocation');
-    const input: AppInboxEnqueueInput<GroupUpdateAppInboxPayload> = {
+    const input: AuthenticatedGroupMutationEnqueue = {
       type: AppInboxType.GROUP_UPDATE,
       resourceId: 'queued-revocation-update',
       contextId: 'ar-eye-hunter:default:queued-revocation-room',
@@ -325,10 +331,10 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
         },
       },
     };
-    const pending = harness.service.processAuthenticatedEntryUntilCompletion<
-      GroupUpdateAppInboxPayload,
-      GroupStateWritten
-    >(input, harness.sessions.owner);
+    const pending = harness.service.processAuthenticatedGroupEntryUntilCompletion(
+      input,
+      harness.sessions.owner,
+    );
     await waitForQueueEntry(harness.queue);
     await harness.authSessions.deleteSession(harness.sessions.owner);
 
@@ -349,7 +355,7 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
       },
     });
     await createRoom(harness, 'coalesced-room', 'Before Coalescing');
-    const input: AppInboxEnqueueInput<GroupUpdateAppInboxPayload> = {
+    const input: AuthenticatedGroupMutationEnqueue = {
       type: AppInboxType.GROUP_UPDATE,
       resourceId: 'coalesced-update',
       contextId: 'ar-eye-hunter:default:coalesced-room',
@@ -365,14 +371,14 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
         },
       },
     };
-    const first = harness.service.processAuthenticatedEntryUntilCompletion<
-      GroupUpdateAppInboxPayload,
-      GroupStateWritten
-    >(input, harness.sessions.owner);
-    const second = harness.service.processAuthenticatedEntryUntilCompletion<
-      GroupUpdateAppInboxPayload,
-      GroupStateWritten
-    >(input, harness.sessions.owner);
+    const first = harness.service.processAuthenticatedGroupEntryUntilCompletion(
+      input,
+      harness.sessions.owner,
+    );
+    const second = harness.service.processAuthenticatedGroupEntryUntilCompletion(
+      input,
+      harness.sessions.owner,
+    );
     await waitForQueueEntry(harness.queue);
     const newEntries = (await harness.queueEntries()).filter(
       (entry) => entry.status === EntityStatus.NEW,
@@ -381,23 +387,23 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
 
     await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
     const [firstResult, secondResult] = await Promise.all([first, second]);
-    expect(firstResult.right?.status).toBe('ok');
-    expect(secondResult.right?.status).toBe('ok');
+    expect(requireGroupStateResult(firstResult).status).toBe('ok');
+    expect(requireGroupStateResult(secondResult).status).toBe('ok');
     expect(await listRoomEvents(harness, 'coalesced-room')).toHaveLength(2);
   });
 });
 
-function processAs<V>(
+function processAs(
   harness: AuthorityHarness,
   principalId: string,
-  input: AppInboxEnqueueInput<V>,
+  input: AuthenticatedGroupMutationEnqueue,
 ) {
-  return processAuthenticated<V, GroupStateWritten>(
-    harness.service,
-    harness.reader,
-    harness.sessions[principalId],
+  return processAuthenticated({
+    service: harness.service,
+    reader: harness.reader,
+    authority: harness.sessions[principalId],
     input,
-  );
+  });
 }
 
 async function readDisplayName(harness: AuthorityHarness, groupId: string) {

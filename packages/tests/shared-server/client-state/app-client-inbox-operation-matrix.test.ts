@@ -27,14 +27,16 @@ import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {
   CLIENT_STATE_TEST_SCOPE as SCOPE,
-  TestResourceInbox,
-  TestResourceInboxResults,
   createAutoAuthorizingClientStateService,
   createClientStateServiceStub,
   createPublisher,
   processAppInbox,
   requireRightSnapshot,
 } from './app-client-inbox-mutation-test-harness.ts';
+import {
+  TestResourceInbox,
+  TestResourceInboxResults,
+} from './app-client-inbox-resource-fixtures.ts';
 
 describe('AppClientInbox operation matrix', () => {
   it('registers the established eight client mutation families in order', () => {
@@ -95,31 +97,31 @@ describe('AppClientInbox mutation processing', () => {
     });
   });
 
-  it('returns a left result when a client inbox mutation handler fails with a non-retryable error', async () => {
-    const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue);
-    const results = new TestResourceInboxResults();
-    const service = new AppClientInboxService(
-      {
-        inboxQueueReader: reader,
-        resourceInboxRepository: queue,
-        resourceInboxResultsRepository: results,
-        database: createAppInboxTestDatabase(queue, results),
-        clientStateService: createClientStateServiceStub({
-          read: vi.fn(async () => {
-            throw new NonRetryableException('Client principal update failed');
+  it(
+    'returns a left result when a client inbox mutation handler fails ' +
+      'with a non-retryable error',
+    async () => {
+      const queue = new TestResourceInbox();
+      const reader = new InboxQueueReader(queue);
+      const results = new TestResourceInboxResults();
+      const service = new AppClientInboxService(
+        {
+          inboxQueueReader: reader,
+          resourceInboxRepository: queue,
+          resourceInboxResultsRepository: results,
+          database: createAppInboxTestDatabase(queue, results),
+          clientStateService: createClientStateServiceStub({
+            read: vi.fn(async () => {
+              throw new NonRetryableException('Client principal update failed');
+            }),
           }),
-        }),
-      },
-      {
-        serviceId: 'server-12345678',
-      },
-    );
+        },
+        {
+          serviceId: 'server-12345678',
+        },
+      );
 
-    const result = await processAppInbox<ClientPrincipalUpsertAppInboxPayload, ClientSnapshot>(
-      service,
-      reader,
-      {
+      const result = await processAppInbox<ClientPrincipalUpsertAppInboxPayload>(service, reader, {
         type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
         resourceId: 'upsert-client-fail',
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
@@ -133,11 +135,11 @@ describe('AppClientInbox mutation processing', () => {
             requestId: 'upsert-client-fail',
           },
         },
-      },
-    );
+      });
 
-    expect(result.left).toBe('Client principal update failed');
-  });
+      expect(result.left).toBe('Client principal update failed');
+    },
+  );
 });
 
 function createMutationProcessingHarness() {
@@ -169,133 +171,113 @@ function createMutationProcessingHarness() {
 type MutationProcessingHarness = ReturnType<typeof createMutationProcessingHarness>;
 
 function upsertPrincipal(harness: MutationProcessingHarness) {
-  return processAppInbox<ClientPrincipalUpsertAppInboxPayload, ClientStateWritten>(
-    harness.service,
-    harness.reader,
-    {
-      type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-      resourceId: 'upsert-client-alice',
-      contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
-      senderId: 'alice',
-      data: {
-        scope: SCOPE,
-        principalId: 'alice',
-        request: {
-          username: 'alice',
-          displayName: 'Alice',
-          actorPrincipalId: 'alice',
-          requestId: 'upsert-client-alice',
-        },
+  return processAppInbox<ClientPrincipalUpsertAppInboxPayload>(harness.service, harness.reader, {
+    type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+    resourceId: 'upsert-client-alice',
+    contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
+    senderId: 'alice',
+    data: {
+      scope: SCOPE,
+      principalId: 'alice',
+      request: {
+        username: 'alice',
+        displayName: 'Alice',
+        actorPrincipalId: 'alice',
+        requestId: 'upsert-client-alice',
       },
     },
-  );
+  });
 }
 
 function upsertInstance(harness: MutationProcessingHarness) {
-  return processAppInbox<ClientInstanceUpsertAppInboxPayload, ClientStateWritten>(
-    harness.service,
-    harness.reader,
-    {
-      type: AppInboxType.CLIENT_INSTANCE_UPSERT,
-      resourceId: 'upsert-client-alice-instance',
-      contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
-      senderId: 'alice',
-      data: {
-        scope: SCOPE,
-        principalId: 'alice',
-        clientInstanceId: 'alice-browser',
-        request: {
-          platform: 'web',
-          capabilities: ['ws'],
-          actorPrincipalId: 'alice',
-          requestId: 'upsert-client-alice-instance',
-        },
+  return processAppInbox<ClientInstanceUpsertAppInboxPayload>(harness.service, harness.reader, {
+    type: AppInboxType.CLIENT_INSTANCE_UPSERT,
+    resourceId: 'upsert-client-alice-instance',
+    contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
+    senderId: 'alice',
+    data: {
+      scope: SCOPE,
+      principalId: 'alice',
+      clientInstanceId: 'alice-browser',
+      request: {
+        platform: 'web',
+        capabilities: ['ws'],
+        actorPrincipalId: 'alice',
+        requestId: 'upsert-client-alice-instance',
       },
     },
-  );
+  });
 }
 
 function connectSession(harness: MutationProcessingHarness) {
-  return processAppInbox<ClientSessionConnectAppInboxPayload, ClientStateWritten>(
-    harness.service,
-    harness.reader,
-    {
-      type: AppInboxType.CLIENT_SESSION_CONNECT,
-      resourceId: 'connect-client-alice-session',
-      contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
-      senderId: 'alice',
-      data: {
-        scope: SCOPE,
-        principalId: 'alice',
-        clientInstanceId: 'alice-browser',
-        sessionId: 'alice-session',
-        request: {
-          generationId: 'generation-alice-session',
-          presenceState: 'online',
-          actorPrincipalId: 'alice',
-          actorSessionId: 'alice-session',
-          connectedAtEpochMs: harness.connectedAtEpochMs,
-          lastHeartbeatAtEpochMs: harness.connectedAtEpochMs,
-          expiresAtEpochMs: harness.connectedAtEpochMs + 60_000,
-          requestId: 'connect-client-alice-session',
-        },
+  return processAppInbox<ClientSessionConnectAppInboxPayload>(harness.service, harness.reader, {
+    type: AppInboxType.CLIENT_SESSION_CONNECT,
+    resourceId: 'connect-client-alice-session',
+    contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
+    senderId: 'alice',
+    data: {
+      scope: SCOPE,
+      principalId: 'alice',
+      clientInstanceId: 'alice-browser',
+      sessionId: 'alice-session',
+      request: {
+        generationId: 'generation-alice-session',
+        presenceState: 'online',
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        connectedAtEpochMs: harness.connectedAtEpochMs,
+        lastHeartbeatAtEpochMs: harness.connectedAtEpochMs,
+        expiresAtEpochMs: harness.connectedAtEpochMs + 60_000,
+        requestId: 'connect-client-alice-session',
       },
     },
-  );
+  });
 }
 
 function heartbeatSession(harness: MutationProcessingHarness) {
-  return processAppInbox<ClientSessionHeartbeatAppInboxPayload, ClientStateWritten>(
-    harness.service,
-    harness.reader,
-    {
-      type: AppInboxType.CLIENT_SESSION_HEARTBEAT,
-      resourceId: 'heartbeat-client-alice-session',
-      contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
-      senderId: 'alice',
-      data: {
-        scope: SCOPE,
-        principalId: 'alice',
-        clientInstanceId: 'alice-browser',
-        sessionId: 'alice-session',
-        request: {
-          generationId: 'generation-alice-session',
-          presenceState: 'away',
-          actorPrincipalId: 'alice',
-          actorSessionId: 'alice-session',
-          lastHeartbeatAtEpochMs: harness.connectedAtEpochMs + 1,
-          expiresAtEpochMs: harness.connectedAtEpochMs + 60_001,
-          requestId: 'heartbeat-client-alice-session',
-        },
+  return processAppInbox<ClientSessionHeartbeatAppInboxPayload>(harness.service, harness.reader, {
+    type: AppInboxType.CLIENT_SESSION_HEARTBEAT,
+    resourceId: 'heartbeat-client-alice-session',
+    contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
+    senderId: 'alice',
+    data: {
+      scope: SCOPE,
+      principalId: 'alice',
+      clientInstanceId: 'alice-browser',
+      sessionId: 'alice-session',
+      request: {
+        generationId: 'generation-alice-session',
+        presenceState: 'away',
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        lastHeartbeatAtEpochMs: harness.connectedAtEpochMs + 1,
+        expiresAtEpochMs: harness.connectedAtEpochMs + 60_001,
+        requestId: 'heartbeat-client-alice-session',
       },
     },
-  );
+  });
 }
 
 function disconnectSession(harness: MutationProcessingHarness) {
-  return processAppInbox<ClientSessionDisconnectAppInboxPayload, ClientStateWritten>(
-    harness.service,
-    harness.reader,
-    {
-      type: AppInboxType.CLIENT_SESSION_DISCONNECT,
-      resourceId: 'disconnect-client-alice-session',
-      contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
-      senderId: 'alice',
-      data: {
-        scope: SCOPE,
-        principalId: 'alice',
-        clientInstanceId: 'alice-browser',
-        sessionId: 'alice-session',
-        request: {
-          generationId: 'generation-alice-session',
-          reason: 'closed',
-          actorPrincipalId: 'alice',
-          actorSessionId: 'alice-session',
-          requestId: 'disconnect-client-alice-session',
-        },
+  return processAppInbox<ClientSessionDisconnectAppInboxPayload>(harness.service, harness.reader, {
+    type: AppInboxType.CLIENT_SESSION_DISCONNECT,
+    resourceId: 'disconnect-client-alice-session',
+    contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
+    senderId: 'alice',
+    data: {
+      scope: SCOPE,
+      principalId: 'alice',
+      clientInstanceId: 'alice-browser',
+      sessionId: 'alice-session',
+      request: {
+        generationId: 'generation-alice-session',
+        reason: 'closed',
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        requestId: 'disconnect-client-alice-session',
       },
     },
-  );
+  });
 }
 
 interface MutationProcessingResults {

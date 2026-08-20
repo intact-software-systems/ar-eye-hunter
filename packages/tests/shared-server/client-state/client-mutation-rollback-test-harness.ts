@@ -2,21 +2,38 @@ import { expect } from 'vitest';
 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import type { ClientSessionConnectAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
-import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
+// prettier-ignore
+import type {
+  ClientSessionConnectAppInboxPayload,
+} from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
+// prettier-ignore
+import {
+  AppClientInboxService,
+} from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+// prettier-ignore
+import {
+  ClientStateRepository,
+} from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+// prettier-ignore
+import type {
+  ClientStateWritten,
+} from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+// prettier-ignore
+import {
+  InMemoryClientStateEventStore,
+} from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {
-  TestResourceInbox,
-  TestResourceInboxResults,
   createAutoAuthorizingClientStateService,
   processAppInbox,
 } from './app-client-inbox-mutation-test-harness.ts';
+import {
+  TestResourceInbox,
+  TestResourceInboxResults,
+} from './app-client-inbox-resource-fixtures.ts';
 
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' } as const;
 
@@ -34,8 +51,10 @@ export async function createRollbackHarness() {
   };
   let failOutbox = true;
   let rollbackAssertions = 0;
-  let database!: ReturnType<typeof createAppInboxTestDatabase>;
-  database = createAppInboxTestDatabase(queue, results, {
+  const rollbackContext: {
+    database?: ReturnType<typeof createAppInboxTestDatabase>;
+  } = {};
+  const database = createAppInboxTestDatabase(queue, results, {
     runtimeRepository,
     clientEventStore: eventStore,
     shouldFailOutboxWrite: () => {
@@ -45,10 +64,21 @@ export async function createRollbackHarness() {
     },
     withTransaction: async (write) => restoreEventsAfterFailure(eventStore, write),
     onTransactionRollback: async () => {
+      const rollbackDatabase = rollbackContext.database;
+      if (rollbackDatabase === undefined) {
+        throw new Error('Rollback occurred before the test database finished construction');
+      }
       rollbackAssertions += 1;
-      await expectRolledBackMutationState({ database, key, queue, repository, results });
+      await expectRolledBackMutationState({
+        database: rollbackDatabase,
+        key,
+        queue,
+        repository,
+        results,
+      });
     },
   });
+  rollbackContext.database = database;
   const service = new AppClientInboxService(
     {
       inboxQueueReader: reader,
@@ -72,30 +102,26 @@ type RollbackHarness = Awaited<ReturnType<typeof createRollbackHarness>>;
 
 export function processRollbackMutation(harness: RollbackHarness) {
   const connectedAtEpochMs = Date.now();
-  return processAppInbox<ClientSessionConnectAppInboxPayload, ClientStateWritten>(
-    harness.service,
-    harness.reader,
-    {
-      type: AppInboxType.CLIENT_SESSION_CONNECT,
-      ...harness.key,
-      senderId: 'alice',
-      data: {
-        scope: SCOPE,
-        principalId: 'alice',
-        clientInstanceId: 'alice-browser',
-        sessionId: 'alice-session',
-        request: {
-          generationId: 'rollback-generation',
-          connectedAtEpochMs,
-          lastHeartbeatAtEpochMs: connectedAtEpochMs,
-          expiresAtEpochMs: connectedAtEpochMs + 60_000,
-          actorPrincipalId: 'alice',
-          actorSessionId: 'alice-session',
-          requestId: 'connect-client-rollback',
-        },
+  return processAppInbox<ClientSessionConnectAppInboxPayload>(harness.service, harness.reader, {
+    type: AppInboxType.CLIENT_SESSION_CONNECT,
+    ...harness.key,
+    senderId: 'alice',
+    data: {
+      scope: SCOPE,
+      principalId: 'alice',
+      clientInstanceId: 'alice-browser',
+      sessionId: 'alice-session',
+      request: {
+        generationId: 'rollback-generation',
+        connectedAtEpochMs,
+        lastHeartbeatAtEpochMs: connectedAtEpochMs,
+        expiresAtEpochMs: connectedAtEpochMs + 60_000,
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        requestId: 'connect-client-rollback',
       },
     },
-  );
+  });
 }
 
 async function restoreEventsAfterFailure<T>(

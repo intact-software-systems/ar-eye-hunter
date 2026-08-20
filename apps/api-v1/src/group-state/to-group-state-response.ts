@@ -1,10 +1,20 @@
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type {
   GroupJoinCodeMutationWritten,
-  GroupJoinCodeWritten,
   GroupMutationWritten,
-  GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
+import type {
+  GroupStateInboxDurableResult,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
+import type {
+  GroupJoinCodeWritten,
+  GroupStateWritten,
+} from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import {
+  requireGroupJoinCodeWritten,
+  requireGroupMutationReceipt,
+  requireGroupStateWritten,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
 // deno-fmt-ignore: This package import exceeds the repository's 100-column checker limit.
 import type {
   GroupMutationReceipt,
@@ -17,15 +27,15 @@ type GroupJoinCodeResponse = Omit<GroupJoinCodeMutationWritten, 'event'>;
 export type GroupStateResponseInput =
   | Readonly<{
     kind: 'mutation';
-    written: GroupStateWritten;
+    written: GroupStateInboxDurableResult;
   }>
   | Readonly<{
     kind: 'join-code';
-    written: GroupJoinCodeWritten;
+    written: GroupStateInboxDurableResult;
   }>
   | Readonly<{
     kind: 'presence';
-    receipt: GroupMutationReceipt;
+    receipt: GroupStateInboxDurableResult;
     ref: GroupRef;
     service: GroupStateRouteService;
   }>;
@@ -47,11 +57,14 @@ export function toGroupStateResponse(
 ): GroupMutationWritten | GroupJoinCodeResponse | Promise<GroupSnapshot> {
   switch (input.kind) {
     case 'mutation':
-      return toGroupMutationResponse(input.written);
+      return toGroupMutationResponse(requireGroupStateWritten(input.written));
     case 'join-code':
-      return toGroupJoinCodeResponse(input.written);
+      return toGroupJoinCodeResponse(requireGroupJoinCodeWritten(input.written));
     case 'presence':
-      return toGroupPresenceResponse(input);
+      return toGroupPresenceResponse({
+        ...input,
+        receipt: requireGroupMutationReceipt(input.receipt),
+      });
   }
 }
 
@@ -75,7 +88,9 @@ function toGroupJoinCodeResponse(written: GroupJoinCodeWritten): GroupJoinCodeRe
 }
 
 async function toGroupPresenceResponse(
-  input: Extract<GroupStateResponseInput, { kind: 'presence' }>,
+  input: Omit<Extract<GroupStateResponseInput, { kind: 'presence' }>, 'receipt'> & {
+    readonly receipt: GroupMutationReceipt;
+  },
 ): Promise<GroupSnapshot> {
   if (input.receipt.outcome === 'rejected') {
     throw new Error(input.receipt.rejection ?? 'Group presence mutation rejected');

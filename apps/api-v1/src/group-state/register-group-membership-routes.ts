@@ -11,10 +11,6 @@ import type {
 import type {
   AuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-import type {
-  GroupStateWritten,
-} from '@shared-server/rallar-system/services/group-state-service.ts';
-
 import { requireGroupAdmissionQuota } from '../services/group-admission-rate-limit.ts';
 import { type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import {
@@ -58,10 +54,7 @@ function registerRemoveGroupMemberRoute(
         const principalId = context.req.param('principalId');
         const written = toGroupStateResponse({
           kind: 'mutation',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupStateWritten
-          >(
+          written: await dependencies.processGroupAppInbox(
             authSession,
             toGroupStateCommand({
               operation: 'remove-group-member',
@@ -96,10 +89,7 @@ function registerBanGroupMemberRoute(
         const principalId = context.req.param('principalId');
         const written = toGroupStateResponse({
           kind: 'mutation',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupStateWritten
-          >(
+          written: await dependencies.processGroupAppInbox(
             authSession,
             toGroupStateCommand({
               operation: 'ban-group-member',
@@ -134,10 +124,7 @@ function registerUnbanGroupMemberRoute(
         const principalId = context.req.param('principalId');
         const written = toGroupStateResponse({
           kind: 'mutation',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupStateWritten
-          >(
+          written: await dependencies.processGroupAppInbox(
             authSession,
             toGroupStateCommand({
               operation: 'unban-group-member',
@@ -172,10 +159,7 @@ function registerSetGroupMemberRoleRoute(
         const principalId = context.req.param('principalId');
         const written = toGroupStateResponse({
           kind: 'mutation',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupStateWritten
-          >(
+          written: await dependencies.processGroupAppInbox(
             authSession,
             toGroupStateCommand({
               operation: 'set-group-member-role',
@@ -209,10 +193,7 @@ function registerTransferGroupOwnershipRoute(
         const groupId = context.req.param('groupId');
         const written = toGroupStateResponse({
           kind: 'mutation',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupStateWritten
-          >(
+          written: await dependencies.processGroupAppInbox(
             authSession,
             toGroupStateCommand({
               operation: 'transfer-group-ownership',
@@ -258,10 +239,7 @@ function registerUpsertSelfGroupMemberRoute(
         authorization.assertSelfServiceMemberStatus(request.status);
         const written = toGroupStateResponse({
           kind: 'mutation',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupStateWritten
-          >(authSession, command),
+          written: await dependencies.processGroupAppInbox(authSession, command),
         });
         const body = toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId);
         return context.json(body);

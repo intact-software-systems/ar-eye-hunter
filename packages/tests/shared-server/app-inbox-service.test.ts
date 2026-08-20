@@ -274,7 +274,7 @@ describe('AppInboxService', () => {
         ...sparse,
         resourceId: 'unsafe-array',
         data: { ...sparse.data, unsafe: [undefined] },
-      } as never),
+      }),
     ).rejects.toThrow(/JSON wire|array/u);
     const cycle: Record<string, object> = {};
     cycle.self = cycle;
@@ -289,7 +289,7 @@ describe('AppInboxService', () => {
           ...sparse,
           resourceId,
           data: { ...sparse.data, unsafe: value },
-        } as never),
+        }),
       ).rejects.toThrow(/JSON wire/u);
     }
     expect(handler).toHaveBeenCalledOnce();
@@ -418,7 +418,7 @@ describe('AppInboxService', () => {
           contextId: 'app:workspace:alice',
           senderId: 'alice',
           data: { unsafe },
-        } as never),
+        }),
       ).rejects.toThrow(/JSON wire/u);
       expect(await readEntries(queue)).toHaveLength(0);
     }
@@ -726,10 +726,10 @@ async function readOnlyEntry(queue: InMemoryQueueBox): Promise<ResourceEntry | u
   return key === undefined ? undefined : queue.getItem(key);
 }
 
-type ProtoPayload = Readonly<{
-  principalId: string;
-  request: Readonly<{
+interface ProtoPayload {
+  readonly principalId: string;
+  readonly request: Readonly<{
     requestId: string;
     metadata: JsonWireObject;
   }>;
-}>;
+}

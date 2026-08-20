@@ -12,11 +12,6 @@ import { toPendingMemberGroupSnapshot } from '@shared/api/group-client-views.ts'
 import type {
   AuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-import type {
-  GroupJoinCodeWritten,
-  GroupStateWritten,
-} from '@shared-server/rallar-system/services/group-state-service.ts';
-
 import { requireGroupAdmissionQuota } from '../services/group-admission-rate-limit.ts';
 import {
   type GroupStateRouteDependencies,
@@ -60,10 +55,7 @@ function registerJoinGroupRoute(
         requireGroupAdmissionQuota('join-admission', { ...scope, groupId }, authSession.clientId);
         const written = toGroupStateResponse({
           kind: 'mutation',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupStateWritten
-          >(
+          written: await dependencies.processGroupAppInbox(
             authSession,
             toGroupStateCommand({
               operation: 'join-group',
@@ -99,10 +91,7 @@ function registerAcceptGroupInviteRoute(
         requireGroupAdmissionQuota('join-admission', { ...scope, groupId }, authSession.clientId);
         const written = toGroupStateResponse({
           kind: 'mutation',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupStateWritten
-          >(
+          written: await dependencies.processGroupAppInbox(
             authSession,
             toGroupStateCommand({
               operation: 'accept-group-invite',
@@ -137,10 +126,7 @@ function registerRotateGroupJoinCodeRoute(
         const groupId = context.req.param('groupId');
         const response = toGroupStateResponse({
           kind: 'join-code',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupJoinCodeWritten
-          >(
+          written: await dependencies.processGroupAppInbox(
             authSession,
             toGroupStateCommand({
               operation: 'rotate-group-join-code',
@@ -174,10 +160,7 @@ function registerCreateGroupInviteRoute(
         const principalId = context.req.param('principalId');
         const written = toGroupStateResponse({
           kind: 'mutation',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupStateWritten
-          >(
+          written: await dependencies.processGroupAppInbox(
             authSession,
             toGroupStateCommand({
               operation: 'create-group-invite',
@@ -288,10 +271,7 @@ function registerRevokeGroupInviteRoute(
         const principalId = context.req.param('principalId');
         const written = toGroupStateResponse({
           kind: 'mutation',
-          written: await dependencies.processGroupAppInbox<
-            GroupStateRouteCommandPayload,
-            GroupStateWritten
-          >(
+          written: await dependencies.processGroupAppInbox(
             authSession,
             toGroupStateCommand({
               operation: 'revoke-group-invite',

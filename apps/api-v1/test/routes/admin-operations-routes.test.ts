@@ -295,7 +295,7 @@ function createRecordingGateway(
       },
     },
     appGroup: {
-      processAuthenticatedEntryUntilCompletionResult: () =>
+      processAuthenticatedTopologyEntryUntilCompletionResult: () =>
         Promise.reject(new Error('Unexpected topology recompute')),
     },
     now: () => NOW_EPOCH_MS,

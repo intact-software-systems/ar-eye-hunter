@@ -15,7 +15,7 @@ export const ROUTING_SOURCE_MARKERS = {
     'AppInboxType.GROUP_CREATE',
   ],
   'apps/api-v1/src/routes/graph-topology-routes.ts': [
-    'processAuthenticatedEntryUntilCompletionResult',
+    'processAuthenticatedTopologyEntryUntilCompletionResult',
     'AppInboxType.TOPOLOGY_RECONFIGURE',
   ],
   'apps/api-v1/src/routes/config-route.ts': ['AppAuthInboxService', 'appAuthInbox'],

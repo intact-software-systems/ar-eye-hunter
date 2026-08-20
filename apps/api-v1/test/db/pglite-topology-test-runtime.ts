@@ -21,7 +21,6 @@ import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repo
 RtcTopologySnapshotRepository.ts';
 import {
   AppGroupInboxService,
-  decodeTopologyAppInboxResult,
   type TopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
@@ -101,7 +100,7 @@ export function submitPGliteTopologyCommand(
     : command.operation === 'deleteOverride'
     ? AppInboxType.TOPOLOGY_OVERRIDE_DELETE
     : AppInboxType.TOPOLOGY_RECONFIGURE;
-  return appGroup.processAuthenticatedEntryUntilCompletionResult(
+  return appGroup.processAuthenticatedTopologyEntryUntilCompletionResult(
     {
       type,
       resourceId: command.requestId,
@@ -114,7 +113,6 @@ export function submitPGliteTopologyCommand(
       data: command,
     },
     authority,
-    decodeTopologyAppInboxResult,
   );
 }
 

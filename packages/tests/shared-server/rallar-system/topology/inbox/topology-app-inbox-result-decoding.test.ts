@@ -6,11 +6,13 @@ import {
   waitForQueueEntry,
 } from '../../../group-state/inbox/group-state-inbox-test-runtime.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/\
-topology-app-inbox-command.ts';
+// prettier-ignore
+import {
+  toTopologyAppInboxCommand,
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 
 describe('AppGroup topology result decoding', () => {
-  it('rejects a malformed completed topology result on the public authenticated path', async () => {
+  it('returns the exact terminal left for a malformed completed topology result', async () => {
     const harness = await createAuthorityHarness(['owner']);
     const authority = harness.sessions.owner;
     const command = await toTopologyAppInboxCommand({
@@ -30,7 +32,7 @@ describe('AppGroup topology result decoding', () => {
         config: { topologyKind: 'tree' },
       },
     });
-    const pending = harness.service.processAuthenticatedEntryUntilCompletion(
+    const pending = harness.service.processAuthenticatedTopologyEntryUntilCompletion(
       {
         type: AppInboxType.TOPOLOGY_CONFIG_PUT,
         resourceId: command.requestId,
@@ -56,8 +58,17 @@ describe('AppGroup topology result decoding', () => {
     await harness.results.replace(completed);
     await harness.queue.enqueue(completed);
 
-    await expect(pending).rejects.toThrow(
-      'Topology config AppInbox receipt must be an exact object',
-    );
+    const result = await pending;
+    expect(result.right).toBeUndefined();
+    expect(JSON.parse(result.left ?? '{}')).toEqual({
+      type: 'app-inbox-failure',
+      version: 'canonical.v2',
+      code: 'TypeError',
+      status: 400,
+      message: 'Topology config AppInbox receipt must be an exact object',
+      issues: null,
+      denial: null,
+      retry: null,
+    });
   });
 });

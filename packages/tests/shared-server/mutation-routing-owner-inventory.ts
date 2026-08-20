@@ -761,7 +761,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
     source: 'ad',
     registrationMarker: "'/api/admin/operations/topology/recompute'",
     enqueueSource: 'ag',
-    enqueueMarker: 'processAuthenticatedEntryUntilCompletionResult',
+    enqueueMarker: 'processAuthenticatedTopologyEntryUntilCompletionResult',
     ownerSource: 'T',
     owner: 'TopologyAppInboxHandler.processMutation',
     typeOwnerSource: 'G',

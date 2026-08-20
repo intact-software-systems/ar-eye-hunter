@@ -21,8 +21,14 @@ import {
   createClientStateRepository,
   createGroupStateRepository,
 } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import type { ClientMutationReceipt } from '@shared-server/rallar-system/services/client-state-mutations.ts';
+// prettier-ignore
+import {
+  PSqlRuntimeStateRepository,
+} from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+// prettier-ignore
+import type {
+  ClientMutationReceipt,
+} from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import {
   type ClientStateWritten,
   toClientMutationCommand,
@@ -31,129 +37,150 @@ import {
   toDisconnectCommandInput,
   toHeartbeatCommandInput,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import type { GroupMutationReceipt } from '@shared-server/rallar-system/services/group-state-mutations.ts';
-import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
-import { AppInboxType, SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from
-  '@shared-server/rallar-system/services/AppInboxService.ts';
+// prettier-ignore
+import type {
+  IssuedAuthSession,
+} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+// prettier-ignore
+import type {
+  GroupMutationReceipt,
+} from '@shared-server/rallar-system/services/group-state-mutations.ts';
+// prettier-ignore
+import {
+  isAuthenticatedGroupMutationEnqueue,
+  type AuthenticatedGroupMutationEnqueue,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+// prettier-ignore
+import {
+  requireGroupMutationReceipt,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
+// prettier-ignore
+import type {
+  GroupTopologyConfigMutationReceipt,
+} from '@shared/api/graph-topology-management-types.ts';
+import {
+  AppInboxType,
+  SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+} from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { toTopologyAppInboxCommand } from
-  '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+// prettier-ignore
+import {
+  toTopologyAppInboxCommand,
+} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import {
   createPostgresAppInboxWorkerRuntime,
   type PersistedAppInboxAttempt,
 } from './postgres-app-inbox-worker-runtime.ts';
+// prettier-ignore
+import type {
+  JsonWireObject,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 
-type WorkerBarrier = Readonly<{
-  readyDirectoryPath: string;
-  releaseFilePath: string;
-}>;
+interface WorkerBarrier {
+  readonly readyDirectoryPath: string;
+  readonly releaseFilePath: string;
+}
 
-type WorkerCommandBase = Readonly<{
-  scope: StateScope;
-  atEpochMs: number;
-  traceFilePath: string;
-  barrier: WorkerBarrier;
-}>;
+interface WorkerCommandBase {
+  readonly scope: StateScope;
+  readonly atEpochMs: number;
+  readonly traceFilePath: string;
+  readonly barrier: WorkerBarrier;
+}
 
-type WorkerMutationRequest<T> = Omit<T, 'requestId'> & Readonly<{
-  requestId: string;
-}>;
+type WorkerMutationRequest<T> = Omit<T, 'requestId'> &
+  Readonly<{
+    requestId: string;
+  }>;
 
-type ClientWorkerInput =
-  & WorkerCommandBase
-  & Readonly<{
+type ClientWorkerInput = WorkerCommandBase &
+  Readonly<{
     principalId: string;
     clientInstanceId: string;
     sessionId: string;
-  }>
-  & (
+  }> &
+  (
     | Readonly<{
-      command: 'client-heartbeat';
-      request: WorkerMutationRequest<HeartbeatClientSessionRequest>;
-    }>
+        command: 'client-heartbeat';
+        request: WorkerMutationRequest<HeartbeatClientSessionRequest>;
+      }>
     | Readonly<{
-      command: 'client-disconnect';
-      request: WorkerMutationRequest<DisconnectClientSessionRequest>;
-    }>
+        command: 'client-disconnect';
+        request: WorkerMutationRequest<DisconnectClientSessionRequest>;
+      }>
     | Readonly<{
-      command: 'client-reconnect';
-      request: WorkerMutationRequest<ConnectClientSessionRequest>;
-    }>
+        command: 'client-reconnect';
+        request: WorkerMutationRequest<ConnectClientSessionRequest>;
+      }>
   );
 
-type GroupWorkerInput =
-  & WorkerCommandBase
-  & Readonly<{
+type GroupWorkerInput = WorkerCommandBase &
+  Readonly<{
     groupId: string;
-  }>
-  & (
+  }> &
+  (
     | Readonly<{
-      command: 'group-join';
-      request: WorkerMutationRequest<JoinGroupRequest>;
-    }>
+        command: 'group-join';
+        request: WorkerMutationRequest<JoinGroupRequest>;
+      }>
     | Readonly<{
-      command: 'group-ban';
-      targetPrincipalId: string;
-      request: WorkerMutationRequest<BanGroupMemberRequest>;
-    }>
+        command: 'group-ban';
+        targetPrincipalId: string;
+        request: WorkerMutationRequest<BanGroupMemberRequest>;
+      }>
     | Readonly<{
-      command: 'group-presence-connect';
-      sessionId: string;
-      request: WorkerMutationRequest<ConnectGroupPresenceSessionRequest>;
-    }>
+        command: 'group-presence-connect';
+        sessionId: string;
+        request: WorkerMutationRequest<ConnectGroupPresenceSessionRequest>;
+      }>
     | Readonly<{
-      command: 'group-presence-heartbeat';
-      sessionId: string;
-      request: WorkerMutationRequest<HeartbeatGroupPresenceSessionRequest>;
-    }>
+        command: 'group-presence-heartbeat';
+        sessionId: string;
+        request: WorkerMutationRequest<HeartbeatGroupPresenceSessionRequest>;
+      }>
     | Readonly<{
-      command: 'group-presence-disconnect';
-      sessionId: string;
-      request: WorkerMutationRequest<DisconnectGroupPresenceSessionRequest>;
-    }>
+        command: 'group-presence-disconnect';
+        sessionId: string;
+        request: WorkerMutationRequest<DisconnectGroupPresenceSessionRequest>;
+      }>
   );
 
-type TopologyWorkerInput =
-  & Readonly<{
-    groupRef: GroupRef;
-    atEpochMs: number;
-    traceFilePath: string;
-    barrier: WorkerBarrier;
-  }>
-  & (
+type TopologyWorkerInput = Readonly<{
+  groupRef: GroupRef;
+  atEpochMs: number;
+  traceFilePath: string;
+  barrier: WorkerBarrier;
+}> &
+  (
     | Readonly<{
-      command: 'topology-config-put';
-      request: WorkerMutationRequest<Omit<PutGroupTopologyConfigInput, 'groupRef'>>;
-    }>
+        command: 'topology-config-put';
+        request: WorkerMutationRequest<Omit<PutGroupTopologyConfigInput, 'groupRef'>>;
+      }>
     | Readonly<{
-      command: 'topology-config-delete';
-      request: WorkerMutationRequest<Omit<DeleteGroupTopologyConfigInput, 'groupRef'>>;
-    }>
+        command: 'topology-config-delete';
+        request: WorkerMutationRequest<Omit<DeleteGroupTopologyConfigInput, 'groupRef'>>;
+      }>
   );
 
-type StateMutationWorkerInput =
-  | ClientWorkerInput
-  | GroupWorkerInput
-  | TopologyWorkerInput;
+type StateMutationWorkerInput = ClientWorkerInput | GroupWorkerInput | TopologyWorkerInput;
 
-type CompactStateMutationWorkerOutput = Readonly<{
-  operation: StateMutationWorkerInput['command'];
-  requestId: string;
-  commandHash: string;
-  attemptCount: number;
-  acceptedStorageRevision: number | null;
-  acceptedCausalRevision: Readonly<Record<string, unknown>> | null;
-  acceptedVersion: number | null;
-  outboxIds: readonly string[];
-  domainStatus: 'applied' | 'no-op' | 'rejected';
-}>;
+interface CompactStateMutationWorkerOutput {
+  readonly operation: StateMutationWorkerInput['command'];
+  readonly requestId: string;
+  readonly commandHash: string;
+  readonly attemptCount: number;
+  readonly acceptedStorageRevision: number | null;
+  readonly acceptedCausalRevision: JsonWireObject | null;
+  readonly acceptedVersion: number | null;
+  readonly outboxIds: readonly string[];
+  readonly domainStatus: 'applied' | 'no-op' | 'rejected';
+}
 
-type WorkerTraceState = {
+interface WorkerTraceState {
   backendPid: number;
   barrierWaitCount: number;
   attempts: PersistedAppInboxAttempt[];
-};
+}
 
 async function main(): Promise<void> {
   const databaseUrl = Deno.env.get('DATABASE_URL');
@@ -174,13 +201,9 @@ async function main(): Promise<void> {
       attempts: [],
     };
     try {
-      console.log(JSON.stringify(
-        await runStateMutationWorker(
-          input,
-          sql as unknown as PSqlSql,
-          trace,
-        ),
-      ));
+      console.log(
+        JSON.stringify(await runStateMutationWorker(input, sql as unknown as PSqlSql, trace)),
+      );
     } finally {
       await Deno.writeTextFile(input.traceFilePath, JSON.stringify(trace));
     }
@@ -195,13 +218,21 @@ async function runStateMutationWorker(
   trace: WorkerTraceState,
 ): Promise<CompactStateMutationWorkerOutput> {
   requireRequestId(input.request.requestId);
-  if (input.command.startsWith('client-')) {
-    return await runClientMutation(input as ClientWorkerInput, sql, trace);
+  switch (input.command) {
+    case 'client-heartbeat':
+    case 'client-disconnect':
+    case 'client-reconnect':
+      return await runClientMutation(input, sql, trace);
+    case 'group-join':
+    case 'group-ban':
+    case 'group-presence-connect':
+    case 'group-presence-heartbeat':
+    case 'group-presence-disconnect':
+      return await runGroupMutation(input, sql, trace);
+    case 'topology-config-put':
+    case 'topology-config-delete':
+      return await runTopologyMutation(input, sql, trace);
   }
-  if (input.command.startsWith('group-')) {
-    return await runGroupMutation(input as GroupWorkerInput, sql, trace);
-  }
-  return await runTopologyMutation(input as TopologyWorkerInput, sql, trace);
 }
 
 async function runClientMutation(
@@ -240,36 +271,42 @@ async function runClientMutation(
     request: input.request,
   };
   const result = await runtime.runUntilCompletion(() =>
-    runtime.client.processAuthenticatedEntryUntilCompletion<typeof data, ClientStateWritten>({
-      type: toClientAppInboxType(input.command),
-      resourceId: requestId,
-      contextId,
-      senderId: input.principalId,
-      data,
-    }, authoritySession)
+    runtime.client.processAuthenticatedEntryUntilCompletion(
+      {
+        type: toClientAppInboxType(input.command),
+        resourceId: requestId,
+        contextId,
+        senderId: input.principalId,
+        data,
+      },
+      authoritySession,
+    ),
   );
   const written = result.fold(
-    (error) => { throw new Error(error); },
+    (error) => {
+      throw new Error(error);
+    },
     (value) => value,
   );
 
   const stored = await createClientStateRepository(
     new PSqlRuntimeStateRepository(sql),
-  )
-    .findIdempotentClientMutationReceipt(
-      { ...input.scope, principalId: input.principalId },
-      requestId,
-    );
+  ).findIdempotentClientMutationReceipt(
+    { ...input.scope, principalId: input.principalId },
+    requestId,
+  );
   if (stored) return compactClientReceipt(input.command, requestId, stored.receipt);
   const mutation = written.result.right;
   if (!mutation || mutation.event !== null) {
     throw new Error(`Applied client mutation receipt not found: ${requestId}`);
   }
-  const entry = await runtime.resourceInbox.findAnyByKey(toAppQueueKey({
-    topicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
-    resourceId: requestId,
-    contextId,
-  }));
+  const entry = await runtime.resourceInbox.findAnyByKey(
+    toAppQueueKey({
+      topicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+      resourceId: requestId,
+      contextId,
+    }),
+  );
   if (!entry || entry.status !== 'COMPLETED') {
     throw new Error(`Completed client AppInbox entry not found: ${requestId}`);
   }
@@ -303,24 +340,37 @@ async function runClientMutation(
   };
 }
 
-function toClientWorkerCommandInput(
-  input: ClientWorkerInput,
-) {
+function toClientWorkerCommandInput(input: ClientWorkerInput) {
   if (input.command === 'client-heartbeat') {
     return toHeartbeatCommandInput(
-      input.scope, input.principalId, input.clientInstanceId, input.sessionId,
-      input.request, input.request.requestId,
+      input.scope,
+      input.principalId,
+      input.clientInstanceId,
+      input.sessionId,
+      input.request,
+      input.request.requestId,
     );
   }
   if (input.command === 'client-disconnect') {
     return toDisconnectCommandInput(
-      'disconnectSession', input.scope, input.principalId, input.clientInstanceId,
-      input.sessionId, input.request, input.request.requestId,
+      'disconnectSession',
+      input.scope,
+      input.principalId,
+      input.clientInstanceId,
+      input.sessionId,
+      input.request,
+      input.request.requestId,
     );
   }
   return toConnectCommandInput(
-    'connectSession', input.scope, input.principalId, input.clientInstanceId,
-    input.sessionId, input.request, input.request.requestId, {},
+    'connectSession',
+    input.scope,
+    input.principalId,
+    input.clientInstanceId,
+    input.sessionId,
+    input.request,
+    input.request.requestId,
+    {},
   );
 }
 
@@ -347,14 +397,8 @@ async function runGroupMutation(
     barrier: input.barrier,
     trace,
   });
-  const actorPrincipalId = requireString(
-    input.request.actorPrincipalId,
-    'actorPrincipalId',
-  );
-  const actorSessionId = requireString(
-    input.request.actorSessionId,
-    'actorSessionId',
-  );
+  const actorPrincipalId = requireString(input.request.actorPrincipalId, 'actorPrincipalId');
+  const actorSessionId = requireString(input.request.actorSessionId, 'actorSessionId');
   const authority: IssuedAuthSession = {
     clientId: actorPrincipalId,
     accessToken: `${actorSessionId}-postgres-worker-token`,
@@ -365,47 +409,54 @@ async function runGroupMutation(
   };
   await runtime.authSessions.putSession(authority);
   const data = toGroupAppInboxData(input);
+  const enqueue = {
+    type: toGroupAppInboxType(input.command),
+    resourceId: requestId,
+    contextId: inboxContextId(input.scope.applicationId, input.scope.workspaceId, input.groupId),
+    senderId: actorPrincipalId,
+    data,
+  };
+  if (!isAuthenticatedGroupMutationEnqueue(enqueue)) {
+    throw new TypeError(`Authenticated group mutation type is required: ${enqueue.type}`);
+  }
   runtime.armBarrier();
   const result = await runtime.runUntilCompletion(() =>
-    runtime.group.processAuthenticatedEntryUntilCompletion<typeof data, unknown>({
-      type: toGroupAppInboxType(input.command),
-      resourceId: requestId,
-      contextId: inboxContextId(
-        input.scope.applicationId,
-        input.scope.workspaceId,
-        input.groupId,
-      ),
-      senderId: actorPrincipalId,
-      data,
-    }, authority)
+    runtime.group.processAuthenticatedGroupEntryUntilCompletion(enqueue, authority),
   );
   const durableResult = result.fold(
-    (error) => { throw new Error(error); },
+    (error) => {
+      throw new Error(error);
+    },
     (value) => value,
   );
 
   const receipt = isGroupPresenceCommand(input.command)
-    ? durableResult as GroupMutationReceipt
-    : (await createGroupStateRepository(new PSqlRuntimeStateRepository(sql))
-      .findIdempotentGroupMutationReceipt(
-        { ...input.scope, groupId: input.groupId },
-        requestId,
-      ))?.receipt;
+    ? requireGroupMutationReceipt(durableResult)
+    : (
+        await createGroupStateRepository(
+          new PSqlRuntimeStateRepository(sql),
+        ).findIdempotentGroupMutationReceipt({ ...input.scope, groupId: input.groupId }, requestId)
+      )?.receipt;
   if (!receipt) throw new Error(`Group mutation receipt not found: ${requestId}`);
   return compactGroupReceipt(input.command, requestId, receipt);
 }
 
 function toGroupAppInboxType(command: GroupWorkerInput['command']): AppInboxType {
   switch (command) {
-    case 'group-join': return AppInboxType.GROUP_JOIN;
-    case 'group-ban': return AppInboxType.GROUP_MEMBER_BAN;
-    case 'group-presence-connect': return AppInboxType.GROUP_PRESENCE_CONNECT;
-    case 'group-presence-heartbeat': return AppInboxType.GROUP_PRESENCE_HEARTBEAT;
-    case 'group-presence-disconnect': return AppInboxType.GROUP_PRESENCE_DISCONNECT;
+    case 'group-join':
+      return AppInboxType.GROUP_JOIN;
+    case 'group-ban':
+      return AppInboxType.GROUP_MEMBER_BAN;
+    case 'group-presence-connect':
+      return AppInboxType.GROUP_PRESENCE_CONNECT;
+    case 'group-presence-heartbeat':
+      return AppInboxType.GROUP_PRESENCE_HEARTBEAT;
+    case 'group-presence-disconnect':
+      return AppInboxType.GROUP_PRESENCE_DISCONNECT;
   }
 }
 
-function toGroupAppInboxData(input: GroupWorkerInput): Readonly<Record<string, unknown>> {
+function toGroupAppInboxData(input: GroupWorkerInput): AuthenticatedGroupMutationEnqueue['data'] {
   if (input.command === 'group-ban') {
     return {
       scope: input.scope,
@@ -425,9 +476,7 @@ function toGroupAppInboxData(input: GroupWorkerInput): Readonly<Record<string, u
   };
 }
 
-function isGroupPresenceCommand(
-  command: GroupWorkerInput['command'],
-): boolean {
+function isGroupPresenceCommand(command: GroupWorkerInput['command']): boolean {
   return command.startsWith('group-presence-');
 }
 
@@ -444,10 +493,7 @@ async function runTopologyMutation(
     barrier: input.barrier,
     trace,
   });
-  const principalId = requireString(
-    input.request.updatedByPrincipalId,
-    'updatedByPrincipalId',
-  );
+  const principalId = requireString(input.request.updatedByPrincipalId, 'updatedByPrincipalId');
   const authority: IssuedAuthSession = {
     clientId: principalId,
     accessToken: `${principalId}-topology-worker-token`,
@@ -462,32 +508,39 @@ async function runTopologyMutation(
     groupRef: input.groupRef,
     requestId,
     capturedAtEpochMs: input.atEpochMs,
-    payload: input.command === 'topology-config-put'
-      ? { operation: 'putConfig', config: input.request.config }
-      : { operation: 'deleteConfig', target: 'config' },
+    payload:
+      input.command === 'topology-config-put'
+        ? { operation: 'putConfig', config: input.request.config }
+        : { operation: 'deleteConfig', target: 'config' },
   });
   runtime.armBarrier();
   const result = await runtime.runUntilCompletion(() =>
-    runtime.group.processAuthenticatedEntryUntilCompletion<
-      typeof data,
-      GroupTopologyConfigMutationExecution
-    >({
-      type: input.command === 'topology-config-put'
-        ? AppInboxType.TOPOLOGY_CONFIG_PUT
-        : AppInboxType.TOPOLOGY_CONFIG_DELETE,
-      resourceId: requestId,
-      contextId: inboxContextId(
-        input.groupRef.applicationId,
-        input.groupRef.workspaceId,
-        input.groupRef.groupId,
-      ),
-      senderId: principalId,
-      data,
-    }, authority)
+    runtime.group.processAuthenticatedTopologyEntryUntilCompletion(
+      {
+        type:
+          input.command === 'topology-config-put'
+            ? AppInboxType.TOPOLOGY_CONFIG_PUT
+            : AppInboxType.TOPOLOGY_CONFIG_DELETE,
+        resourceId: requestId,
+        contextId: inboxContextId(
+          input.groupRef.applicationId,
+          input.groupRef.workspaceId,
+          input.groupRef.groupId,
+        ),
+        senderId: principalId,
+        data,
+      },
+      authority,
+    ),
   );
   const execution = result.fold(
-    (error) => { throw new Error(error); },
-    (value) => value,
+    (error) => {
+      throw new Error(error);
+    },
+    (value) => {
+      if (!('receipt' in value)) throw new TypeError('Expected topology config result');
+      return value;
+    },
   );
   return compactTopologyReceipt(input.command, requestId, execution.receipt);
 }
@@ -549,10 +602,13 @@ function compactTopologyReceipt(
     commandHash: receipt.commandHash,
     attemptCount: receipt.attemptCount,
     acceptedStorageRevision: receipt.acceptedStorageRevision,
-    acceptedCausalRevision: receipt.acceptedCausalRevision === null ? null : {
-      ...receipt.acceptedCausalRevision,
-      causalRevision: { ...receipt.acceptedCausalRevision.causalRevision },
-    },
+    acceptedCausalRevision:
+      receipt.acceptedCausalRevision === null
+        ? null
+        : {
+            ...receipt.acceptedCausalRevision,
+            causalRevision: { ...receipt.acceptedCausalRevision.causalRevision },
+          },
     acceptedVersion: receipt.acceptedVersion,
     outboxIds: [...receipt.outboxIds],
     domainStatus: receipt.outcome,
@@ -572,10 +628,7 @@ function requireRequestId(requestId: unknown): string {
   return requireString(requestId, 'requestId');
 }
 
-function requireMatchingRequestId(
-  actual: string | null,
-  expected: string,
-): string {
+function requireMatchingRequestId(actual: string | null, expected: string): string {
   if (actual !== expected) {
     throw new Error(`Mutation receipt requestId differs: expected ${expected}`);
   }

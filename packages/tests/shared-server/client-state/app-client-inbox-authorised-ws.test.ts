@@ -6,17 +6,42 @@ import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { AuthSessionRepository, type IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
-import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import {
+  AuthSessionRepository,
+  type IssuedAuthSession,
+} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+// prettier-ignore
+import {
+  AppClientInboxService,
+} from
+'@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+// prettier-ignore
+import type {
+  AuthorisedWsClientMutationResult,
+} from
+'@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
+// prettier-ignore
+import {
+  toAuthorisedWsClientConnectEnqueue,
+} from
+'@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
+// prettier-ignore
+import {
+  createClientStateService,
+} from
+'@shared-server/rallar-system/client-state/client-state-service.ts';
+// prettier-ignore
 import type {
   ClientMutationWritten,
   ClientStateWritten,
-} from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+} from
+'@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
-import { TestResourceInbox, TestResourceInboxResults } from '../auth/auth-app-inbox-test-runtime.ts';
+import {
+  TestResourceInbox,
+  TestResourceInboxResults,
+} from '../auth/auth-app-inbox-test-runtime.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
 const SERVICE_ID = 'server-12345678';
@@ -47,7 +72,9 @@ it('rejects authorised websocket disconnect after durable auth revocation', asyn
       userAgent: 'Browser',
     },
   } as const;
-  const connected = await processAppInboxMethod(reader, () => service.processAuthorisedWsClientConnect(connectInput));
+  const connected = await processAppInboxMethod(reader, () =>
+    service.processAuthorisedWsClientConnect(connectInput),
+  );
   vi.mocked(publisher.publishClientSnapshot).mockClear();
   vi.mocked(publisher.publishClientEvent).mockClear();
   await authSessions.deleteSession(authSession);
@@ -170,53 +197,61 @@ it('processes authorised websocket connects independently per state scope', asyn
   });
 });
 
-it(['disconnects authorised websocket sessions from their connected state scope', 'while auth exists'].join(' '), async () => {
-  const queue = new TestResourceInbox();
-  const reader = new InboxQueueReader(queue);
-  const results = new TestResourceInboxResults();
-  const publisher = createPublisher();
-  const authSession = issuedSession('admin', 'admin-ws-session');
-  const runtimeRepository = new FakeRuntimeStateRepository();
-  await new AuthSessionRepository(runtimeRepository).putSession(authSession);
-  const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
-  const service = createAuthorisedWsService({
-    database,
-    queue,
-    reader,
-    results,
-    runtimeRepository,
-  });
+it(
+  [
+    'disconnects authorised websocket sessions from their connected state scope',
+    'while auth exists',
+  ].join(' '),
+  async () => {
+    const queue = new TestResourceInbox();
+    const reader = new InboxQueueReader(queue);
+    const results = new TestResourceInboxResults();
+    const publisher = createPublisher();
+    const authSession = issuedSession('admin', 'admin-ws-session');
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    await new AuthSessionRepository(runtimeRepository).putSession(authSession);
+    const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
+    const service = createAuthorisedWsService({
+      database,
+      queue,
+      reader,
+      results,
+      runtimeRepository,
+    });
 
-  const connectInput = {
-    authSession,
-    generationId: 'generation-scoped',
-    input: {
+    const connectInput = {
+      authSession,
+      generationId: 'generation-scoped',
+      input: {
+        applicationId: 'ar-eye-hunter',
+        workspaceId: 'default',
+        expiresAtEpochMs: Date.now() + 60_000,
+      },
+    } as const;
+    await processAppInboxMethod(reader, () =>
+      service.processAuthorisedWsClientConnect(connectInput),
+    );
+    const disconnected = await processAppInboxMethod(reader, () =>
+      service.processAuthorisedWsClientDisconnect({
+        connection: toAuthorisedWsClientConnectEnqueue(connectInput).data,
+        disconnectedAtEpochMs: Date.now(),
+        reason: 'socket-closed',
+      }),
+    );
+
+    expect(requireRightSnapshot(disconnected).principal).toMatchObject({
       applicationId: 'ar-eye-hunter',
       workspaceId: 'default',
-      expiresAtEpochMs: Date.now() + 60_000,
-    },
-  } as const;
-  await processAppInboxMethod(reader, () => service.processAuthorisedWsClientConnect(connectInput));
-  const disconnected = await processAppInboxMethod(reader, () =>
-    service.processAuthorisedWsClientDisconnect({
-      connection: toAuthorisedWsClientConnectEnqueue(connectInput).data,
-      disconnectedAtEpochMs: Date.now(),
-      reason: 'socket-closed',
-    }),
-  );
-
-  expect(requireRightSnapshot(disconnected).principal).toMatchObject({
-    applicationId: 'ar-eye-hunter',
-    workspaceId: 'default',
-    principalId: 'admin',
-  });
-  expect(requireRightSnapshot(disconnected).activeSessions).toHaveLength(0);
-  expect(requireRightWritten(disconnected).event).toMatchObject({
-    applicationId: 'ar-eye-hunter',
-    workspaceId: 'default',
-    eventType: 'session-disconnected',
-  });
-});
+      principalId: 'admin',
+    });
+    expect(requireRightSnapshot(disconnected).activeSessions).toHaveLength(0);
+    expect(requireRightWritten(disconnected).event).toMatchObject({
+      applicationId: 'ar-eye-hunter',
+      workspaceId: 'default',
+      eventType: 'session-disconnected',
+    });
+  },
+);
 
 interface CreateAuthorisedWsServiceInput {
   readonly database: ReturnType<typeof createAppInboxTestDatabase>;
@@ -246,34 +281,31 @@ function createAuthorisedWsService(input: CreateAuthorisedWsServiceInput): AppCl
   );
 }
 
-function requireRightSnapshot(result: Either<string, ClientStateWritten>): ClientSnapshot {
+function requireRightSnapshot(
+  result: Either<string, AuthorisedWsClientMutationResult>,
+): ClientSnapshot {
+  return requireRightWritten(result).snapshot;
+}
+
+function requireRightWritten(
+  result: Either<string, AuthorisedWsClientMutationResult>,
+): ClientMutationWritten {
   if (!result.right) {
     throw new Error(result.left ?? 'Expected client app-inbox right result');
   }
-  return requireClientMutationWritten(result.right).snapshot;
-}
-
-function requireRightWritten(result: Either<string, ClientStateWritten>): ClientMutationWritten {
-  if (!result.right) {
-    throw new Error(result.left ?? 'Expected client app-inbox right result');
+  if (result.right.status === 'inactive') {
+    throw new Error(`Expected client mutation result, received ${result.right.status}`);
   }
   return requireClientMutationWritten(result.right);
 }
 
 function requireClientMutationWritten(written: ClientStateWritten): ClientMutationWritten {
-  const result = written.result as ClientStateWritten['result'] | { left?: string; right?: ClientMutationWritten };
-  if ('fold' in result && typeof result.fold === 'function') {
-    return result.fold(
-      (error) => {
-        throw new Error(error);
-      },
-      (value) => value,
-    );
-  }
-  if (result.right) {
-    return result.right;
-  }
-  throw new Error(result.left ?? 'Client mutation failed');
+  return written.result.fold(
+    (error) => {
+      throw new Error(error);
+    },
+    (value) => value,
+  );
 }
 
 function issuedSession(clientId: string, sessionId: string): IssuedAuthSession {
@@ -288,7 +320,10 @@ function issuedSession(clientId: string, sessionId: string): IssuedAuthSession {
   };
 }
 
-async function processAppInboxMethod<R>(reader: InboxQueueReader, run: () => Promise<R>): Promise<R> {
+async function processAppInboxMethod<R>(
+  reader: InboxQueueReader,
+  run: () => Promise<R>,
+): Promise<R> {
   const resultPromise = run();
   await new Promise((resolve) => setTimeout(resolve, 0));
   await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
@@ -304,5 +339,11 @@ function createPublisher() {
 
 function createResilience(): ResilienceDto {
   const duration = Temporal.Duration.from({ seconds: 10 });
-  return ResilienceDto.toResilienceDto(new CircuitBreakerPolicy(10, duration, duration, duration), 1, 10, 1, 1);
+  return ResilienceDto.toResilienceDto(
+    new CircuitBreakerPolicy(10, duration, duration, duration),
+    1,
+    10,
+    1,
+    1,
+  );
 }

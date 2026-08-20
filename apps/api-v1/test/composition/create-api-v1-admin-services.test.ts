@@ -149,7 +149,7 @@ function createInput(
       writeCrdtAdminMutation: () => Promise.reject(new Error('mutation not used')),
     },
     appGroupInboxService: {
-      processAuthenticatedEntryUntilCompletionResult: rejectUnusedOperation,
+      processAuthenticatedTopologyEntryUntilCompletionResult: rejectUnusedOperation,
     },
   };
 }

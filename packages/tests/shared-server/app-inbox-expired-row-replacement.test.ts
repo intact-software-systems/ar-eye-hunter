@@ -202,185 +202,185 @@ describe('AppInbox expired row replacement', () => {
     });
   });
 
-  it('atomically recreates an expired group and its summary after a summary CAS conflict', async () => {
-    const nowEpochMs = Date.now();
-    const runtime = new FakeRuntimeStateRepository();
-    const queue = new TestResourceInbox();
-    const results = new TestResourceInboxResults();
-    const reader = new InboxQueueReader(queue);
-    const sessions = new AuthSessionRepository(runtime);
-    const owner = {
-      clientId: 'owner',
-      username: 'owner',
-      sessionId: 'owner-session',
-      accessToken: 'owner-token',
-      issuedAtEpochMs: nowEpochMs - 1_000,
-      expiresAtEpochMs: nowEpochMs + 60_000,
-    };
-    await sessions.putSession(owner);
-    let expiredGroupRevision = -1;
-    let oldSummaryRevision = -1;
-    let rollbackPreservedPredecessors = false;
-    const database = createAppInboxTestDatabase(queue, results, {
-      runtimeRepository: runtime,
-      onTransactionRollback: async () => {
-        const [group] = await runtime.findAllEntries('group-state:groups');
-        const [summary] = await runtime.findAllEntries('group-state:presence-summaries');
-        rollbackPreservedPredecessors =
-          group?.revision === expiredGroupRevision && summary?.revision === oldSummaryRevision;
-      },
-    });
-    const groupState = createGroupStateService({
-      runtimeRepository: runtime,
-      formationDamping: 'damped',
-      createGroupStateEventStore: () => database.groupEventStore,
-      serviceId: 'expired-group-service',
-      now: () => nowEpochMs,
-      authSessionRepository: sessions,
-    });
-    const service = new AppGroupInboxService(
-      {
-        inboxQueueReader: reader,
-        resourceInboxRepository: queue,
-        resourceInboxResultsRepository: results,
-        database: database,
-        groupStateService: groupState,
-      },
-      {
+  it(
+    'atomically recreates an expired group and its summary ' + 'after a summary CAS conflict',
+    async () => {
+      const nowEpochMs = Date.now();
+      const runtime = new FakeRuntimeStateRepository();
+      const queue = new TestResourceInbox();
+      const results = new TestResourceInboxResults();
+      const reader = new InboxQueueReader(queue);
+      const sessions = new AuthSessionRepository(runtime);
+      const owner = {
+        clientId: 'owner',
+        username: 'owner',
+        sessionId: 'owner-session',
+        accessToken: 'owner-token',
+        issuedAtEpochMs: nowEpochMs - 1_000,
+        expiresAtEpochMs: nowEpochMs + 60_000,
+      };
+      await sessions.putSession(owner);
+      let expiredGroupRevision = -1;
+      let oldSummaryRevision = -1;
+      let rollbackPreservedPredecessors = false;
+      const database = createAppInboxTestDatabase(queue, results, {
+        runtimeRepository: runtime,
+        onTransactionRollback: async () => {
+          const [group] = await runtime.findAllEntries('group-state:groups');
+          const [summary] = await runtime.findAllEntries('group-state:presence-summaries');
+          rollbackPreservedPredecessors =
+            group?.revision === expiredGroupRevision && summary?.revision === oldSummaryRevision;
+        },
+      });
+      const groupState = createGroupStateService({
+        runtimeRepository: runtime,
+        formationDamping: 'damped',
+        createGroupStateEventStore: () => database.groupEventStore,
         serviceId: 'expired-group-service',
-      },
-    );
-    const create = async (requestId: string, displayName: string) => {
-      const minimumEntries = (await queue.getAllKeys()).length + 1;
-      const pending = service.processAuthenticatedEntryUntilCompletion<
-        GroupCreateAppInboxPayload,
-        { status: string }
-      >(
+        now: () => nowEpochMs,
+        authSessionRepository: sessions,
+      });
+      const service = new AppGroupInboxService(
         {
-          type: AppInboxType.GROUP_CREATE,
-          resourceId: requestId,
-          contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:room-1`,
-          senderId: owner.clientId,
-          data: {
-            scope: SCOPE,
-            request: {
-              groupId: 'room-1',
-              displayName,
-              kind: 'room',
-              joinMode: 'open',
-              createdByPrincipalId: owner.clientId,
-              actorPrincipalId: owner.clientId,
-              actorSessionId: owner.sessionId,
-              requestId,
+          inboxQueueReader: reader,
+          resourceInboxRepository: queue,
+          resourceInboxResultsRepository: results,
+          database: database,
+          groupStateService: groupState,
+        },
+        {
+          serviceId: 'expired-group-service',
+        },
+      );
+      const create = async (requestId: string, displayName: string) => {
+        const minimumEntries = (await queue.getAllKeys()).length + 1;
+        const pending = service.processAuthenticatedGroupEntryUntilCompletion(
+          {
+            type: AppInboxType.GROUP_CREATE,
+            resourceId: requestId,
+            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:room-1`,
+            senderId: owner.clientId,
+            data: {
+              scope: SCOPE,
+              request: {
+                groupId: 'room-1',
+                displayName,
+                kind: 'room',
+                joinMode: 'open',
+                createdByPrincipalId: owner.clientId,
+                actorPrincipalId: owner.clientId,
+                actorSessionId: owner.sessionId,
+                requestId,
+              },
             },
           },
-        },
-        owner,
-      );
-      await waitForQueuedEntry(queue, minimumEntries);
-      return { pending };
-    };
+          owner,
+        );
+        await waitForQueuedEntry(queue, minimumEntries);
+        return { pending };
+      };
 
-    const seeded = await create('seed-group', 'Old room');
-    await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-    await expect(seeded.pending).resolves.toMatchObject({
-      right: { status: 'created' },
-    });
-    const [groupBeforeExpiry] = await runtime.findAllEntries('group-state:groups');
-    const [summaryBefore] = await runtime.findAllEntries('group-state:presence-summaries');
-    if (!groupBeforeExpiry || !summaryBefore) {
-      throw new Error('Expected seeded group and presence summary');
-    }
-    const [staleWorkEntry] = database.outboxEntries.values();
-    if (!staleWorkEntry) throw new Error('Expected seeded presence-summary work');
-    const staleMessage = JSON.parse(staleWorkEntry.resource) as Readonly<{
-      payload: Readonly<{ resource: string }>;
-    }>;
-    const staleWork = (
-      JSON.parse(staleMessage.payload.resource) as Readonly<{
-        data: Readonly<{ acceptedCausalRevision: Readonly<{ groupRevision: number }> }>;
-      }>
-    ).data;
-    await runtime.upsert(
-      'group-state:groups',
-      groupBeforeExpiry.key,
-      groupBeforeExpiry.value,
-      nowEpochMs - 1,
-    );
-    const expiredGroup = await runtime.findEntry('group-state:groups', groupBeforeExpiry.key);
-    if (!expiredGroup) throw new Error('Expected expired group predecessor');
-    expiredGroupRevision = expiredGroup.revision;
-    oldSummaryRevision = summaryBefore.revision;
-    await expect(
-      new GroupStateRepository(runtime).findGroup({
-        ...SCOPE,
-        groupId: 'room-1',
-      }),
-    ).resolves.toBeUndefined();
-
-    let conflictInjected = false;
-    runtime.beforeConditionalWrite = async (operation, namespace, key) => {
-      if (
-        !conflictInjected &&
-        operation === 'upsertIfRevision' &&
-        namespace === 'group-state:presence-summaries'
-      ) {
-        conflictInjected = true;
-        const current = await runtime.findEntry(namespace, key);
-        if (!current) throw new Error('Expected old group presence summary');
-        await runtime.upsert(namespace, key, current.value, current.expireAtTimestamp);
-      }
-    };
-    const replacement = await create('replace-group', 'New room');
-    await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience(1));
-    const afterFirst = (await readEntries(queue)).find(
-      (entry) => entry.status === EntityStatus.RETRY || entry.dequeueAudit.attempts > 1,
-    );
-    if (afterFirst?.status === EntityStatus.RETRY) {
-      await new Promise((resolve) => setTimeout(resolve, 2));
+      const seeded = await create('seed-group', 'Old room');
       await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-    }
-    await expect(replacement.pending).resolves.toMatchObject({
-      right: { status: 'created' },
-    });
+      await expect(seeded.pending).resolves.toMatchObject({
+        right: { status: 'created' },
+      });
+      const [groupBeforeExpiry] = await runtime.findAllEntries('group-state:groups');
+      const [summaryBefore] = await runtime.findAllEntries('group-state:presence-summaries');
+      if (!groupBeforeExpiry || !summaryBefore) {
+        throw new Error('Expected seeded group and presence summary');
+      }
+      const [staleWorkEntry] = database.outboxEntries.values();
+      if (!staleWorkEntry) throw new Error('Expected seeded presence-summary work');
+      const staleMessage = JSON.parse(staleWorkEntry.resource) as Readonly<{
+        payload: Readonly<{ resource: string }>;
+      }>;
+      const staleWork = (
+        JSON.parse(staleMessage.payload.resource) as Readonly<{
+          data: Readonly<{ acceptedCausalRevision: Readonly<{ groupRevision: number }> }>;
+        }>
+      ).data;
+      await runtime.upsert(
+        'group-state:groups',
+        groupBeforeExpiry.key,
+        groupBeforeExpiry.value,
+        nowEpochMs - 1,
+      );
+      const expiredGroup = await runtime.findEntry('group-state:groups', groupBeforeExpiry.key);
+      if (!expiredGroup) throw new Error('Expected expired group predecessor');
+      expiredGroupRevision = expiredGroup.revision;
+      oldSummaryRevision = summaryBefore.revision;
+      await expect(
+        new GroupStateRepository(runtime).findGroup({
+          ...SCOPE,
+          groupId: 'room-1',
+        }),
+      ).resolves.toBeUndefined();
 
-    const [replacedGroup] = await runtime.findAllEntries('group-state:groups');
-    const [replacedSummary] = await runtime.findAllEntries('group-state:presence-summaries');
-    const groupValue = JSON.parse(replacedGroup!.value);
-    const summaryValue = JSON.parse(replacedSummary!.value);
-    const replacementReceipt = (await runtime.findAllEntries('group-state:idempotent'))
-      .map((entry) => JSON.parse(entry.value))
-      .find((entry) => entry.requestId === 'replace-group');
-    expect(replacedGroup?.revision).toBe(expiredGroupRevision + 1);
-    expect(replacedSummary?.revision).toBe(oldSummaryRevision + 1);
-    expect(groupValue).toMatchObject({ displayName: 'New room' });
-    expect(summaryValue).toMatchObject({
-      activePrincipalIds: [],
-      activeSessionIds: [],
-      causalRevision: { groupRevision: groupValue.snapshotVersion },
-    });
-    expect(replacementReceipt).toMatchObject({
-      requestId: 'replace-group',
-      receipt: {
-        attemptCount: 2,
-        acceptedStorageRevision: expiredGroupRevision + 1,
+      let conflictInjected = false;
+      runtime.beforeConditionalWrite = async (operation, namespace, key) => {
+        if (
+          !conflictInjected &&
+          operation === 'upsertIfRevision' &&
+          namespace === 'group-state:presence-summaries'
+        ) {
+          conflictInjected = true;
+          const current = await runtime.findEntry(namespace, key);
+          if (!current) throw new Error('Expected old group presence summary');
+          await runtime.upsert(namespace, key, current.value, current.expireAtTimestamp);
+        }
+      };
+      const replacement = await create('replace-group', 'New room');
+      await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience(1));
+      const afterFirst = (await readEntries(queue)).find(
+        (entry) => entry.status === EntityStatus.RETRY || entry.dequeueAudit.attempts > 1,
+      );
+      if (afterFirst?.status === EntityStatus.RETRY) {
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+      }
+      await expect(replacement.pending).resolves.toMatchObject({
+        right: { status: 'created' },
+      });
+
+      const [replacedGroup] = await runtime.findAllEntries('group-state:groups');
+      const [replacedSummary] = await runtime.findAllEntries('group-state:presence-summaries');
+      const groupValue = JSON.parse(replacedGroup!.value);
+      const summaryValue = JSON.parse(replacedSummary!.value);
+      const replacementReceipt = (await runtime.findAllEntries('group-state:idempotent'))
+        .map((entry) => JSON.parse(entry.value))
+        .find((entry) => entry.requestId === 'replace-group');
+      expect(replacedGroup?.revision).toBe(expiredGroupRevision + 1);
+      expect(replacedSummary?.revision).toBe(oldSummaryRevision + 1);
+      expect(groupValue).toMatchObject({ displayName: 'New room' });
+      expect(summaryValue).toMatchObject({
+        activePrincipalIds: [],
+        activeSessionIds: [],
+        causalRevision: { groupRevision: groupValue.snapshotVersion },
+      });
+      expect(replacementReceipt).toMatchObject({
+        requestId: 'replace-group',
+        receipt: {
+          attemptCount: 2,
+          acceptedStorageRevision: expiredGroupRevision + 1,
+          causalRevision: summaryValue.causalRevision,
+        },
+      });
+      expect(database.groupEventStore.events.at(-1)).toMatchObject({
+        requestId: 'replace-group',
         causalRevision: summaryValue.causalRevision,
-      },
-    });
-    expect(database.groupEventStore.events.at(-1)).toMatchObject({
-      requestId: 'replace-group',
-      causalRevision: summaryValue.causalRevision,
-    });
-    expect(rollbackPreservedPredecessors).toBe(true);
-    expect(database.groupEventStore.events).toHaveLength(2);
-    expect(database.outboxEntries.size).toBe(2);
-    expect(
-      (await readEntries(queue)).some(
-        (entry) => entry.status === EntityStatus.COMPLETED && entry.dequeueAudit.attempts === 2,
-      ),
-    ).toBe(true);
-    expect(groupValue.snapshotVersion).toBeGreaterThan(
-      staleWork.acceptedCausalRevision.groupRevision,
-    );
-  });
+      });
+      expect(rollbackPreservedPredecessors).toBe(true);
+      expect(database.groupEventStore.events).toHaveLength(2);
+      expect(database.outboxEntries.size).toBe(2);
+      expect(
+        (await readEntries(queue)).some(
+          (entry) => entry.status === EntityStatus.COMPLETED && entry.dequeueAudit.attempts === 2,
+        ),
+      ).toBe(true);
+      expect(groupValue.snapshotVersion).toBeGreaterThan(
+        staleWork.acceptedCausalRevision.groupRevision,
+      );
+    },
+  );
 });

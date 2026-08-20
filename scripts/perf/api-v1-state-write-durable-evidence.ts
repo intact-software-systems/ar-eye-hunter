@@ -59,9 +59,9 @@ import {
   type StateWriteResourceOutboxEvidence,
 } from './api-v1-state-write-outbox-evidence.ts';
 
-export type StateWriteBenchmarkCommand = Readonly<{
-  commandId: string;
-  kind:
+export interface StateWriteBenchmarkCommand {
+  readonly commandId: string;
+  readonly kind:
     | 'profile-instance'
     | 'membership'
     | 'presence-connect'
@@ -69,42 +69,42 @@ export type StateWriteBenchmarkCommand = Readonly<{
     | 'presence-disconnect'
     | 'config'
     | 'topology-source';
-  latencyMs: number;
-  stackIndex: number;
-  status: 'accepted' | 'exhausted';
-}>;
+  readonly latencyMs: number;
+  readonly stackIndex: number;
+  readonly status: 'accepted' | 'exhausted';
+}
 
-export type StateWriteDurableEvidence = Readonly<{
-  appInbox: readonly AppInboxAttemptEvidence[];
-  receipts: readonly ProductionReceiptEvidence[];
-  resourceOutbox: readonly StateWriteResourceOutboxEvidence[];
-  intermediateMutationIntents: readonly [];
-  atomicCompletionFailures: number;
-}>;
+export interface StateWriteDurableEvidence {
+  readonly appInbox: readonly AppInboxAttemptEvidence[];
+  readonly receipts: readonly ProductionReceiptEvidence[];
+  readonly resourceOutbox: readonly StateWriteResourceOutboxEvidence[];
+  readonly intermediateMutationIntents: readonly [];
+  readonly atomicCompletionFailures: number;
+}
 
-type AppInboxAttemptEvidence = Readonly<{
-  commandId: string;
-  operationId: string;
-  resourceId: string;
-  topicId: string;
-  status: string;
-  resultStatus: string;
-  attempts: number;
-  retryDelayMs: number;
-  dueAgeMs: number;
-  selectedLane: 'fast' | 'fairness' | 'timeout';
-  transactionDurationMs: number;
-  commandType: string;
-  durableResult: ReturnType<typeof parsePersistedResult>;
-}>;
+interface AppInboxAttemptEvidence {
+  readonly commandId: string;
+  readonly operationId: string;
+  readonly resourceId: string;
+  readonly topicId: string;
+  readonly status: string;
+  readonly resultStatus: string;
+  readonly attempts: number;
+  readonly retryDelayMs: number;
+  readonly dueAgeMs: number;
+  readonly selectedLane: 'fast' | 'fairness' | 'timeout';
+  readonly transactionDurationMs: number;
+  readonly commandType: string;
+  readonly durableResult: ReturnType<typeof parsePersistedResult>;
+}
 
-export type QueryStateWriteDurableEvidenceInput = Readonly<{
-  sql: Sql;
-  scope: StateScope;
-  commands: readonly StateWriteBenchmarkCommand[];
-  groupCount: number;
-  timingEvents: readonly RallarTimingEvent[];
-}>;
+export interface QueryStateWriteDurableEvidenceInput {
+  readonly sql: Sql;
+  readonly scope: StateScope;
+  readonly commands: readonly StateWriteBenchmarkCommand[];
+  readonly groupCount: number;
+  readonly timingEvents: readonly RallarTimingEvent[];
+}
 
 export async function queryStateWriteDurableEvidence({
   sql,
@@ -197,12 +197,12 @@ export async function queryStateWriteDurableEvidence({
   };
 }
 
-type ReadAppInboxEvidenceInput = Readonly<{
-  sql: Sql;
-  scope: StateScope;
-  commands: readonly StateWriteBenchmarkCommand[];
-  timingEvents: readonly RallarTimingEvent[];
-}>;
+interface ReadAppInboxEvidenceInput {
+  readonly sql: Sql;
+  readonly scope: StateScope;
+  readonly commands: readonly StateWriteBenchmarkCommand[];
+  readonly timingEvents: readonly RallarTimingEvent[];
+}
 
 async function readAppInboxEvidence({
   sql,
