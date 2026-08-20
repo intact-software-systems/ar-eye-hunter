@@ -1,8 +1,16 @@
 import type { StateErrorResponse } from '@shared/api/state-types.ts';
+import {
+  decodeApiMutationFailure,
+  type ApiMutationFailure,
+  type ApiMutationFailureJsonObject,
+  type ApiMutationFailureJsonValue,
+} from '@shared/api/mutation/api-mutation.ts';
 
 export type ApiHttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
 export class ApiHttpError extends Error {
+  public readonly mutationFailure: ApiMutationFailure | undefined;
+
   public readonly policyError?: StateErrorResponse & Readonly<{ code: string }>;
 
   public readonly method: ApiHttpMethod;
@@ -25,6 +33,7 @@ export class ApiHttpError extends Error {
     this.bodyText = bodyText;
     this.headers = headers;
     this.name = 'ApiHttpError';
+    this.mutationFailure = parseApiMutationFailure(bodyText);
     this.policyError = parseApiPolicyError(bodyText);
   }
 }
@@ -35,11 +44,19 @@ export function readApiPolicyError<T>(
   return error instanceof ApiHttpError ? error.policyError : undefined;
 }
 
+function parseApiMutationFailure(bodyText: string): ApiMutationFailure | undefined {
+  try {
+    return decodeApiMutationFailure(JSON.parse(bodyText) as ApiMutationFailureJsonValue);
+  } catch {
+    return undefined;
+  }
+}
+
 function parseApiPolicyError(
   bodyText: string,
 ): (StateErrorResponse & Readonly<{ code: string }>) | undefined {
   try {
-    const value = JSON.parse(bodyText);
+    const value = JSON.parse(bodyText) as ApiMutationFailureJsonValue;
     if (!isRecord(value) || typeof value.error !== 'string' || typeof value.code !== 'string') {
       return undefined;
     }
@@ -54,12 +71,6 @@ function parseApiPolicyError(
   }
 }
 
-function isRecord<T>(value: T): value is T & JsonRecord {
-  return typeof value === 'object' && value !== null;
-}
-
-type JsonValue = string | number | boolean | null | JsonValue[] | JsonRecord;
-
-interface JsonRecord {
-  readonly [key: string]: JsonValue;
+function isRecord(value: ApiMutationFailureJsonValue): value is ApiMutationFailureJsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
