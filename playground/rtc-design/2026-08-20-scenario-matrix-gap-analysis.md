@@ -100,6 +100,12 @@ Building the managed threshold bursts surfaced three facts the fixed-size recipe
   live in `api-v1-black-box-formation-large` (the opt-in profile that already holds
   burst-large and churn-large). The attempt-20 exhaustion under 19-writer endpoint
   contention is noted as an observed retry-schedule limit, not fixed here.
+- **The lifecycle recipes moved from the cluster profile to the memory profiles, not into
+  both.** The Postgres CI job runs the `api-v1-black-box` profile and then the cluster
+  profile against the same servers with one shared runId — a recipe in both profiles
+  replays its requestIds with fresh login sessions and dies on app-inbox idempotency
+  conflicts (409). Postgres coverage now comes from the `api-v1-black-box` phase itself,
+  which that job already runs; the cluster profile keeps the genuinely multi-node recipes.
 - **Threshold activation between deadline checks rides the refinement gate.** The criterion
   is petitioned by RTT-triggered topology work, which the refinement gate debounces under
   burst traffic — so a group whose evidence crosses the threshold mid-burst can sit ready
