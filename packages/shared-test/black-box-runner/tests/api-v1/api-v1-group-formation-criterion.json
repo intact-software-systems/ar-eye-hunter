@@ -29,6 +29,12 @@
     "runId": {
       "env": "RALLAR_BB_RUN_ID",
       "default": "local"
+    },
+    "thresholdGroupId": "threshold-room-{runId}",
+    "degradedGroupId": "degraded-room-{runId}",
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
     }
   },
   "execution": {
@@ -44,6 +50,10 @@
       "headers": {
         "Content-Type": "application/json"
       },
+      "timeoutMs": 10000
+    },
+    "wsAlice": {
+      "type": "ws",
       "timeoutMs": 10000
     }
   },
@@ -241,9 +251,7 @@
             "outcome": "activated",
             "observedRate": 1
           },
-          "managerPrincipalIds": [
-            "{aliceClientId}"
-          ]
+          "managerPrincipalIds": ["{aliceClientId}"]
         }
       }
     },
@@ -287,9 +295,7 @@
             "groupId": "{deadlineGroupId}",
             "lifecycleState": "forming",
             "formationEpoch": 0,
-            "formationElectorate": [
-              "{aliceClientId}"
-            ]
+            "formationElectorate": ["{aliceClientId}"]
           }
         }
       }
@@ -376,10 +382,7 @@
           "group": {
             "lifecycleState": "establishing",
             "formationEpoch": 1,
-            "formationElectorate": [
-              "{aliceClientId}",
-              "{bobClientId}"
-            ]
+            "formationElectorate": ["{aliceClientId}", "{bobClientId}"]
           }
         }
       }
@@ -412,10 +415,501 @@
             "outcome": "below-floor",
             "observedRate": 0
           },
-          "managerPrincipalIds": [
-            "{aliceClientId}"
+          "managerPrincipalIds": ["{aliceClientId}"]
+        }
+      }
+    },
+    {
+      "name": "createThresholdGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "group-create-threshold-{runId}",
+          "groupId": "{thresholdGroupId}",
+          "displayName": "Threshold group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "activation": {
+              "mode": "threshold-or-deadline",
+              "successRate": 1,
+              "minimumViableRate": 1,
+              "deadlineMs": 60000,
+              "maxFormationAttempts": 1
+            },
+            "admission": {
+              "mode": "open"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{thresholdGroupId}",
+            "lifecycleState": "forming",
+            "formationEpoch": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "joinBobToThresholdGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{thresholdGroupId}/join",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "join-threshold-bob-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
           ]
         }
+      }
+    },
+    {
+      "name": "connectAliceThresholdPresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{thresholdGroupId}/sessions/{aliceSessionId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "presence-alice-threshold-{runId}",
+          "generationId": "generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectBobThresholdPresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{thresholdGroupId}/sessions/{bobSessionId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "presence-bob-threshold-{runId}",
+          "generationId": "generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "startThresholdEstablishment",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{thresholdGroupId}/lifecycle/establish",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "establish-threshold-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "establishing",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "thresholdHoldsWithoutObservedEdges",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{thresholdGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 30000,
+          "backoffMs": 250,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "establishing",
+          "readiness": {
+            "plannedEdgeCount": 1,
+            "observedEdgeCount": 0,
+            "observedRate": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "createDegradedGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "group-create-degraded-{runId}",
+          "groupId": "{degradedGroupId}",
+          "displayName": "Degraded group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "activation": {
+              "mode": "deadline",
+              "successRate": 1,
+              "minimumViableRate": 0,
+              "deadlineMs": 3000,
+              "maxFormationAttempts": 1
+            },
+            "admission": {
+              "mode": "open"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{degradedGroupId}",
+            "lifecycleState": "forming",
+            "formationEpoch": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "joinBobToDegradedGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{degradedGroupId}/join",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "join-degraded-bob-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "connectAliceDegradedPresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{degradedGroupId}/sessions/{aliceSessionId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "presence-alice-degraded-{runId}",
+          "generationId": "generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectBobDegradedPresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{degradedGroupId}/sessions/{bobSessionId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "presence-bob-degraded-{runId}",
+          "generationId": "generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "startDegradedEstablishment",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{degradedGroupId}/lifecycle/establish",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "establish-degraded-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "establishing",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "formationActivatesDegradedAtDeadline",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{degradedGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 30000,
+          "backoffMs": 250,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "active",
+          "formationEpoch": 2,
+          "lastFormationOutcome": {
+            "outcome": "activated-degraded",
+            "observedRate": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "createAliceWsTicket",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "aliceWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceWsUrl",
+      "type": "set",
+      "output": "aliceWsUrl",
+      "secret": true,
+      "redactAs": "aliceWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.aliceSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.aliceWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openAliceWs",
+      "type": "ws.open",
+      "connection": "wsAlice",
+      "request": {
+        "url": "{aliceWsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "deriveRttCreatedAt",
+      "type": "set",
+      "output": "rttCreatedAtEpochMs",
+      "transform": {
+        "timestamp": true
+      }
+    },
+    {
+      "name": "deriveRttResource",
+      "type": "set",
+      "output": "rttResource",
+      "transform": {
+        "concat": [
+          "{\"sessionIdFrom\":\"",
+          {
+            "path": "outputs.aliceSessionId"
+          },
+          "\",\"sessionIdTo\":\"",
+          {
+            "path": "outputs.bobSessionId"
+          },
+          "\",\"rttMs\":42,\"createdAtEpochMs\":",
+          {
+            "path": "outputs.rttCreatedAtEpochMs"
+          },
+          ",\"version\":1}"
+        ]
+      }
+    },
+    {
+      "name": "reportTheObservedEdge",
+      "type": "ws.send",
+      "connection": "wsAlice",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "rtt-report-{runId}",
+            "ts": 0,
+            "senderId": "{aliceSessionId}",
+            "sessionId": "{aliceSessionId}"
+          },
+          "route": {
+            "topicId": "rtt",
+            "resourceId": "{aliceSessionId} {bobSessionId}",
+            "contextId": "1"
+          },
+          "delivery": {
+            "reliability": "best-effort",
+            "ack": "none"
+          },
+          "payload": {
+            "typeId": "rtt",
+            "contentType": "application/json",
+            "resource": "{rttResource}"
+          }
+        }
+      }
+    },
+    {
+      "name": "thresholdActivatesOnObservation",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{thresholdGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 30000,
+          "backoffMs": 250,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "active",
+          "readiness": {
+            "plannedEdgeCount": 1,
+            "observedEdgeCount": 1,
+            "observedRate": 1
+          },
+          "lastFormationOutcome": {
+            "outcome": "activated"
+          }
+        }
+      }
+    },
+    {
+      "name": "closeAliceWs",
+      "type": "ws.close",
+      "connection": "wsAlice",
+      "request": {
+        "code": 1000,
+        "reason": "formation criterion ws checks done"
       }
     }
   ]

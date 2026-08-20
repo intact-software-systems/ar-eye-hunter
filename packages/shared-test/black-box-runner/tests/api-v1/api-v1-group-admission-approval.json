@@ -30,6 +30,12 @@
     "runId": {
       "env": "RALLAR_BB_RUN_ID",
       "default": "local"
+    },
+    "carolUsername": "carol-{runId}",
+    "carolPassword": {
+      "env": "RALLAR_CAROL_PASSWORD",
+      "default": "secret",
+      "secret": true
     }
   },
   "execution": {
@@ -123,6 +129,61 @@
           "Bearer ",
           {
             "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerCarol",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "{carolUsername}",
+          "password": "{carolPassword}",
+          "displayName": "Admission approval carol {runId}"
+        }
+      },
+      "expect": {
+        "statusCode": [201, 409]
+      }
+    },
+    {
+      "name": "loginCarol",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{carolUsername}",
+          "password": "{carolPassword}"
+        },
+        "outputs": {
+          "carolClientId": "body.clientId",
+          "carolAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveCarolAuthHeader",
+      "type": "set",
+      "output": "carolAuthHeader",
+      "secret": true,
+      "redactAs": "carolAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.carolAccessToken"
           }
         ]
       }
@@ -320,6 +381,28 @@
       }
     },
     {
+      "name": "grantEmitsMemberJoined",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{approvalGroupId}/events",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": [
+          {
+            "eventType": "member-joined",
+            "requestId": "grant-bob-{runId}"
+          }
+        ]
+      }
+    },
+    {
       "name": "createRecoveryGroup",
       "type": "http",
       "connection": "primary",
@@ -344,9 +427,7 @@
             },
             "manager": {
               "selection": "assigned",
-              "assignedPrincipalIds": [
-                "{bobClientId}"
-              ],
+              "assignedPrincipalIds": ["{bobClientId}"],
               "count": 1
             }
           }
@@ -479,9 +560,56 @@
       "expect": {
         "status": 200,
         "body": {
-          "managerPrincipalIds": [
-            "{bobClientId}"
+          "managerPrincipalIds": ["{bobClientId}"]
+        }
+      }
+    },
+    {
+      "name": "carolParksInTheRecoveredGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{recoveryGroupId}/join",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {
+          "requestId": "park-carol-recovery-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{carolClientId}",
+              "status": "pending"
+            }
           ]
+        }
+      }
+    },
+    {
+      "name": "nonManagerGrantIsForbidden",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{recoveryGroupId}/admissions/{carolClientId}/grant",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "grant-carol-forbidden-{runId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "forbidden-role"
         }
       }
     },
@@ -573,9 +701,7 @@
           "group": {
             "lifecycleState": "establishing",
             "formationEpoch": 1,
-            "formationElectorate": [
-              "{aliceClientId}"
-            ]
+            "formationElectorate": ["{aliceClientId}"]
           }
         }
       }
@@ -661,6 +787,34 @@
             {
               "principalId": "{bobClientId}",
               "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "joinWhileActiveParksPending",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{epochGroupId}/join",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {
+          "requestId": "park-carol-active-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{carolClientId}",
+              "status": "pending",
+              "joined": null
             }
           ]
         }

@@ -7,6 +7,14 @@
     "applicationId": "admission-windows-{runId}",
     "workspaceId": "default-{runId}",
     "capacityGroupId": "capacity-room-{runId}",
+    "capacityReopenGroupId": "capacity-reopen-room-{runId}",
+    "deadlineOpenGroupId": "deadline-open-room-{runId}",
+    "carolUsername": "carol-{runId}",
+    "carolPassword": {
+      "env": "RALLAR_CAROL_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
     "deadlineGroupId": "deadline-window-room-{runId}",
     "closedGroupId": "closed-room-{runId}",
     "reopenGroupId": "reopen-room-{runId}",
@@ -129,6 +137,61 @@
       }
     },
     {
+      "name": "registerCarol",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "{carolUsername}",
+          "password": "{carolPassword}",
+          "displayName": "Admission windows carol {runId}"
+        }
+      },
+      "expect": {
+        "statusCode": [201, 409]
+      }
+    },
+    {
+      "name": "loginCarol",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{carolUsername}",
+          "password": "{carolPassword}"
+        },
+        "outputs": {
+          "carolClientId": "body.clientId",
+          "carolAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveCarolAuthHeader",
+      "type": "set",
+      "output": "carolAuthHeader",
+      "secret": true,
+      "redactAs": "carolAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.carolAccessToken"
+          }
+        ]
+      }
+    },
+    {
       "name": "createCapacityGroup",
       "type": "http",
       "connection": "primary",
@@ -190,6 +253,149 @@
       }
     },
     {
+      "name": "createCapacityReopenGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "group-create-capacity-reopen-{runId}",
+          "groupId": "{capacityReopenGroupId}",
+          "displayName": "Capacity reopen group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "formation": "phased",
+            "activation": {
+              "mode": "manual"
+            },
+            "admission": {
+              "mode": "open",
+              "untilMemberCount": 2
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "lifecycleState": "forming"
+          }
+        }
+      }
+    },
+    {
+      "name": "capacityAdmitsUnderTheWindow",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{capacityReopenGroupId}/join",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "join-capacity-under-bob-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "capacityDeniesAtTheWindow",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{capacityReopenGroupId}/join",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {
+          "requestId": "join-capacity-carol-denied-{runId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "group-admission-capacity-reached"
+        }
+      }
+    },
+    {
+      "name": "bobLeavesTheCapacityGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{capacityReopenGroupId}/members/{bobClientId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "leave-capacity-bob-{runId}",
+          "status": "left"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "leaveReopensTheCapacityWindow",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{capacityReopenGroupId}/join",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {
+          "requestId": "join-capacity-carol-reopened-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{carolClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "createDeadlineWindowGroup",
       "type": "http",
       "connection": "primary",
@@ -242,6 +448,72 @@
       }
     },
     {
+      "name": "createDeadlineOpenGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "group-create-deadline-open-{runId}",
+          "groupId": "{deadlineOpenGroupId}",
+          "displayName": "Deadline open group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "formation": "phased",
+            "activation": {
+              "mode": "manual"
+            },
+            "admission": {
+              "mode": "open",
+              "untilEpochMs": 4102444800000
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "lifecycleState": "forming"
+          }
+        }
+      }
+    },
+    {
+      "name": "deadlineAdmitsBeforeTheWindow",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineOpenGroupId}/join",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "join-deadline-open-bob-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "createClosedGroup",
       "type": "http",
       "connection": "primary",
@@ -263,9 +535,7 @@
             "formation": "phased",
             "manager": {
               "selection": "assigned",
-              "assignedPrincipalIds": [
-                "{aliceClientId}"
-              ],
+              "assignedPrincipalIds": ["{aliceClientId}"],
               "count": 1
             },
             "establishment": {
@@ -411,9 +681,7 @@
             "formation": "phased",
             "manager": {
               "selection": "assigned",
-              "assignedPrincipalIds": [
-                "{aliceClientId}"
-              ],
+              "assignedPrincipalIds": ["{aliceClientId}"],
               "count": 1
             },
             "establishment": {
@@ -532,10 +800,7 @@
           "group": {
             "lifecycleState": "establishing",
             "formationEpoch": 1,
-            "formationElectorate": [
-              "{aliceClientId}",
-              "{bobClientId}"
-            ]
+            "formationElectorate": ["{aliceClientId}", "{bobClientId}"]
           }
         }
       }

@@ -54,11 +54,15 @@ lane is untouched by slice 6 and still has no lifecycle artifact.
   the composed products applications pick. `match` composes manager-approval admission,
   blocked-until-active data, and threshold activation with the `minimumViableRate` floor —
   the fullest single exercise of the control plane.
-- **`strict-confirmation` response shape.** The validation rejection body is
-  `{"error": "<message>"}` with no structured code field; the recipe must assert the
-  `strict-confirmation-unsupported` code as a substring of the error message. A follow-up
-  could give validation rejections a structured issue list, but that is an API-shape change
-  slice 6 does not take.
+- **Policy-validity rejections are untyped on the wire.** Verified empirically during 6a:
+  a create with `strictConfirmation: true` (or `selection: 'none'` + manager initiator)
+  returns `400 {"error": "App inbox command is malformed", "code":
+  "app-inbox-malformed-command"}` — the issue codes (`strict-confirmation-unsupported`,
+  `manager-initiator-without-manager`) and the "not coherent" message exist only inside the
+  mutation compute and never reach the HTTP response. The 6a recipes pin this current
+  contract plus a not-persisted read-back (404). Whether the HTTP surface should carry the
+  typed issue list is an open API-shape question, the HTTP twin of the WS NACK opacity in
+  decision 6.2.
 - **Scale semantics.** Fractional readiness only exists with enough planned edges: N=20 is
   ~190 mesh edges (fractional band expressible), N=50 is ~1,225 — the quadratic planned-edge
   surface where a readiness-bookkeeping cliff would show. This is why the managed variants

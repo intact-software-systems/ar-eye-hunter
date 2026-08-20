@@ -29,7 +29,9 @@
     "runId": {
       "env": "RALLAR_BB_RUN_ID",
       "default": "local"
-    }
+    },
+    "leaveGroupId": "succession-leave-room-{runId}",
+    "zeroEstablishingGroupId": "zero-establishing-room-{runId}"
   },
   "execution": {
     "correlation": {
@@ -174,10 +176,7 @@
             },
             "manager": {
               "selection": "assigned",
-              "assignedPrincipalIds": [
-                "{aliceClientId}",
-                "{bobClientId}"
-              ],
+              "assignedPrincipalIds": ["{aliceClientId}", "{bobClientId}"],
               "count": 1
             },
             "admission": {
@@ -193,9 +192,7 @@
             "groupId": "{managerGroupId}",
             "lifecycleState": "forming",
             "formationEpoch": 0,
-            "formationElectorate": [
-              "{bobClientId}"
-            ]
+            "formationElectorate": ["{bobClientId}"]
           }
         }
       }
@@ -235,9 +232,7 @@
         "status": 200,
         "body": {
           "lifecycleState": "forming",
-          "managerPrincipalIds": [
-            "{aliceClientId}"
-          ]
+          "managerPrincipalIds": ["{aliceClientId}"]
         }
       }
     },
@@ -257,7 +252,10 @@
         }
       },
       "expect": {
-        "status": 403
+        "status": 403,
+        "body": {
+          "code": "forbidden-role"
+        }
       }
     },
     {
@@ -281,10 +279,7 @@
           "group": {
             "lifecycleState": "establishing",
             "formationEpoch": 1,
-            "formationElectorate": [
-              "{aliceClientId}",
-              "{bobClientId}"
-            ]
+            "formationElectorate": ["{aliceClientId}", "{bobClientId}"]
           }
         }
       }
@@ -323,9 +318,7 @@
       "expect": {
         "status": 200,
         "body": {
-          "managerPrincipalIds": [
-            "{bobClientId}"
-          ]
+          "managerPrincipalIds": ["{bobClientId}"]
         }
       }
     },
@@ -355,6 +348,366 @@
       }
     },
     {
+      "name": "createLeaveTwinGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "group-create-leave-twin-{runId}",
+          "groupId": "{leaveGroupId}",
+          "displayName": "Voluntary leave twin {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{bobClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "activation": {
+              "mode": "manual"
+            },
+            "manager": {
+              "selection": "assigned",
+              "assignedPrincipalIds": ["{aliceClientId}", "{bobClientId}"],
+              "count": 1
+            },
+            "admission": {
+              "mode": "open"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "lifecycleState": "forming"
+          }
+        }
+      }
+    },
+    {
+      "name": "aliceJoinsTheLeaveTwin",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/join",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "join-alice-leave-twin-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{aliceClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "leaveTwinManagerEstablishes",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/lifecycle/establish",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "establish-leave-twin-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "establishing",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "managerLeavesMidEstablishing",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/members/{aliceClientId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "leave-twin-alice-{runId}",
+          "status": "left"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{aliceClientId}",
+              "status": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "leaveSuccessionPassesToBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/formation",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "establishing",
+          "managerPrincipalIds": ["{bobClientId}"]
+        }
+      }
+    },
+    {
+      "name": "leaveSuccessorCompletesThePhase",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/lifecycle/activate",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "activate-leave-twin-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "active",
+            "formationEpoch": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "createZeroEstablishingGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "group-create-zero-establishing-{runId}",
+          "groupId": "{zeroEstablishingGroupId}",
+          "displayName": "Zero manager establishing {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{bobClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "activation": {
+              "mode": "manual"
+            },
+            "manager": {
+              "selection": "assigned",
+              "assignedPrincipalIds": ["{aliceClientId}"],
+              "count": 1
+            },
+            "admission": {
+              "mode": "open"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "lifecycleState": "forming"
+          }
+        }
+      }
+    },
+    {
+      "name": "aliceJoinsTheZeroEstablishingGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/join",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "join-alice-zero-establishing-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{aliceClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "soleManagerEstablishes",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/lifecycle/establish",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "establish-zero-establishing-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "establishing",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "soleManagerLeavesMidEstablishing",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/members/{aliceClientId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "leave-zero-establishing-alice-{runId}",
+          "status": "left"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{aliceClientId}",
+              "status": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "zeroManagersMidEstablishingInTheView",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/formation",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "establishing",
+          "managerPrincipalIds": []
+        }
+      }
+    },
+    {
+      "name": "zeroManagerBlocksActivateMidEstablishing",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/lifecycle/activate",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "activate-zero-establishing-{runId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "lifecycle-manager-unavailable"
+        }
+      }
+    },
+    {
+      "name": "membershipStaysSafeMidEstablishing",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/join",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "rejoin-zero-establishing-alice-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{aliceClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "createZeroManagerGroup",
       "type": "http",
       "connection": "primary",
@@ -379,9 +732,7 @@
             },
             "manager": {
               "selection": "assigned",
-              "assignedPrincipalIds": [
-                "{aliceClientId}"
-              ],
+              "assignedPrincipalIds": ["{aliceClientId}"],
               "count": 1
             },
             "admission": {
@@ -434,7 +785,10 @@
         }
       },
       "expect": {
-        "status": 403
+        "status": 403,
+        "body": {
+          "code": "lifecycle-manager-unavailable"
+        }
       }
     },
     {
@@ -471,9 +825,7 @@
       "expect": {
         "status": 200,
         "body": {
-          "managerPrincipalIds": [
-            "{aliceClientId}"
-          ]
+          "managerPrincipalIds": ["{aliceClientId}"]
         }
       }
     }
