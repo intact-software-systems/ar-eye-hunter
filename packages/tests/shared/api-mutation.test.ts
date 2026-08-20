@@ -65,6 +65,26 @@ describe('API mutation contract', () => {
   });
 
   it.each([
+    ['NaN detail', { diagnostic: Number.NaN }],
+    ['nested non-finite detail', { diagnostics: { elapsedMs: Number.POSITIVE_INFINITY } }],
+    ['non-finite detail nested in an array', { diagnostics: [{ attempt: Number.NaN }] }],
+  ])('rejects details that are not recursively JSON-wire values: %s', (_description, details) => {
+    const failure = {
+      ...canonicalUnavailableFailure(),
+      issues: [
+        {
+          code: 'request-invalid',
+          path: null,
+          message: 'Value is invalid',
+          details,
+        },
+      ],
+    };
+
+    expect(decodeApiMutationFailure(failure)).toBeUndefined();
+  });
+
+  it.each([
     {
       ...canonicalUnavailableFailure(),
       status: 399,
