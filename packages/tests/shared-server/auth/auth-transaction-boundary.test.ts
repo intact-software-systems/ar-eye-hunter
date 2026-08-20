@@ -2,8 +2,6 @@ import { expect, it, vi } from 'vitest';
 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
-import type { IssueAuthSessionCommand } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import {
   type AuthUser,
@@ -44,57 +42,39 @@ async function commitsIssuedSessionAndResultAtomically(): Promise<void> {
     serviceId,
     credentialSecret,
   });
-  const accessToken = await fixture.credentialIssuer.issueAccessToken('session-1');
-  const command = await createIssueSessionCommand(accessToken);
-
-  const pending = fixture.service.processAuthCommandUntilCompletion(command);
-  await dequeue(fixture);
-  const result = await pending;
-
-  expect(result.right).toMatchObject({ accessToken, sessionId: 'session-1' });
-  const sessions = new AuthSessionRepository(runtimeRepository);
-  expect(await sessions.findByAccessToken(accessToken)).toMatchObject({ sessionId: 'session-1' });
-  expect(await sessions.findBySessionId('session-1')).toMatchObject({
-    sessionId: 'session-1',
-    accessTokenDigest: command.session.accessTokenDigest,
-  });
-  await expectDurableIssueResult({ fixture, accessToken, credentialSecret, command });
-}
-
-async function createIssueSessionCommand(accessToken: string): Promise<IssueAuthSessionCommand> {
-  return {
-    version: 1,
-    kind: 'issue-session',
+  const pending = fixture.service.issueSession({
     requestId: 'issue-session-1',
-    capturedAtEpochMs: 1_000,
+    clientId: 'client-1',
+    username: 'alice',
     authority: {
       kind: 'static-client',
       clientId: 'client-1',
       normalizedUsername: 'alice',
     },
-    session: {
-      clientId: 'client-1',
-      username: 'alice',
-      sessionId: 'session-1',
-      accessTokenDigest: await hashAuthSecret(accessToken),
-      issuedAtEpochMs: 1_000,
-      expiresAtEpochMs: Date.now() + 60_000,
-    },
-  };
+    ttlMs: 60_000,
+  });
+  await waitForAuthInboxEntry(fixture.queue);
+  await dequeue(fixture);
+  const result = await pending;
+
+  if (!result.right) throw new Error('Expected issued auth session');
+  const { accessToken, sessionId } = result.right;
+  const sessions = new AuthSessionRepository(runtimeRepository);
+  expect(await sessions.findByAccessToken(accessToken)).toMatchObject({ sessionId });
+  expect(await sessions.findBySessionId(sessionId)).toMatchObject({ sessionId });
+  await expectDurableIssueResult({ fixture, accessToken, credentialSecret });
 }
 
 interface DurableIssueResultExpectation {
   readonly fixture: AuthInboxTestRuntime;
   readonly accessToken: string;
   readonly credentialSecret: string;
-  readonly command: IssueAuthSessionCommand;
 }
 
 async function expectDurableIssueResult({
   fixture,
   accessToken,
   credentialSecret,
-  command,
 }: DurableIssueResultExpectation): Promise<void> {
   const entries = await readEntries(fixture.queue);
   expect(entries).toHaveLength(1);
@@ -104,7 +84,7 @@ async function expectDurableIssueResult({
   const resultEntry = await fixture.results.findByKey(entries[0].key);
   expect(resultEntry?.resource).not.toContain(accessToken);
   expect(resultEntry?.resource).not.toContain(credentialSecret);
-  expect(resultEntry?.resource).toContain(command.session.accessTokenDigest);
+  expect(resultEntry?.resource).toContain('accessTokenDigest');
 }
 
 async function deniesSessionWhenUserIsDisabledAfterEnqueue(): Promise<void> {

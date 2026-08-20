@@ -137,21 +137,28 @@ describe('auth HTTP AppInbox idempotency security', () => {
     const second = auth.service.issueSession(input);
     await waitForAuthInboxEntry(auth.queue);
 
-    expect(nowEpochMs).toHaveBeenCalledOnce();
-    expect(issueAccessToken).toHaveBeenCalledOnce();
+    expect(nowEpochMs).not.toHaveBeenCalled();
+    expect(issueAccessToken).not.toHaveBeenCalled();
 
     await auth.reader.dequeueInbox(
       InboxQueueReader.INBOX_DEQUEUE_TYPES,
       createAuthInboxTestResilience(),
     );
-    await Promise.all([first, second]);
+    const [firstResult, secondResult] = await Promise.all([first, second]);
 
+    expect(nowEpochMs).toHaveBeenCalledOnce();
+    expect(issueAccessToken).toHaveBeenCalledTimes(3);
+    expect(firstResult.right).toEqual(secondResult.right);
+
+    const replay = await auth.service.issueSession(input);
+
+    expect(replay.right).toEqual(firstResult.right);
     expect(nowEpochMs).toHaveBeenCalledOnce();
     expect(issueAccessToken).toHaveBeenCalledTimes(4);
   });
 
   it('starts login TTL after winner execution rather than reservation queue delay', async () => {
-    let currentTime = 1_000;
+    let currentTime = 0;
     const nowEpochMs = vi.fn(() => currentTime);
     const runtimeRepository = new FakeRuntimeStateRepository();
     const auth = createAuthInboxTestRuntime({
@@ -160,12 +167,6 @@ describe('auth HTTP AppInbox idempotency security', () => {
       credentialSecret: 'auth-winner-ttl-secret-0123456789abcdef',
       nowEpochMs,
     });
-    let releaseMaterialization!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      releaseMaterialization = resolve;
-    });
-    auth.queue.delayNextMaterializationUntil(gate);
-
     const pending = auth.service.issueSession({
       requestId: 'WinnerTtlLoginRequest_0123',
       clientId: 'static-client',
@@ -177,19 +178,64 @@ describe('auth HTTP AppInbox idempotency security', () => {
       },
       ttlMs: 60_000,
     });
-    await Promise.resolve();
-    expect(await readEntries(auth.queue)).toHaveLength(0);
+    await waitForAuthInboxEntry(auth.queue);
+    const [queued] = await readEntries(auth.queue);
     expect(nowEpochMs).not.toHaveBeenCalled();
+    expect(queued.resource).not.toContain('capturedAtEpochMs');
+    expect(queued.resource).not.toContain('sessionId');
+    expect(queued.resource).not.toContain('accessTokenDigest');
 
     currentTime = 9_000;
-    releaseMaterialization();
-    const result = await runAuthCommand({
-      pending,
-      queue: auth.queue,
-      reader: auth.reader,
-    });
+    await auth.reader.dequeueInbox(
+      InboxQueueReader.INBOX_DEQUEUE_TYPES,
+      createAuthInboxTestResilience(),
+    );
+    const result = await pending;
 
     expect(result.right?.expiresAtEpochMs).toBe(69_000);
+    expect(nowEpochMs).toHaveBeenCalledOnce();
+  });
+
+  it('timestamps registration at worker execution without persisting the password', async () => {
+    let currentTime = 0;
+    const nowEpochMs = vi.fn(() => currentTime);
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const auth = createAuthInboxTestRuntime({
+      runtimeRepository,
+      serviceId: 'auth-winner-registration-service',
+      credentialSecret: 'auth-winner-registration-secret-0123456789abcdef',
+      nowEpochMs,
+    });
+    const input = {
+      requestId: 'WinnerRegistrationRequest_01',
+      request: {
+        username: 'DelayedAlice',
+        password: 'registration-password-must-not-persist',
+      },
+    };
+    const pending = auth.service.registerUser(input);
+    await waitForAuthInboxEntry(auth.queue);
+    const [queued] = await readEntries(auth.queue);
+
+    expect(nowEpochMs).not.toHaveBeenCalled();
+    expect(queued.resource).not.toContain(input.request.password);
+    expect(queued.resource).not.toContain('capturedAtEpochMs');
+    expect(queued.resource).not.toContain('createdAtEpochMs');
+    expect(queued.resource).not.toContain('clientId');
+
+    currentTime = 9_000;
+    await auth.reader.dequeueInbox(
+      InboxQueueReader.INBOX_DEQUEUE_TYPES,
+      createAuthInboxTestResilience(),
+    );
+    const result = await pending;
+
+    expect(result.right?.registeredAtEpochMs).toBe(9_000);
+    expect(nowEpochMs).toHaveBeenCalledOnce();
+
+    const replay = await auth.service.registerUser(input);
+
+    expect(replay.right).toEqual(result.right);
     expect(nowEpochMs).toHaveBeenCalledOnce();
   });
 

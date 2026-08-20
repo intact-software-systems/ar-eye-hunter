@@ -333,3 +333,137 @@ cognitive-load CI finding remains outside this fix round as directed.
 - Full package suites, five typechecks, bundle measurement, changed-style, structure, coupling, and
   diff checks established that the API/public-surface and arena ownership changes remain buildable
   and navigable across every touched consumer.
+
+## Fix round 2
+
+Fix base: `e23e85185ddee8557951e1e9daaea918bc2e5f1a`.
+
+### Findings verified and corrected
+
+1. **Reconnect-action WebSocket identity.** The middleware ticket URL provider no longer allocates
+   an ID. `WsQueueBoxClientService.reconnect` allocates one connection request ID before its retry
+   policy and passes that identity through every `Command`, socket-open, and ticket HTTP attempt.
+   A later reconnect invocation allocates a new ID only after the prior reconnect action has
+   completed or been abandoned. Initial connection owns its ID outside its timeout command too.
+2. **Worker-owned auth issuance facts.** AppAuth now persists one of seven credential-safe semantic
+   intents at enqueue. Registration's deterministic, non-expiring password verifier and salt are
+   created only by the enqueue winner, never contain the raw password, and remain excluded from
+   semantic equality. The accepted worker validates queue identity first and then materializes the
+   clock sample, user/session/agent-session IDs, access-token and ticket proofs/digests, issuance
+   timestamps, and expiries immediately before read/compute/validate/write. The existing atomic
+   domain/result/receipt/finalization transaction is still the only authority that can publish a
+   fact set; exact replay reads its durable result without invoking the worker or clock.
+3. **Replay identity preservation.** Public credential reconstruction now verifies durable
+   session, WebSocket-ticket, consumed-ticket, and agent-ticket identity against the reserved
+   intent (or the retained materialized-command compatibility input) before returning plaintext.
+   A durable row cannot switch to another validly derived session or agent while retaining a
+   matching credential digest.
+4. **Navigation and wire ownership.** The auth navigation map now traces stable intent reservation,
+   worker materialization, domain phases, and public reconstruction. AppInbox canonical hashing and
+   black-box evidence decode stable intent; registration verifier hash/salt remain deliberately
+   absent from semantic equality. The pre-existing public `captureAuthMutationFacts` compatibility
+   owner remains unchanged because its exact consumers and removal condition are governed by the
+   existing compatibility inventory.
+
+No schema, new store, persisted migration, raw/reversible credential persistence, compatibility
+shim, or route change was introduced. If a worker transaction attempt fails, a later queue retry
+may resample the clock and rematerialize deterministic credentials, but the failed attempt cannot
+persist or expose them; only the attempt whose existing atomic transaction commits becomes the
+durable result authority.
+
+### TDD RED evidence
+
+- Initial covering RED:
+  `npx vitest run packages/tests/shared/websocket-webrtc.test.ts
+  packages/tests/shared-server/auth/auth-http-idempotency-security.test.ts` — 2 files failed,
+  4 failed and 27 passed. Reconnect URL-provider observations were `[undefined, undefined]` rather
+  than one repeated ID followed by a distinct later-action ID. Auth assertions observed the clock
+  and credential creator before dequeue, proving reservation-time fact materialization.
+- Intent codec RED:
+  `npx vitest run packages/tests/shared-server/auth/auth-mutation-intent-codec.test.ts` — 3 failed
+  and 2 passed. Exact-key validation masked the required plaintext-field rejection. Moving the
+  recursive credential check before shape discrimination made all forbidden password, access-token,
+  and ticket fields fail with the stable security error.
+- Replay identity self-review RED:
+  `npx vitest run packages/tests/shared-server/auth/auth-public-result.test.ts` — 1 failed and
+  2 passed because a valid digest for `other-session` was accepted even though the reserved
+  WebSocket intent authorized `session-1`. Restoring intent-to-result identity checks produced
+  3/3 GREEN.
+
+### GREEN behavior evidence
+
+- WebSocket action retry:
+  `npx vitest run packages/tests/shared/websocket-webrtc.test.ts
+  packages/tests/shared-web/ws-engine.test.ts` — 2 files, 30/30 passed. A lost ticket-provider
+  response retries with `reconnect-request-1`; the next completed-then-restarted reconnect uses
+  `reconnect-request-2`.
+- Final focused WebSocket plus auth:
+  `npx vitest run packages/tests/shared/websocket-webrtc.test.ts
+  packages/tests/shared-web/ws-engine.test.ts packages/tests/shared-server/auth` — 33 files,
+  161/161 passed before the final replay-identity test was added. The final full auth rerun,
+  `npx vitest run packages/tests/shared-server/auth`, passed 31 files and 132/132 tests.
+- Deterministic worker-delay and exact replay assertions enqueue at `t=0`, observe no clock call,
+  no `capturedAtEpochMs`, session ID, access-token digest, created timestamp, client ID, or raw
+  password in the durable semantic intent, then dequeue at `t=9000`. Session expiry is exactly
+  `69000`, registration time is exactly `9000`, equal contenders share one result, and replay does
+  not sample another clock/fact set.
+- Focused API auth/client/middleware/PGlite:
+  `cd apps/api-v1 && deno test -A
+  test/routes/auth-client-mutation-idempotency-routes.test.ts
+  test/config-route-auth-logout.test.ts test/routes/agent-session-ticket-route.test.ts
+  test/routes/app-inbox-timeout-durable-route.test.ts
+  test/client-state/client-state-mutation-routes.test.ts
+  test/db/pglite-auth-app-inbox.test.ts test/db/pglite-auth-failure-atomicity.test.ts
+  test/composition/create-api-v1-route-installers.test.ts
+  test/services/state-api-authentication-middleware.test.ts
+  test/services/state-api-resilience-middleware.test.ts test/request-auth-service.test.ts`
+  — 38/38 passed. Expected failed-entry diagnostics came from the deliberate consumed-ticket,
+  post-enqueue policy, outbox-collision, and finalization-fence cases; the command exited 0.
+- Final PGlite focus:
+  `cd apps/api-v1 && deno test -A test/db/pglite-auth-app-inbox.test.ts` — 3/3 passed. Two equal
+  contenders persisted one stable intent at `t=0`, worker execution at `t=9000` sampled one clock,
+  produced expiry `69000`, wrote one durable result, and replay sampled nothing new.
+- Full shared-web: `npm run test:shared-web` — 90 files, 540/540 passed. Browser bundle boundary:
+  `npm run check:browser-bundles --workspace=packages/shared-web` — passed; every budgeted browser
+  entry remained within its Brotli limit.
+
+### GREEN static and repository evidence
+
+- Typechecks passed for shared (`npx tsc -p packages/shared/tsconfig.json --noEmit`), shared-server,
+  shared-web, shared-test, and API-v1 (`deno task check`).
+- `deno fmt --check test/db/pglite-auth-app-inbox.test.ts` and
+  `deno lint test/db/pglite-auth-app-inbox.test.ts` each checked one touched API file with zero
+  findings.
+- `node scripts/check-changed-repo-style.mjs
+  407251f258180c2d19da1feb5ebe535eecdb4328 WORKTREE` — PASS with zero new findings. The first run
+  found 16 line-width/unknown-boundary findings; wrapping five owners and narrowing the persisted
+  JSON decoder to `JsonWireValue` reduced the next run to five formatter-expanded lines, and the
+  final run passed with zero.
+- `npm run check:repo-structure -- --base
+  407251f258180c2d19da1feb5ebe535eecdb4328` — PASS with the same 12 review-level density/prefix
+  findings already dispositioned in Fix round 1; no new auth, WebSocket, or test owner finding.
+- `npm run check:test-structure-coupling` — PASS with registry entries current. The same two
+  unrelated `tests-typecheck-gate.test.ts` candidates await human classification.
+- `git diff --check` — clean.
+
+### Fix-round self-review and disposition
+
+Every changed human-authored source, test, and navigation file was reviewed in full after
+formatting. The review verified that request IDs are allocated outside every logical reconnect
+retry supplier, intent decoding rejects caller-supplied timestamps and plaintext recursively,
+registration verifier persistence is credential-safe and excluded from semantic equality, queue
+identity precedes fact creation, and replay reconstruction is tied to reserved identity. No
+task-specific follow-up remains.
+
+### Commands executed and what they taught us (Fix round 2)
+
+- Focused RED/GREEN Vitest runs showed that a connection request identity belongs to the complete
+  reconnect action and that a real `JsonWebSocketClient` URL-provider failure is needed to model a
+  lost ticket HTTP response accurately.
+- In-memory and PGlite delayed-worker tests showed that reserving stable intent separates queue
+  delay from issuance TTL while preserving the existing single-result atomic authority.
+- Full auth, API, and shared-web suites plus five affected typechecks showed that intent wire
+  migration retained public response shapes, security failures, and directly coupled consumers.
+- Deno formatting/lint, browser bundle measurement, changed-style, structure, coupling, and diff
+  checks showed that the final source remains buildable, reviewable, and within existing package
+  boundaries.

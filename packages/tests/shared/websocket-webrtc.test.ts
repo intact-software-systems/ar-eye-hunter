@@ -598,6 +598,109 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    FakeWebSocket.instances.length = 0;
+  });
+
+  it('reuses one ticket identity after a lost response within one reconnect action', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    const requestIds: Array<string | undefined> = [];
+    let loseNextResponse = false;
+    const socket = new JsonWebSocketClient(async (options) => {
+      requestIds.push(options.requestId);
+      if (loseNextResponse) {
+        loseNextResponse = false;
+        throw new Error('ticket response lost');
+      }
+      return `ws://test?requestId=${options.requestId}`;
+    });
+    const service = createWsQueueBoxService(socket, {
+      newConnectionRequestId: () => 'reconnect-request-1',
+      reconnect: {
+        maxAttempts: 2,
+        connectTimeoutMsecs: 0,
+        retryIntervalMsecs: 0,
+        maxRetryIntervalMsecs: 0,
+      },
+    });
+
+    const initialConnect = socket.connect({ requestId: 'initial-request' });
+    await Promise.resolve();
+    const initialSocket = FakeWebSocket.instances[0];
+    initialSocket.readyState = FakeWebSocket.OPEN;
+    await initialSocket.emit('open', { type: 'open' });
+    await initialConnect;
+    requestIds.length = 0;
+    FakeWebSocket.instances.length = 0;
+    service.enableReconnect();
+    loseNextResponse = true;
+    initialSocket.readyState = FakeWebSocket.CLOSED;
+    await initialSocket.emit('close', {
+      type: 'close',
+      code: 1006,
+      reason: 'network-lost',
+    });
+    await vi.runAllTimersAsync();
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+
+    const connected = FakeWebSocket.instances[0];
+    connected.readyState = FakeWebSocket.OPEN;
+    await connected.emit('open', { type: 'open' });
+
+    expect(requestIds).toEqual(['reconnect-request-1', 'reconnect-request-1']);
+  });
+
+  it('allocates a new ticket request identity for a later reconnect action', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    const requestIds: Array<string | undefined> = [];
+    let requestSequence = 0;
+    const socket = new JsonWebSocketClient((options) => {
+      requestIds.push(options.requestId);
+      return `ws://test?requestId=${options.requestId}`;
+    });
+    const service = createWsQueueBoxService(socket, {
+      newConnectionRequestId: () => `reconnect-request-${++requestSequence}`,
+      reconnect: {
+        connectTimeoutMsecs: 0,
+        retryIntervalMsecs: 0,
+        maxRetryIntervalMsecs: 0,
+      },
+    });
+
+    const initialConnect = socket.connect({ requestId: 'initial-request' });
+    await Promise.resolve();
+    const initialSocket = FakeWebSocket.instances[0];
+    initialSocket.readyState = FakeWebSocket.OPEN;
+    await initialSocket.emit('open', { type: 'open' });
+    await initialConnect;
+    requestIds.length = 0;
+    FakeWebSocket.instances.length = 0;
+    service.enableReconnect();
+    initialSocket.readyState = FakeWebSocket.CLOSED;
+    await initialSocket.emit('close', {
+      type: 'close',
+      code: 1006,
+      reason: 'network-lost',
+    });
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    const first = FakeWebSocket.instances[0];
+    first.readyState = FakeWebSocket.OPEN;
+    await first.emit('open', { type: 'open' });
+    await vi.waitFor(() => expect(service.readHealth().reconnecting).toBe(false));
+
+    first.readyState = FakeWebSocket.CLOSED;
+    await first.emit('close', {
+      type: 'close',
+      code: 1006,
+      reason: 'network-lost-again',
+    });
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2));
+    const second = FakeWebSocket.instances[1];
+    second.readyState = FakeWebSocket.OPEN;
+    await second.emit('open', { type: 'open' });
+
+    expect(requestIds).toEqual(['reconnect-request-1', 'reconnect-request-2']);
   });
 
   it('reconnects after an unexpected WebSocket close while reconnect is enabled', async () => {

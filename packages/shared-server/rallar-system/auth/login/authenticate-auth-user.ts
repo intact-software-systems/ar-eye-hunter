@@ -5,12 +5,12 @@ import {
   normalizeUsername,
   type AuthUser,
 } from '../persistence/auth-user-repository.ts';
-import type { IssueAuthSessionCommand } from '../mutation/auth-mutation-contracts.ts';
+import type { AuthSessionAuthority } from '../mutation/auth-mutation-contracts.ts';
 
 export type AuthenticatedUserIdentity = Readonly<{
   clientId: string;
   username: string;
-  authority: IssueAuthSessionCommand['authority'];
+  authority: AuthSessionAuthority;
 }>;
 
 export type LoginClientData = Readonly<{
@@ -81,7 +81,10 @@ function authenticateStaticClient(
 
 export async function verifyAuthUserPassword(
   password: string,
-  user: AuthUser,
+  user: Pick<
+    AuthUser,
+    'passwordAlgorithm' | 'passwordHash' | 'passwordIterations' | 'passwordSalt'
+  >,
 ): Promise<boolean> {
   if (user.passwordAlgorithm !== PASSWORD_ALGORITHM) {
     return false;

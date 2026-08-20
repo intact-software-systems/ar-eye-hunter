@@ -174,8 +174,11 @@ export async function initialiseMiddleware(
     );
 
     const socket = new JsonWebSocketClient(async (connectOptions) => {
+        if (!connectOptions.requestId) {
+            throw new Error('WebSocket connection request identity is missing.');
+        }
         const wsTicket = await createWebSocketTicket({
-            requestId: crypto.randomUUID(),
+            requestId: connectOptions.requestId,
             signal: connectOptions.signal,
         });
         if (wsTicket.sessionId !== session.sessionId) {
@@ -196,6 +199,7 @@ export async function initialiseMiddleware(
             signal: options.signal,
             connectTimeoutMs: options.timeoutMs ??
                 DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
+            newConnectionRequestId: () => crypto.randomUUID(),
             outboundDiagnostics: options.outboundDiagnostics,
         },
     )

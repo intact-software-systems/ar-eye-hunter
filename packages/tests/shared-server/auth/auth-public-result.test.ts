@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import { toAuthMutationPublicResult } from '@shared-server/rallar-system/auth/mutation/to-auth-mutation-public-result.ts';
 
 const credentialIssuer = createHmacAuthCredentialIssuer('auth-task-one-secret-0123456789abcdef');
@@ -93,4 +94,37 @@ it('rejects a durable result whose digest does not match the rederived credentia
       credentialIssuer,
     ),
   ).rejects.toThrow('Auth AppInbox result credential digest differs');
+});
+
+it('rejects a durable ticket result outside the reserved authority', async () => {
+  const requestId = 'ws-ticket-request';
+  const mismatchedTicket = await credentialIssuer.issueWebSocketTicket(requestId, 'other-session');
+
+  await expect(
+    toAuthMutationPublicResult(
+      {
+        version: 1,
+        kind: 'issue-ws-ticket',
+        requestId,
+        authority: {
+          clientId: 'client-1',
+          username: 'alice',
+          sessionId: 'session-1',
+          accessTokenDigest,
+          issuedAtEpochMs: 1_000,
+          expiresAtEpochMs: 70_000,
+        },
+        ttlMs: 30_000,
+      },
+      {
+        requestId,
+        kind: 'ws-ticket-issued',
+        ticketDigest: await hashAuthSecret(mismatchedTicket),
+        sessionId: 'other-session',
+        issuedAtEpochMs: 1_000,
+        expiresAtEpochMs: 31_000,
+      },
+      credentialIssuer,
+    ),
+  ).rejects.toThrow('Auth websocket ticket result identity differs');
 });

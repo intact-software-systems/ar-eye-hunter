@@ -118,9 +118,9 @@ it.each([
     source: sources.authHandler,
     owner: 'processAuthMutation',
     calls: [
+      'materializeAuthMutationIntent(intent,',
       'this.dependencies.mutationService.read(command)',
-      'captureAuthMutationFacts(command, this.dependencies.credentialIssuer)',
-      'this.dependencies.mutationService.compute(command, read, facts)',
+      'this.dependencies.mutationService.compute(command, read, materialized.facts)',
       'this.dependencies.mutationService.validate(command, read, computed)',
       'this.dependencies.transactionWriter.writeMutation(',
       'this.dependencies.mutationService.write(transaction, computed)',

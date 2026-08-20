@@ -17,6 +17,7 @@ import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMes
 export type WsEngineInitOptions = Readonly<{
     signal?: AbortSignal;
     connectTimeoutMs?: number;
+    newConnectionRequestId?: () => string;
     outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
 }>;
 
@@ -39,6 +40,7 @@ export async function initialiseWsEngine(
                 inboundStores: resolveBrowserWsClientALInboundRuntimeStores(clientData.sessionId),
                 outboundStores: resolveBrowserWsClientALOutboundRuntimeStores(clientData.sessionId),
                 outboundDiagnostics: options.outboundDiagnostics,
+                newConnectionRequestId: options.newConnectionRequestId,
                 reconnect: {
                     ...DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
                     canReconnect: () =>
@@ -97,10 +99,12 @@ async function connectInitialSocket(
     socket: JsonWebSocketClient,
     options: WsEngineInitOptions,
 ): Promise<void> {
+    const requestId = options.newConnectionRequestId?.();
     const connectTimeoutMs = options.connectTimeoutMs ??
         DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs;
     if (connectTimeoutMs <= 0) {
         await socket.connect({
+            requestId,
             signal: options.signal,
         });
         return;
@@ -109,6 +113,7 @@ async function connectInitialSocket(
     await new Command<void>(
         (signal) =>
             socket.connect({
+                requestId,
                 signal,
             }),
         {
