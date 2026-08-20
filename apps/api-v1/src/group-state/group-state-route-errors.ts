@@ -102,7 +102,7 @@ export function toGroupMutationErrorResponse<Failure>(
       denial: {
         code: error.denial.code,
         message: error.denial.message,
-        details: toApiMutationFailureJsonObject(error.denial.details),
+        details: toApiMutationFailureJsonObject(JSON.stringify(error.denial.details)),
       },
     });
     return context.json(failure, failure.status);
