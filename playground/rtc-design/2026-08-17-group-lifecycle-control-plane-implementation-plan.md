@@ -238,6 +238,18 @@ scenarios land as black-box recipes at the 6/20/50 tiers where scale matters.
 `strict-confirmation` becomes a negative test in v1: setting `strictConfirmation: true` returns the
 typed unsupported rejection.
 
+#### Decisions taken during slice 6 planning (2026-08-20)
+
+The coverage audit behind these is `2026-08-20-scenario-matrix-gap-analysis.md`: one covered,
+eight partial, one uncovered, with every missing pin named.
+
+| # | Decision |
+| --- | --- |
+| 6.1 | **Preset-labeled recipes are the organizing principle.** Every recipe exercising lifecycle behaviour names the policy it tests. The formation-burst recipes gain `preset: 'optimistic'` at all three tiers — they *are* the optimistic-baseline scenario, now explicitly — and every preset gets at least one labeled recipe: `managed` already has several; `match` and `drop-in-social` gain composed-behaviour recipes (no recipe sends either today). The compatibility guarantee is pinned once, not per tier: a create that omits `lifecyclePolicy` resolves to exactly the optimistic default (absent ≡ explicit equivalence) — this is the acceptance property's pin. |
+| 6.2 | **The generic WS NACK is the contract.** The room authorizer maps every policy denial to the generic NACK reason; `group-data-blocked-until-active` and the admission codes are typed on the HTTP surface only. Recipes pin the generic NACK over WS and the typed code over HTTP. Surfacing typed codes in the NACK is deferred until an application needs to distinguish them. |
+| 6.3 | **Managed burst variants at N=20 and N=50.** These are runner-process WS clients, not browsers, so the cost is seconds. N=20 makes fractional readiness expressible (~190 planned mesh edges); N=50 exercises the quadratic planned-edge surface (~1,225) where a bookkeeping cliff would hide from 20. Gate placement is decided at implementation from the recipe matrix; the single-server-safe lifecycle recipes also join the memory profile so the fast loop runs them. |
+| 6.4 | **Delivered as 6a/6b/6c.** 6a: the per-scenario missing pins in existing recipes, the `strict-confirmation` negative, the absent ≡ optimistic equivalence pin, and the weak-pin repairs (the mis-aimed non-manager leg, body-code assertions, the `member-joined` event pin). 6b: preset labeling of the burst recipes plus the managed 20/50 variants and profile wiring. 6c: the `match` and `drop-in-social` composed-preset recipes. |
+
 ## Deferred, explicitly
 
 - **Per-edge confirm-or-fail batch machinery** — the whole activation design. Gated behind
