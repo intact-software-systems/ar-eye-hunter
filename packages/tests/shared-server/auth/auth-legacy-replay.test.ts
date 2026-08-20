@@ -11,7 +11,10 @@ import {
   createHmacAuthCredentialIssuer,
 } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+// prettier-ignore
+import type {
+  JsonWireValue,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 // prettier-ignore
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/\
 app-auth-inbox-service.ts';
@@ -248,18 +251,15 @@ async function failsReplayAfterSecretRotation(): Promise<void> {
   const first = await firstPending;
   if (!first.right) throw new Error('Expected initial auth session');
 
-  const rotatedIssuer = createHmacAuthCredentialIssuer(
-    'second-auth-secret-0123456789abcdef-extra',
-  );
+  // prettier-ignore
+  const rotatedIssuer = createHmacAuthCredentialIssuer('second-auth-secret-0123456789abcdef-extra');
   const rotatedService = createServiceWithIssuer(auth, runtimeRepository, rotatedIssuer);
-  await expect(rotatedService.issueSession(input)).rejects.toThrow(
-    /digest differs/u,
-  );
+  // prettier-ignore
+  await expect(rotatedService.issueSession(input)).rejects.toThrow(/digest differs/u);
   const durable = await durableResources(auth);
   expect(durable).not.toContain(first.right.accessToken);
-  expect(durable).not.toContain(
-    await rotatedIssuer.issueAccessToken(first.right.sessionId),
-  );
+  // prettier-ignore
+  expect(durable).not.toContain(await rotatedIssuer.issueAccessToken(first.right.sessionId));
 }
 
 async function failsClosedOnCorruptResults(): Promise<void> {
@@ -303,7 +303,19 @@ async function failsClosedOnCorruptResults(): Promise<void> {
   }
 }
 
-function corruptedResultRows(result: AuthMutationResult, injectedSecret: string) {
+interface CorruptAuthMutationResult {
+  readonly [property: string]: JsonWireValue | undefined;
+}
+
+interface CorruptAuthMutationResultRow {
+  readonly value: CorruptAuthMutationResult;
+  readonly expectedMessage: string;
+}
+
+function corruptedResultRows(
+  result: AuthMutationResult,
+  injectedSecret: string,
+): readonly CorruptAuthMutationResultRow[] {
   if (!('kind' in result) || result.kind !== 'session-issued') {
     throw new Error('Expected durable session-issued result');
   }
@@ -334,7 +346,7 @@ interface CorruptReplayInput {
   readonly auth: AuthInboxTestRuntime;
   readonly input: Parameters<AppAuthInboxService['issueSession']>[0];
   readonly durableResult: ResourceEntry;
-  readonly corrupted: JsonWireValue;
+  readonly corrupted: CorruptAuthMutationResult;
   readonly expectedMessage: string;
   readonly injectedSecret: string;
 }

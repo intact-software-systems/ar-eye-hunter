@@ -35,6 +35,7 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/services/ti
 import {
   ADMIN_APP_INBOX_TOPIC,
   AppAdminInboxService,
+  type AdminPruneEnqueueResult,
 } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
 import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
 import {
@@ -46,6 +47,27 @@ import {
 
 const INITIAL_TIME_EPOCH_MS = 1_800_000_000_000;
 const RETRY_EXPIRY_OFFSET_MS = 900_000;
+
+interface CreateAdminInboxHarnessOptions {
+  readonly allowCurrentAuthority?: boolean;
+  readonly conflictFirstTransaction?: boolean;
+  readonly failOutboxWrite?: boolean;
+  readonly retryExpiryOffsetMs?: number;
+  readonly waitForResult?: boolean;
+}
+
+interface AdminPruneConflictCase {
+  readonly name: string;
+  readonly session: AuthSession;
+  readonly request: AdminPruneExpiredRequest;
+}
+
+interface AdminPruneUnavailableCase {
+  readonly name: string;
+  readonly options: CreateAdminInboxHarnessOptions;
+  readonly request: AdminPruneExpiredRequest;
+  readonly expectedCode: string;
+}
 
 describe('AppAdminInboxService initial prune command', () => {
   it('normalizes defaults and captures volatile command facts once before enqueue', async () => {
@@ -65,7 +87,7 @@ describe('AppAdminInboxService initial prune command', () => {
       capturedAtEpochMs: INITIAL_TIME_EPOCH_MS,
       expireAtEpochMs: INITIAL_TIME_EPOCH_MS + RETRY_EXPIRY_OFFSET_MS,
       dryRun: true,
-      categories: ADMIN_PRUNE_EXPIRED_CATEGORIES.filter((category) => category !== 'app-data'),
+      categories: defaultAdminPruneCategories(),
       appData: null,
       pageSize: 25,
     });
@@ -87,7 +109,7 @@ describe('AppAdminInboxService initial prune command', () => {
       requestId: command.jobId,
       requestedBy: 'admin',
       requestedSessionId: 'admin-session',
-      categories: ADMIN_PRUNE_EXPIRED_CATEGORIES.filter((category) => category !== 'app-data'),
+      categories: defaultAdminPruneCategories(),
       appData: null,
       dryRun: true,
     });
@@ -168,7 +190,7 @@ describe('AppAdminInboxService initial prune command', () => {
 
     const command = await readOnlyCommand(harness.queue, 'first-occurrence-order', 'admin');
     expect(command.categories).toEqual(['resource-inbox-results', 'runtime-state']);
-    expect(result.right?.results.map(({ category }) => category)).toEqual([
+    expect(readAdminPruneResultCategories(result.right)).toEqual([
       'resource-inbox-results',
       'runtime-state',
     ]);
@@ -207,14 +229,14 @@ describe('AppAdminInboxService initial prune command', () => {
       },
     });
 
-    expect(replay.right?.results.map(({ category }) => category)).toEqual([
+    expect(readAdminPruneResultCategories(replay.right)).toEqual([
       'resource-inbox-results',
       'runtime-state',
     ]);
     expect(harness.readWorkCounts()).toEqual(beforeReplay);
   });
 
-  it.each([
+  it.each<AdminPruneConflictCase>([
     {
       name: 'authenticated session',
       session: createAdminSession('admin', 'other-session'),
@@ -242,32 +264,7 @@ describe('AppAdminInboxService initial prune command', () => {
     },
   ])(
     'rejects changed $name under an existing same-client request ID without new work',
-    async ({ session, request }) => {
-      const harness = createAdminInboxHarness();
-      await completePrune(harness, createAdminSession('admin', 'admin-session'), {
-        requestId: 'same-client-conflict',
-        categories: ['runtime-state'],
-        dryRun: true,
-      });
-      const beforeConflict = harness.readWorkCounts();
-      const conflict = harness.service.pruneExpired({ adminSession: session, request });
-      await expect(conflict).rejects.toBeInstanceOf(AppInboxIdempotencyConflictError);
-      await expect(conflict).rejects.toMatchObject({
-        code: 'app-inbox-idempotency-conflict',
-        status: 409,
-      });
-
-      expect(harness.readWorkCounts()).toEqual(beforeConflict);
-      expect(harness.createAdminPruneIdempotencyIdentity).toHaveBeenCalledTimes(2);
-      const identities = await Promise.all(
-        harness.createAdminPruneIdempotencyIdentity.mock.results.map(({ value }) => value),
-      );
-      expect(identities[0]?.semanticHash).not.toBe(identities[1]?.semanticHash);
-      const semanticHashes = readSemanticHashes(harness.timingEvents);
-      expect(semanticHashes).toHaveLength(2);
-      expect(semanticHashes[0]).toMatch(/^sha256:/u);
-      expect(semanticHashes[1]).not.toBe(semanticHashes[0]);
-    },
+    rejectsChangedAdminPruneRequest,
   );
 
   it('uses a distinct key for another client with the same request ID', async () => {
@@ -420,7 +417,7 @@ describe('AppAdminInboxService initial prune command', () => {
     ]);
   });
 
-  it.each([
+  it.each<AdminPruneUnavailableCase>([
     {
       name: 'current authority denial',
       options: { allowCurrentAuthority: false },
@@ -469,12 +466,54 @@ describe('AppAdminInboxService initial prune command', () => {
   });
 });
 
-interface CreateAdminInboxHarnessOptions {
-  readonly allowCurrentAuthority?: boolean;
-  readonly conflictFirstTransaction?: boolean;
-  readonly failOutboxWrite?: boolean;
-  readonly retryExpiryOffsetMs?: number;
-  readonly waitForResult?: boolean;
+async function rejectsChangedAdminPruneRequest({
+  session,
+  request,
+}: AdminPruneConflictCase): Promise<void> {
+  const harness = createAdminInboxHarness();
+  await completePrune(harness, createAdminSession('admin', 'admin-session'), {
+    requestId: 'same-client-conflict',
+    categories: ['runtime-state'],
+    dryRun: true,
+  });
+  const beforeConflict = harness.readWorkCounts();
+  const conflict = harness.service.pruneExpired({ adminSession: session, request });
+  await expect(conflict).rejects.toBeInstanceOf(AppInboxIdempotencyConflictError);
+  await expect(conflict).rejects.toMatchObject({
+    code: 'app-inbox-idempotency-conflict',
+    status: 409,
+  });
+
+  expect(harness.readWorkCounts()).toEqual(beforeConflict);
+  expect(harness.createAdminPruneIdempotencyIdentity).toHaveBeenCalledTimes(2);
+  const identities = await Promise.all(
+    harness.createAdminPruneIdempotencyIdentity.mock.results.map(({ value }) => value),
+  );
+  expect(identities[0]?.semanticHash).not.toBe(identities[1]?.semanticHash);
+  const semanticHashes = readSemanticHashes(harness.timingEvents);
+  expect(semanticHashes).toHaveLength(2);
+  expect(semanticHashes[0]).toMatch(/^sha256:/u);
+  expect(semanticHashes[1]).not.toBe(semanticHashes[0]);
+}
+
+function defaultAdminPruneCategories(): readonly AdminPruneExpiredCategory[] {
+  return ADMIN_PRUNE_EXPIRED_CATEGORIES.filter(isNotAppDataCategory);
+}
+
+function isNotAppDataCategory(category: AdminPruneExpiredCategory): boolean {
+  return category !== 'app-data';
+}
+
+function readAdminPruneResultCategories(
+  result: AdminPruneEnqueueResult | undefined,
+): readonly AdminPruneExpiredCategory[] {
+  return result?.results.map(readAdminPruneResultCategory) ?? [];
+}
+
+function readAdminPruneResultCategory(
+  result: Readonly<{ category: AdminPruneExpiredCategory }>,
+): AdminPruneExpiredCategory {
+  return result.category;
 }
 
 interface AdminInboxHarness {
