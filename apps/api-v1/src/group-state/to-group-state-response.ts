@@ -4,6 +4,7 @@ import type {
   GroupMutationWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import type {
+  GroupPresenceInboxDurableResult,
   GroupStateInboxDurableResult,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import type {
@@ -12,13 +13,9 @@ import type {
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import {
   requireGroupJoinCodeWritten,
-  requireGroupMutationReceipt,
+  requireGroupPresenceInboxDurableResult,
   requireGroupStateWritten,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
-// deno-fmt-ignore: This package import exceeds the repository's 100-column checker limit.
-import type {
-  GroupMutationReceipt,
-} from '@shared-server/rallar-system/services/group-state-mutations.ts';
 
 import type { GroupStateRouteService } from './group-state-route-contracts.ts';
 
@@ -63,7 +60,7 @@ export function toGroupStateResponse(
     case 'presence':
       return toGroupPresenceResponse({
         ...input,
-        receipt: requireGroupMutationReceipt(input.receipt),
+        receipt: requireGroupPresenceInboxDurableResult(input.receipt),
       });
   }
 }
@@ -89,10 +86,10 @@ function toGroupJoinCodeResponse(written: GroupJoinCodeWritten): GroupJoinCodeRe
 
 async function toGroupPresenceResponse(
   input: Omit<Extract<GroupStateResponseInput, { kind: 'presence' }>, 'receipt'> & {
-    readonly receipt: GroupMutationReceipt;
+    readonly receipt: GroupPresenceInboxDurableResult;
   },
 ): Promise<GroupSnapshot> {
-  if (input.receipt.outcome === 'rejected') {
+  if ('commandId' in input.receipt && input.receipt.outcome === 'rejected') {
     throw new Error(input.receipt.rejection ?? 'Group presence mutation rejected');
   }
 

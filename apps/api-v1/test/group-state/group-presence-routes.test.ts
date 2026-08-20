@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 
 import type {
-  AppInboxEnqueueInput,
-} from '@shared-server/rallar-system/services/AppInboxService.ts';
+  GroupMutationReceipt,
+} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import type {
+  InactiveGroupPresenceResult,
+} from '@shared-server/rallar-system/group-state/presence/group-presence-service.ts';
 
 import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
 import { toGroupStateResponse } from '../../src/group-state/to-group-state-response.ts';
-import type {
-  GroupStateRouteAuthSession,
-  ProcessGroupAppInbox,
-} from '../../src/group-state/group-state-route-contracts.ts';
+import type { ProcessGroupAppInbox } from '../../src/group-state/group-state-route-contracts.ts';
 
 import {
   createGroupStateRouteAuthSession,
@@ -223,6 +223,37 @@ Deno.test(
   },
 );
 
+Deno.test('inactive group presence returns the current snapshot as a no-op', async () => {
+  const snapshot = createGroupStateRouteSnapshot('room-1');
+  const inactiveResult: InactiveGroupPresenceResult = {
+    status: 'inactive',
+    sessionId: 'alice-session',
+    generationId: 'generation-closed',
+  };
+  let currentSnapshotReads = 0;
+  const runtime = createGroupStateRouteTestRuntime({
+    groupService: {
+      readCurrentSnapshot: () => {
+        currentSnapshotReads += 1;
+        return Promise.resolve(snapshot);
+      },
+    },
+    processGroupAppInbox: () => Promise.resolve(inactiveResult),
+  });
+
+  const response = await requestPresenceMutation(runtime.app, PRESENCE_CONNECT_ROUTE, {
+    generationId: inactiveResult.generationId,
+    connectedAtEpochMs: 1,
+    lastHeartbeatAtEpochMs: 1,
+    expiresAtEpochMs: 2,
+    requestId: 'closed-generation-request',
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), snapshot);
+  assert.equal(currentSnapshotReads, 1);
+});
+
 Deno.test('group presence route rejects a receipt before its cleanup read', async () => {
   let currentSnapshotReads = 0;
   const runtime = createGroupStateRouteTestRuntime({
@@ -233,10 +264,12 @@ Deno.test('group presence route rejects a receipt before its cleanup read', asyn
       },
     },
     processGroupAppInbox: () =>
-      Promise.resolve({
-        outcome: 'rejected',
-        rejection: 'Presence rejected by current authority',
-      } as never),
+      Promise.resolve(
+        createGroupPresenceReceipt({
+          outcome: 'rejected',
+          rejection: 'Presence rejected by current authority',
+        }),
+      ),
   });
 
   const response = await requestPresenceMutation(runtime.app, PRESENCE_CONNECT_ROUTE, {
@@ -270,15 +303,38 @@ function createPresenceResponseService(
 }
 
 function capturePresenceReceipt(enqueued: unknown[]): ProcessGroupAppInbox {
-  return <V, R>(
-    _authority: GroupStateRouteAuthSession,
-    entry: AppInboxEnqueueInput<V>,
-  ): Promise<R> => {
+  return (_authority, entry) => {
     enqueued.push(entry);
-    return Promise.resolve({
-      outcome: 'applied',
-      causalRevision: { groupRevision: 1, presenceRevision: 1 },
-    } as R);
+    return Promise.resolve(
+      createGroupPresenceReceipt({ outcome: 'applied', rejection: null }),
+    );
+  };
+}
+
+interface CreateGroupPresenceReceiptInput {
+  readonly outcome: GroupMutationReceipt['outcome'];
+  readonly rejection: string | null;
+}
+
+function createGroupPresenceReceipt(
+  input: CreateGroupPresenceReceiptInput,
+): GroupMutationReceipt {
+  return {
+    commandId: 'presence-command',
+    requestId: 'presence-request',
+    commandHash: 'presence-hash',
+    aggregateRef: { ...TEST_GROUP_SCOPE, groupId: 'room-1' },
+    outcome: input.outcome,
+    attemptCount: 1,
+    acceptedStorageRevision: input.outcome === 'rejected' ? null : 1,
+    stateRevision: 1,
+    snapshotVersion: 1,
+    causalRevision: { groupRevision: 1, presenceRevision: 1 },
+    eventId: null,
+    outboxIds: [],
+    joinCode: null,
+    joinCodeExpiresAtEpochMs: null,
+    rejection: input.rejection,
   };
 }
 
@@ -319,12 +375,11 @@ function createPresenceValidationRuntime(processCalls: unknown[]): {
     groupService: {
       readCurrentSnapshot: () => Promise.resolve(snapshot),
     },
-    processGroupAppInbox: (_authority, input) => {
-      processCalls.push(input);
-      return Promise.resolve({
-        outcome: 'applied',
-        causalRevision: snapshot.causalRevision,
-      } as never);
+    processGroupAppInbox: (_authority, enqueue) => {
+      processCalls.push(enqueue);
+      return Promise.resolve(
+        createGroupPresenceReceipt({ outcome: 'applied', rejection: null }),
+      );
     },
   });
   return {

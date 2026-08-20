@@ -7,8 +7,10 @@ import type { InactiveGroupPresenceResult } from '../presence/group-presence-ser
 import type { GroupStateMutationCommand } from '../group-state-service-contracts.ts';
 import type { GroupJoinCodeWritten, GroupStateWritten } from '../group-state-service-contracts.ts';
 
+export type GroupPresenceInboxDurableResult = GroupMutationReceipt | InactiveGroupPresenceResult;
+
 export type GroupStateInboxDurableResult =
-  GroupMutationReceipt | GroupJoinCodeWritten | GroupStateWritten | InactiveGroupPresenceResult;
+  GroupPresenceInboxDurableResult | GroupJoinCodeWritten | GroupStateWritten;
 
 export interface GroupStateInboxResult {
   readonly durableResult: GroupStateInboxDurableResult;

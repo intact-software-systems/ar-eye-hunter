@@ -6,9 +6,6 @@ import type {
   MutationActorInput,
   UpdateGroupRequest,
 } from '@shared/api/state-types.ts';
-import type {
-  AuthenticatedGroupMutationEnqueue,
-} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import {
   type GroupStateRouteDependencies,
@@ -18,8 +15,6 @@ import { toGroupStateErrorResponse } from './group-state-route-errors.ts';
 import { readGroupStateRouteRequest } from './read-group-state-route-request.ts';
 import { toGroupStateCommand } from './to-group-state-command.ts';
 import { toGroupStateResponse } from './to-group-state-response.ts';
-
-type GroupStateRouteCommandPayload = AuthenticatedGroupMutationEnqueue['data'];
 
 export function registerGroupStateMutationRoutes(
   app: Hono,

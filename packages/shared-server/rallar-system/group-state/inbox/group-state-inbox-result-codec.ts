@@ -19,7 +19,10 @@ import type {
 } from '../group-state-service-contracts.ts';
 import type { GroupMutationReceipt } from '../mutation/group-mutation-contracts.ts';
 import type { InactiveGroupPresenceResult } from '../presence/group-presence-service.ts';
-import type { GroupStateInboxDurableResult } from './group-state-inbox-result.ts';
+import type {
+  GroupPresenceInboxDurableResult,
+  GroupStateInboxDurableResult,
+} from './group-state-inbox-result.ts';
 
 const GROUP_PRESENCE_RESULT_TYPES: ReadonlySet<AppInboxType> = new Set([
   AppInboxType.GROUP_PRESENCE_CONNECT,
@@ -195,6 +198,15 @@ export function requireGroupMutationReceipt(
     throw new TypeError('Expected a group mutation receipt');
   }
   return result;
+}
+
+export function requireGroupPresenceInboxDurableResult(
+  result: GroupStateInboxDurableResult,
+): GroupPresenceInboxDurableResult {
+  if ('commandId' in result || result.status === 'inactive') {
+    return result;
+  }
+  throw new TypeError('Expected a group presence mutation result');
 }
 
 function decodeGroupMutationEither(value: JsonWireValue): GroupStateWritten['result'] {

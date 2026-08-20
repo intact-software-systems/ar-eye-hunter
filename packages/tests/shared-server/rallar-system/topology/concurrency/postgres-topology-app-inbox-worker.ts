@@ -6,6 +6,10 @@ import type {
   GroupTopologyConfigMutationReceipt,
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import {
+  fromCanonicalGroupTopologyConfigPatch,
+  toCanonicalGroupTopologyConfigPatch,
+} from '@shared/api/group-topology-config-canonical.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
@@ -21,6 +25,16 @@ import {
   type AppInboxFailure,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
+// prettier-ignore
+import type {
+  JsonWireValue,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import {
+  requireExactKeys,
+  requireExactOptionalKeys,
+  requireOneOf,
+  requireString,
+} from '@shared-server/rallar-system/services/exact-object-codec.ts';
 // prettier-ignore
 import {
   toTopologyAppInboxCommand,
@@ -234,7 +248,114 @@ function toWorkerOutput(
 function readInput(): WorkerInput {
   const raw = Deno.env.get('RALLAR_TOPOLOGY_CONCURRENCY_WORKER_INPUT');
   if (!raw) throw new Error('RALLAR_TOPOLOGY_CONCURRENCY_WORKER_INPUT is required');
-  return JSON.parse(raw) as WorkerInput;
+  const parsed: JsonWireValue = JSON.parse(raw);
+  return decodeWorkerInput(parsed);
+}
+
+function decodeWorkerInput(value: JsonWireValue): WorkerInput {
+  const input = requireWorkerRecord(value, 'Topology concurrency worker input');
+  requireExactKeys(
+    input,
+    ['command', 'barrierPhase', 'groupRef', 'atEpochMs', 'traceFilePath', 'barrier', 'request'],
+    'Topology concurrency worker input',
+  );
+  const request = requireWorkerRecord(input.request, 'Topology concurrency worker request');
+  requireExactOptionalKeys(
+    request,
+    ['requestId', 'updatedByPrincipalId', 'config'],
+    ['expiresAtEpochMs'],
+    'Topology concurrency worker request',
+  );
+  requireString(input.traceFilePath, 'Topology concurrency worker traceFilePath');
+  requireString(request.requestId, 'Topology concurrency worker requestId');
+  requireString(request.updatedByPrincipalId, 'Topology concurrency worker updatedByPrincipalId');
+  return {
+    command: requireOneOf(
+      input.command,
+      ['put-config', 'put-override'] as const,
+      'Topology concurrency worker command',
+    ),
+    barrierPhase: requireOneOf(
+      input.barrierPhase,
+      ['topology-read', 'transaction'] as const,
+      'Topology concurrency worker barrierPhase',
+    ),
+    groupRef: decodeGroupRef(input.groupRef),
+    atEpochMs: requireWorkerEpoch(input.atEpochMs, 'Topology concurrency worker atEpochMs'),
+    traceFilePath: input.traceFilePath,
+    barrier: decodeWorkerBarrier(input.barrier),
+    request: {
+      requestId: request.requestId,
+      updatedByPrincipalId: request.updatedByPrincipalId,
+      config: fromCanonicalGroupTopologyConfigPatch(
+        toCanonicalGroupTopologyConfigPatch(request.config),
+      ),
+      ...(request.expiresAtEpochMs === undefined
+        ? {}
+        : {
+            expiresAtEpochMs: requireWorkerEpoch(
+              request.expiresAtEpochMs,
+              'Topology concurrency worker expiresAtEpochMs',
+            ),
+          }),
+    },
+  };
+}
+
+function decodeGroupRef(value: JsonWireValue): GroupRef {
+  const groupRef = requireWorkerRecord(value, 'Topology concurrency worker groupRef');
+  requireExactKeys(
+    groupRef,
+    ['applicationId', 'workspaceId', 'groupId'],
+    'Topology concurrency worker groupRef',
+  );
+  requireString(groupRef.applicationId, 'Topology concurrency worker applicationId');
+  requireString(groupRef.workspaceId, 'Topology concurrency worker workspaceId');
+  requireString(groupRef.groupId, 'Topology concurrency worker groupId');
+  return {
+    applicationId: groupRef.applicationId,
+    workspaceId: groupRef.workspaceId,
+    groupId: groupRef.groupId,
+  };
+}
+
+function decodeWorkerBarrier(value: JsonWireValue): WorkerBarrier {
+  const barrier = requireWorkerRecord(value, 'Topology concurrency worker barrier');
+  requireExactKeys(
+    barrier,
+    ['readyDirectoryPath', 'releaseFilePath'],
+    'Topology concurrency worker barrier',
+  );
+  requireString(
+    barrier.readyDirectoryPath,
+    'Topology concurrency worker barrier readyDirectoryPath',
+  );
+  requireString(barrier.releaseFilePath, 'Topology concurrency worker barrier releaseFilePath');
+  return {
+    readyDirectoryPath: barrier.readyDirectoryPath,
+    releaseFilePath: barrier.releaseFilePath,
+  };
+}
+
+function requireWorkerEpoch(value: JsonWireValue, label: string): number {
+  if (!Number.isSafeInteger(value) || Number(value) < 0) {
+    throw new TypeError(`${label} must be a non-negative safe integer`);
+  }
+  return Number(value);
+}
+
+function requireWorkerRecord(
+  value: JsonWireValue,
+  label: string,
+): Readonly<Record<string, JsonWireValue>> {
+  if (!isWorkerRecord(value)) {
+    throw new TypeError(`${label} must be an object`);
+  }
+  return value;
+}
+
+function isWorkerRecord(value: JsonWireValue): value is Readonly<Record<string, JsonWireValue>> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 await main();

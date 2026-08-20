@@ -1,12 +1,13 @@
 import process from 'node:process';
 import { dirname, normalize } from 'node:path';
 import postgres, { type Sql } from 'postgres';
-// prettier-ignore
-import type {
-  JsonWireObject,
-} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
+import type {
+  ConnectGroupPresenceSessionRequest,
+  DisconnectGroupPresenceSessionRequest,
+  HeartbeatGroupPresenceSessionRequest,
+  StateScope,
+} from '@shared/api/state-types.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 // prettier-ignore
 import {
@@ -21,6 +22,10 @@ import {
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+// prettier-ignore
+import type {
+  AuthenticatedGroupMutationEnqueue,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 import {
   createStateWriteBenchmarkArtifact,
@@ -28,7 +33,7 @@ import {
 } from './state-write/api-v1-state-write-benchmark-artifact.ts';
 import {
   parseBenchmarkOptions,
-  STATE_WRITE_REQUIRED_CONCURRENCY as REQUIRED_CONCURRENCY,
+  STATE_WRITE_REQUIRED_CONCURRENCY,
 } from './state-write/api-v1-state-write-benchmark-options.ts';
 import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from './compare-api-v1-state-write-results.mjs';
 import {
@@ -200,9 +205,10 @@ async function main(): Promise<void> {
   if (options.runs < 3) {
     throw new Error(`Task 0B requires --runs>=3; received ${options.runs}`);
   }
-  if (options.concurrency !== REQUIRED_CONCURRENCY) {
+  if (options.concurrency !== STATE_WRITE_REQUIRED_CONCURRENCY) {
     throw new Error(
-      `Task 0B requires --concurrency=${REQUIRED_CONCURRENCY}; received ${options.concurrency}`,
+      `Task 0B requires --concurrency=${STATE_WRITE_REQUIRED_CONCURRENCY}; ` +
+        `received ${options.concurrency}`,
     );
   }
   assertPerfOutputPath(options.out);
@@ -734,38 +740,73 @@ async function executeMutation({
   }
 }
 
-interface RunGroupPresenceMutationInput {
+interface RunGroupPresenceMutationInputBase {
   readonly runtime: StateWriteServiceRuntime;
   readonly command: ExecuteMutationInput['command'];
   readonly scope: StateScope;
   readonly contextId: string;
-  readonly type:
-    | typeof AppInboxType.GROUP_PRESENCE_CONNECT
-    | typeof AppInboxType.GROUP_PRESENCE_HEARTBEAT
-    | typeof AppInboxType.GROUP_PRESENCE_DISCONNECT;
-  readonly request: JsonWireObject;
 }
 
-async function runGroupPresenceMutation({
-  runtime,
-  command,
-  scope,
-  contextId,
-  type,
-  request,
-}: RunGroupPresenceMutationInput): Promise<void> {
-  await runAppInboxMutation(runtime, () =>
-    runtime.group.processAuthenticatedGroupEntryUntilCompletion(
-      {
-        type,
-        resourceId: command.requestId,
-        contextId,
-        senderId: command.principalId,
-        data: { scope, groupId: command.groupId, sessionId: command.sessionId, request },
-      },
-      command.clientAuthority,
+type RunGroupPresenceMutationInput = RunGroupPresenceMutationInputBase &
+  (
+    | Readonly<{
+        type: typeof AppInboxType.GROUP_PRESENCE_CONNECT;
+        request: ConnectGroupPresenceSessionRequest;
+      }>
+    | Readonly<{
+        type: typeof AppInboxType.GROUP_PRESENCE_HEARTBEAT;
+        request: HeartbeatGroupPresenceSessionRequest;
+      }>
+    | Readonly<{
+        type: typeof AppInboxType.GROUP_PRESENCE_DISCONNECT;
+        request: DisconnectGroupPresenceSessionRequest;
+      }>
+  );
+
+async function runGroupPresenceMutation(input: RunGroupPresenceMutationInput): Promise<void> {
+  await runAppInboxMutation(input.runtime, () =>
+    input.runtime.group.processAuthenticatedGroupEntryUntilCompletion(
+      toGroupPresenceEnqueue(input),
+      input.command.clientAuthority,
     ),
   );
+}
+
+function toGroupPresenceEnqueue(
+  input: RunGroupPresenceMutationInput,
+): AuthenticatedGroupMutationEnqueue {
+  const command = input.command;
+  const shared = {
+    resourceId: command.requestId,
+    contextId: input.contextId,
+    senderId: command.principalId,
+  };
+  const data = {
+    scope: input.scope,
+    groupId: command.groupId,
+    sessionId: command.sessionId,
+  };
+
+  switch (input.type) {
+    case AppInboxType.GROUP_PRESENCE_CONNECT:
+      return {
+        ...shared,
+        type: input.type,
+        data: { ...data, request: input.request },
+      };
+    case AppInboxType.GROUP_PRESENCE_HEARTBEAT:
+      return {
+        ...shared,
+        type: input.type,
+        data: { ...data, request: input.request },
+      };
+    case AppInboxType.GROUP_PRESENCE_DISCONNECT:
+      return {
+        ...shared,
+        type: input.type,
+        data: { ...data, request: input.request },
+      };
+  }
 }
 
 interface BenchmarkMutationOutcome {
@@ -812,7 +853,7 @@ async function seedCompleteState(
 
   await mapWithConcurrency(
     Array.from({ length: workload.groups }, (_, groupIndex) => groupIndex),
-    REQUIRED_CONCURRENCY,
+    STATE_WRITE_REQUIRED_CONCURRENCY,
     async (groupIndex) => {
       const ownerId = `owner-${groupIndex}`;
       const authority = createBenchmarkAuthSession(scope, ownerId, `owner-session-${groupIndex}`);
@@ -850,7 +891,7 @@ async function seedCompleteState(
 
   await mapWithConcurrency(
     Array.from({ length: workload.clients }, (_, clientIndex) => clientIndex),
-    REQUIRED_CONCURRENCY,
+    STATE_WRITE_REQUIRED_CONCURRENCY,
     async (clientIndex) => {
       const principalId = `client-${clientIndex}`;
       const authority = createBenchmarkAuthSession(

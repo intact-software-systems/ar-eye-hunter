@@ -1,4 +1,8 @@
 import postgres from 'postgres';
+import {
+  fromCanonicalGroupTopologyConfigPatch,
+  toCanonicalGroupTopologyConfigPatch,
+} from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
   BanGroupMemberRequest,
@@ -74,6 +78,7 @@ import {
 // prettier-ignore
 import type {
   JsonWireObject,
+  JsonWireValue,
 } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 
 interface WorkerBarrier {
@@ -188,7 +193,8 @@ async function main(): Promise<void> {
     throw new Error('DATABASE_URL is required for postgres-expiry-worker');
   }
 
-  const input = readInput();
+  const inputValue = readInputValue();
+  const traceFilePath = readWorkerTraceFilePath(inputValue);
   const sql = postgres(databaseUrl, { max: 2, idle_timeout: 1 });
 
   try {
@@ -201,11 +207,12 @@ async function main(): Promise<void> {
       attempts: [],
     };
     try {
+      const input = decodeStateMutationWorkerInput(inputValue);
       console.log(
         JSON.stringify(await runStateMutationWorker(input, sql as unknown as PSqlSql, trace)),
       );
     } finally {
-      await Deno.writeTextFile(input.traceFilePath, JSON.stringify(trace));
+      await Deno.writeTextFile(traceFilePath, JSON.stringify(trace));
     }
   } finally {
     await sql.end();
@@ -615,16 +622,388 @@ function compactTopologyReceipt(
   };
 }
 
-function readInput(): StateMutationWorkerInput {
+function readInputValue(): JsonWireValue {
   const raw = Deno.env.get('RALLAR_EXPIRY_WORKER_INPUT');
   if (!raw) {
     throw new Error('RALLAR_EXPIRY_WORKER_INPUT is required');
   }
-
-  return JSON.parse(raw) as StateMutationWorkerInput;
+  return JSON.parse(raw);
 }
 
-function requireRequestId(requestId: unknown): string {
+function readWorkerTraceFilePath(value: JsonWireValue): string {
+  if (!isRecord(value)) {
+    throw new TypeError('State mutation worker input must be an object');
+  }
+  return requireString(value.traceFilePath, 'traceFilePath');
+}
+
+function decodeStateMutationWorkerInput(value: JsonWireValue): StateMutationWorkerInput {
+  if (!isRecord(value) || !isRecord(value.request)) {
+    throw new TypeError('State mutation worker input must contain a request object');
+  }
+  requireRequestId(value.request.requestId);
+  if (!isStateMutationWorkerInput(value)) {
+    throw new TypeError('State mutation worker input is invalid');
+  }
+  return value;
+}
+
+function isStateMutationWorkerInput(
+  value: JsonWireValue,
+): value is StateMutationWorkerInput & JsonWireObject {
+  if (!isRecord(value) || !hasWorkerRuntimeFields(value)) {
+    return false;
+  }
+  switch (value.command) {
+    case 'client-heartbeat':
+      return hasClientWorkerFields(value) && isClientHeartbeatRequest(value.request);
+    case 'client-disconnect':
+      return hasClientWorkerFields(value) && isClientDisconnectRequest(value.request);
+    case 'client-reconnect':
+      return hasClientWorkerFields(value) && isClientReconnectRequest(value.request);
+    case 'group-join':
+      return hasGroupWorkerFields(value, false, false) && isGroupJoinRequest(value.request);
+    case 'group-ban':
+      return hasGroupWorkerFields(value, true, false) && isMutationActorRequest(value.request);
+    case 'group-presence-connect':
+      return (
+        hasGroupWorkerFields(value, false, true) && isGroupPresenceConnectRequest(value.request)
+      );
+    case 'group-presence-heartbeat':
+      return (
+        hasGroupWorkerFields(value, false, true) && isGroupPresenceHeartbeatRequest(value.request)
+      );
+    case 'group-presence-disconnect':
+      return (
+        hasGroupWorkerFields(value, false, true) && isGroupPresenceDisconnectRequest(value.request)
+      );
+    case 'topology-config-put':
+      return hasTopologyWorkerFields(value) && isTopologyPutRequest(value.request);
+    case 'topology-config-delete':
+      return hasTopologyWorkerFields(value) && isTopologyDeleteRequest(value.request);
+    default:
+      return false;
+  }
+}
+
+function hasWorkerRuntimeFields(value: JsonWireObject): boolean {
+  return (
+    typeof value.command === 'string' &&
+    Number.isSafeInteger(value.atEpochMs) &&
+    Number(value.atEpochMs) >= 0 &&
+    isNonEmptyString(value.traceFilePath) &&
+    isWorkerBarrier(value.barrier) &&
+    isRecord(value.request)
+  );
+}
+
+function hasClientWorkerFields(value: JsonWireObject): boolean {
+  return (
+    hasOnlyKeys(value, [
+      'command',
+      'scope',
+      'atEpochMs',
+      'traceFilePath',
+      'barrier',
+      'principalId',
+      'clientInstanceId',
+      'sessionId',
+      'request',
+    ]) &&
+    isStateScope(value.scope) &&
+    isNonEmptyString(value.principalId) &&
+    isNonEmptyString(value.clientInstanceId) &&
+    isNonEmptyString(value.sessionId)
+  );
+}
+
+function hasGroupWorkerFields(
+  value: JsonWireObject,
+  hasTargetPrincipalId: boolean,
+  hasSessionId: boolean,
+): boolean {
+  const conditionalKeys = [
+    ...(hasTargetPrincipalId ? ['targetPrincipalId'] : []),
+    ...(hasSessionId ? ['sessionId'] : []),
+  ];
+  return (
+    hasOnlyKeys(value, [
+      'command',
+      'scope',
+      'groupId',
+      'atEpochMs',
+      'traceFilePath',
+      'barrier',
+      'request',
+      ...conditionalKeys,
+    ]) &&
+    isStateScope(value.scope) &&
+    isNonEmptyString(value.groupId) &&
+    (!hasTargetPrincipalId || isNonEmptyString(value.targetPrincipalId)) &&
+    (!hasSessionId || isNonEmptyString(value.sessionId))
+  );
+}
+
+function hasTopologyWorkerFields(value: JsonWireObject): boolean {
+  return (
+    hasOnlyKeys(value, [
+      'command',
+      'groupRef',
+      'atEpochMs',
+      'traceFilePath',
+      'barrier',
+      'request',
+    ]) && isGroupRef(value.groupRef)
+  );
+}
+
+function isClientHeartbeatRequest(
+  value: JsonWireValue,
+): value is ClientWorkerInput['request'] & JsonWireObject {
+  return (
+    isMutationActorRequest(value) &&
+    hasOnlyKeys(value, [
+      ...MUTATION_ACTOR_KEYS,
+      'generationId',
+      'presenceState',
+      'lastHeartbeatAtEpochMs',
+      'expiresAtEpochMs',
+    ]) &&
+    isNonEmptyString(value.generationId) &&
+    isOptionalOneOf(value.presenceState, ['online', 'offline', 'away', 'busy']) &&
+    isOptionalEpoch(value.lastHeartbeatAtEpochMs) &&
+    isOptionalEpoch(value.expiresAtEpochMs)
+  );
+}
+
+function isClientDisconnectRequest(
+  value: JsonWireValue,
+): value is ClientWorkerInput['request'] & JsonWireObject {
+  return (
+    isMutationActorRequest(value) &&
+    hasOnlyKeys(value, [
+      ...MUTATION_ACTOR_KEYS,
+      'generationId',
+      'disconnectedAtEpochMs',
+      'lastHeartbeatAtEpochMs',
+      'expiresAtEpochMs',
+    ]) &&
+    isNonEmptyString(value.generationId) &&
+    isOptionalEpoch(value.disconnectedAtEpochMs) &&
+    isOptionalEpoch(value.lastHeartbeatAtEpochMs) &&
+    isOptionalEpoch(value.expiresAtEpochMs)
+  );
+}
+
+function isClientReconnectRequest(
+  value: JsonWireValue,
+): value is ClientWorkerInput['request'] & JsonWireObject {
+  return (
+    isMutationActorRequest(value) &&
+    hasOnlyKeys(value, [
+      ...MUTATION_ACTOR_KEYS,
+      'generationId',
+      'presenceState',
+      'transport',
+      'connectionId',
+      'authenticatedAtEpochMs',
+      'connectedAtEpochMs',
+      'lastHeartbeatAtEpochMs',
+      'expiresAtEpochMs',
+    ]) &&
+    isNonEmptyString(value.generationId) &&
+    isOptionalOneOf(value.presenceState, ['online', 'offline', 'away', 'busy']) &&
+    isOptionalOneOf(value.transport, ['ws', 'http', 'rtc', 'unknown']) &&
+    isOptionalString(value.connectionId) &&
+    isOptionalEpoch(value.authenticatedAtEpochMs) &&
+    isOptionalEpoch(value.connectedAtEpochMs) &&
+    isOptionalEpoch(value.lastHeartbeatAtEpochMs) &&
+    isOptionalEpoch(value.expiresAtEpochMs)
+  );
+}
+
+function isGroupJoinRequest(
+  value: JsonWireValue,
+): value is GroupWorkerInput['request'] & JsonWireObject {
+  return (
+    isMutationActorRequest(value) &&
+    hasOnlyKeys(value, [...MUTATION_ACTOR_KEYS, 'inviteToken', 'joinCode']) &&
+    isOptionalString(value.inviteToken) &&
+    isOptionalString(value.joinCode)
+  );
+}
+
+function isGroupPresenceConnectRequest(
+  value: JsonWireValue,
+): value is GroupWorkerInput['request'] & JsonWireObject {
+  return (
+    isMutationActorRequest(value) &&
+    hasOnlyKeys(value, [
+      ...MUTATION_ACTOR_KEYS,
+      'principalId',
+      'generationId',
+      'connectedAtEpochMs',
+      'lastHeartbeatAtEpochMs',
+      'expiresAtEpochMs',
+    ]) &&
+    isNonEmptyString(value.principalId) &&
+    isNonEmptyString(value.generationId) &&
+    isOptionalEpoch(value.connectedAtEpochMs) &&
+    isOptionalEpoch(value.lastHeartbeatAtEpochMs) &&
+    isOptionalEpoch(value.expiresAtEpochMs)
+  );
+}
+
+function isGroupPresenceHeartbeatRequest(
+  value: JsonWireValue,
+): value is GroupWorkerInput['request'] & JsonWireObject {
+  return (
+    isMutationActorRequest(value) &&
+    hasOnlyKeys(value, [
+      ...MUTATION_ACTOR_KEYS,
+      'principalId',
+      'generationId',
+      'lastHeartbeatAtEpochMs',
+      'expiresAtEpochMs',
+    ]) &&
+    isOptionalString(value.principalId) &&
+    isNonEmptyString(value.generationId) &&
+    isOptionalEpoch(value.lastHeartbeatAtEpochMs) &&
+    isOptionalEpoch(value.expiresAtEpochMs)
+  );
+}
+
+function isGroupPresenceDisconnectRequest(
+  value: JsonWireValue,
+): value is GroupWorkerInput['request'] & JsonWireObject {
+  return (
+    isMutationActorRequest(value) &&
+    hasOnlyKeys(value, [
+      ...MUTATION_ACTOR_KEYS,
+      'principalId',
+      'generationId',
+      'disconnectedAtEpochMs',
+      'lastHeartbeatAtEpochMs',
+      'expiresAtEpochMs',
+    ]) &&
+    isOptionalString(value.principalId) &&
+    isNonEmptyString(value.generationId) &&
+    isOptionalEpoch(value.disconnectedAtEpochMs) &&
+    isOptionalEpoch(value.lastHeartbeatAtEpochMs) &&
+    isOptionalEpoch(value.expiresAtEpochMs)
+  );
+}
+
+function isTopologyPutRequest(
+  value: JsonWireValue,
+): value is TopologyWorkerInput['request'] & JsonWireObject {
+  return (
+    isTopologyRequest(value) &&
+    hasOnlyKeys(value, ['requestId', 'updatedByPrincipalId', 'config']) &&
+    isTopologyConfigPatch(value.config)
+  );
+}
+
+function isTopologyDeleteRequest(
+  value: JsonWireValue,
+): value is TopologyWorkerInput['request'] & JsonWireObject {
+  return isTopologyRequest(value) && hasOnlyKeys(value, ['requestId', 'updatedByPrincipalId']);
+}
+
+const MUTATION_ACTOR_KEYS = [
+  'actorPrincipalId',
+  'actorSessionId',
+  'reason',
+  'traceId',
+  'requestId',
+] as const;
+
+function isMutationActorRequest(value: JsonWireValue): value is JsonWireObject & {
+  requestId: string;
+} {
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value.requestId) &&
+    isOptionalString(value.actorPrincipalId) &&
+    isOptionalString(value.actorSessionId) &&
+    isOptionalString(value.reason) &&
+    isOptionalString(value.traceId)
+  );
+}
+
+function isTopologyRequest(value: JsonWireValue): value is JsonWireObject & {
+  requestId: string;
+  updatedByPrincipalId: string;
+} {
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value.requestId) &&
+    isNonEmptyString(value.updatedByPrincipalId)
+  );
+}
+
+function isTopologyConfigPatch(value: JsonWireValue): boolean {
+  try {
+    fromCanonicalGroupTopologyConfigPatch(toCanonicalGroupTopologyConfigPatch(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isStateScope(value: JsonWireValue): value is StateScope & JsonWireObject {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ['applicationId', 'workspaceId']) &&
+    isNonEmptyString(value.applicationId) &&
+    isNonEmptyString(value.workspaceId)
+  );
+}
+
+function isGroupRef(value: JsonWireValue): value is GroupRef & JsonWireObject {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ['applicationId', 'workspaceId', 'groupId']) &&
+    isNonEmptyString(value.applicationId) &&
+    isNonEmptyString(value.workspaceId) &&
+    isNonEmptyString(value.groupId)
+  );
+}
+
+function isWorkerBarrier(value: JsonWireValue): value is WorkerBarrier & JsonWireObject {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ['readyDirectoryPath', 'releaseFilePath']) &&
+    isNonEmptyString(value.readyDirectoryPath) &&
+    isNonEmptyString(value.releaseFilePath)
+  );
+}
+
+function isRecord(value: JsonWireValue): value is JsonWireObject {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasOnlyKeys(value: JsonWireObject, keys: readonly string[]): boolean {
+  return Object.keys(value).every((key) => keys.includes(key));
+}
+
+function isOptionalString(value: JsonWireValue | undefined): boolean {
+  return value === undefined || typeof value === 'string';
+}
+
+function isOptionalEpoch(value: JsonWireValue | undefined): boolean {
+  return value === undefined || (Number.isSafeInteger(value) && Number(value) >= 0);
+}
+
+function isOptionalOneOf(value: JsonWireValue | undefined, values: readonly string[]): boolean {
+  return value === undefined || (typeof value === 'string' && values.includes(value));
+}
+
+function isNonEmptyString(value: JsonWireValue): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function requireRequestId(requestId: JsonWireValue): string {
   return requireString(requestId, 'requestId');
 }
 
@@ -635,7 +1014,7 @@ function requireMatchingRequestId(actual: string | null, expected: string): stri
   return actual;
 }
 
-function requireString(value: unknown, label: string): string {
+function requireString(value: JsonWireValue | undefined, label: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new Error(`${label} is required`);
   }

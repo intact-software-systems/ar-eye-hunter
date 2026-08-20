@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 
-import {
-  type AppInboxEnqueueInput,
-  AppInboxType,
-} from '@shared-server/rallar-system/services/AppInboxService.ts';
+// prettier-ignore
+import type {
+  AuthenticatedGroupMutationEnqueue,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
 import type {
@@ -22,6 +23,7 @@ import {
   postGroupStateMutationWithHeaders,
   putGroupStateMutation,
   TEST_GROUP_SCOPE,
+  toGroupStateWritten,
   withStrictGroupStateRouteReadAuth,
 } from './group-state-route-test-runtime.ts';
 
@@ -135,16 +137,13 @@ Deno.test(
 
 async function verifyGroupGovernanceRoutes(): Promise<void> {
   const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
-  const enqueued: AppInboxEnqueueInput<unknown>[] = [];
+  const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
   const { app } = createPredecessorGroupStateRouteTestRuntime({
     session: createPredecessorGroupStateRouteAuthSession('alice'),
     groupService: {},
-    processGroupAppInbox: <V, R>(
-      _authority: GroupStateRouteAuthSession,
-      input: AppInboxEnqueueInput<V>,
-    ): Promise<R> => {
+    processGroupAppInbox: (_authority, input) => {
       enqueued.push(input);
-      return Promise.resolve({ status: 'ok', result: { right: { snapshot } } } as R);
+      return Promise.resolve(toGroupStateWritten(snapshot));
     },
   });
   const responses = await requestGovernanceRoutes(app);
@@ -185,7 +184,7 @@ async function requestGovernanceRoutes(
   ]);
 }
 
-function assertMemberRestrictionEnvelopes(enqueued: AppInboxEnqueueInput<unknown>[]): void {
+function assertMemberRestrictionEnvelopes(enqueued: AuthenticatedGroupMutationEnqueue[]): void {
   assert.deepEqual(enqueued, [
     {
       type: AppInboxType.GROUP_MEMBER_REMOVE,
@@ -238,7 +237,7 @@ function assertMemberRestrictionEnvelopes(enqueued: AppInboxEnqueueInput<unknown
   ]);
 }
 
-function assertRoleAndOwnershipEnvelopes(enqueued: AppInboxEnqueueInput<unknown>[]): void {
+function assertRoleAndOwnershipEnvelopes(enqueued: AuthenticatedGroupMutationEnqueue[]): void {
   assert.deepEqual(enqueued, [
     {
       type: AppInboxType.GROUP_MEMBER_ROLE_SET,

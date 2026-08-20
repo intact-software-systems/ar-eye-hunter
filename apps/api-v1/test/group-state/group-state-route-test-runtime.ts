@@ -9,11 +9,17 @@ import type {
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type {
-  AppInboxEnqueueInput,
-} from '@shared-server/rallar-system/services/AppInboxService.ts';
-import type {
   GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
+// prettier-ignore
+import type {
+  AuthenticatedGroupMutationEnqueue,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+// prettier-ignore
+import type {
+  GroupStateInboxDurableResult,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 import { registerGroupStateRoutes } from '../../src/group-state/register-group-state-routes.ts';
 import type {
@@ -256,12 +262,9 @@ export function captureGroupStateRouteWrite(
   enqueued: unknown[],
   snapshot: GroupSnapshot,
 ): ProcessGroupAppInbox {
-  return <V, R>(
-    _authority: GroupStateRouteAuthSession,
-    entry: AppInboxEnqueueInput<V>,
-  ): Promise<R> => {
+  return (_authority, entry) => {
     enqueued.push(entry);
-    return Promise.resolve(toGroupStateWritten(snapshot) as R);
+    return Promise.resolve(toGroupStateRouteDurableResult(entry, snapshot));
   };
 }
 
@@ -306,22 +309,68 @@ function createGroupStateRouteService(
 ): GroupStateRouteService {
   const readSnapshot = groupService?.readSnapshot ?? (() => Promise.resolve(undefined));
   return {
-    listSnapshots: () => Promise.resolve([]),
+    listSnapshots: groupService?.listSnapshots ?? (() => Promise.resolve([])),
     readSnapshot,
     readCurrentSnapshot: groupService?.readCurrentSnapshot ?? readSnapshot,
-    listEvents: () => Promise.resolve([]),
-    listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
-    ...groupService,
-  } as GroupStateRouteService;
+    listEvents: groupService?.listEvents ?? (() => Promise.resolve([])),
+    listRecentEvents: groupService?.listRecentEvents ?? (() => Promise.resolve([])),
+    listEventPage: groupService?.listEventPage ??
+      (() => Promise.resolve({ events: [], hasMore: false })),
+  };
 }
 
-const defaultProcessGroupAppInbox: ProcessGroupAppInbox = <V, R>(
-  _authority: GroupStateRouteAuthSession,
-  _enqueue: AppInboxEnqueueInput<V>,
-): Promise<R> => Promise.resolve(toGroupStateWritten(createGroupStateRouteSnapshot('room-1')) as R);
+const defaultProcessGroupAppInbox: ProcessGroupAppInbox = (_authority, entry) =>
+  Promise.resolve(
+    toGroupStateRouteDurableResult(entry, createGroupStateRouteSnapshot('room-1')),
+  );
 
 const rejectUnexpectedGroupMutation: ProcessGroupAppInbox = () =>
   Promise.reject(new Error('Unexpected group mutation'));
+
+function toGroupStateRouteDurableResult(
+  entry: AuthenticatedGroupMutationEnqueue,
+  snapshot: GroupSnapshot,
+): GroupStateInboxDurableResult {
+  if (entry.type === AppInboxType.GROUP_JOIN_CODE_ROTATE) {
+    return {
+      status: 'ok',
+      result: Either.ofRight({
+        joinCode: entry.data.request.joinCode ?? 'test-join-code',
+        expiresAtEpochMs: entry.data.request.expiresAtEpochMs ?? 1,
+        snapshot,
+        event: null,
+      }),
+    };
+  }
+  if (
+    entry.type === AppInboxType.GROUP_PRESENCE_CONNECT ||
+    entry.type === AppInboxType.GROUP_PRESENCE_HEARTBEAT ||
+    entry.type === AppInboxType.GROUP_PRESENCE_DISCONNECT
+  ) {
+    const commandId = entry.resourceId ?? 'test-presence-command';
+    return {
+      commandId,
+      requestId: commandId,
+      commandHash: 'test-command-hash',
+      aggregateRef: {
+        ...entry.data.scope,
+        groupId: entry.data.groupId,
+      },
+      outcome: 'applied',
+      attemptCount: 1,
+      acceptedStorageRevision: 1,
+      stateRevision: snapshot.stateRevision,
+      snapshotVersion: snapshot.group.snapshotVersion,
+      causalRevision: snapshot.causalRevision,
+      eventId: null,
+      outboxIds: [],
+      joinCode: null,
+      joinCodeExpiresAtEpochMs: null,
+      rejection: null,
+    };
+  }
+  return toGroupStateWritten(snapshot);
+}
 
 function createGroupStateRouteMember(groupId: string, principalId: string): GroupMember {
   return {
@@ -346,21 +395,63 @@ function createGroupStateRouteMemberWithStatus(
   status: GroupMember['status'],
 ): GroupMember {
   const auditStamp = testAuditStamp(1);
-  const joined = status === 'invited' ? null : auditStamp;
-  return {
+  const base = {
     ...TEST_GROUP_SCOPE,
     groupId,
     principalId,
     role: 'member',
-    status,
-    joined,
     updated: auditStamp,
-    left: status === 'left' ? auditStamp : null,
-    removed: status === 'removed' ? auditStamp : null,
-    banned: status === 'banned' ? auditStamp : null,
     invitedByPrincipalId: null,
     invitationExpiresAtEpochMs: null,
-  } as GroupMember;
+  } as const;
+  switch (status) {
+    case 'invited':
+    case 'pending':
+      return {
+        ...base,
+        status,
+        joined: null,
+        left: null,
+        removed: null,
+        banned: null,
+      };
+    case 'active':
+      return {
+        ...base,
+        status,
+        joined: auditStamp,
+        left: null,
+        removed: null,
+        banned: null,
+      };
+    case 'left':
+      return {
+        ...base,
+        status,
+        joined: auditStamp,
+        left: auditStamp,
+        removed: null,
+        banned: null,
+      };
+    case 'removed':
+      return {
+        ...base,
+        status,
+        joined: auditStamp,
+        left: null,
+        removed: auditStamp,
+        banned: null,
+      };
+    case 'banned':
+      return {
+        ...base,
+        status,
+        joined: auditStamp,
+        left: null,
+        removed: null,
+        banned: auditStamp,
+      };
+  }
 }
 
 function testAuditStamp(atEpochMs: number): AuditStamp {
