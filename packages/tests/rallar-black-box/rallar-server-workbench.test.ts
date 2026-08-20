@@ -5,8 +5,8 @@ import {
     assertRallarServerRestResponse,
     buildRallarServerCollectionStepRequestInput,
     buildRallarServerRestRequest,
-    createRallarServerRestCollectionTemplates,
     defaultRallarServerWorkbenchVariables,
+    executeRallarServerMutationRequest,
     executeRallarServerRestRequest,
     extractRallarServerRestVariables,
     extractRallarServerOpenApiEndpoints,
@@ -17,6 +17,9 @@ import {
     toRallarServerCurl,
     toRallarServerRestCollectionRecipe,
 } from '../../../apps/rallar-black-box/src/rallar-server-workbench.ts';
+import {
+    createRallarServerRestCollectionTemplates,
+} from '../../../apps/rallar-black-box/src/rallar-server-workbench/create-rallar-server-rest-collection-templates.ts';
 
 const authSession: AuthSession = {
     clientId: 'alice-client',
@@ -85,7 +88,8 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
     });
 
     it('rejects placeholder API base URLs for real-provider calls', () => {
-        expect(() => buildRallarServerRestRequest({
+    expect(() =>
+      buildRallarServerRestRequest({
             apiBaseUrl: 'https://api.example.invalid',
             method: 'GET',
             path: '/api/config',
@@ -96,7 +100,8 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
             attachAuth: false,
             forbidPlaceholderBaseUrl: true,
             timeoutMs: 5000,
-        })).toThrow(/placeholder API base URL/);
+      }),
+    ).toThrow(/placeholder API base URL/);
     });
 
     it('executes a request and parses JSON responses', async () => {
@@ -112,13 +117,11 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
                 attachAuth: false,
                 timeoutMs: 5000,
             },
-            async () => new Response(
-                JSON.stringify({ apiBaseUrl: 'http://localhost:8080' }),
-                {
+      async () =>
+        new Response(JSON.stringify({ apiBaseUrl: 'http://localhost:8080' }), {
                     status: 200,
                     headers: { 'content-type': 'application/json' },
-                },
-            ),
+        }),
         );
 
         expect(response).toMatchObject({
@@ -130,6 +133,42 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
             },
         });
     });
+
+  it('executes operator mutations with path-only request identity', async () => {
+    const calls: Array<Readonly<{ url: string; body: string | undefined }>> = [];
+
+    await executeRallarServerMutationRequest(
+      {
+        apiBaseUrl: 'http://localhost:8080',
+        method: 'POST',
+        path: '/api/auth/ws-ticket',
+        headersText: '{}',
+        queryText: '{}',
+        bodyText: '{"requestId":"legacy-body-id"}',
+        responseBodyMode: 'json',
+        attachAuth: false,
+        timeoutMs: 5000,
+      },
+      'opaque-operator-request-id',
+      async (input, init) => {
+        calls.push({
+          url: String(input),
+          body: init?.body === undefined ? undefined : String(init.body),
+        });
+        return new Response('{}', {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    );
+
+    expect(calls).toEqual([
+      {
+        url: 'http://localhost:8080/api/auth/ws-ticket/requests/opaque-operator-request-id',
+        body: '{}',
+      },
+    ]);
+  });
 
     it('classifies unauthenticated responses and invalid JSON bodies', async () => {
         const response = await executeRallarServerRestRequest(
@@ -145,7 +184,8 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
                 authSession,
                 timeoutMs: 5000,
             },
-            async () => new Response('not-json', {
+      async () =>
+        new Response('not-json', {
                 status: 401,
                 statusText: 'Unauthorized',
                 headers: { 'content-type': 'application/json' },
@@ -158,7 +198,8 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
     });
 
     it('creates black-box http.request commands without embedding auth headers', () => {
-        const command = toRallarServerBlackBoxCommand({
+    const command = toRallarServerBlackBoxCommand(
+      {
             apiBaseUrl: 'http://localhost:8080',
             method: 'POST',
             path: '/api/auth/ws-ticket',
@@ -169,7 +210,9 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
             attachAuth: true,
             authSession,
             timeoutMs: 5000,
-        }, 'rest-ws-ticket');
+      },
+      'rest-ws-ticket',
+    );
 
         expect(command).toEqual({
             kind: 'http.request',
@@ -235,44 +278,77 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
         expect(presets.get('group-graph-latest')).toMatchObject({
             tag: 'Graph',
             method: 'GET',
-            pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest',
+      pathTemplate:
+        '/api/state/apps/{applicationId}/workspaces/{workspaceId}' +
+        '/groups/{groupId}/graphs/latest',
             requiresAuth: true,
         });
         expect(presets.get('group-topology-read')).toMatchObject({
             tag: 'Topology',
             method: 'GET',
-            pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology',
+      pathTemplate:
+        '/api/state/apps/{applicationId}/workspaces/{workspaceId}' + '/groups/{groupId}/topology',
             requiresAuth: true,
         });
         expect(presets.get('group-topology-config-put')).toMatchObject({
             tag: 'Topology',
             method: 'PUT',
-            pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config',
+      pathTemplate:
+        '/api/state/apps/{applicationId}/workspaces/{workspaceId}' +
+        '/groups/{groupId}/topology/config/requests/{requestId}',
             requiresAuth: true,
         });
         expect(presets.get('group-topology-override-put')).toMatchObject({
             tag: 'Topology',
             method: 'PUT',
-            pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override',
+      pathTemplate:
+        '/api/state/apps/{applicationId}/workspaces/{workspaceId}' +
+        '/groups/{groupId}/topology/override/requests/{requestId}',
             requiresAuth: true,
         });
         expect(presets.get('group-topology-reconfigure')).toMatchObject({
             tag: 'Topology',
             method: 'POST',
-            pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure',
+      pathTemplate:
+        '/api/state/apps/{applicationId}/workspaces/{workspaceId}' +
+        '/groups/{groupId}/topology/reconfigure/requests/{requestId}',
             requiresAuth: true,
         });
         expect(presets.get('group-topology-config-delete')).toMatchObject({
             method: 'DELETE',
-            pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config',
+      pathTemplate:
+        '/api/state/apps/{applicationId}/workspaces/{workspaceId}' +
+        '/groups/{groupId}/topology/config/requests/{requestId}',
         });
         expect(presets.get('group-topology-override-delete')).toMatchObject({
             method: 'DELETE',
-            pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override',
+      pathTemplate:
+        '/api/state/apps/{applicationId}/workspaces/{workspaceId}' +
+        '/groups/{groupId}/topology/override/requests/{requestId}',
         });
         expect(presets.has('graph-global')).toBe(false);
         expect(presets.has('graph-group')).toBe(false);
     });
+
+  it('uses strict request paths for every built-in mutation preset and collection step', () => {
+    const mutationPresets = RALLAR_SERVER_ENDPOINT_PRESETS.filter(
+      (preset) => preset.method !== 'GET',
+    );
+    expect(mutationPresets).toHaveLength(17);
+    for (const preset of mutationPresets) {
+      expect(preset.pathTemplate, preset.presetId).toMatch(/\/requests\/\{requestId\}$/u);
+      expect(preset.body).not.toMatchObject({ requestId: expect.anything() });
+    }
+
+    const collectionMutationSteps = createRallarServerRestCollectionTemplates(
+      defaultRallarServerWorkbenchVariables({}),
+    ).flatMap((collection) => collection.steps.filter((step) => step.request.method !== 'GET'));
+    expect(collectionMutationSteps).toHaveLength(9);
+    for (const step of collectionMutationSteps) {
+      expect(step.request.path, step.stepId).toMatch(/\/requests\/\{\{requestId\}\}$/u);
+      expect(step.request.body).not.toMatchObject({ requestId: expect.anything() });
+    }
+  });
 
     it('threads one generation through client session lifecycle presets and collections', () => {
         const variables = defaultRallarServerWorkbenchVariables({
@@ -293,10 +369,11 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
             });
         }
 
-        const collection = createRallarServerRestCollectionTemplates(variables)
-            .find((entry) => entry.collectionId === 'client-presence-lifecycle');
+    const collection = createRallarServerRestCollectionTemplates(variables).find(
+      (entry) => entry.collectionId === 'client-presence-lifecycle',
+    );
         const lifecycleSteps = collection!.steps.filter((step) =>
-            step.stepId.includes('client-session')
+      step.stepId.includes('client-session'),
         );
 
         expect(lifecycleSteps.map((step) => step.stepId)).toEqual([
@@ -345,9 +422,12 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
                 workspaceId: 'workspace',
                 groupId: 'bb-group',
                 principalId: 'alice-client',
+        requestId: 'request-000000000001',
             }),
         );
-        const collection = templates.find(entry => entry.collectionId === 'group-membership-evidence');
+    const collection = templates.find(
+      (entry) => entry.collectionId === 'group-membership-evidence',
+    );
         expect(collection).toBeDefined();
 
         const input = buildRallarServerCollectionStepRequestInput({
@@ -358,7 +438,9 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
             defaultTimeoutMs: 5000,
         });
 
-        expect(input.path).toBe('/api/state/apps/app/workspaces/workspace/groups');
+    expect(input.path).toBe(
+      '/api/state/apps/app/workspaces/workspace/groups/requests/request-000000000001',
+    );
         expect(JSON.parse(input.bodyText)).toMatchObject({
             groupId: 'bb-group',
             createdByPrincipalId: 'alice-client',
@@ -385,25 +467,34 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
             bodyKind: 'json' as const,
         };
 
-        expect(readRallarServerJsonPath(response.bodyJson, '$.members[0].principalId'))
-            .toBe('alice-client');
-        expect(resolveRallarServerCollectionValue(
-            '/groups/{{groupId}}/${principalId}',
-            { groupId: 'bb-group', principalId: 'alice-client' },
-        )).toBe('/groups/bb-group/alice-client');
+    expect(readRallarServerJsonPath(response.bodyJson, '$.members[0].principalId')).toBe(
+      'alice-client',
+    );
+    expect(
+      resolveRallarServerCollectionValue('/groups/{{groupId}}/${principalId}', {
+        groupId: 'bb-group',
+        principalId: 'alice-client',
+      }),
+    ).toBe('/groups/bb-group/alice-client');
 
-        const assertions = assertRallarServerRestResponse(response, {
+    const assertions = assertRallarServerRestResponse(
+      response,
+      {
             status: [200, 201],
             body: [{ path: '$.group.groupId', equals: '{{groupId}}' }],
             headers: [{ name: 'x-snapshot-version', exists: true }],
-        }, { groupId: 'bb-group' });
+      },
+      { groupId: 'bb-group' },
+    );
 
-        expect(assertions.every(assertion => assertion.ok)).toBe(true);
-        expect(extractRallarServerRestVariables(response, [
+    expect(assertions.every((assertion) => assertion.ok)).toBe(true);
+    expect(
+      extractRallarServerRestVariables(response, [
             { name: 'observedGroupId', path: '$.group.groupId' },
             { name: 'snapshotVersion', from: 'headers', header: 'x-snapshot-version' },
             { name: 'statusCode', from: 'status' },
-        ])).toEqual({
+      ]),
+    ).toEqual({
             observedGroupId: 'bb-group',
             snapshotVersion: '3',
             statusCode: 200,

@@ -4,6 +4,7 @@ import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
@@ -428,25 +429,25 @@ describe('Rallar workflow options compatibility', () => {
         expect(command.maxAttempts).toBe(3);
         expect(
             shouldRetry(
-                Object.assign(new Error('server busy'), { status: 503 }),
+                new ApiHttpError('POST', '/api/state/mutation', 503, 'server busy'),
                 1,
             ),
         ).toBe(true);
         expect(
             shouldRetry(
-                Object.assign(new Error('rate limited'), { status: 429 }),
+                new ApiHttpError('POST', '/api/state/mutation', 429, 'rate limited'),
                 1,
             ),
         ).toBe(true);
         expect(
             shouldRetry(
-                Object.assign(new Error('bad request'), { status: 400 }),
+                new ApiHttpError('POST', '/api/state/mutation', 400, 'bad request'),
                 1,
             ),
         ).toBe(false);
         expect(
             shouldRetry(
-                Object.assign(new Error('conflict'), { status: 409 }),
+                new ApiHttpError('POST', '/api/state/mutation', 409, 'conflict'),
                 1,
             ),
         ).toBe(false);

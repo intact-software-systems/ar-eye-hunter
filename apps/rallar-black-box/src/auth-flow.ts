@@ -1,4 +1,6 @@
 import type { AuthSession, LoginRequest, LoginResponse, RegisterRequest } from '@shared/api/api-config.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+
 import type { RallarBlackBoxBootstrapConfig } from './runtime-store.ts';
 
 export type RallarBlackBoxAuthFacade = Readonly<{
@@ -45,10 +47,9 @@ export async function authenticateRallarBlackBox(
 }
 
 function isExistingUserRegistrationError(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error);
-    return message.includes('POST /api/auth/register') &&
-        message.includes('409') &&
-        message.includes('already exists');
+    return error instanceof ApiHttpError &&
+        error.status === 409 &&
+        error.mutationFailure?.code === 'auth-user-exists';
 }
 
 export function bootstrapPatchFromAuthSession(
@@ -87,10 +88,10 @@ export function authErrorMessage(error: unknown): string {
     ) {
         return 'Rallar Server is unreachable or blocked by CORS.';
     }
-    if (message.includes('401')) {
+    if (error instanceof ApiHttpError && error.mutationFailure?.status === 401) {
         return 'Invalid username or password.';
     }
-    if (message.includes('403')) {
+    if (error instanceof ApiHttpError && error.mutationFailure?.status === 403) {
         return 'Login is forbidden for this user.';
     }
     return message;

@@ -6,7 +6,6 @@ import {
 } from 'react';
 import type {
     AuthSession,
-    WebSocketTicketResponse,
 } from '@shared/api/api-config.ts';
 import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
 import type {
@@ -20,14 +19,13 @@ import {
     runDirectRallarWsSubscribe,
     type DirectRallarOperationResult,
 } from '../../../direct-rallar-operations.ts';
-import { executeRallarServerRestRequest } from '../../../rallar-server-workbench.ts';
+import { recordValue as optionalRecord } from '../../shared/record-value.ts';
 import {
     type RallarBlackBoxBootstrapConfig,
     rallarBlackBoxProviderModeFromConfig,
     rallarBlackBoxRuntimeStore,
 } from '../../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
-import { recordValue as optionalRecord } from '../../shared/record-value.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import {
     formatDuration,
@@ -48,6 +46,7 @@ import type {
 } from './websocket-contracts.ts';
 import type { WebSocketCommandCenterViewModel } from './websocket-view-contracts.ts';
 import { deriveWebSocketDiagnostics } from './websocket-diagnostics.ts';
+import { observeRawWebSocket } from './observe-raw-web-socket.ts';
 import {
     DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID,
     WEBSOCKET_PAYLOAD_PRESETS,
@@ -55,6 +54,7 @@ import {
     webSocketPayloadPresetText,
 } from './websocket-presets.ts';
 import { webSocketCommandCenterRecipe } from './websocket-recipes.ts';
+import { requestWebSocketTicket } from './request-web-socket-ticket.ts';
 import {
     defaultWebSocketApiUrl,
     defaultWebSocketScope,
@@ -431,47 +431,26 @@ export function useWebSocketCommandCenterController({
         }
     };
 
-    const requestWsTicket = async (): Promise<AuthCommandCenterTicket> => {
-        const response = await executeRallarServerRestRequest({
+    const requestWsTicket = async (
+        requestId: string,
+    ): Promise<AuthCommandCenterTicket> => {
+        const nextTicket = await requestWebSocketTicket({
             apiBaseUrl: values.apiBaseUrl,
-            method: 'POST',
-            path: '/api/auth/ws-ticket',
-            headersText: '{}',
-            queryText: '{}',
-            bodyText: '{}',
-            responseBodyMode: 'json',
-            attachAuth: true,
             authSession,
+            requestId,
             timeoutMs: values.timeoutMs,
         });
-        const body = optionalRecord(response.bodyJson);
-        if (
-            response.ok &&
-            typeof body.ticket === 'string' &&
-            typeof body.sessionId === 'string' &&
-            typeof body.expiresAtEpochMs === 'number'
-        ) {
-            const wsTicket = body as WebSocketTicketResponse;
-            const nextTicket = {
-                ticket: wsTicket.ticket,
-                sessionId: wsTicket.sessionId,
-                expiresAtEpochMs: wsTicket.expiresAtEpochMs,
-                issuedAtEpochMs: Date.now(),
-            };
-            setTicket(nextTicket);
-            return nextTicket;
-        }
-
-        throw new Error(
-            response.error?.message ??
-                `WS ticket request returned ${response.status}`,
-        );
+        setTicket(nextTicket);
+        return nextTicket;
     };
 
     const open = async (
         url = values.wsUrl,
         options: { useTicket?: boolean } = { useTicket: true },
     ): Promise<void> => {
+        const ticketRequestId = options.useTicket === false
+            ? undefined
+            : crypto.randomUUID();
         setBusyAction('Open WebSocket');
         setLocalError(undefined);
         const label =
@@ -490,9 +469,9 @@ export function useWebSocketCommandCenterController({
         );
         try {
             const nextTicket =
-                options.useTicket === false
+                ticketRequestId === undefined
                     ? undefined
-                    : await requestWsTicket();
+                    : await requestWsTicket(ticketRequestId);
             const resolvedUrl = resolveWebSocketUrlTemplate(
                 url,
                 values.apiBaseUrl,
@@ -517,84 +496,15 @@ export function useWebSocketCommandCenterController({
             );
             rawSocketRef.current = socket;
             setSequence((current) => current + 1);
-            socket.addEventListener('open', () => {
-                recordWebSocketEvent(
-                    'rallar.direct.raw_ws.open.completed',
-                    {
-                        connection: values.connection,
-                        url: resolvedUrl,
-                        readyState: socket.readyState,
-                    },
-                    'Open WebSocket',
-                );
-                setWaitStatus('raw ws open');
-                setActionFeedback(
-                    completedActionFeedback({
-                        label,
-                        startedAtEpochMs,
-                        target: resolvedUrl,
-                        ok: true,
-                        status: 'open',
-                        message: 'Raw WebSocket is open.',
-                    }),
-                );
-            });
-            socket.addEventListener('message', (event) => {
-                let data: unknown = event.data;
-                if (typeof event.data === 'string') {
-                    try {
-                        data = JSON.parse(event.data);
-                    } catch {
-                        data = event.data;
-                    }
-                }
-                recordWebSocketEvent(
-                    'rallar.direct.raw_ws.message',
-                    {
-                        connection: values.connection,
-                        data,
-                    },
-                    'Raw WebSocket message received',
-                    'info',
-                    'message',
-                );
-            });
-            socket.addEventListener('error', () => {
-                recordWebSocketEvent(
-                    'rallar.direct.raw_ws.error',
-                    {
-                        connection: values.connection,
-                        url: resolvedUrl,
-                        readyState: socket.readyState,
-                    },
-                    'Raw WebSocket error',
-                    'error',
-                );
-                setWaitStatus('raw ws error');
-                setActionFeedback(
-                    completedActionFeedback({
-                        label,
-                        startedAtEpochMs,
-                        target: resolvedUrl,
-                        ok: false,
-                        statusText: 'error',
-                        message: 'Raw WebSocket emitted an error.',
-                    }),
-                );
-            });
-            socket.addEventListener('close', (event) => {
-                recordWebSocketEvent(
-                    'rallar.direct.raw_ws.close',
-                    {
-                        connection: values.connection,
-                        code: event.code,
-                        reason: event.reason,
-                        wasClean: event.wasClean,
-                    },
-                    'Raw WebSocket closed',
-                    event.wasClean ? 'info' : 'warning',
-                );
-                setWaitStatus('raw ws closed');
+            observeRawWebSocket({
+                socket,
+                connection: values.connection,
+                url: resolvedUrl,
+                label,
+                startedAtEpochMs,
+                recordEvent: recordWebSocketEvent,
+                setWaitStatus,
+                setActionFeedback,
             });
             setActionFeedback(
                 completedActionFeedback({
@@ -933,6 +843,7 @@ export function useWebSocketCommandCenterController({
     };
 
     const createTicket = async (): Promise<void> => {
+        const requestId = crypto.randomUUID();
         setBusyAction('Create WS ticket');
         setLocalError(undefined);
         const label = 'Create WS ticket';
@@ -945,7 +856,7 @@ export function useWebSocketCommandCenterController({
             ),
         );
         try {
-            const nextTicket = await requestWsTicket();
+            const nextTicket = await requestWsTicket(requestId);
             recordWebSocketEvent(
                 'rallar.direct.raw_ws.ticket.created',
                 {

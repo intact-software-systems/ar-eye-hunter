@@ -5,6 +5,7 @@ export type {
     ApiRequestOptions,
 } from './browser/api/http-request.ts';
 export * from './browser/api-integration.ts';
+export * from './browser/api/state-mutation-http-contracts.ts';
 export * from './browser/auth/agent-session-ticket-http-api.ts';
 export * from './browser/auth/session-http-api.ts';
 export * from './browser/auth/websocket-ticket-http-api.ts';

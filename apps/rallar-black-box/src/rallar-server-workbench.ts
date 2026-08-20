@@ -1,7 +1,10 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import type { RallarBlackBoxTestHttpRequestCommand } from '@shared-test/rallar-bb-test/types.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
+
+import { RALLAR_SERVER_STATE_ENDPOINT_PRESETS } from './rallar-server-workbench/rallar-server-state-endpoint-presets.ts';
 
 export type RallarServerRestMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 export type RallarServerResponseBodyMode = 'auto' | 'json' | 'text' | 'none';
@@ -75,6 +78,7 @@ export type RallarServerWorkbenchVariables = Readonly<{
     principalId: string;
     sessionId: string;
     generationId: string;
+    requestId: string;
     clientInstanceId: string;
     groupId: string;
     username: string;
@@ -172,7 +176,7 @@ export const RALLAR_SERVER_ENDPOINT_PRESETS: readonly RallarServerEndpointPreset
         tag: 'Auth',
         label: 'Create WS ticket',
         method: 'POST',
-        pathTemplate: '/api/auth/ws-ticket',
+        pathTemplate: '/api/auth/ws-ticket/requests/{requestId}',
         requiresAuth: true,
         body: {},
     },
@@ -184,315 +188,7 @@ export const RALLAR_SERVER_ENDPOINT_PRESETS: readonly RallarServerEndpointPreset
         pathTemplate: '/api/webrtc/ice',
         requiresAuth: true,
     },
-    {
-        presetId: 'clients-list',
-        tag: 'Client State',
-        label: 'List clients',
-        method: 'GET',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients',
-        requiresAuth: true,
-    },
-    {
-        presetId: 'client-read',
-        tag: 'Client State',
-        label: 'Read current client',
-        method: 'GET',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}',
-        requiresAuth: true,
-    },
-    {
-        presetId: 'client-presence',
-        tag: 'Client State',
-        label: 'Read current client presence',
-        method: 'GET',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/presence',
-        requiresAuth: true,
-    },
-    {
-        presetId: 'client-events',
-        tag: 'Client State',
-        label: 'List current client events',
-        method: 'GET',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/events',
-        requiresAuth: true,
-    },
-    {
-        presetId: 'client-events-page',
-        tag: 'Client State',
-        label: 'List current client events page',
-        method: 'GET',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/events/page',
-        requiresAuth: true,
-    },
-    {
-        presetId: 'client-principal-upsert',
-        tag: 'Client State',
-        label: 'Upsert current client principal',
-        method: 'PUT',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/principal',
-        requiresAuth: true,
-        body: {
-            username: '{username}',
-            displayName: '{username}',
-            status: 'active',
-        },
-    },
-    {
-        presetId: 'client-instance-upsert',
-        tag: 'Client State',
-        label: 'Upsert current client instance',
-        method: 'PUT',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}',
-        requiresAuth: true,
-        body: {
-            status: 'active',
-            platform: 'browser',
-            deviceLabel: 'rallar-black-box',
-            capabilities: ['black-box-testing'],
-        },
-    },
-    {
-        presetId: 'client-session-connect',
-        tag: 'Client State',
-        label: 'Connect current client session',
-        method: 'PUT',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}',
-        requiresAuth: true,
-        body: {
-            generationId: '{generationId}',
-            presenceState: 'online',
-            transport: 'rtc',
-            connectionId: 'rallar-black-box',
-        },
-    },
-    {
-        presetId: 'client-session-heartbeat',
-        tag: 'Client State',
-        label: 'Heartbeat current client session',
-        method: 'POST',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}/heartbeat',
-        requiresAuth: true,
-        body: {
-            generationId: '{generationId}',
-            presenceState: 'online',
-        },
-    },
-    {
-        presetId: 'client-session-disconnect',
-        tag: 'Client State',
-        label: 'Disconnect current client session',
-        method: 'POST',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}/disconnect',
-        requiresAuth: true,
-        body: {
-            generationId: '{generationId}',
-        },
-    },
-    {
-        presetId: 'groups-list',
-        tag: 'Group State',
-        label: 'List groups',
-        method: 'GET',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups',
-        requiresAuth: true,
-    },
-    {
-        presetId: 'group-create',
-        tag: 'Group State',
-        label: 'Create group',
-        method: 'POST',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups',
-        requiresAuth: true,
-        body: {
-            groupId: '{groupId}',
-            displayName: '{groupId}',
-            description: 'Created by rallar-black-box',
-            kind: 'room',
-            joinMode: 'open',
-            createdByPrincipalId: '{principalId}',
-            metadata: {
-                source: 'rallar-black-box',
-            },
-        },
-    },
-    {
-        presetId: 'group-read',
-        tag: 'Group State',
-        label: 'Read group',
-        method: 'GET',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}',
-        requiresAuth: true,
-    },
-    {
-        presetId: 'group-member-join',
-        tag: 'Group State',
-        label: 'Join group',
-        method: 'PUT',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}',
-        requiresAuth: true,
-        body: {
-            status: 'active',
-        },
-    },
-    {
-        presetId: 'group-member-leave',
-        tag: 'Group State',
-        label: 'Leave group',
-        method: 'PUT',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}',
-        requiresAuth: true,
-        body: {
-            status: 'left',
-        },
-    },
-    {
-        presetId: 'group-presence-connect',
-        tag: 'Group State',
-        label: 'Connect group presence',
-        method: 'PUT',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}',
-        requiresAuth: true,
-        body: {
-            principalId: '{principalId}',
-        },
-    },
-    {
-        presetId: 'group-presence-heartbeat',
-        tag: 'Group State',
-        label: 'Heartbeat group presence',
-        method: 'POST',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/heartbeat',
-        requiresAuth: true,
-        body: {
-            principalId: '{principalId}',
-        },
-    },
-    {
-        presetId: 'group-presence-disconnect',
-        tag: 'Group State',
-        label: 'Disconnect group presence',
-        method: 'POST',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/disconnect',
-        requiresAuth: true,
-        body: {
-            principalId: '{principalId}',
-        },
-    },
-    {
-        presetId: 'group-events',
-        tag: 'Group State',
-        label: 'List group events',
-        method: 'GET',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events',
-        requiresAuth: true,
-    },
-    {
-        presetId: 'group-events-page',
-        tag: 'Group State',
-        label: 'List group events page',
-        method: 'GET',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events/page',
-        requiresAuth: true,
-    },
-    {
-        presetId: 'graph-scoped-global',
-        tag: 'Graph',
-        label: 'Read scoped global graph',
-        method: 'GET',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global',
-        requiresAuth: false,
-    },
-    {
-        presetId: 'group-graph-latest',
-        tag: 'Graph',
-        label: 'Read latest group graph',
-        method: 'GET',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest',
-        requiresAuth: true,
-    },
-    {
-        presetId: 'group-topology-read',
-        tag: 'Topology',
-        label: 'Read group topology',
-        method: 'GET',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology',
-        requiresAuth: true,
-    },
-    {
-        presetId: 'group-topology-config-read',
-        tag: 'Topology',
-        label: 'Read group topology config',
-        method: 'GET',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config',
-        requiresAuth: true,
-    },
-    {
-        presetId: 'group-topology-config-put',
-        tag: 'Topology',
-        label: 'Put group topology config',
-        method: 'PUT',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config',
-        requiresAuth: true,
-        body: {
-            config: {
-                topologyKind: 'auto',
-            },
-            reconfigure: true,
-        },
-    },
-    {
-        presetId: 'group-topology-config-delete',
-        tag: 'Topology',
-        label: 'Delete group topology config',
-        method: 'DELETE',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config',
-        requiresAuth: true,
-    },
-    {
-        presetId: 'group-topology-override-read',
-        tag: 'Topology',
-        label: 'Read group topology override',
-        method: 'GET',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override',
-        requiresAuth: true,
-    },
-    {
-        presetId: 'group-topology-override-put',
-        tag: 'Topology',
-        label: 'Put group topology override',
-        method: 'PUT',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override',
-        requiresAuth: true,
-        body: {
-            config: {
-                topologyKind: 'mesh',
-            },
-            ttlMs: 900000,
-            reconfigure: true,
-        },
-    },
-    {
-        presetId: 'group-topology-override-delete',
-        tag: 'Topology',
-        label: 'Delete group topology override',
-        method: 'DELETE',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override',
-        requiresAuth: true,
-    },
-    {
-        presetId: 'group-topology-reconfigure',
-        tag: 'Topology',
-        label: 'Reconfigure group topology',
-        method: 'POST',
-        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure',
-        requiresAuth: true,
-        body: {
-            options: {
-                topologyKind: 'auto',
-            },
-            publish: true,
-        },
-    },
+    ...RALLAR_SERVER_STATE_ENDPOINT_PRESETS,
     {
         presetId: 'openapi-json',
         tag: 'Docs',
@@ -503,7 +199,9 @@ export const RALLAR_SERVER_ENDPOINT_PRESETS: readonly RallarServerEndpointPreset
     },
 ];
 
-export function defaultRallarServerWorkbenchVariables(input: Partial<RallarServerWorkbenchVariables>): RallarServerWorkbenchVariables {
+export function defaultRallarServerWorkbenchVariables(
+    input: Partial<RallarServerWorkbenchVariables>,
+): RallarServerWorkbenchVariables {
     const principalId = input.principalId || 'alice';
     const sessionId = input.sessionId || 'visible-session-alice';
 
@@ -513,252 +211,11 @@ export function defaultRallarServerWorkbenchVariables(input: Partial<RallarServe
         principalId,
         sessionId,
         generationId: input.generationId || crypto.randomUUID(),
+        requestId: input.requestId || crypto.randomUUID(),
         clientInstanceId: input.clientInstanceId || `${sessionId}-browser`,
         groupId: input.groupId || 'rallar-black-box-room',
         username: input.username || principalId,
     };
-}
-
-export function createRallarServerRestCollectionTemplates(
-    variables: RallarServerWorkbenchVariables,
-): readonly RallarServerRestCollection[] {
-    const baseVariables = {
-        applicationId: variables.applicationId,
-        workspaceId: variables.workspaceId,
-        groupId: variables.groupId,
-        principalId: variables.principalId,
-        clientInstanceId: variables.clientInstanceId,
-        sessionId: variables.sessionId,
-        generationId: variables.generationId,
-        username: variables.username,
-        missingGroupId: `${variables.groupId}-missing`,
-        otherPrincipalId: `${variables.principalId}-not-self`,
-    };
-
-    return [
-        {
-            collectionId: 'group-membership-evidence',
-            name: 'Group membership evidence',
-            description: 'Create/read/join a group and verify the latest group snapshot.',
-            variables: baseVariables,
-            steps: [
-                {
-                    stepId: 'create-group',
-                    label: 'Create group',
-                    request: {
-                        method: 'POST',
-                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/groups',
-                        attachAuth: true,
-                        responseBodyMode: 'json',
-                        body: {
-                            groupId: '{{groupId}}',
-                            displayName: '{{groupId}}',
-                            description: 'Created by rallar-black-box REST collection',
-                            kind: 'room',
-                            joinMode: 'open',
-                            createdByPrincipalId: '{{principalId}}',
-                        },
-                    },
-                    expect: {
-                        status: [200, 201, 409],
-                    },
-                },
-                {
-                    stepId: 'join-group',
-                    label: 'Join group',
-                    request: {
-                        method: 'PUT',
-                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/groups/{{groupId}}/members/{{principalId}}',
-                        attachAuth: true,
-                        responseBodyMode: 'json',
-                        body: {
-                            status: 'active',
-                        },
-                    },
-                    expect: {
-                        status: [200, 201],
-                    },
-                },
-                {
-                    stepId: 'read-group',
-                    label: 'Read group',
-                    request: {
-                        method: 'GET',
-                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/groups/{{groupId}}',
-                        attachAuth: true,
-                        responseBodyMode: 'json',
-                    },
-                    expect: {
-                        status: 200,
-                        body: [
-                            {
-                                path: '$.group.groupId',
-                                equals: '{{groupId}}',
-                            },
-                        ],
-                    },
-                    extract: [
-                        {
-                            name: 'observedGroupId',
-                            path: '$.group.groupId',
-                        },
-                    ],
-                },
-            ],
-        },
-        {
-            collectionId: 'client-presence-lifecycle',
-            name: 'Client presence lifecycle',
-            description: 'Upsert client state, connect presence, and list client/group events.',
-            variables: baseVariables,
-            steps: [
-                {
-                    stepId: 'upsert-principal',
-                    label: 'Upsert principal',
-                    request: {
-                        method: 'PUT',
-                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/clients/{{principalId}}/principal',
-                        attachAuth: true,
-                        responseBodyMode: 'json',
-                        body: {
-                            username: '{{username}}',
-                            displayName: '{{username}}',
-                            status: 'active',
-                        },
-                    },
-                    expect: { status: [200, 201] },
-                },
-                {
-                    stepId: 'connect-client-session',
-                    label: 'Connect client session',
-                    request: {
-                        method: 'PUT',
-                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/clients/{{principalId}}/instances/{{clientInstanceId}}/sessions/{{sessionId}}',
-                        attachAuth: true,
-                        responseBodyMode: 'json',
-                        body: {
-                            generationId: '{{generationId}}',
-                            presenceState: 'online',
-                            transport: 'rtc',
-                            connectionId: 'rallar-black-box',
-                        },
-                    },
-                    expect: { status: [200, 201] },
-                },
-                {
-                    stepId: 'heartbeat-client-session',
-                    label: 'Heartbeat client session',
-                    request: {
-                        method: 'POST',
-                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/clients/{{principalId}}/instances/{{clientInstanceId}}/sessions/{{sessionId}}/heartbeat',
-                        attachAuth: true,
-                        responseBodyMode: 'json',
-                        body: {
-                            generationId: '{{generationId}}',
-                            presenceState: 'online',
-                        },
-                    },
-                    expect: { status: 200 },
-                },
-                {
-                    stepId: 'connect-group-presence',
-                    label: 'Connect group presence',
-                    request: {
-                        method: 'PUT',
-                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/groups/{{groupId}}/sessions/{{sessionId}}',
-                        attachAuth: true,
-                        responseBodyMode: 'json',
-                        body: {
-                            principalId: '{{principalId}}',
-                        },
-                    },
-                    expect: { status: [200, 201] },
-                },
-                {
-                    stepId: 'client-events-page',
-                    label: 'List client events page',
-                    request: {
-                        method: 'GET',
-                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/clients/{{principalId}}/events/page',
-                        query: { limit: 20 },
-                        attachAuth: true,
-                        responseBodyMode: 'json',
-                    },
-                    expect: { status: 200 },
-                },
-                {
-                    stepId: 'disconnect-client-session',
-                    label: 'Disconnect client session',
-                    request: {
-                        method: 'POST',
-                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/clients/{{principalId}}/instances/{{clientInstanceId}}/sessions/{{sessionId}}/disconnect',
-                        attachAuth: true,
-                        responseBodyMode: 'json',
-                        body: {
-                            generationId: '{{generationId}}',
-                        },
-                    },
-                    expect: { status: 200 },
-                },
-            ],
-        },
-        {
-            collectionId: 'negative-auth-state-cases',
-            name: 'Negative auth and state cases',
-            description: 'Check missing auth, forbidden self-service, duplicate group, and missing group behavior.',
-            variables: baseVariables,
-            steps: [
-                {
-                    stepId: 'missing-auth-ws-ticket',
-                    label: 'Missing auth WS ticket',
-                    request: {
-                        method: 'POST',
-                        path: '/api/auth/ws-ticket',
-                        attachAuth: false,
-                        responseBodyMode: 'json',
-                        body: {},
-                    },
-                    expect: { status: 401 },
-                },
-                {
-                    stepId: 'missing-auth-ice',
-                    label: 'Missing auth ICE config',
-                    request: {
-                        method: 'GET',
-                        path: '/api/webrtc/ice',
-                        attachAuth: false,
-                        responseBodyMode: 'json',
-                    },
-                    expect: { status: 401 },
-                },
-                {
-                    stepId: 'forbidden-other-principal-join',
-                    label: 'Forbidden other-principal join',
-                    request: {
-                        method: 'PUT',
-                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/groups/{{groupId}}/members/{{otherPrincipalId}}',
-                        attachAuth: true,
-                        responseBodyMode: 'json',
-                        body: {
-                            status: 'active',
-                        },
-                    },
-                    expect: { status: 403 },
-                },
-                {
-                    stepId: 'missing-group-read',
-                    label: 'Missing group read',
-                    request: {
-                        method: 'GET',
-                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/groups/{{missingGroupId}}',
-                        attachAuth: true,
-                        responseBodyMode: 'json',
-                    },
-                    expect: { status: 404 },
-                },
-            ],
-        },
-    ];
 }
 
 export function applyRallarServerEndpointPreset(
@@ -898,6 +355,21 @@ export async function executeRallarServerRestRequest(
             clearTimeout(timeout);
         }
     }
+}
+
+export async function executeRallarServerMutationRequest(
+    input: RallarServerRestRequestInput,
+    requestId: string,
+    fetchImpl: typeof fetch = fetch,
+): Promise<RallarServerRestResponse> {
+    return await executeRallarServerRestRequest(
+        {
+            ...input,
+            path: toApiMutationRequestPath(input.path, requestId),
+            bodyText: withoutMutationRequestId(input.bodyText),
+        },
+        fetchImpl,
+    );
 }
 
 export function toRallarServerBlackBoxCommand(
@@ -1209,7 +681,7 @@ export function redactRallarServerUrl(url: string, authSession?: AuthSession): s
     try {
         const parsed = new URL(url);
         for (const [key, value] of [...parsed.searchParams.entries()]) {
-            const redacted = redactRallarServerValue({ [key]: value }, authSession) as Record<string, string>;
+            const redacted = redactRallarServerValue({ [key]: value }, authSession);
             if (redacted[key] !== value) {
                 parsed.searchParams.set(key, redacted[key]);
             }
@@ -1422,6 +894,17 @@ function parseOptionalJsonValue(text: string, label: string): unknown | undefine
     } catch (error) {
         throw new Error(`${label} is invalid: ${error instanceof Error ? error.message : String(error)}`);
     }
+}
+
+function withoutMutationRequestId(bodyText: string): string {
+    const body = parseOptionalJsonValue(bodyText, 'Body');
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+        return bodyText;
+    }
+
+    return JSON.stringify(
+        Object.fromEntries(Object.entries(body).filter(([key]) => key !== 'requestId')),
+    );
 }
 
 function hasHeader(headers: Readonly<Record<string, string>>, expected: string): boolean {

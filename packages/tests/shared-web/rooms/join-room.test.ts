@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 
 import {
   createRoomSnapshot,
@@ -91,10 +92,10 @@ describe('room join operations', () => {
       throw new TypeError('Expected join workflow retry policy');
     }
     expect(command.maxAttempts).toBe(3);
-    expect(shouldRetry(Object.assign(new Error(), { status: 503 }), 1)).toBe(true);
-    expect(shouldRetry(Object.assign(new Error(), { status: 429 }), 1)).toBe(true);
-    expect(shouldRetry(Object.assign(new Error(), { status: 400 }), 1)).toBe(false);
-    expect(shouldRetry(Object.assign(new Error(), { status: 409 }), 1)).toBe(false);
+    expect(shouldRetry(apiHttpError(503), 1)).toBe(true);
+    expect(shouldRetry(apiHttpError(429), 1)).toBe(true);
+    expect(shouldRetry(apiHttpError(400), 1)).toBe(false);
+    expect(shouldRetry(apiHttpError(409), 1)).toBe(false);
   });
 
   it('accepts the new room before leaving the previous room', async () => {
@@ -169,3 +170,40 @@ describe('room join operations', () => {
     expect(roomWorkflowMocks.joinStateGroup).not.toHaveBeenCalled();
   });
 });
+
+function apiHttpError(status: number): ApiHttpError {
+  return new ApiHttpError(
+    'POST',
+    '/api/test/requests/test-request-id',
+    status,
+    JSON.stringify({
+      type: 'api-mutation-failure',
+      version: 'canonical.v1',
+      code: `test-${status}`,
+      status,
+      message: `Test ${status}`,
+      issues: null,
+      denial: null,
+      retry:
+        status === 429
+          ? {
+              kind: 'rate-limited',
+              retryAfterMs: 1000,
+              attempts: null,
+              lane: null,
+              queueAgeMs: null,
+              dueAgeMs: null,
+            }
+          : status === 503
+            ? {
+                kind: 'unavailable',
+                retryAfterMs: null,
+                attempts: 1,
+                lane: null,
+                queueAgeMs: null,
+                dueAgeMs: null,
+              }
+            : null,
+    }),
+  );
+}

@@ -1,5 +1,9 @@
 import { useState } from 'react';
 import { json } from '../../shared/json-presentation.ts';
+import {
+    isCrdtAdminOperatorMutationAction,
+    toCrdtAdminOperatorMutationRequest,
+} from './crdt-admin-operator-mutation.ts';
 import type {
     CrdtAdminDocumentStatus,
     CrdtAdminListResult,
@@ -28,11 +32,17 @@ export function useCrdtHealthController({
     const canCallAdmin =
         providerReady && Boolean(authSession?.accessToken) && !busyAction;
 
-    const adminRequestForAction = (
-        action: string,
-    ): { path: string; body: Record<string, unknown> } | undefined => {
+    const adminRequestForAction = (action: string) => {
         if (!selectedDocument) {
             return undefined;
+        }
+        if (isCrdtAdminOperatorMutationAction(action)) {
+            return toCrdtAdminOperatorMutationRequest({
+                action,
+                changedAtEpochMs: Date.now(),
+                document: selectedDocument.document,
+                requestId: '${RALLAR_REQUEST_ID}',
+            });
         }
         const body = { document: selectedDocument.document };
         switch (action) {
@@ -45,46 +55,6 @@ export function useCrdtHealthController({
                 };
             case 'backup-export':
                 return { path: '/api/crdt/admin/documents/backup-export', body };
-            case 'compact':
-                return {
-                    path: '/api/crdt/admin/documents/compact',
-                    body: {
-                        ...body,
-                        reason: 'black-box-crdt-health-compaction',
-                    },
-                };
-            case 'rebuild':
-                return {
-                    path: '/api/crdt/admin/documents/rebuild-projection',
-                    body: { ...body, projectionId: 'black-box-health' },
-                };
-            case 'archive':
-                return {
-                    path: '/api/crdt/admin/documents/lifecycle',
-                    body: {
-                        ...body,
-                        lifecycle: 'archived',
-                        changedAtEpochMs: Date.now(),
-                    },
-                };
-            case 'destroy':
-                return {
-                    path: '/api/crdt/admin/documents/erase',
-                    body: {
-                        ...body,
-                        mode: 'destroy-document',
-                        reason: 'black-box-crdt-health-destroy',
-                    },
-                };
-            case 'quarantine':
-                return {
-                    path: '/api/crdt/admin/documents/lifecycle',
-                    body: {
-                        ...body,
-                        lifecycle: 'quarantined',
-                        changedAtEpochMs: Date.now(),
-                    },
-                };
             default:
                 return undefined;
         }
@@ -182,93 +152,50 @@ export function useCrdtHealthController({
         if (!selectedDocument) {
             return;
         }
+        const mutationRequest = isCrdtAdminOperatorMutationAction(action)
+            ? toCrdtAdminOperatorMutationRequest({
+                action,
+                changedAtEpochMs: Date.now(),
+                document: selectedDocument.document,
+                requestId: crypto.randomUUID(),
+            })
+            : undefined;
         setBusyAction(action);
         setError(undefined);
         try {
             const body = { document: selectedDocument.document };
             let result: unknown;
-            switch (action) {
-                case 'integrity':
-                    result = await callAdmin(
-                        '/api/crdt/admin/documents/integrity',
-                        body,
-                    );
-                    break;
-                case 'debug-export':
-                    result = await callAdmin(
-                        '/api/crdt/admin/documents/debug-export',
-                        {
-                            ...body,
-                            reason: 'black-box-crdt-health',
-                        },
-                    );
-                    break;
-                case 'backup-export':
-                    result = await callAdmin(
-                        '/api/crdt/admin/documents/backup-export',
-                        body,
-                    );
-                    break;
-                case 'compact':
-                    result = await callAdmin(
-                        '/api/crdt/admin/documents/compact',
-                        {
-                            ...body,
-                            reason: 'black-box-crdt-health-compaction',
-                        },
-                    );
-                    break;
-                case 'rebuild':
-                    result = await callAdmin(
-                        '/api/crdt/admin/documents/rebuild-projection',
-                        {
-                            ...body,
-                            projectionId: 'black-box-health',
-                        },
-                    );
-                    break;
-                case 'archive':
-                    result = await callAdmin(
-                        '/api/crdt/admin/documents/lifecycle',
-                        {
-                            ...body,
-                            lifecycle: 'archived',
-                            changedAtEpochMs: Date.now(),
-                        },
-                    );
-                    break;
-                case 'destroy':
-                    result = await callAdmin(
-                        '/api/crdt/admin/documents/erase',
-                        {
-                            ...body,
-                            mode: 'destroy-document',
-                            reason: 'black-box-crdt-health-destroy',
-                        },
-                    );
-                    break;
-                case 'quarantine':
-                default:
-                    result = await callAdmin(
-                        '/api/crdt/admin/documents/lifecycle',
-                        {
-                            ...body,
-                            lifecycle: 'quarantined',
-                            changedAtEpochMs: Date.now(),
-                        },
-                    );
-                    break;
+            if (mutationRequest) {
+                result = await callAdmin(mutationRequest.path, mutationRequest.body);
+            } else {
+                switch (action) {
+                    case 'integrity':
+                        result = await callAdmin(
+                            '/api/crdt/admin/documents/integrity',
+                            body,
+                        );
+                        break;
+                    case 'debug-export':
+                        result = await callAdmin(
+                            '/api/crdt/admin/documents/debug-export',
+                            {
+                                ...body,
+                                reason: 'black-box-crdt-health',
+                            },
+                        );
+                        break;
+                    case 'backup-export':
+                        result = await callAdmin(
+                            '/api/crdt/admin/documents/backup-export',
+                            body,
+                        );
+                        break;
+                    default:
+                        throw new Error(`Unsupported CRDT admin action: ${action}.`);
+                }
             }
             setLastResult(result);
-            if (
-                [
-                    'archive',
-                    'compact',
-                    'destroy',
-                    'quarantine',
-                    'rebuild',
-                ].includes(action)
-            ) {
+            if (mutationRequest) {
                 await refresh();
             }
         } catch (caught) {

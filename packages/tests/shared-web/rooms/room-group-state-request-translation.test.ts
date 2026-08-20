@@ -25,16 +25,19 @@ import type {
   RallarUpdateRoomInput,
 } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type {
-  CreateGroupRequest,
-  JoinGroupRequest,
-  UpdateGroupRequest,
-} from '@shared/api/state-types.ts';
+  CreateStateGroupBody,
+  JoinStateGroupBody,
+  UpdateStateGroupBody,
+} from '@shared-web/browser/api/state-mutation-http-contracts.ts';
 
 const actor = {
   actorPrincipalId: 'owner-1',
   actorSessionId: 'owner-session',
-  requestId: 'request-1',
 } as const;
+
+function withLegacyRequestId<Body extends object>(body: Body) {
+  return { ...body, requestId: 'caller-request' };
+}
 
 describe('room request translation', () => {
   it('translates minimal and fully populated create fields with literal defaults', () => {
@@ -128,7 +131,7 @@ describe('room request translation', () => {
     });
   });
 
-  it('preserves literal raw JSON omission and insertion order for create, join, and update', () => {
+  it('serializes create, join, and update bodies without undefined or transport identity', () => {
     expect(
       JSON.stringify(
         toCreateGroupStateRequest({
@@ -143,7 +146,17 @@ describe('room request translation', () => {
         }),
       ),
     ).toBe(
-      '{"groupId":"ordered-room","slug":"ordered-room","displayName":"Ordered Room","kind":"room","joinMode":"invite-only","maxMembers":0,"createdByPrincipalId":"owner-1","actorPrincipalId":"owner-1","actorSessionId":"owner-session","requestId":"request-1","metadata":{}}',
+      JSON.stringify({
+        groupId: 'ordered-room',
+        slug: 'ordered-room',
+        displayName: 'Ordered Room',
+        kind: 'room',
+        joinMode: 'invite-only',
+        maxMembers: 0,
+        createdByPrincipalId: 'owner-1',
+        ...actor,
+        metadata: {},
+      }),
     );
     expect(
       JSON.stringify(
@@ -152,103 +165,98 @@ describe('room request translation', () => {
           ...actor,
         }),
       ),
-    ).toBe(
-      '{"joinCode":"","actorPrincipalId":"owner-1","actorSessionId":"owner-session","requestId":"request-1"}',
-    );
+    ).toBe(JSON.stringify({ joinCode: '', ...actor }));
     expect(
       JSON.stringify(
         toUpdateGroupStateRequest({
-          request: {
+          request: withLegacyRequestId({
             traceId: 'caller-trace',
             actorPrincipalId: 'caller-owner',
             maxMembers: 0,
             maxSessionsPerMember: undefined,
             actorSessionId: 'caller-session',
-            requestId: 'caller-request',
             metadata: { sawNull: null },
-          },
+          }),
           ...actor,
         }),
       ),
     ).toBe(
-      '{"traceId":"caller-trace","actorPrincipalId":"owner-1","maxMembers":0,"actorSessionId":"owner-session","requestId":"request-1","metadata":{"sawNull":null}}',
+      JSON.stringify({
+        maxMembers: 0,
+        metadata: { sawNull: null },
+        traceId: 'caller-trace',
+        ...actor,
+      }),
     );
   });
 
   it('omits undefined own properties in lifecycle, invite, and member-governance requests', () => {
     const lifecycle = toRoomLifecycleGroupStateRequest({
-      request: {
+      request: withLegacyRequestId({
         traceId: 'lifecycle-trace',
         maxMembers: 0,
         purgeAfterEpochMs: undefined,
         actorPrincipalId: 'caller-owner',
         actorSessionId: 'caller-session',
-        requestId: 'caller-request',
-      },
+      }),
       status: 'archived',
       ...actor,
     });
     const invite = toCreateRoomInviteGroupStateRequest({
-      request: {
+      request: withLegacyRequestId({
         invitationExpiresAtEpochMs: 0,
         reason: undefined,
         traceId: 'invite-trace',
         actorPrincipalId: 'caller-owner',
         actorSessionId: 'caller-session',
-        requestId: 'caller-request',
-      },
+      }),
       ...actor,
     });
     const remove = toRemoveRoomMemberGroupStateRequest({
-      request: {
+      request: withLegacyRequestId({
         reason: undefined,
         traceId: 'remove-trace',
         actorPrincipalId: 'caller-owner',
         actorSessionId: 'caller-session',
-        requestId: 'caller-request',
-      },
+      }),
       ...actor,
     });
     const ban = toBanRoomMemberGroupStateRequest({
-      request: {
+      request: withLegacyRequestId({
         reason: '',
         traceId: undefined,
         actorPrincipalId: 'caller-owner',
         actorSessionId: 'caller-session',
-        requestId: 'caller-request',
-      },
+      }),
       ...actor,
     });
     const unban = toUnbanRoomMemberGroupStateRequest({
-      request: {
+      request: withLegacyRequestId({
         reason: undefined,
         traceId: 'unban-trace',
         actorPrincipalId: 'caller-owner',
         actorSessionId: 'caller-session',
-        requestId: 'caller-request',
-      },
+      }),
       ...actor,
     });
     const role = toSetRoomMemberRoleGroupStateRequest({
-      request: {
+      request: withLegacyRequestId({
         role: 'admin',
         reason: undefined,
         traceId: 'role-trace',
         actorPrincipalId: 'caller-owner',
         actorSessionId: 'caller-session',
-        requestId: 'caller-request',
-      },
+      }),
       ...actor,
     });
     const ownership = toTransferRoomOwnershipGroupStateRequest({
-      request: {
+      request: withLegacyRequestId({
         newOwnerPrincipalId: 'member-1',
         reason: undefined,
         traceId: 'owner-trace',
         actorPrincipalId: 'caller-owner',
         actorSessionId: 'caller-session',
-        requestId: 'caller-request',
-      },
+      }),
       ...actor,
     });
 
@@ -260,25 +268,46 @@ describe('room request translation', () => {
     expect(role).not.toHaveProperty('reason');
     expect(ownership).not.toHaveProperty('reason');
     expect(JSON.stringify(lifecycle)).toBe(
-      '{"traceId":"lifecycle-trace","maxMembers":0,"actorPrincipalId":"owner-1","actorSessionId":"owner-session","requestId":"request-1","status":"archived"}',
+      JSON.stringify({
+        maxMembers: 0,
+        traceId: 'lifecycle-trace',
+        status: 'archived',
+        ...actor,
+      }),
     );
     expect(JSON.stringify(invite)).toBe(
-      '{"invitationExpiresAtEpochMs":0,"traceId":"invite-trace","actorPrincipalId":"owner-1","actorSessionId":"owner-session","requestId":"request-1"}',
+      JSON.stringify({
+        invitationExpiresAtEpochMs: 0,
+        traceId: 'invite-trace',
+        ...actor,
+      }),
     );
     expect(JSON.stringify(remove)).toBe(
-      '{"traceId":"remove-trace","actorPrincipalId":"owner-1","actorSessionId":"owner-session","requestId":"request-1"}',
+      JSON.stringify({
+        traceId: 'remove-trace',
+        ...actor,
+      }),
     );
-    expect(JSON.stringify(ban)).toBe(
-      '{"reason":"","actorPrincipalId":"owner-1","actorSessionId":"owner-session","requestId":"request-1"}',
-    );
+    expect(JSON.stringify(ban)).toBe(JSON.stringify({ reason: '', ...actor }));
     expect(JSON.stringify(unban)).toBe(
-      '{"traceId":"unban-trace","actorPrincipalId":"owner-1","actorSessionId":"owner-session","requestId":"request-1"}',
+      JSON.stringify({
+        traceId: 'unban-trace',
+        ...actor,
+      }),
     );
     expect(JSON.stringify(role)).toBe(
-      '{"role":"admin","traceId":"role-trace","actorPrincipalId":"owner-1","actorSessionId":"owner-session","requestId":"request-1"}',
+      JSON.stringify({
+        role: 'admin',
+        traceId: 'role-trace',
+        ...actor,
+      }),
     );
     expect(JSON.stringify(ownership)).toBe(
-      '{"newOwnerPrincipalId":"member-1","traceId":"owner-trace","actorPrincipalId":"owner-1","actorSessionId":"owner-session","requestId":"request-1"}',
+      JSON.stringify({
+        newOwnerPrincipalId: 'member-1',
+        traceId: 'owner-trace',
+        ...actor,
+      }),
     );
   });
 
@@ -385,10 +414,10 @@ describe('room request translation', () => {
 
   it('retains facade inputs and authoritative request result types', () => {
     expectTypeOf<RallarCreateRoomInput>().toMatchTypeOf<RoomCreateGroupStateFields>();
-    expectTypeOf<RallarUpdateRoomInput>().toMatchTypeOf<UpdateGroupRequest>();
+    expectTypeOf<RallarUpdateRoomInput>().toMatchTypeOf<UpdateStateGroupBody>();
     expectTypeOf<RallarJoinRoomOptions>().toMatchTypeOf<RoomJoinGroupStateFields>();
-    expectTypeOf(toCreateGroupStateRequest).returns.toEqualTypeOf<CreateGroupRequest>();
-    expectTypeOf(toUpdateGroupStateRequest).returns.toEqualTypeOf<UpdateGroupRequest>();
-    expectTypeOf(toJoinGroupStateRequest).returns.toEqualTypeOf<JoinGroupRequest>();
+    expectTypeOf(toCreateGroupStateRequest).returns.toEqualTypeOf<CreateStateGroupBody>();
+    expectTypeOf(toUpdateGroupStateRequest).returns.toEqualTypeOf<UpdateStateGroupBody>();
+    expectTypeOf(toJoinGroupStateRequest).returns.toEqualTypeOf<JoinStateGroupBody>();
   });
 });

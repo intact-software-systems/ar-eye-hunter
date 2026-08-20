@@ -4,6 +4,7 @@ import {
     toRallarCommandOptions,
     toRallarWorkflowPolicies,
 } from '@shared-web/browser/rallar-operation-options.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 
 describe('Rallar defaults and operation options', () => {
     it('builds command and workflow policies from operation options', () => {
@@ -31,11 +32,28 @@ describe('Rallar defaults and operation options', () => {
     });
 
     it('retries transient HTTP status failures by default', () => {
-        expect(shouldRetryRallarOperation({ status: 429 })).toBe(true);
-        expect(shouldRetryRallarOperation({ status: 500 })).toBe(true);
-        expect(shouldRetryRallarOperation({ status: 503 })).toBe(true);
-        expect(shouldRetryRallarOperation({ status: 400 })).toBe(false);
-        expect(shouldRetryRallarOperation({ status: Number.NaN })).toBe(true);
+        expect(shouldRetryRallarOperation(apiHttpError(429))).toBe(true);
+        expect(shouldRetryRallarOperation(apiHttpError(500))).toBe(true);
+        expect(shouldRetryRallarOperation(apiHttpError(503))).toBe(true);
+        expect(shouldRetryRallarOperation(apiHttpError(400))).toBe(false);
+        expect(shouldRetryRallarOperation(apiHttpError(409, canonicalConflictBody()))).toBe(false);
         expect(shouldRetryRallarOperation(new Error('network'))).toBe(true);
     });
 });
+
+function apiHttpError(status: number, bodyText = ''): ApiHttpError {
+    return new ApiHttpError('POST', '/api/state/mutation', status, bodyText);
+}
+
+function canonicalConflictBody(): string {
+    return JSON.stringify({
+        type: 'api-mutation-failure',
+        version: 'canonical.v1',
+        code: 'idempotency-conflict',
+        status: 409,
+        message: 'Request identity was already used for different semantic intent',
+        issues: null,
+        denial: null,
+        retry: null,
+    });
+}

@@ -2,6 +2,7 @@ import type { CommandOptions } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import type { RtcGroupFormationMode } from '@shared/rtc/group-formation-mode.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 
 export type RallarOperationRetryPredicate = (
     error: unknown,
@@ -119,21 +120,9 @@ export function toRallarCommandOptions<T>(
 }
 
 export function shouldRetryRallarOperation(error: unknown): boolean {
-    const status = readHttpStatus(error);
-    if (status !== undefined) {
-        return status === 429 || status >= 500;
+    if (error instanceof ApiHttpError) {
+        return error.status === 429 || error.status >= 500;
     }
 
     return true;
-}
-
-function readHttpStatus(error: unknown): number | undefined {
-    if (typeof error !== 'object' || error === null) {
-        return undefined;
-    }
-
-    const status = (error as { status?: unknown }).status;
-    return typeof status === 'number' && Number.isFinite(status)
-        ? status
-        : undefined;
 }

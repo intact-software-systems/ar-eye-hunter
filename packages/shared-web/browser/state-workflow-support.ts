@@ -1,4 +1,5 @@
 import type { OrchestratorResults } from '@shared/cache/CommandsOrchestrator.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 
 export function requireStateWorkflowResult<K, V>(
   results: OrchestratorResults<K, V>,
@@ -9,7 +10,7 @@ export function requireStateWorkflowResult<K, V>(
     throw new Error(`Workflow step ${String(key)} did not produce a value.`);
   }
 
-  return value as NonNullable<V>;
+  return value;
 }
 
 export function tolerateStateWorkflowNotFound<T>(error: unknown, value: T): T {
@@ -21,19 +22,7 @@ export function tolerateStateWorkflowNotFound<T>(error: unknown, value: T): T {
 }
 
 export function isStateWorkflowNotFoundError(error: unknown): boolean {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'status' in error &&
-    typeof error.status === 'number' &&
-    Number.isFinite(error.status) &&
-    error.status === 404
-  ) {
-    return true;
-  }
-
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes('404');
+  return error instanceof ApiHttpError && error.status === 404;
 }
 
 export function toApiMutationWorkflowRequestId(): string {

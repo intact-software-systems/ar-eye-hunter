@@ -17,7 +17,7 @@ import type {
 } from '@shared-web/browser/readiness.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type {
-  CreateGroupRequest,
+  CreateStateGroupBody,
   GroupEvent,
   GroupEventType,
   GroupJoinMode,
@@ -28,7 +28,7 @@ import type {
   GroupStatus,
   StateEventCursor,
   StateScope,
-  UpdateGroupRequest,
+  UpdateStateGroupBody,
 } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 
 export interface RallarRoomSummary {
@@ -87,7 +87,7 @@ export type RallarCreateRoomInput = RallarScopedOperationOptions &
   }> &
   Readonly<
     Pick<
-      CreateGroupRequest,
+      CreateStateGroupBody,
       | 'description'
       | 'joinMode'
       | 'maxMembers'
@@ -107,7 +107,7 @@ export type RallarRoomTargetInput = RallarScopedOperationOptions &
 export type RallarUpdateRoomInput = RallarRoomTargetInput &
   Readonly<
     Pick<
-      UpdateGroupRequest,
+      UpdateStateGroupBody,
       | 'slug'
       | 'displayName'
       | 'description'
