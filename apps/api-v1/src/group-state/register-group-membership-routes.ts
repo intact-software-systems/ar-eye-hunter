@@ -23,6 +23,7 @@ import {
 } from './group-state-route-contracts.ts';
 import { toGroupStateErrorResponse } from './group-state-route-errors.ts';
 import { readGroupStateRouteRequest } from './read-group-state-route-request.ts';
+import { toPendingMemberGroupSnapshot } from '@shared/api/group-client-views.ts';
 import { toGroupStateCommand } from './to-group-state-command.ts';
 import { toGroupStateResponse } from './to-group-state-response.ts';
 
@@ -242,8 +243,7 @@ function registerUpsertSelfGroupMemberRoute(
       try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
         const scope = toGroupStateRouteScope(context);
-        const groupId = context.req.param('groupId');
-        const principalId = context.req.param('principalId');
+        const { groupId, principalId } = context.req.param();
         requireGroupAdmissionQuota('join-admission', { ...scope, groupId }, authSession.clientId);
         authorization.assertSelfPrincipal(authSession.clientId, principalId);
         const request = await readGroupStateRouteRequest<UpsertGroupMemberRequest>(context);
@@ -263,7 +263,8 @@ function registerUpsertSelfGroupMemberRoute(
             GroupStateWritten
           >(authSession, command),
         });
-        return context.json(written.snapshot);
+        const body = toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId);
+        return context.json(body);
       } catch (error) {
         return toGroupStateErrorResponse(context, error);
       }

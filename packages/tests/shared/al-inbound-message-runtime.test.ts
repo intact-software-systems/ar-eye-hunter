@@ -87,6 +87,33 @@ describe('ALInboundMessageRuntime', () => {
         expect(forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
     });
 
+    // The transport capability is reconciled at admission (not at the
+    // forward executor): a disowned message records no forward effect and
+    // its subtree ack collapses to an immediate delivered ack — never a
+    // deferred ack that waits on a subtree that will not exist.
+    it('acks delivered without forwarding when the transport disowns a message', async () => {
+        const { runtime, controlMessages, forwardedIds, dispatchedTexts } = createInboundHarness(
+            undefined,
+            { canForwardMessage: () => false },
+        );
+        const msg = createOrderedMessage(1, 'kept-local', 'all-logical-recipients');
+
+        await runtime.handleIncomingMessage(msg, 'peer-1');
+
+        expect(forwardedIds).toEqual([]);
+        expect(dispatchedTexts).toEqual(['kept-local']);
+        const ackPayloads = controlMessages.flatMap((candidate) => {
+            const parsed = parseALControlMessage(candidate);
+            return parsed?.type === 'ack' ? [parsed.payload] : [];
+        });
+        expect(ackPayloads).toHaveLength(1);
+        expect(ackPayloads[0]).toMatchObject({
+            ackedMsgId: msg.id.msgId,
+            toPeerId: 'peer-1',
+            status: 'delivered',
+        });
+    });
+
     it('retries a stale optimistic write and still releases ordered messages once', async () => {
         vi.useFakeTimers();
 
@@ -602,6 +629,7 @@ function createInboundHarness(
             fromPeerId: string,
             plan: ALMessageHandlingPlan,
         ) => Promise<void>;
+        canForwardMessage: (msg: ALMessage) => boolean;
     }> = {},
 ) {
     const inbox = new InMemoryQueueBox(new Map());
@@ -645,6 +673,7 @@ function createInboundHarness(
         forwardMessage: overrides.forwardMessage ?? (async (msg) => {
             forwardedIds.push(msg.id.msgId);
         }),
+        canForwardMessage: overrides.canForwardMessage,
     });
 
     return {

@@ -9,7 +9,10 @@ import type {
   GroupPolicyReasonCode,
   GroupPolicyResult,
 } from '@shared/api/group-policy-types.ts';
-import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type {
+  GroupLifecyclePolicy,
+  GroupPreActivationAppData,
+} from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import {
   resolveGroupLifecycleManagers,
   toGroupLifecycleElectionKey,
@@ -120,6 +123,12 @@ export type CanSendRoomMessageInput = Readonly<{
   senderSessionId: string;
   minSnapshotVersion?: number;
   nowEpochMs?: number;
+  /**
+   * The group's resolved data-policy value; absent when the caller's
+   * transport does not gate application data (plan decision 5.4). CRDT
+   * topics are classified out at the authorizer, never here.
+   */
+  preActivationAppData?: GroupPreActivationAppData;
 }>;
 
 const ALLOWED: GroupPolicyResult = { allowed: true };
@@ -499,6 +508,16 @@ export function canSendRoomMessage(input: CanSendRoomMessageInput): GroupPolicyR
   const memberDenial = denyForPresenceMember(member);
   if (memberDenial) {
     return memberDenial;
+  }
+
+  if (
+    input.preActivationAppData === 'blocked-until-active' &&
+    input.snapshot.group.lifecycleState !== 'active'
+  ) {
+    return deny(
+      'group-data-blocked-until-active',
+      'Application data is blocked until the group activates.',
+    );
   }
 
   return ALLOWED;

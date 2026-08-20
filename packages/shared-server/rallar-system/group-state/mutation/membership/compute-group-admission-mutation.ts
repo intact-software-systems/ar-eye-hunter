@@ -88,14 +88,7 @@ export function computeGrantGroupAdmission(
       capacity: facts.capacity,
     }),
   );
-  const windows = computeGroupAdmissionDecision({
-    admission: policy.admission,
-    lifecycleState: stored.value.lifecycleState,
-    activeMemberCount: stored.value.activeMemberCount,
-    invited: true,
-    nowEpochMs: facts.nowEpochMs,
-  });
-  if (windows.kind === 'deny') throw new GroupPolicyDeniedError(windows.denial);
+  assertGroupAdmissionWindowsOpen(read, facts);
   const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
   return computeGroupMembershipWrite({
     command,
@@ -134,6 +127,30 @@ export function computeDeclineGroupAdmission(
     members: [transitionGroupMemberLifecycle({ ...existing, updated: audit }, 'left', audit)],
     eventType: 'member-left',
   });
+}
+
+/**
+ * The window constraints bind on every path that lands a member `active`
+ * from a non-active status — grant, invite acceptance, and governance
+ * activation alike (plan decision 5.2). `invited: true` is the group's
+ * consent, so only the windows and the closed mode can deny here.
+ */
+export function assertGroupAdmissionWindowsOpen(
+  read: GroupMutationRead,
+  facts: GroupMutationFacts,
+): void {
+  if (read.group === null) {
+    throw new GroupMutationRejectedError('Group not found');
+  }
+  const policy = requireReadableLifecyclePolicy(read);
+  const decision = computeGroupAdmissionDecision({
+    admission: policy.admission,
+    lifecycleState: read.group.value.lifecycleState,
+    activeMemberCount: read.group.value.activeMemberCount,
+    invited: true,
+    nowEpochMs: facts.nowEpochMs,
+  });
+  if (decision.kind === 'deny') throw new GroupPolicyDeniedError(decision.denial);
 }
 
 function requireReadableLifecyclePolicy(read: GroupMutationRead): GroupLifecyclePolicy {

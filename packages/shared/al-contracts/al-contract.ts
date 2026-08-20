@@ -342,6 +342,19 @@ export function readALMulticastTargetGroupRef(message: ALMessage): GroupRef | un
     return toALGroupRef(targets.groupRef);
 }
 
+/**
+ * Whether a message addresses a room audience by its own shape — a `room.`
+ * topic, a multicast, or a room-scoped broadcast. Room-scoped delivery is
+ * owned by the topic router behind its room authorizer; transports must not
+ * relay these on their own, or the authorization is bypassed.
+ */
+export function isRoomScopedALMessage(message: ALMessage): boolean {
+    return message.route.topicId.startsWith('room.') ||
+        message.targets?.mode === 'multicast' ||
+        (message.targets?.mode === 'broadcast' &&
+            message.targets.scope === 'room');
+}
+
 export function readALTargetGroupRef(message: ALMessage): GroupRef | undefined {
     const targets = message.targets;
     if (targets?.mode === 'multicast') {

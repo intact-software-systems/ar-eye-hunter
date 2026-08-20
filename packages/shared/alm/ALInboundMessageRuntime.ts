@@ -53,13 +53,20 @@ export type ALInboundMessageRuntimeInput = Readonly<{
         fromPeerId: string,
         plan: ALMessageHandlingPlan,
     ) => Promise<void>;
+    /**
+     * Per-message forwarding capability, reconciled at admission so a
+     * message this transport will not relay never records a forward
+     * effect and acks as delivered, not forwarded. Absent means every
+     * message `forwardMessage` can carry is forwardable.
+     */
+    canForwardMessage?: (msg: ALMessage) => boolean;
     stores?: ALInboundRuntimeStores;
 }>;
 
 type AdmissionComputeDependencies = Readonly<{
     selfPeerId: string;
     toInboxEntry: (msg: ALMessage) => ResourceEntry;
-    canForward: boolean;
+    canForward: (msg: ALMessage) => boolean;
 }>;
 
 export type AdmissionComputedDto = Readonly<{
@@ -200,7 +207,7 @@ export class ALInboundMessageRuntime {
         const plan = read.plan;
         const mutations: ALInboundAdmissionMutation[] = [];
         const durableEffects: ALInboundDurableEffectWrite[] = [];
-        const shouldForward = dependencies.canForward && plan.forwarding.enabled;
+        const shouldForward = dependencies.canForward(read.msg) && plan.forwarding.enabled;
         const completedPendingAcks: ALCompletedPendingAck[] = [];
 
         if (plan.dropReason) {
@@ -301,7 +308,11 @@ export class ALInboundMessageRuntime {
             }
         }
 
-        if (shouldForward && plan.ack.enabled && plan.ack.deferred && plan.ack.toPeerId) {
+        // The plan defers subtree acks on the assumption it will forward; a
+        // runtime that will not forward this message has no subtree to wait
+        // for and must ack immediately instead of never.
+        const ackDeferred = plan.ack.deferred && shouldForward;
+        if (shouldForward && plan.ack.enabled && ackDeferred && plan.ack.toPeerId) {
             const transition = trackPendingAckSnapshot(
                 read.msg.id.msgId,
                 read.pendingAck,
@@ -332,7 +343,7 @@ export class ALInboundMessageRuntime {
             }
         }
 
-        if (plan.ack.enabled && plan.ack.toPeerId && !plan.ack.deferred) {
+        if (plan.ack.enabled && plan.ack.toPeerId && !ackDeferred) {
             durableEffects.push(
                 this.toAckEffect(
                     dependencies.selfPeerId,
@@ -727,7 +738,9 @@ export class ALInboundMessageRuntime {
         return {
             selfPeerId: this.input.selfPeerId,
             toInboxEntry: this.input.toInboxEntry,
-            canForward: this.input.forwardMessage !== undefined,
+            canForward: (msg) =>
+                this.input.forwardMessage !== undefined &&
+                (this.input.canForwardMessage?.(msg) ?? true),
         };
     }
 

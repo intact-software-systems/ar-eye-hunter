@@ -1072,6 +1072,31 @@
       "description": "Pins the admission binding phases: the member-count window closes joins in a group that never activates, the epoch-ms window denies after its deadline, and closed admits only while forming -- denying during establishment and activation, and reopening after a below-floor return to forming."
     },
     {
+      "id": "api-v1-group-data-policy",
+      "recipe": "tests/api-v1/api-v1-group-data-policy.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-data-policy",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Pins the preActivationAppData gate: under blocked-until-active a room-scoped WS app-data send is NACKed unauthorized before activation and never reaches other members, then flows end to end once the manager activates the group."
+    },
+    {
       "id": "api-v1-rtc-topology-convergence",
       "recipe": "tests/api-v1/api-v1-rtc-topology-convergence.json",
       "category": "api-v1-black-box",

@@ -7,7 +7,7 @@ import {
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
 import { OnWebSocketServerMessageCallback } from './InboxOutboxContracts.ts';
-import { ALMessage } from '../al-contracts/al-contract.ts';
+import { ALMessage, isRoomScopedALMessage } from '../al-contracts/al-contract.ts';
 import {
     validatePersistedALMessage,
 } from '../al-contracts/al-message-persistence-validation.ts';
@@ -58,6 +58,15 @@ export type WsQueueBoxServerServiceOptions = Readonly<{
     outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
     outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
     deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
+    /**
+     * Whether inbound ALM forwarding relays room-scoped messages (default
+     * true, the standalone service contract). A composition that installs a
+     * topic router with a room authorizer must pass false: the router owns
+     * room-scoped fanout behind its authorization, and relaying here would
+     * deliver messages the authorizer rejects (and double-deliver the ones
+     * it accepts).
+     */
+    forwardsRoomScopedMessages?: boolean;
 }>;
 
 type WsServerPreparedMessage = Readonly<
@@ -96,6 +105,7 @@ export class WsQueueBoxServerService {
     private readonly targetResolver: WsServerTargetResolver;
     private readonly outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
     private readonly deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
+    private readonly forwardsRoomScopedMessages: boolean;
     public readonly inbox: QueueBoxResourceEntryRepository;
     public readonly outbox: QueueBoxResourceEntryRepository;
     public readonly socket: JsonWebSocketServer;
@@ -116,6 +126,7 @@ export class WsQueueBoxServerService {
         this.targetResolver = options.targetResolver ?? {};
         this.outboundDeliveryOutcome = options.outboundDeliveryOutcome;
         this.deliveryDiagnostics = options.deliveryDiagnostics;
+        this.forwardsRoomScopedMessages = options.forwardsRoomScopedMessages ?? true;
 
         this.outboundRuntime = new ALOutboundMessageRuntime<
             WsServerPreparedMessage
@@ -213,6 +224,8 @@ export class WsQueueBoxServerService {
                 forwardMessage: async (msg, fromPeerId, plan) => {
                     await this.forwardIncomingMessage(msg, fromPeerId, plan);
                 },
+                canForwardMessage: (msg) =>
+                    this.forwardsRoomScopedMessages || !isRoomScopedALMessage(msg),
             },
         );
 

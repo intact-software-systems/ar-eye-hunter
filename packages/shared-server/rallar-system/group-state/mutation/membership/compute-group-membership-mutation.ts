@@ -33,7 +33,10 @@ import {
   groupMemberEventType,
   transitionGroupMemberLifecycle,
 } from './transition-group-member-lifecycle.ts';
-import { resolveAdmittedMemberStatus } from './compute-group-admission-mutation.ts';
+import {
+  assertGroupAdmissionWindowsOpen,
+  resolveAdmittedMemberStatus,
+} from './compute-group-admission-mutation.ts';
 
 const DEFAULT_GROUP_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
@@ -253,11 +256,18 @@ export function computeUpsertMember(
   // Self-activation is the second join surface: it takes the same admission
   // decision as the join command, so it parks where a join would park
   // (plan decision 5.1). Admin activation stays governance — it is a grant
-  // expressed through the existing surface.
+  // expressed through the existing surface. An already-active member is not
+  // joining: their re-upsert bypasses admission exactly as computeJoin's
+  // active no-op does, never demoting or re-gating an existing membership.
   const status =
-    isSelf && command.input.status === 'active'
+    isSelf && command.input.status === 'active' && existing?.status !== 'active'
       ? resolveAdmittedMemberStatus({ read, facts, existing })
       : command.input.status;
+  // Governance activation is the group's consent, but the admission windows
+  // and the closed mode still bind — the same re-check grant runs.
+  if (!isSelf && status === 'active' && existing?.status !== 'active') {
+    assertGroupAdmissionWindowsOpen(read, facts);
+  }
   const role = command.input.role ?? existing?.role ?? 'member';
   const invitedByPrincipalId =
     command.input.invitedByPrincipalId ?? existing?.invitedByPrincipalId ?? null;

@@ -160,6 +160,10 @@ export function createRallarMiddleware(
       inboundStores: options.inboundStores,
       outboundStores: options.outboundStores,
       deliveryDiagnostics: options.wsDeliveryDiagnostics,
+      // This runtime installs the topic router, which owns room-scoped
+      // fanout behind its room authorizer; ALM forwarding of those messages
+      // here would bypass that authorization.
+      forwardsRoomScopedMessages: false,
     },
   );
   const queuePubSubBridgeReadiness = options.queuePubSubBridge
