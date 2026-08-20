@@ -2768,6 +2768,16 @@ components:
       description: Short-lived one-time ticket returned from `/api/auth/ws-ticket`.
 
   parameters:
+    ApiMutationRequestId:
+      name: requestId
+      in: path
+      required: true
+      description: Case-sensitive mutation request identity. It must contain 20 to 128 letters, digits, underscores, or hyphens.
+      schema:
+        type: string
+        minLength: 20
+        maxLength: 128
+        pattern: ^[A-Za-z0-9_-]+$
     ApplicationId:
       name: applicationId
       in: path
