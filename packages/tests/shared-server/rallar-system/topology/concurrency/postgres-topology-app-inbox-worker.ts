@@ -48,6 +48,7 @@ import {
   waitForPostgresWorkerBarrier,
   type WorkerBarrier,
 } from '../../../fixtures/postgres-app-inbox-worker-runtime.ts';
+import { toPSqlSql } from '../../../fixtures/postgres-sql-adapter.ts';
 
 interface WorkerInput {
   readonly command: 'put-config' | 'put-override';
@@ -85,7 +86,8 @@ async function main(): Promise<void> {
   const databaseUrl = Deno.env.get('DATABASE_URL');
   if (!databaseUrl) throw new Error('DATABASE_URL is required');
   const input = readInput();
-  const sql = postgres(databaseUrl, { max: 2, idle_timeout: 1 });
+  const postgresSql = postgres(databaseUrl, { max: 2, idle_timeout: 1 });
+  const sql = toPSqlSql(postgresSql);
   const [{ pid }] = await sql<{ pid: number }[]>`select pg_backend_pid()::int as pid`;
   const trace: TopologyAppInboxWorkerTrace = {
     backendPid: pid,
@@ -94,10 +96,10 @@ async function main(): Promise<void> {
     attempts: [],
   };
   try {
-    console.log(JSON.stringify(await runWorker(input, sql as unknown as PSqlSql, trace)));
+    console.log(JSON.stringify(await runWorker(input, sql, trace)));
   } finally {
     await Deno.writeTextFile(input.traceFilePath, JSON.stringify(trace));
-    await sql.end();
+    await postgresSql.end();
   }
 }
 
@@ -136,16 +138,15 @@ function createTopologyAppInboxRuntime(
     serviceId: `postgres-topology-inbox-${Deno.pid}`,
     atEpochMs: input.atEpochMs,
     barrier: input.barrierPhase === 'transaction' ? input.barrier : undefined,
-    beforeTopologyConfigRead:
-      input.barrierPhase === 'topology-read'
-        ? async (primitive) => {
-            trace.topologyReadBarrierPrimitive = primitive;
-            await waitForPostgresWorkerBarrier(
-              input.barrier,
-              `postgres-topology-inbox-${Deno.pid}`,
-            );
-          }
-        : undefined,
+    beforeTopologyConfigRead: input.barrierPhase === 'topology-read'
+      ? async (primitive) => {
+        trace.topologyReadBarrierPrimitive = primitive;
+        await waitForPostgresWorkerBarrier(
+          input.barrier,
+          `postgres-topology-inbox-${Deno.pid}`,
+        );
+      }
+      : undefined,
     trace,
   });
 }
@@ -161,24 +162,22 @@ async function writeTopologyAppInboxCommand(
     groupRef: input.groupRef,
     requestId: input.request.requestId,
     capturedAtEpochMs: input.atEpochMs,
-    payload:
-      input.command === 'put-config'
-        ? { operation: 'putConfig', config: input.request.config }
-        : {
-            operation: 'putOverride',
-            config: input.request.config,
-            ttlMs: null,
-            expiresAtEpochMs: input.request.expiresAtEpochMs ?? input.atEpochMs + 60_000,
-          },
+    payload: input.command === 'put-config'
+      ? { operation: 'putConfig', config: input.request.config }
+      : {
+        operation: 'putOverride',
+        config: input.request.config,
+        ttlMs: null,
+        expiresAtEpochMs: input.request.expiresAtEpochMs ?? input.atEpochMs + 60_000,
+      },
   });
   runtime.armBarrier();
   const result = await runtime.runUntilCompletion(() =>
     runtime.group.processAuthenticatedTopologyEntryUntilCompletionResult(
       {
-        type:
-          input.command === 'put-config'
-            ? AppInboxType.TOPOLOGY_CONFIG_PUT
-            : AppInboxType.TOPOLOGY_OVERRIDE_PUT,
+        type: input.command === 'put-config'
+          ? AppInboxType.TOPOLOGY_CONFIG_PUT
+          : AppInboxType.TOPOLOGY_OVERRIDE_PUT,
         resourceId: input.request.requestId,
         contextId: [
           input.groupRef.applicationId,
@@ -191,7 +190,7 @@ async function writeTopologyAppInboxCommand(
         data,
       },
       authority,
-    ),
+    )
   );
   return result.mapRight((value) => {
     if (!('receipt' in value)) {
@@ -290,14 +289,12 @@ function decodeWorkerInput(value: JsonWireValue): WorkerInput {
       config: fromCanonicalGroupTopologyConfigPatch(
         toCanonicalGroupTopologyConfigPatch(request.config),
       ),
-      ...(request.expiresAtEpochMs === undefined
-        ? {}
-        : {
-            expiresAtEpochMs: requireWorkerEpoch(
-              request.expiresAtEpochMs,
-              'Topology concurrency worker expiresAtEpochMs',
-            ),
-          }),
+      ...(request.expiresAtEpochMs === undefined ? {} : {
+        expiresAtEpochMs: requireWorkerEpoch(
+          request.expiresAtEpochMs,
+          'Topology concurrency worker expiresAtEpochMs',
+        ),
+      }),
     },
   };
 }

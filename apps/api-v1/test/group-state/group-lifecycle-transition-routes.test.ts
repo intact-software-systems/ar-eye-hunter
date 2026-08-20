@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
 
+// prettier-ignore
+import type {
+  AuthenticatedGroupMutationEnqueue,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+
 import {
   captureGroupStateRouteWrite,
   createGroupStateRouteSnapshot,
@@ -10,7 +15,7 @@ import {
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups';
 
 Deno.test('group lifecycle transition routes retain their AppInbox envelopes', async () => {
-  const enqueued: unknown[] = [];
+  const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
   const snapshot = createGroupStateRouteSnapshot('room-1');
   const runtime = createGroupStateRouteTestRuntime({
     processGroupAppInbox: captureGroupStateRouteWrite(enqueued, snapshot),

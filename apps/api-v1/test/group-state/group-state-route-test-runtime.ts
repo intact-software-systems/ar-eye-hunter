@@ -259,7 +259,7 @@ export function toGroupStateWritten(snapshot: GroupSnapshot): GroupStateWritten 
 }
 
 export function captureGroupStateRouteWrite(
-  enqueued: unknown[],
+  enqueued: AuthenticatedGroupMutationEnqueue[],
   snapshot: GroupSnapshot,
 ): ProcessGroupAppInbox {
   return (_authority, entry) => {
@@ -313,7 +313,7 @@ function createGroupStateRouteService(
     readSnapshot,
     readCurrentSnapshot: groupService?.readCurrentSnapshot ?? readSnapshot,
     listEvents: groupService?.listEvents ?? (() => Promise.resolve([])),
-    listRecentEvents: groupService?.listRecentEvents ?? (() => Promise.resolve([])),
+    ...(groupService?.listRecentEvents ? { listRecentEvents: groupService.listRecentEvents } : {}),
     listEventPage: groupService?.listEventPage ??
       (() => Promise.resolve({ events: [], hasMore: false })),
   };
