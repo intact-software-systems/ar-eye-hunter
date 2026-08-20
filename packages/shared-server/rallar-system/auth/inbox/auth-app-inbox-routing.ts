@@ -25,36 +25,44 @@ export function toAuthAppInboxType(command: AuthMutationCommand): AppInboxType {
 export function toAuthCommandContextId(command: AuthMutationCommand): string {
   switch (command.kind) {
     case 'register-user':
-      return toContextId([
-        ['operation', command.kind],
-        ['username', command.user.normalizedUsername],
-      ]);
+      return toAuthUsernameContextId(command.kind, command.user.normalizedUsername);
     case 'issue-session':
-      return toContextId([
-        ['operation', command.kind],
-        ['username', command.authority.normalizedUsername],
-      ]);
+      return toAuthUsernameContextId(command.kind, command.authority.normalizedUsername);
     case 'logout-session':
-      return toSessionContextId(command.expected.clientId, command.expected.sessionId);
+      return toAuthSessionContextId(command.expected.clientId, command.expected.sessionId);
     case 'issue-ws-ticket':
-      return toSessionContextId(
+      return toAuthSessionContextId(
         command.ticketRecord.clientId,
         command.ticketRecord.sessionId,
       );
     case 'consume-ws-ticket':
-      return toContextId([['credential', command.ticketDigest]]);
+      return toAuthCredentialContextId(command.ticketDigest);
     case 'issue-agent-tickets':
-      return toSessionContextId(command.authority.clientId, command.authority.sessionId);
+      return toAuthSessionContextId(command.authority.clientId, command.authority.sessionId);
     case 'consume-agent-ticket':
-      return toContextId([['credential', command.ticketDigest]]);
+      return toAuthCredentialContextId(command.ticketDigest);
   }
 }
 
-function toSessionContextId(clientId: string, sessionId: string): string {
+export function toAuthUsernameContextId(
+  operation: 'register-user' | 'issue-session',
+  normalizedUsername: string,
+): string {
+  return toContextId([
+    ['operation', operation],
+    ['username', normalizedUsername],
+  ]);
+}
+
+export function toAuthSessionContextId(clientId: string, sessionId: string): string {
   return toContextId([
     ['client', clientId],
     ['session', sessionId],
   ]);
+}
+
+export function toAuthCredentialContextId(credentialDigest: string): string {
+  return toContextId([['credential', credentialDigest]]);
 }
 
 function toContextId(parts: readonly (readonly [string, string])[]): string {

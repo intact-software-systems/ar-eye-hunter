@@ -1,8 +1,14 @@
 import { useEffect } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
 import { rallar } from '@shared-web/browser/rallar.ts';
+import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
+import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
 
 import { toErrorMessage } from '../arena-connection-helpers.ts';
-import { createArenaMatchRuntime } from './create-arena-match-runtime.ts';
+import {
+    type ArenaMatchRuntimeInput,
+    createArenaMatchRuntime,
+} from './create-arena-match-runtime.ts';
 import { GAME_SNAPSHOT_LANE_ID } from '../../rallar-game-match-adapter.ts';
 import {
     GAME_AI_LANE_ID,
@@ -10,14 +16,26 @@ import {
     GAME_FX_LANE_ID,
     GAME_MOTION_LANE_ID,
 } from '../../types.ts';
-import type {
-    ArenaConnectionLifecycle,
-    ArenaConnectionLifecycleInput,
-} from '../lifecycle/use-arena-connection-lifecycle.ts';
+import type { ArenaConnectionState, DirectorAttemptSource } from '../arena-connection-contracts.ts';
+
+interface ArenaMatchLifecycleInput extends ArenaMatchRuntimeInput {
+    readonly activeMatchRoomIdRef: RefObject<string | undefined>;
+    readonly bumpNetworkGeneration: () => number;
+    readonly connectionState: ArenaConnectionState;
+    readonly networkGenerationRef: RefObject<number>;
+    readonly roomId: string | undefined;
+    readonly runBestEffortNetworkTask: <T>(
+        task: () => Promise<T> | undefined,
+        generation?: number,
+    ) => void;
+    readonly setDirectorStatus: Dispatch<SetStateAction<RallarDirectorStatus>>;
+    readonly setError: Dispatch<SetStateAction<string | undefined>>;
+    readonly setGameDiagnostics: Dispatch<SetStateAction<RallarGameDiagnostics | undefined>>;
+}
 
 export function useArenaMatchRuntime(
-    input: ArenaConnectionLifecycleInput,
-    attemptDirectorAppointment: ArenaConnectionLifecycle['attemptDirectorAppointment'],
+    input: ArenaMatchLifecycleInput,
+    attemptDirectorAppointment: (source: DirectorAttemptSource) => Promise<void>,
 ): void {
     const {
         acceptDirectorOutput,

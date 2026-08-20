@@ -9,6 +9,7 @@ import type { ClientEvent, ClientPrincipalRef, ClientSnapshot } from '@shared/ap
 import type {
   ClientStateService,
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import { authorizationDenied } from '../services/request-auth-service.ts';
 import {
   type AppInboxEnqueueInput,
   AppInboxType,
@@ -467,7 +468,7 @@ async function assertCanReadClientState(
   }
 
   if (authSession.clientId !== principalId) {
-    throw new Error(
+    throw authorizationDenied(
       'Forbidden: state read principal id does not match authenticated client',
     );
   }
@@ -609,7 +610,9 @@ function assertSelfPrincipal(
   principalId: string,
 ): void {
   if (clientId !== principalId) {
-    throw new Error('Forbidden: principal id does not match authenticated client');
+    throw authorizationDenied(
+      'Forbidden: principal id does not match authenticated client',
+    );
   }
 }
 
@@ -624,6 +627,8 @@ function assertSelfSession(
   assertSelfPrincipal(authSession.clientId, principalId);
 
   if (authSession.sessionId !== sessionId) {
-    throw new Error('Forbidden: session id does not match authenticated session');
+    throw authorizationDenied(
+      'Forbidden: session id does not match authenticated session',
+    );
   }
 }

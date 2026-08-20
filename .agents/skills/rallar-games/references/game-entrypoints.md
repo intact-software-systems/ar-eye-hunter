@@ -5,7 +5,12 @@
 - Use as the broad capability example for Rallar Game, director, diagnostics,
   Motion, presence, and AI composition.
 - App: `apps/ar-eye-hunter-v1/src/App.tsx`
-- Main hook: `apps/ar-eye-hunter-v1/src/game/useRallarArena.ts`
+- Main hook: `apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts`
+- Runtime state and presence: `apps/ar-eye-hunter-v1/src/game/arena-runtime/state`
+- Connection and RTC lifecycle: `apps/ar-eye-hunter-v1/src/game/arena-runtime/transport`
+- Match authority: `apps/ar-eye-hunter-v1/src/game/arena-runtime/match`
+- Player actions: `apps/ar-eye-hunter-v1/src/game/arena-runtime/actions` and
+  `apps/ar-eye-hunter-v1/src/game/arena-runtime/game-actions`
 - Simulation: `apps/ar-eye-hunter-v1/src/game/simulation.ts`
 - AI director: `apps/ar-eye-hunter-v1/src/game/aiDirector.ts`
 - Rallar Game adapter: `apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts`

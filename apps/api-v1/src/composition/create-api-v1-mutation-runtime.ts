@@ -421,6 +421,7 @@ function createAppAuthInboxServiceFactory(
         timing: input.timing,
         options: input.appInboxOptions,
         wakeOwningQueue: wakeQueueEngine,
+        authFactNowEpochMs: input.appInboxOptions.nowEpochMs,
       },
     );
 }

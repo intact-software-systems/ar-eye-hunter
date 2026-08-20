@@ -174,7 +174,10 @@ export async function initialiseMiddleware(
     );
 
     const socket = new JsonWebSocketClient(async (connectOptions) => {
-        const wsTicket = await createWebSocketTicket({ signal: connectOptions.signal });
+        const wsTicket = await createWebSocketTicket({
+            requestId: crypto.randomUUID(),
+            signal: connectOptions.signal,
+        });
         if (wsTicket.sessionId !== session.sessionId) {
             throw new Error('WebSocket ticket does not match the current session.');
         }

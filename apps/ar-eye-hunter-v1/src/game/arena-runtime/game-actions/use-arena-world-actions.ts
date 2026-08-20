@@ -1,5 +1,8 @@
 import { useCallback } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
+import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 
 import { hydrateArenaSnapshot, resolvePickupIntent, toArenaSnapshot } from '../../simulation.ts';
 import {
@@ -9,14 +12,37 @@ import {
     GAME_PROTOCOL,
     type GameRealtimeMessage,
     type MatchStartIntent,
+    type PickupAccepted,
     type PickupIntent,
 } from '../../types.ts';
-import type { ArenaActions, ArenaActionsInput } from '../actions/use-arena-actions.ts';
+import type { ArenaConnection } from '../arena-connection-contracts.ts';
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+
+interface ArenaWorldActionsInput {
+    readonly acceptMatchStartIntent: (intent: MatchStartIntent) => Promise<void>;
+    readonly acceptPickup: (accepted: PickupAccepted) => void;
+    readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
+    readonly arenaSnapshotRef: RefObject<ArenaSnapshot | undefined>;
+    readonly directorStatusRef: RefObject<RallarDirectorStatus>;
+    readonly isNetworkEnabled: () => boolean;
+    readonly networkGenerationRef: RefObject<number>;
+    readonly roomIdRef: RefObject<string | undefined>;
+    readonly runBestEffortNetworkTask: <T>(
+        task: () => Promise<T> | undefined,
+        generation?: number,
+    ) => void;
+    readonly scheduleReliableArenaSnapshot: (
+        snapshot: ArenaSnapshot,
+        generation: number,
+    ) => void;
+    readonly sessionRef: RefObject<AuthSession | undefined>;
+    readonly setArenaSnapshot: Dispatch<SetStateAction<ArenaSnapshot | undefined>>;
+}
 
 export function useArenaWorldActions(
-    input: ArenaActionsInput,
+    input: ArenaWorldActionsInput,
 ): Pick<
-    ArenaActions,
+    ArenaConnection,
     'sendPickupIntent' | 'startArenaMatch' | 'publishArenaSnapshot'
 > {
     const {

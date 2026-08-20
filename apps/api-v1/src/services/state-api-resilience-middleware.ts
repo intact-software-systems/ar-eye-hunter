@@ -3,6 +3,14 @@ import { Temporal } from '@js-temporal/polyfill';
 import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
 import { readRateLimiter, readRequestClientKey } from '@shared-server/http/rate-limit-service.ts';
+import {
+  isClientStateMutationRoute,
+  isRemovedClientStateMutationRoute,
+} from '../routes/is-client-state-mutation-route.ts';
+import {
+  toApiMutationRateLimitResponse,
+  toApiMutationUnavailableResponse,
+} from '../routes/api-mutation-route-failure.ts';
 
 const STATE_API_RATE_LIMIT = new RateLimiterPolicy(60_000, 300);
 const STATE_EVENT_LIST_RATE_LIMIT = new RateLimiterPolicy(60_000, 60);
@@ -35,6 +43,11 @@ export function createStateApiResilienceMiddleware(
     STATE_API_CIRCUIT_BREAKER;
 
   return async (c, next) => {
+    if (isRemovedClientStateMutationRoute(c.req.method, c.req.path)) {
+      await next();
+      return c.res;
+    }
+    const isClientMutation = isClientStateMutationRoute(c.req.method, c.req.path);
     const limiter = readRateLimiter(
       toRateLimiterNamespace(namespace, c.req.path),
       readAuthenticatedClientKey(c),
@@ -55,14 +68,22 @@ export function createStateApiResilienceMiddleware(
 
         return result.fold(
           () =>
-            c.json(
-              { error: 'State API is temporarily unavailable' },
-              503,
-            ),
+            isClientMutation
+              ? toApiMutationUnavailableResponse(
+                c,
+                'State API is temporarily unavailable',
+              )
+              : c.json({ error: 'State API is temporarily unavailable' }, 503),
           (response) => response,
         );
       },
-      c.json({ error: 'Too many state API requests' }, 429),
+      isClientMutation
+        ? toApiMutationRateLimitResponse(
+          c,
+          'Too many state API requests',
+          stateRateLimitPolicy.timebasedFilterMs,
+        )
+        : c.json({ error: 'Too many state API requests' }, 429),
     );
   };
 }

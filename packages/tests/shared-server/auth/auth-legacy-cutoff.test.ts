@@ -21,7 +21,6 @@ it('treats both legacy session indexes as unavailable on public mutation paths',
         run: (service: AppAuthInboxService, session: IssuedAuthSession) =>
           service.logoutSession({
             requestId: 'cutoff-logout',
-            capturedAtEpochMs: Date.now(),
             session,
           }),
         expected: { right: { loggedOut: true } },
@@ -31,9 +30,8 @@ it('treats both legacy session indexes as unavailable on public mutation paths',
         run: (service: AppAuthInboxService, session: IssuedAuthSession) =>
           service.issueWebSocketTicket({
             requestId: 'cutoff-ws-issue',
-            capturedAtEpochMs: Date.now(),
             session,
-            expiresAtEpochMs: Date.now() + 30_000,
+            ttlMs: 30_000,
           }),
         expected: { left: { status: 401 } },
       },
@@ -42,11 +40,9 @@ it('treats both legacy session indexes as unavailable on public mutation paths',
         run: (service: AppAuthInboxService, session: IssuedAuthSession) =>
           service.issueAgentSessionTickets({
             requestId: 'cutoff-agent-issue',
-            capturedAtEpochMs: Date.now(),
             session,
-            sessionExpiresAtEpochMs: Date.now() + 60_000,
-            ticketExpiresAtEpochMs: Date.now() + 30_000,
-            agents: [{ agentId: 'agent-1', sessionId: 'agent-session-1' }],
+            ticketTtlMs: 30_000,
+            agents: [{ agentId: 'agent-1' }],
           }),
         expected: { left: { status: 401 } },
       },
@@ -80,13 +76,11 @@ it('returns not found when canonical websocket and agent tickets target a legacy
         kind === 'websocket'
           ? fixture.service.consumeWebSocketTicket({
               requestId: 'cutoff-ws-consume',
-              capturedAtEpochMs: Date.now(),
               ticket,
               expectedSessionId: LEGACY_SESSION_ID,
             })
           : fixture.service.consumeAgentSessionTicket({
               requestId: 'cutoff-agent-consume',
-              capturedAtEpochMs: Date.now(),
               ticket,
             });
 

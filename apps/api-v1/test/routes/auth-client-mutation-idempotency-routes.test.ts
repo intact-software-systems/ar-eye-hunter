@@ -4,6 +4,7 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 import { Either } from '@shared/resilience/Either.ts';
 import type { ApiMutationFailure } from '@shared/api/mutation/api-mutation.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { authenticationRequired } from '../../src/services/request-auth-service.ts';
 
 import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
 import * as configRoutes from '../../src/routes/config-route.ts';
@@ -53,7 +54,6 @@ Deno.test('auth logout accepts only the case-sensitive path request ID', async (
   assert.deepEqual(await response.json(), { loggedOut: true });
   assert.deepEqual(calls, [{
     requestId: REQUEST_ID,
-    capturedAtEpochMs: 2_000,
     session: AUTH_SESSION,
   }]);
   assert.equal((await app.request('/api/auth/logout', { method: 'POST' })).status, 404);
@@ -99,7 +99,8 @@ Deno.test(
   async () => {
     let inboxCalls = 0;
     const app = createConfigRouteApp({
-      requireApiAuthSession: () => Promise.reject(new Error('Unauthorized: invalid credential')),
+      requireApiAuthSession: () =>
+        Promise.reject(authenticationRequired('Credential was rejected')),
       appAuthInbox: ({
         logoutSession: () => {
           inboxCalls += 1;
@@ -119,10 +120,10 @@ Deno.test(
       mutationFailure({
         code: 'authentication-required',
         status: 401,
-        message: 'Unauthorized: invalid credential',
+        message: 'Credential was rejected',
         denial: {
           code: 'authentication-required',
-          message: 'Unauthorized: invalid credential',
+          message: 'Credential was rejected',
           details: null,
         },
       }),
@@ -141,7 +142,8 @@ Deno.test('logout reauthenticates before credential-proof replay disclosure', as
   > = [];
   let liveLogoutCalls = 0;
   const app = createConfigRouteApp({
-    requireApiAuthSession: () => Promise.reject(new Error('Unauthorized: session invalidated')),
+    requireApiAuthSession: () =>
+      Promise.reject(authenticationRequired('Session cannot be used any longer')),
     appAuthInbox: ({
       logoutSession: () => {
         liveLogoutCalls += 1;
@@ -195,19 +197,17 @@ Deno.test(
           })),
         registerUser: (
           input: {
-            user: {
-              clientId: string;
+            request: {
               username: string;
-              displayName: string | null;
-              createdAtEpochMs: number;
+              displayName?: string;
             };
           },
         ) =>
           Promise.resolve(Either.ofRight({
-            clientId: input.user.clientId,
-            username: input.user.username,
-            displayName: input.user.displayName,
-            registeredAtEpochMs: input.user.createdAtEpochMs,
+            clientId: 'new-user-id',
+            username: input.request.username,
+            displayName: input.request.displayName ?? null,
+            registeredAtEpochMs: 2_000,
           })),
         issueWebSocketTicket: () =>
           Promise.resolve(Either.ofRight({
@@ -458,6 +458,10 @@ function createConfigRouteApp(
     appAuthInbox: ({
       logoutSession: () => Promise.resolve(Either.ofRight({ loggedOut: true })),
       replayLogoutSessionWithCredentialProof: () => Promise.resolve(null),
+      registerUser: (input: { request: { username?: string } }) => {
+        if (!input.request.username) throw new TypeError('Username is required');
+        throw new Error('Unexpected registration call');
+      },
     }) as never,
     authUserRepository: {} as never,
     staticClients: [],

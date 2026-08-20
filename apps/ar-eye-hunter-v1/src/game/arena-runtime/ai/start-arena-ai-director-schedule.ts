@@ -1,17 +1,42 @@
 import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 
 import { createAiDirectorMockProvider } from '../../aiDirector.ts';
 import { createArenaBrowserAiProvider } from '../../browserAiProvider.ts';
 import { resolveArenaBrowserAiConfig } from '../../browserAiConfig.ts';
 import { arenaRevisionKey, hydrateArenaSnapshot } from '../../simulation.ts';
 import { generateArenaAiDirectorOutput } from './generate-arena-ai-director-output.ts';
-import type { ArenaConnectionLifecycleInput } from '../lifecycle/use-arena-connection-lifecycle.ts';
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+import type { ArenaEvent, ArenaSnapshot } from '../../types.ts';
+import type {
+    ArenaAiStatus,
+    ArenaConnectionState,
+} from '../arena-connection-contracts.ts';
 
 const BROWSER_RALLAR_AI_CONFIG = resolveArenaBrowserAiConfig();
 
+export interface ArenaAiDirectorScheduleInput {
+    readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
+    readonly arenaSnapshotRef: RefObject<ArenaSnapshot | undefined>;
+    readonly connectionState: ArenaConnectionState;
+    readonly directorStatus: RallarDirectorStatus;
+    readonly isCurrentNetworkGeneration: (generation: number) => boolean;
+    readonly networkGenerationRef: RefObject<number>;
+    readonly roomId: string | undefined;
+    readonly runBestEffortNetworkTask: <T>(
+        task: () => Promise<T> | undefined,
+        generation?: number,
+    ) => void;
+    readonly setActiveEvent: Dispatch<SetStateAction<ArenaEvent | undefined>>;
+    readonly setAiError: Dispatch<SetStateAction<string | undefined>>;
+    readonly setAiStatus: Dispatch<SetStateAction<ArenaAiStatus>>;
+    readonly setRemoteEvents: Dispatch<SetStateAction<readonly ArenaEvent[]>>;
+}
+
 export function startArenaAiDirectorSchedule(
-    input: ArenaConnectionLifecycleInput,
+    input: ArenaAiDirectorScheduleInput,
 ): (() => void) | undefined {
     if (
         input.connectionState !== 'connected' ||

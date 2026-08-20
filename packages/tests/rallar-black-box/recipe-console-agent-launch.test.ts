@@ -143,7 +143,11 @@ describe('Recipe Console browser-agent launch service', () => {
         expect(issueAgentTickets).toHaveBeenCalledWith(
             'https://api.example.test',
             { agentIds: ['browser-1'] },
-            { authSession, signal: undefined },
+            {
+                requestId: expect.any(String),
+                authSession,
+                signal: undefined,
+            },
         );
         expect(url.searchParams.get('sessionId')).toBeNull();
         expect(url.searchParams.get('actor')).toBe('alice');

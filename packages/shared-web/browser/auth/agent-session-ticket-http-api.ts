@@ -7,11 +7,14 @@ import type {
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
-import { type ApiRequestOptions, executeHttpRequest } from '../api/http-request.ts';
+import {
+    type ApiMutationRequestOptions,
+    executeHttpRequest,
+} from '../api/http-request.ts';
 
 export async function issueAgentSessionTickets(
     request: AgentSessionTicketRequest,
-    options?: ApiRequestOptions,
+    options: ApiMutationRequestOptions,
 ): Promise<AgentSessionTicketResponse> {
     return await issueAgentSessionTicketsAt(readApiBaseUrl(), request, options);
 }
@@ -19,11 +22,11 @@ export async function issueAgentSessionTickets(
 export async function issueAgentSessionTicketsAt(
     apiBaseUrl: string,
     request: AgentSessionTicketRequest,
-    options?: ApiRequestOptions,
+    options: ApiMutationRequestOptions,
 ): Promise<AgentSessionTicketResponse> {
     return await executeHttpRequest<AgentSessionTicketRequest, AgentSessionTicketResponse>(
         normalizeExplicitApiBaseUrl(apiBaseUrl),
-        toApiMutationRequestPath('/api/auth/agent-session-tickets', crypto.randomUUID()),
+        toApiMutationRequestPath('/api/auth/agent-session-tickets', options.requestId),
         'POST',
         request,
         options,
@@ -32,7 +35,7 @@ export async function issueAgentSessionTicketsAt(
 
 export async function consumeAgentSessionTicket(
     request: ConsumeAgentSessionTicketRequest,
-    options?: ApiRequestOptions,
+    options: ApiMutationRequestOptions,
 ): Promise<ConsumeAgentSessionTicketResponse> {
     return await consumeAgentSessionTicketAt(readApiBaseUrl(), request, options);
 }
@@ -40,14 +43,17 @@ export async function consumeAgentSessionTicket(
 export async function consumeAgentSessionTicketAt(
     apiBaseUrl: string,
     request: ConsumeAgentSessionTicketRequest,
-    options?: ApiRequestOptions,
+    options: ApiMutationRequestOptions,
 ): Promise<ConsumeAgentSessionTicketResponse> {
     return await executeHttpRequest<
         ConsumeAgentSessionTicketRequest,
         ConsumeAgentSessionTicketResponse
     >(
         normalizeExplicitApiBaseUrl(apiBaseUrl),
-        toApiMutationRequestPath('/api/auth/agent-session-tickets/consume', crypto.randomUUID()),
+        toApiMutationRequestPath(
+            '/api/auth/agent-session-tickets/consume',
+            options.requestId,
+        ),
         'POST',
         request,
         options,

@@ -72,7 +72,6 @@ describe('AppAuthInboxService registration', () => {
 
     const pending = service.logoutSession({
       requestId: 'registration-later-invocation',
-      capturedAtEpochMs: 1_000,
       session: {
         clientId: 'client-1',
         username: 'alice',

@@ -1,6 +1,9 @@
 export * from './browser/api-client-config.ts';
 export * from './browser/api/http-error.ts';
-export type { ApiRequestOptions } from './browser/api/http-request.ts';
+export type {
+    ApiMutationRequestOptions,
+    ApiRequestOptions,
+} from './browser/api/http-request.ts';
 export * from './browser/api-integration.ts';
 export * from './browser/auth/agent-session-ticket-http-api.ts';
 export * from './browser/auth/session-http-api.ts';

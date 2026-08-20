@@ -1,4 +1,6 @@
 import { useCallback } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { readApiConfig, readIceCandidates } from '@shared-web/browser/api-integration.ts';
 import {
@@ -12,18 +14,38 @@ import {
     GAME_MOTION_LANE_ID,
 } from '../../types.ts';
 import { GAME_SNAPSHOT_LANE_ID } from '../../rallar-game-match-adapter.ts';
-import type { ArenaActions, ArenaActionsInput } from './use-arena-actions.ts';
 import type {
+    ArenaConnection,
     ArenaDiagnosticsRefreshOptions,
+    ArenaHttpDiagnostics,
     ArenaTransportDiagnostics,
 } from '../arena-connection-contracts.ts';
 import type { ArenaPresenceNotice } from '../../squadLink.ts';
 import { probeHttp, toErrorMessage } from '../arena-connection-helpers.ts';
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
+import type { RtcLaneStatus } from '../../types.ts';
+
+interface ArenaDiagnosticActionsInput {
+    readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
+    readonly currentNetworkSignal: () => AbortSignal;
+    readonly diagnosticsRefreshRef: RefObject<Promise<void> | undefined>;
+    readonly isCurrentNetworkGeneration: (generation: number) => boolean;
+    readonly isNetworkEnabled: () => boolean;
+    readonly networkGenerationRef: RefObject<number>;
+    readonly sessionRef: RefObject<AuthSession | undefined>;
+    readonly setGameDiagnostics: Dispatch<SetStateAction<RallarGameDiagnostics | undefined>>;
+    readonly setHttpDiagnostics: Dispatch<SetStateAction<ArenaHttpDiagnostics>>;
+    readonly setPresenceNotices: Dispatch<SetStateAction<readonly ArenaPresenceNotice[]>>;
+    readonly setRtcLanes: Dispatch<SetStateAction<readonly RtcLaneStatus[]>>;
+    readonly setTransportDiagnostics: Dispatch<SetStateAction<ArenaTransportDiagnostics>>;
+    readonly transportDiagnosticsRef: RefObject<ArenaTransportDiagnostics>;
+}
 
 export function useArenaDiagnosticActions(
-    input: ArenaActionsInput,
+    input: ArenaDiagnosticActionsInput,
 ): Pick<
-    ArenaActions,
+    ArenaConnection,
     'refreshDiagnostics' | 'requestArenaSync' | 'dismissPresenceNotice'
 > {
     const {

@@ -8,6 +8,10 @@ export type ApiRequestOptions = Readonly<{
     authSession?: AuthSession | null;
 }>;
 
+export type ApiMutationRequestOptions = ApiRequestOptions & Readonly<{
+    requestId: string;
+}>;
+
 export async function executeHttpRequest<Request, Result>(
     baseUrl: string,
     path: string,

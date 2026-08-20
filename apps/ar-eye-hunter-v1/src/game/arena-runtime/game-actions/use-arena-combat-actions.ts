@@ -1,21 +1,43 @@
 import { useCallback } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
+import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 
 import { colorForId } from '../../color.ts';
 import { hydrateArenaSnapshot, resolvePlayerHitIntent, toArenaSnapshot } from '../../simulation.ts';
 import {
     GAME_COMBAT_LANE_ID,
     GAME_PROTOCOL,
+    type ArenaSnapshot,
     type GameRealtimeMessage,
+    type PlayerHitAccepted,
     type PlayerHitIntent,
     type PlayerShot,
     type ShotAccepted,
 } from '../../types.ts';
-import type { ArenaActions, ArenaActionsInput } from '../actions/use-arena-actions.ts';
+import type { ArenaConnection } from '../arena-connection-contracts.ts';
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+
+interface ArenaCombatActionsInput {
+    readonly acceptPlayerHit: (accepted: PlayerHitAccepted) => void;
+    readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
+    readonly arenaSnapshotRef: RefObject<ArenaSnapshot | undefined>;
+    readonly directorStatusRef: RefObject<RallarDirectorStatus>;
+    readonly isNetworkEnabled: () => boolean;
+    readonly networkGenerationRef: RefObject<number>;
+    readonly roomIdRef: RefObject<string | undefined>;
+    readonly runBestEffortNetworkTask: <T>(
+        task: () => Promise<T> | undefined,
+        generation?: number,
+    ) => void;
+    readonly sessionRef: RefObject<AuthSession | undefined>;
+    readonly setArenaSnapshot: Dispatch<SetStateAction<ArenaSnapshot | undefined>>;
+}
 
 export function useArenaCombatActions(
-    input: ArenaActionsInput,
-): Pick<ArenaActions, 'sendShot' | 'sendPlayerHit'> {
+    input: ArenaCombatActionsInput,
+): Pick<ArenaConnection, 'sendShot' | 'sendPlayerHit'> {
     const {
         acceptPlayerHit,
         arenaMatchRef,

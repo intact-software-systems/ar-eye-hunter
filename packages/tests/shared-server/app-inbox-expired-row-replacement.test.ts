@@ -139,12 +139,16 @@ describe('AppInbox expired row replacement', () => {
         serviceId: 'expired-auth-service',
       },
     );
-    const accessToken = await credentialIssuer.issueAccessToken('session-1');
+    const requestId = 'replace-expired-auth-session';
+    const sessionId = `session-${(
+      await hashAuthSecret(JSON.stringify(['session', requestId, 'alice', 'client-1']))
+    ).slice(0, 24)}`;
+    const accessToken = await credentialIssuer.issueAccessToken(sessionId);
     const accessTokenDigest = await hashAuthSecret(accessToken);
     const oldSession = {
       clientId: 'client-1',
       username: 'alice',
-      sessionId: 'session-1',
+      sessionId,
       accessTokenDigest,
       issuedAtEpochMs: nowEpochMs - 10_000,
       expiresAtEpochMs: nowEpochMs - 1,
@@ -173,12 +177,10 @@ describe('AppInbox expired row replacement', () => {
       }
     };
     const pending = service.issueSession({
-      requestId: 'replace-expired-auth-session',
-      capturedAtEpochMs: nowEpochMs,
+      requestId,
       clientId: 'client-1',
       username: 'alice',
-      sessionId: 'session-1',
-      expiresAtEpochMs: nowEpochMs + 60_000,
+      ttlMs: 60_000,
       authority: {
         kind: 'static-client',
         clientId: 'client-1',
@@ -193,7 +195,7 @@ describe('AppInbox expired row replacement', () => {
       await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
     }
     await expect(pending).resolves.toMatchObject({
-      right: { sessionId: 'session-1', accessToken },
+      right: { sessionId, accessToken },
     });
     const after = await Promise.all([
       runtime.findAllEntries('auth-sessions:by-token'),
@@ -421,7 +423,7 @@ function requireJsonObject(value: JsonWireValue, label: string): JsonWireObject 
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError(`${label} must be an object`);
   }
-  return value;
+  return value as JsonWireObject;
 }
 
 function requireNonNegativeInteger(value: JsonWireValue, label: string): number {

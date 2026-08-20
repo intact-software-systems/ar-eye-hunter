@@ -46,7 +46,11 @@ type IssueRunToken = (
 type IssueAgentTickets = (
     apiBaseUrl: string,
     request: AgentSessionTicketRequest,
-    options: Readonly<{ authSession: AuthSession; signal?: AbortSignal }>,
+    options: Readonly<{
+        requestId: string;
+        authSession: AuthSession;
+        signal?: AbortSignal;
+    }>,
 ) => Promise<AgentSessionTicketResponse>;
 
 export function createBrowserAgentLaunchService(
@@ -146,7 +150,11 @@ async function issueTickets(
     const response = await (config.issueAgentTickets ?? issueAgentSessionTicketsAt)(
         config.apiBaseUrl,
         { agentIds },
-        { authSession: config.authSession, signal },
+        {
+            requestId: crypto.randomUUID(),
+            authSession: config.authSession,
+            signal,
+        },
     );
     const tickets = new Map(
         response.tickets.map((ticket) => [ticket.agentId, ticket] as const),

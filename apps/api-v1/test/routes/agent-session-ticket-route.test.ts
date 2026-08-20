@@ -7,6 +7,7 @@ import type {
 import * as configRoutes from '../../src/routes/config-route.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { authenticationRequired } from '../../src/services/request-auth-service.ts';
 
 const NOW_EPOCH_MS = Date.now();
 const ISSUE_REQUEST_ID = 'AgentIssueRequest_01234567';
@@ -14,7 +15,8 @@ const CONSUME_REQUEST_ID = 'AgentConsumeRequest_012345';
 
 Deno.test('agent session ticket route rejects unauthenticated issue requests', async () => {
   const app = createApp({
-    requireApiAuthSession: () => Promise.reject(new Error('Unauthorized: Missing bearer token')),
+    requireApiAuthSession: () =>
+      Promise.reject(authenticationRequired('Bearer credential was not provided')),
   });
 
   const response = await app.request(
@@ -31,7 +33,7 @@ Deno.test('agent session ticket route rejects unauthenticated issue requests', a
     mutationFailure(
       'authentication-required',
       401,
-      'Unauthorized: Missing bearer token',
+      'Bearer credential was not provided',
     ),
   );
 });
@@ -44,8 +46,7 @@ Deno.test('agent session ticket route mints distinct same-user sessions and cons
     appAuthInbox: ({
       issueAgentSessionTickets: (input: {
         agents: readonly { agentId: string; sessionId?: string }[];
-        ticketExpiresAtEpochMs: number;
-        sessionExpiresAtEpochMs: number;
+        ticketTtlMs: number;
       }) =>
         Promise.resolve(Either.ofRight({
           tickets: input.agents.map(({ agentId, sessionId: candidateSessionId }) => {
@@ -56,13 +57,13 @@ Deno.test('agent session ticket route mints distinct same-user sessions and cons
               username: 'alice',
               accessToken: `access-for-${sessionId}-long-enough`,
               sessionId,
-              expiresAtEpochMs: input.sessionExpiresAtEpochMs,
+              expiresAtEpochMs: NOW_EPOCH_MS + 86_400_000,
             });
             return {
               agentId,
               ticket,
               sessionId,
-              expiresAtEpochMs: input.ticketExpiresAtEpochMs,
+              expiresAtEpochMs: NOW_EPOCH_MS + input.ticketTtlMs,
             };
           }),
         })),

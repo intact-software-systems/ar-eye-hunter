@@ -1,16 +1,29 @@
 import { useCallback } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
 import { rallar } from '@shared-web/browser/rallar.ts';
+import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
+import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
 
 import type { DirectorAttemptSource } from '../arena-connection-contracts.ts';
-import type {
-    ArenaConnectionLifecycle,
-    ArenaConnectionLifecycleInput,
-} from '../lifecycle/use-arena-connection-lifecycle.ts';
+import type { DirectorAttemptState } from '../arena-connection-contracts.ts';
 import { toDirectorAttemptState, toErrorMessage } from '../arena-connection-helpers.ts';
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+
+interface ArenaDirectorAppointmentInput {
+    readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
+    readonly isCurrentNetworkGeneration: (generation: number) => boolean;
+    readonly networkGenerationRef: RefObject<number>;
+    readonly roomIdRef: RefObject<string | undefined>;
+    readonly setDirectorAttempt: Dispatch<SetStateAction<DirectorAttemptState>>;
+    readonly setDirectorStatus: Dispatch<SetStateAction<RallarDirectorStatus>>;
+    readonly setGameDiagnostics: Dispatch<SetStateAction<RallarGameDiagnostics | undefined>>;
+}
 
 export function useArenaDirectorAppointment(
-    input: ArenaConnectionLifecycleInput,
-): Pick<ArenaConnectionLifecycle, 'attemptDirectorAppointment'> {
+    input: ArenaDirectorAppointmentInput,
+): Readonly<{
+    attemptDirectorAppointment: (source: DirectorAttemptSource) => Promise<void>;
+}> {
     const {
         arenaMatchRef,
         isCurrentNetworkGeneration,

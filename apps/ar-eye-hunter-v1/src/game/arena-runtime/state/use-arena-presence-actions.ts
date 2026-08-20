@@ -1,4 +1,6 @@
 import { useCallback } from 'react';
+import type { RefObject } from 'react';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { shouldSendRallarMotionSample } from '@shared/rallar-motion/mod.ts';
 
 import { colorForId } from '../../color.ts';
@@ -9,11 +11,27 @@ import {
     type GameRealtimeMessage,
     type PlayerPose,
 } from '../../types.ts';
-import type { ArenaActions, ArenaActionsInput } from '../actions/use-arena-actions.ts';
+import type { ArenaConnection } from '../arena-connection-contracts.ts';
+import type { AvatarProfile } from '../../avatarProfile.ts';
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+
+interface ArenaPresenceActionsInput {
+    readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
+    readonly isNetworkEnabled: () => boolean;
+    readonly localAvatarProfileRef: RefObject<AvatarProfile | undefined>;
+    readonly networkGenerationRef: RefObject<number>;
+    readonly poseSendBudget: RefObject<number>;
+    readonly roomIdRef: RefObject<string | undefined>;
+    readonly runBestEffortNetworkTask: <T>(
+        task: () => Promise<T> | undefined,
+        generation?: number,
+    ) => void;
+    readonly sessionRef: RefObject<AuthSession | undefined>;
+}
 
 export function useArenaPresenceActions(
-    input: ArenaActionsInput,
-): Pick<ArenaActions, 'sendPose'> {
+    input: ArenaPresenceActionsInput,
+): Pick<ArenaConnection, 'sendPose'> {
     const {
         arenaMatchRef,
         isNetworkEnabled,

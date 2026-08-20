@@ -13,6 +13,7 @@ import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import type {
   RuntimeStateRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import { authenticationRequired } from '../../src/services/request-auth-service.ts';
 
 import {
   type ApiV1RouteInstallerOperations,
@@ -155,7 +156,6 @@ function createInput(): CreateApiV1RouteInstallersInput<
     createTokenId: () => 'token-id',
     createWsAuthRequestFacts: () => ({
       requestId: 'request-id',
-      capturedAtEpochMs: 1_000,
     }),
   };
 }
@@ -180,7 +180,7 @@ function rejectUnusedOperation<T>(): Promise<T> {
 }
 
 function rejectUnauthenticated<T>(): Promise<T> {
-  return Promise.reject(new Error('Unauthorized: Missing bearer token'));
+  return Promise.reject(authenticationRequired('Unauthorized: Missing bearer token'));
 }
 
 class UnusedRuntimeStateRepository implements RuntimeStateRepositoryLike {

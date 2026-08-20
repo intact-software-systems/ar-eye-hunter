@@ -4,12 +4,10 @@ import { withValidatedAvatarProfile } from '../../arena-connection-helpers.ts';
 import { isArenaPoseIntentFromSender } from '../../../rallar-game-match-adapter.ts';
 import { hydrateArenaSnapshot, toArenaSnapshot, upsertPlayerPose } from '../../../simulation.ts';
 import { GAME_PROTOCOL, type GameRealtimeMessage } from '../../../types.ts';
-import type {
-    ArenaConnectionLifecycleInput,
-} from '../../lifecycle/use-arena-connection-lifecycle.ts';
+import type { ArenaMatchRuntimeInput } from '../create-arena-match-runtime.ts';
 
 export async function handleArenaMatchInput(
-    input: ArenaConnectionLifecycleInput,
+    input: ArenaMatchRuntimeInput,
     generation: number,
     envelope: RallarGameEnvelope<GameRealtimeMessage>,
 ): Promise<void> {

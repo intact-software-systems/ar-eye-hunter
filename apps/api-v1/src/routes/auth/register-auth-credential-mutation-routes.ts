@@ -14,7 +14,10 @@ import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
-import { readApiAuthCredentialProof } from '../../services/request-auth-service.ts';
+import {
+  readApiAuthCredentialProof,
+  RequestAuthFailure,
+} from '../../services/request-auth-service.ts';
 import type { ConfigRouteDependencies } from '../config-route.ts';
 import {
   toApiMutationFailureResponse,
@@ -57,10 +60,7 @@ async function logoutResponse(
     try {
       authSession = await dependencies.requireApiAuthSession(context.req);
     } catch (authError) {
-      if (
-        authError instanceof Error &&
-        authError.message.startsWith('Unauthorized:')
-      ) {
+      if (authError instanceof RequestAuthFailure && authError.kind === 'authentication') {
         const proof = readApiAuthCredentialProof(context.req);
         if (proof) {
           const replay = await dependencies.appAuthInbox
@@ -78,7 +78,6 @@ async function logoutResponse(
       requireAuthMutationResult(
         await dependencies.appAuthInbox.logoutSession({
           requestId,
-          capturedAtEpochMs: dependencies.now(),
           session: authSession,
         }),
       ) satisfies LogoutResponse,
@@ -111,14 +110,12 @@ async function webSocketTicketResponse(
     return await RateLimiter.tryToExecuteOrDefault<Response>(
       readRateLimiter('auth-ws-ticket', authSession.sessionId, WS_TICKET_RATE_LIMIT),
       async () => {
-        const issuedAtEpochMs = Date.now();
         return toJsonResponse<WebSocketTicketResponse>(
           requireAuthMutationResult(
             await dependencies.appAuthInbox.issueWebSocketTicket({
               requestId,
-              capturedAtEpochMs: issuedAtEpochMs,
               session: authSession,
-              expiresAtEpochMs: issuedAtEpochMs + WS_AUTH_TICKET_TTL_MS,
+              ttlMs: WS_AUTH_TICKET_TTL_MS,
             }),
           ),
         );
@@ -147,19 +144,12 @@ function registerAgentTicketIssueRoute(
       const { requestId, body } = await readAuthMutationRequest(context);
       const request = body as AgentSessionTicketRequest;
       const agentIds = readAgentSessionTicketAgentIds(request);
-      const issuedAtEpochMs = dependencies.now();
-      const ticketExpiresAtEpochMs = Math.min(
-        authSession.expiresAtEpochMs,
-        issuedAtEpochMs + AGENT_SESSION_TICKET_TTL_MS,
-      );
       return toJsonResponse<AgentSessionTicketResponse>(
         requireAuthMutationResult(
           await dependencies.appAuthInbox.issueAgentSessionTickets({
             requestId,
-            capturedAtEpochMs: issuedAtEpochMs,
             session: authSession,
-            sessionExpiresAtEpochMs: authSession.expiresAtEpochMs,
-            ticketExpiresAtEpochMs,
+            ticketTtlMs: AGENT_SESSION_TICKET_TTL_MS,
             agents: agentIds.map((agentId) => ({ agentId })),
           }),
         ),
@@ -189,7 +179,6 @@ function registerAgentTicketConsumeRoute(
           requireAuthMutationResult(
             await dependencies.appAuthInbox.consumeAgentSessionTicket({
               requestId,
-              capturedAtEpochMs: dependencies.now(),
               ticket,
             }),
           ) satisfies ConsumeAgentSessionTicketResponse,
