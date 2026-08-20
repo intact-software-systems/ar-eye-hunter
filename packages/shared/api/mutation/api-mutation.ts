@@ -263,7 +263,26 @@ function isNullableNonNegativeNumber(value: ApiMutationFailureJsonValue): value 
 function isNullableRecord(
   value: ApiMutationFailureJsonValue,
 ): value is ApiMutationFailureJsonObject | null {
-  return value === null || isRecord(value);
+  return value === null || isApiMutationFailureJsonObject(value);
+}
+
+function isApiMutationFailureJsonValue(value: ApiMutationFailureJsonValue): boolean {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
+    return true;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value);
+  }
+  if (Array.isArray(value)) {
+    return value.every(isApiMutationFailureJsonValue);
+  }
+  return isApiMutationFailureJsonObject(value);
+}
+
+function isApiMutationFailureJsonObject(
+  value: ApiMutationFailureJsonValue,
+): value is ApiMutationFailureJsonObject {
+  return isRecord(value) && Object.values(value).every(isApiMutationFailureJsonValue);
 }
 
 function isRecord(value: ApiMutationFailureJsonValue): value is ApiMutationFailureJsonObject {
