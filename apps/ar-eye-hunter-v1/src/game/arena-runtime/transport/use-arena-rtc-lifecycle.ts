@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
 import { rallar } from '@shared-web/browser/rallar.ts';
+import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
 
 import {
     GAME_AI_LANE_ID,
@@ -9,9 +11,27 @@ import {
     type RtcLaneStatus,
 } from '../../types.ts';
 import { GAME_SNAPSHOT_LANE_ID } from '../../rallar-game-match-adapter.ts';
-import type { ArenaConnectionLifecycleInput } from '../lifecycle/use-arena-connection-lifecycle.ts';
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+import type { ArenaConnectionState } from '../arena-connection-contracts.ts';
 
-export function useArenaRtcLifecycle(input: ArenaConnectionLifecycleInput): void {
+interface ArenaRtcLifecycleInput {
+    readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
+    readonly connectionState: ArenaConnectionState;
+    readonly isCurrentNetworkGeneration: (generation: number) => boolean;
+    readonly isNetworkEnabled: () => boolean;
+    readonly networkGenerationRef: RefObject<number>;
+    readonly roomId: string | undefined;
+    readonly rtcLanes: readonly RtcLaneStatus[];
+    readonly runBestEffortNetworkTask: <T>(
+        task: () => Promise<T> | undefined,
+        generation?: number,
+    ) => void;
+    readonly setGameDiagnostics: Dispatch<SetStateAction<RallarGameDiagnostics | undefined>>;
+    readonly setRtcLanes: Dispatch<SetStateAction<readonly RtcLaneStatus[]>>;
+    readonly snapshotLaneReadySyncKeyRef: RefObject<string | undefined>;
+}
+
+export function useArenaRtcLifecycle(input: ArenaRtcLifecycleInput): void {
     const {
         arenaMatchRef,
         connectionState,

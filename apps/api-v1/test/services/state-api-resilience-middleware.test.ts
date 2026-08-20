@@ -124,3 +124,96 @@ Deno.test('state API circuit breaker ignores repeated revision-floor conflicts',
   assert.equal(first.status, 409);
   assert.equal(second.status, 409);
 });
+
+Deno.test('state API rate limiting uses the canonical client mutation failure', async () => {
+  const app = new Hono();
+  app.use(
+    '/api/state/*',
+    createStateApiResilienceMiddleware({
+      namespace: `test-${crypto.randomUUID()}`,
+      stateRateLimitPolicy: new RateLimiterPolicy(12_500, 1),
+    }),
+  );
+  const path = '/api/state/apps/app/workspaces/workspace/clients/alice/principal/' +
+    'requests/Request_ID-012345678';
+  app.put(path, (context) => context.json({ ok: true }));
+
+  const success = await app.request(path, { method: 'PUT' });
+  assert.equal(success.status, 200);
+  assert.equal(success.headers.get('retry-after'), null);
+  const response = await app.request(path, { method: 'PUT' });
+
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('retry-after'), '13');
+  assert.deepEqual(await response.json(), {
+    type: 'api-mutation-failure',
+    version: 'canonical.v1',
+    code: 'rate-limited',
+    status: 429,
+    message: 'Too many state API requests',
+    issues: null,
+    denial: null,
+    retry: {
+      kind: 'rate-limited',
+      retryAfterMs: 12_500,
+      attempts: null,
+      lane: null,
+      queueAgeMs: null,
+      dueAgeMs: null,
+    },
+  });
+});
+
+Deno.test('state API circuit breaking uses the canonical client mutation failure', async () => {
+  const app = new Hono();
+  const duration = Temporal.Duration.from({ seconds: 60 });
+  app.use(
+    '/api/state/*',
+    createStateApiResilienceMiddleware({
+      namespace: `test-${crypto.randomUUID()}`,
+      stateRateLimitPolicy: new RateLimiterPolicy(60_000, 100),
+      circuitBreaker: CircuitBreaker.create(
+        new CircuitBreakerPolicy(0, duration, duration, duration),
+      ),
+    }),
+  );
+  const path = '/api/state/apps/app/workspaces/workspace/clients/alice/principal/' +
+    'requests/Request_ID-012345678';
+  app.put(path, (context) => context.json({ error: 'failed' }, 500));
+
+  assert.equal((await app.request(path, { method: 'PUT' })).status, 500);
+  const response = await app.request(path, { method: 'PUT' });
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), {
+    type: 'api-mutation-failure',
+    version: 'canonical.v1',
+    code: 'api-mutation-unavailable',
+    status: 503,
+    message: 'State API is temporarily unavailable',
+    issues: null,
+    denial: null,
+    retry: {
+      kind: 'unavailable',
+      retryAfterMs: null,
+      attempts: null,
+      lane: null,
+      queueAgeMs: null,
+      dueAgeMs: null,
+    },
+  });
+});
+
+Deno.test('removed client mutation paths bypass resilience and remain 404', async () => {
+  const app = new Hono();
+  app.use(
+    '/api/state/*',
+    createStateApiResilienceMiddleware({
+      namespace: `test-${crypto.randomUUID()}`,
+      stateRateLimitPolicy: new RateLimiterPolicy(60_000, 0),
+    }),
+  );
+  const path = '/api/state/apps/app/workspaces/workspace/clients/alice/principal';
+
+  assert.equal((await app.request(path, { method: 'PUT' })).status, 404);
+});

@@ -51,12 +51,12 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
           waitJitterRatio: 0,
           nowEpochMs: () => nowEpochMs,
         },
+        authFactNowEpochMs: () => nowEpochMs,
       },
     );
 
     const loginPending = appAuth.issueSession({
       requestId: 'pglite-auth-session',
-      capturedAtEpochMs: nowEpochMs,
       clientId: 'client-pglite',
       username: 'alice',
       authority: {
@@ -64,8 +64,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
         clientId: 'client-pglite',
         normalizedUsername: 'alice',
       },
-      sessionId: 'session-pglite',
-      expiresAtEpochMs: nowEpochMs + 60_000,
+      ttlMs: 60_000,
     });
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
     await inboxReader.dequeueInbox(
@@ -95,9 +94,8 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
 
     const ticketPending = appAuth.issueWebSocketTicket({
       requestId: 'pglite-ws-ticket',
-      capturedAtEpochMs: nowEpochMs + 1,
       session,
-      expiresAtEpochMs: nowEpochMs + 30_000,
+      ttlMs: 30_000,
     });
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
     await inboxReader.dequeueInbox(
@@ -118,13 +116,11 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
     const consumers = [
       appAuth.consumeWebSocketTicket({
         requestId: 'pglite-ws-consume-a',
-        capturedAtEpochMs: nowEpochMs + 2,
         expectedSessionId: session.sessionId,
         ticket,
       }),
       appAuth.consumeWebSocketTicket({
         requestId: 'pglite-ws-consume-b',
-        capturedAtEpochMs: nowEpochMs + 2,
         expectedSessionId: session.sessionId,
         ticket,
       }),
@@ -148,7 +144,6 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
 
     const logoutPending = appAuth.logoutSession({
       requestId: 'pglite-logout-request',
-      capturedAtEpochMs: nowEpochMs + 3,
       session,
     });
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
@@ -233,11 +228,11 @@ Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async (
           waitJitterRatio: 0,
           nowEpochMs: () => nowEpochMs,
         },
+        authFactNowEpochMs: () => nowEpochMs,
       },
     );
     const pending = appAuth.issueSession({
       requestId: 'pglite-disabled-after-enqueue',
-      capturedAtEpochMs: nowEpochMs,
       clientId: user.clientId,
       username: user.username,
       authority: {
@@ -246,8 +241,7 @@ Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async (
         normalizedUsername: user.normalizedUsername,
         userRevision: 0,
       },
-      sessionId: 'pglite-disabled-session',
-      expiresAtEpochMs: nowEpochMs + 60_000,
+      ttlMs: 60_000,
     });
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
     await users.putUser({

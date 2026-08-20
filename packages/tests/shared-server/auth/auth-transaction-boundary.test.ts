@@ -119,13 +119,11 @@ async function deniesSessionWhenUserIsDisabledAfterEnqueue(): Promise<void> {
   await users.putUser(user);
   const pending = fixture.service.issueSession({
     requestId: 'disabled-session-request',
-    capturedAtEpochMs: 2_000,
     clientId: user.clientId,
     username: user.username,
-    sessionId: 'disabled-session',
-    expiresAtEpochMs: Date.now() + 60_000,
+    ttlMs: 60_000,
     authority: registeredUserAuthority(user),
-  } as never);
+  });
   await waitForAuthInboxEntry(fixture.queue);
   await users.putUser({ ...user, status: 'disabled', updatedAtEpochMs: 1_001 });
   await dequeue(fixture);
@@ -150,11 +148,9 @@ async function rereadsUserPolicyAfterRetryConflict(): Promise<void> {
   const userRead = vi.spyOn(fixture.runtimeRepository, 'findEntry');
   const pending = fixture.auth.service.issueSession({
     requestId: 'retry-disabled-session-request',
-    capturedAtEpochMs: 2_000,
     clientId: fixture.user.clientId,
     username: fixture.user.username,
-    sessionId: 'retry-disabled-session',
-    expiresAtEpochMs: Date.now() + 60_000,
+    ttlMs: 60_000,
     authority: registeredUserAuthority(fixture.user),
   });
 

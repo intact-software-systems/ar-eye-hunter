@@ -14,12 +14,10 @@ import {
     toArenaSnapshot,
 } from '../../../simulation.ts';
 import { GAME_PROTOCOL, type GameRealtimeMessage } from '../../../types.ts';
-import type {
-    ArenaConnectionLifecycleInput,
-} from '../../lifecycle/use-arena-connection-lifecycle.ts';
+import type { ArenaMatchRuntimeInput } from '../create-arena-match-runtime.ts';
 
 export async function handleArenaMatchIntent(
-    input: ArenaConnectionLifecycleInput,
+    input: ArenaMatchRuntimeInput,
     generation: number,
     envelope: RallarGameEnvelope<GameRealtimeMessage>,
 ): Promise<void> {

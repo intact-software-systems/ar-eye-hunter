@@ -122,9 +122,13 @@ describe('state API workflows', () => {
         await issueAgentSessionTicketsAt(
             'https://agent-api.example.test',
             { agentIds: ['agent-1'] },
-            { authSession },
+            { requestId: 'agent-issue-request-id', authSession },
         );
-        await consumeAgentSessionTicketAt('https://agent-api.example.test', { ticket: 'ticket-1' });
+        await consumeAgentSessionTicketAt(
+            'https://agent-api.example.test',
+            { ticket: 'ticket-1' },
+            { requestId: 'agent-consume-request-id' },
+        );
         await readStateMyRealtimeStatus();
 
         expect(fetchCalls.map((call) => withoutMutationRequestPath(call.url))).toEqual([
@@ -133,6 +137,69 @@ describe('state API workflows', () => {
             '/api/state/apps/rallar-server/workspaces/default/stats/me/realtime',
         ]);
         expect(fetchCalls[0].headers.authorization).toBe('Bearer operator-token');
+    });
+
+    it('reuses caller-owned request IDs when agent ticket responses are lost', async () => {
+        let issueAttempts = 0;
+        let consumeAttempts = 0;
+        stubFetch(({ url }) => {
+            if (url.includes('/agent-session-tickets/consume/requests/')) {
+                consumeAttempts += 1;
+                return consumeAttempts === 1
+                    ? textResponse('response lost', 503)
+                    : jsonResponse({
+                        clientId: 'agent-1',
+                        accessToken: 'agent-token',
+                        username: 'operator',
+                        sessionId: 'agent-session-1',
+                        expiresAtEpochMs: 10_000,
+                    });
+            }
+            if (url.includes('/agent-session-tickets/requests/')) {
+                issueAttempts += 1;
+                return issueAttempts === 1
+                    ? textResponse('response lost', 503)
+                    : jsonResponse({ tickets: [] });
+            }
+            return notFoundResponse();
+        });
+        const issueOptions = {
+            requestId: 'agent-issue-lost-response-id',
+            authSession: null,
+        } as const;
+        const consumeOptions = {
+            requestId: 'agent-consume-lost-response-id',
+            authSession: null,
+        } as const;
+
+        await expect(issueAgentSessionTicketsAt(
+            'https://agent-api.example.test',
+            { agentIds: ['agent-1'] },
+            issueOptions,
+        )).rejects.toThrow('503');
+        await issueAgentSessionTicketsAt(
+            'https://agent-api.example.test',
+            { agentIds: ['agent-1'] },
+            issueOptions,
+        );
+        await expect(consumeAgentSessionTicketAt(
+            'https://agent-api.example.test',
+            { ticket: 'ticket-1' },
+            consumeOptions,
+        )).rejects.toThrow('503');
+        await consumeAgentSessionTicketAt(
+            'https://agent-api.example.test',
+            { ticket: 'ticket-1' },
+            consumeOptions,
+        );
+
+        const requestPaths = fetchCalls.map((call) => new URL(call.url).pathname);
+        expect(requestPaths).toEqual([
+            '/api/auth/agent-session-tickets/requests/agent-issue-lost-response-id',
+            '/api/auth/agent-session-tickets/requests/agent-issue-lost-response-id',
+            '/api/auth/agent-session-tickets/consume/requests/agent-consume-lost-response-id',
+            '/api/auth/agent-session-tickets/consume/requests/agent-consume-lost-response-id',
+        ]);
     });
 
     it('refreshes client and group snapshots through an orchestrated API workflow', async () => {
@@ -1461,6 +1528,7 @@ describe('state API workflows', () => {
         };
         vi.spyOn(crypto, 'randomUUID')
             .mockReturnValueOnce('client-heartbeat-request' as ReturnType<typeof crypto.randomUUID>)
+            .mockReturnValueOnce('client-repair-request' as ReturnType<typeof crypto.randomUUID>)
             .mockReturnValueOnce('group-heartbeat-request' as ReturnType<typeof crypto.randomUUID>)
             .mockReturnValue('unused-request' as ReturnType<typeof crypto.randomUUID>);
         let clientAttempts = 0;
@@ -1524,6 +1592,64 @@ describe('state API workflows', () => {
         expect(new Set(groupRequestIds).size).toBe(1);
         expect(groupRequestIds[0]).toContain('group-heartbeat-request');
         expect(clientRequestIds[0]).not.toBe(groupRequestIds[0]);
+    });
+
+    it('reuses a distinct presence repair request ID across heartbeat retries', async () => {
+        const clientData: ClientInfo = {
+            clientId: 'principal-1',
+            sessionId: 'session-1',
+            isOnline: true,
+        };
+        vi.spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce(
+                'client-heartbeat-request-id' as ReturnType<typeof crypto.randomUUID>,
+            )
+            .mockReturnValueOnce(
+                'client-repair-request-id' as ReturnType<typeof crypto.randomUUID>,
+            )
+            .mockReturnValue(
+                'unexpected-request-id' as ReturnType<typeof crypto.randomUUID>,
+            );
+        let repairAttempts = 0;
+        stubFetch(({ url, method }) => {
+            if (
+                method === 'POST' &&
+                url.includes('/clients/principal-1/') &&
+                url.includes('/sessions/session-1/heartbeat')
+            ) {
+                return textResponse('presence missing', 404);
+            }
+            if (
+                method === 'PUT' &&
+                url.includes('/clients/principal-1/') &&
+                url.includes('/sessions/session-1/requests/')
+            ) {
+                repairAttempts += 1;
+                return repairAttempts === 1
+                    ? textResponse('repair response lost', 503)
+                    : jsonResponse(clientSnapshot('principal-1'));
+            }
+
+            return notFoundResponse();
+        });
+
+        await refreshStateHeartbeat(clientData, [], {
+            generationId: 'generation-1',
+            policies: { command: { maxAttempts: 2 } },
+        });
+
+        const repairRequestIds = fetchCalls
+            .filter(
+                (call) =>
+                    call.method === 'PUT' &&
+                    call.url.includes('/sessions/session-1/requests/'),
+            )
+            .map((call) => call.url.match(/\/requests\/([A-Za-z0-9_-]+)$/u)?.[1]);
+        expect(repairRequestIds).toEqual([
+            'client-repair-request-id',
+            'client-repair-request-id',
+        ]);
+        expect(repairRequestIds[0]).not.toBe('client-heartbeat-request-id');
     });
 
     it('uses the provided auth session for heartbeat requests', async () => {

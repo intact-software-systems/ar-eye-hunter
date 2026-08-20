@@ -134,7 +134,7 @@ export function toPgTimestamp(
 ): string {
     // postgres.js serializes a zone-less string as process-local time. The
     // domain PlainDateTime is a UTC wall clock, so make that zone explicit.
-    return t instanceof Temporal.Instant ? t.toString() : `${t.toString()}Z`;
+    return 'epochMilliseconds' in t ? t.toString() : `${t.toString()}Z`;
 }
 
 export function parseTemporalPlainDateTime(ts: string | Date): Temporal.PlainDateTime {

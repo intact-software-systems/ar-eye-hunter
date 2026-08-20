@@ -78,21 +78,18 @@ it('consumes websocket tickets once and rejects session mismatches', async () =>
   await expect(
     requireWsAuthSession({ sessionId: 'session-1', ticket: 'ticket-1' }, appAuthInbox, {
       requestId: 'consume-1',
-      capturedAtEpochMs: 1_000,
     }),
   ).resolves.toMatchObject({ clientId: 'client-1' });
 
   await expect(
     requireWsAuthSession({ sessionId: 'session-1', ticket: 'ticket-1' }, appAuthInbox, {
       requestId: 'consume-2',
-      capturedAtEpochMs: 1_001,
     }),
   ).rejects.toThrow('Unauthorized: Invalid or expired websocket auth ticket');
 
   await expect(
     requireWsAuthSession({ sessionId: 'session-2', ticket: 'ticket-2' }, appAuthInbox, {
       requestId: 'consume-3',
-      capturedAtEpochMs: 1_002,
     }),
   ).rejects.toThrow('Unauthorized: Invalid or expired websocket auth ticket');
 });

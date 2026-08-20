@@ -41,7 +41,6 @@ Deno.test('logout routes the session mutation through AppAuthInbox', async () =>
   assert.deepEqual(await response.json(), { loggedOut: true });
   assert.deepEqual(calls, [{
     requestId: REQUEST_ID,
-    capturedAtEpochMs: 2_000,
     session: SESSION,
   }]);
 });

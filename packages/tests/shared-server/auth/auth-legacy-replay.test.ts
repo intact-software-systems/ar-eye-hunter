@@ -169,7 +169,6 @@ async function consumeLegacyWebSocketTicket(fixture: LegacyTicketFixture): Promi
   const ticketDigest = await hashAuthSecret(fixture.legacyWsTicket);
   const pending = fixture.auth.service.consumeWebSocketTicket({
     requestId: 'legacy-ws-consume',
-    capturedAtEpochMs: Date.now(),
     ticket: fixture.legacyWsTicket,
     expectedSessionId: fixture.session.sessionId,
   });
@@ -198,7 +197,6 @@ async function consumeLegacyWebSocketTicket(fixture: LegacyTicketFixture): Promi
 async function consumeLegacyAgentTicket(fixture: LegacyTicketFixture): Promise<void> {
   const pending = fixture.auth.service.consumeAgentSessionTicket({
     requestId: 'legacy-agent-consume',
-    capturedAtEpochMs: Date.now(),
     ticket: fixture.legacyAgentTicket,
   });
   await waitForAuthInboxEntry(fixture.auth.queue, 2);

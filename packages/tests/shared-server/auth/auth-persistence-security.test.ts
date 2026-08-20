@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 // prettier-ignore
@@ -140,29 +140,27 @@ async function preservesCutoffOutcomes(): Promise<void> {
   try {
     const capturedAtEpochMs = Date.now();
     const session = createCutoffSession(capturedAtEpochMs);
-    await expectCutoffSessionOutcomes(capturedAtEpochMs, session);
-    await expectCutoffConsumeOutcomes(capturedAtEpochMs);
+    await expectCutoffSessionOutcomes(session);
+    await expectCutoffConsumeOutcomes();
   } finally {
     vi.useRealTimers();
   }
 }
 
 async function expectCutoffSessionOutcomes(
-  capturedAtEpochMs: number,
   session: ReturnType<typeof createCutoffSession>,
 ): Promise<void> {
   await expect(
     runCutoffOperation((service) =>
-      service.logoutSession({ requestId: 'cutoff-logout', capturedAtEpochMs, session }),
+      service.logoutSession({ requestId: 'cutoff-logout', session })
     ),
   ).resolves.toMatchObject({ right: { loggedOut: true } });
   await expect(
     runCutoffOperation((service) =>
       service.issueWebSocketTicket({
         requestId: 'cutoff-ws-issue',
-        capturedAtEpochMs,
         session,
-        expiresAtEpochMs: capturedAtEpochMs + 30_000,
+        ttlMs: 30_000,
       }),
     ),
   ).resolves.toMatchObject({ left: { status: 401 } });
@@ -170,22 +168,19 @@ async function expectCutoffSessionOutcomes(
     runCutoffOperation((service) =>
       service.issueAgentSessionTickets({
         requestId: 'cutoff-agent-issue',
-        capturedAtEpochMs,
         session,
-        sessionExpiresAtEpochMs: capturedAtEpochMs + 60_000,
-        ticketExpiresAtEpochMs: capturedAtEpochMs + 30_000,
-        agents: [{ agentId: 'agent-1', sessionId: 'agent-session-1' }],
+        ticketTtlMs: 30_000,
+        agents: [{ agentId: 'agent-1' }],
       }),
     ),
   ).resolves.toMatchObject({ left: { status: 401 } });
 }
 
-async function expectCutoffConsumeOutcomes(capturedAtEpochMs: number): Promise<void> {
+async function expectCutoffConsumeOutcomes(): Promise<void> {
   await expect(
     runCutoffOperation((service) =>
       service.consumeWebSocketTicket({
         requestId: 'cutoff-ws-missing',
-        capturedAtEpochMs,
         ticket: 'missing-ws-ticket',
         expectedSessionId: 'cutoff-session',
       }),
@@ -195,7 +190,6 @@ async function expectCutoffConsumeOutcomes(capturedAtEpochMs: number): Promise<v
     runCutoffOperation((service) =>
       service.consumeAgentSessionTicket({
         requestId: 'cutoff-agent-missing',
-        capturedAtEpochMs,
         ticket: 'missing-agent-ticket',
       }),
     ),

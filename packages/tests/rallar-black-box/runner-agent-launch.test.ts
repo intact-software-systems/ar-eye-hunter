@@ -25,7 +25,7 @@ const ticketMocks = vi.hoisted(() => ({
 vi.mock('@shared-web/browser/api-client-config.ts', () => ({
     configureApiClient: ticketMocks.configureApiClient,
 }));
-vi.mock('@shared-web/browser/api-integration.ts', () => ({
+vi.mock('@shared-web/browser/auth/agent-session-ticket-http-api.ts', () => ({
     consumeAgentSessionTicket: ticketMocks.consumeAgentSessionTicket,
     consumeAgentSessionTicketAt: ticketMocks.consumeAgentSessionTicketAt,
 }));
@@ -162,6 +162,7 @@ describe('rallar-black-box runner agent launch links', () => {
         expect(ticketMocks.consumeAgentSessionTicketAt).toHaveBeenCalledWith(
             'https://api.example.test',
             { ticket: 'secret-agent-ticket' },
+            { requestId: expect.any(String) },
         );
 
         const replaceState = vi.fn();

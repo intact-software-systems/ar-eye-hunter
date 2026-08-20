@@ -90,7 +90,7 @@ Deno.test('requireWsAuthSession consumes websocket tickets and rejects mismatche
       ticket: 'ticket-1',
     },
     appAuthInbox,
-    { requestId: 'consume-1', capturedAtEpochMs: 1_000 },
+    { requestId: 'consume-1' },
   );
   assert.equal(authorised.clientId, 'client-1');
 
@@ -102,7 +102,7 @@ Deno.test('requireWsAuthSession consumes websocket tickets and rejects mismatche
           ticket: 'ticket-1',
         },
         appAuthInbox,
-        { requestId: 'consume-2', capturedAtEpochMs: 1_001 },
+        { requestId: 'consume-2' },
       ),
     /Unauthorized: Invalid or expired websocket auth ticket/,
   );
@@ -115,7 +115,7 @@ Deno.test('requireWsAuthSession consumes websocket tickets and rejects mismatche
           ticket: 'ticket-2',
         },
         appAuthInbox,
-        { requestId: 'consume-3', capturedAtEpochMs: 1_002 },
+        { requestId: 'consume-3' },
       ),
     /Unauthorized: Invalid or expired websocket auth ticket/,
   );
@@ -128,7 +128,7 @@ Deno.test('requireWsAuthSession consumes websocket tickets and rejects mismatche
           ticket: 'missing-ticket',
         },
         appAuthInbox,
-        { requestId: 'consume-4', capturedAtEpochMs: 1_003 },
+        { requestId: 'consume-4' },
       ),
     /Unauthorized: Invalid or expired websocket auth ticket/,
   );

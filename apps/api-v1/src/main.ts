@@ -2,9 +2,12 @@ import 'jsr:@std/dotenv@0.225.6/load';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import { cors } from 'jsr:@hono/hono@4.11.9/cors';
 
-import { requireApiAuthSession, toAuthErrorResponse } from './services/request-auth-service.ts';
+import { requireApiAuthSession } from './services/request-auth-service.ts';
 import { createDefaultRallarServer } from './composition/create-default-rallar-server.ts';
 import { createStateApiResilienceMiddleware } from './services/state-api-resilience-middleware.ts';
+import {
+  createStateApiAuthenticationMiddleware,
+} from './services/state-api-authentication-middleware.ts';
 import { createHttpTimingMiddleware } from './services/http-timing-middleware.ts';
 import { logDatabaseBackendConfig, logPGliteSchemaInitConfig } from './db/database-config.ts';
 import { logDatabasePubSubConfig } from './db/database-pubsub-config.ts';
@@ -55,6 +58,7 @@ const apiCors = cors(
       'Content-Length',
       'Server-Timing',
       'x-request-id',
+      'Retry-After',
       ...STATE_SNAPSHOT_READ_EXPOSED_HEADERS,
     ],
     maxAge: 600, // Cache the preflight for 10 minutes
@@ -73,14 +77,12 @@ app.use('/api/*', async (c, next) => {
 
 app.use('/api/*', createHttpTimingMiddleware());
 
-app.use('/api/state/*', async (c, next) => {
-  try {
-    await requireApiAuthSession(c.req, rallar.runtime.authSessionRepository);
-    await next();
-  } catch (error) {
-    return toAuthErrorResponse(c, error);
-  }
-});
+app.use(
+  '/api/state/*',
+  createStateApiAuthenticationMiddleware((request) =>
+    requireApiAuthSession(request, rallar.runtime.authSessionRepository)
+  ),
+);
 
 app.use('/api/state/*', createStateApiResilienceMiddleware());
 

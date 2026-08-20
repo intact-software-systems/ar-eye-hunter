@@ -7,7 +7,10 @@ import { RateLimiter } from '@shared/resilience/Resilience.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
 import { ApiHttpError } from '../api/http-error.ts';
-import { type ApiRequestOptions, executeHttpRequest } from '../api/http-request.ts';
+import {
+    type ApiMutationRequestOptions,
+    executeHttpRequest,
+} from '../api/http-request.ts';
 
 export type WebSocketTicketBackoffState = Readonly<
     | {
@@ -105,9 +108,8 @@ export function configureWebSocketTicketCircuitBreaker(
 }
 
 export async function createWebSocketTicket(
-    options?: ApiRequestOptions,
+    options: ApiMutationRequestOptions,
 ): Promise<WebSocketTicketResponse> {
-    const requestId = crypto.randomUUID();
     const now = Date.now();
     if (
         webSocketTicketBackoffState.status === 'cooldown' &&
@@ -126,11 +128,11 @@ export async function createWebSocketTicket(
     }
 
     try {
-        const session = options?.authSession === undefined ? readSession() : options.authSession;
+        const session = options.authSession === undefined ? readSession() : options.authSession;
         const limiterKey = session?.sessionId ?? 'anonymous';
         const ticket = await RateLimiter.tryToExecuteOrElse<WebSocketTicketResponse>(
             readWebSocketTicketLocalLimiter(limiterKey),
-            () => createWebSocketTicketThroughCircuitBreaker(requestId, options),
+            () => createWebSocketTicketThroughCircuitBreaker(options),
             rejectWebSocketTicketLocalRateLimit,
         );
         webSocketTicketBackoffState = { status: 'idle' };
@@ -192,15 +194,14 @@ function readRetryAfterMs(headers: Headers | undefined, nowMs: number): number {
 }
 
 async function executeWebSocketTicketAttempt(
-    requestId: string,
-    options?: ApiRequestOptions,
+    options: ApiMutationRequestOptions,
 ): Promise<WebSocketTicketAttempt> {
     try {
         return {
             kind: 'ok',
             ticket: await executeHttpRequest<Record<string, never>, WebSocketTicketResponse>(
                 readApiBaseUrl(),
-                toApiMutationRequestPath('/api/auth/ws-ticket', requestId),
+                toApiMutationRequestPath('/api/auth/ws-ticket', options.requestId),
                 'POST',
                 {},
                 options,
@@ -252,12 +253,11 @@ async function rejectWebSocketTicketLocalRateLimit(): Promise<WebSocketTicketRes
 }
 
 async function createWebSocketTicketThroughCircuitBreaker(
-    requestId: string,
-    options?: ApiRequestOptions,
+    options: ApiMutationRequestOptions,
 ): Promise<WebSocketTicketResponse> {
     const result = await CircuitBreaker.tryToExecute<WebSocketTicketAttempt>(
         webSocketTicketCircuitBreaker,
-        () => executeWebSocketTicketAttempt(requestId, options),
+        () => executeWebSocketTicketAttempt(options),
         isSuccessfulWebSocketTicketAttempt,
     );
     return result.fold(

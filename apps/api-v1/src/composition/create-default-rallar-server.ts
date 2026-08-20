@@ -166,7 +166,6 @@ export function createDefaultRallarServer(
     createTokenId: () => crypto.randomUUID(),
     createWsAuthRequestFacts: () => ({
       requestId: crypto.randomUUID(),
-      capturedAtEpochMs: Date.now(),
     }),
   });
 

@@ -18,6 +18,7 @@ import {
     toSystemDate,
 } from './repository-utils.ts';
 import { requeueObservedResourceInboxDeliveryFailure } from './resource-inbox-delivery-failure.ts';
+import { writeMaterializedResourceInboxEntry } from './write-materialized-resource-inbox-entry.ts';
 export {
     initResourceInboxExpiryEviction,
     RESOURCE_INBOX_EXPIRY_EVICTION_INTERVAL_MS,
@@ -350,6 +351,40 @@ export class ResourceInboxRepository {
     }
 
     async writeIfAbsentOrReplaceExpired(entry: ResourceEntry): Promise<ResourceEntry> {
+        const written = await this.tryWriteIfAbsentOrReplaceExpired(entry);
+        if (written) {
+            return written;
+        }
+
+        const existing = await this.findAnyByKey(entry.key);
+        if (existing) {
+            return existing;
+        }
+
+        throw new Error(
+            'Write-if-absent failed: conflicting row was not returned and no active row exists',
+        );
+    }
+
+    async writeMaterializedIfAbsentOrReplaceExpired(
+        placeholder: ResourceEntry,
+        materialize: () => Promise<ResourceEntry>,
+    ): Promise<ResourceEntry> {
+        return await writeMaterializedResourceInboxEntry(
+            this,
+            placeholder,
+            materialize,
+            (key) =>
+                new ResourceInboxInvariantCorruptionError(
+                    key,
+                    'Materialized resource inbox identity differs from its reservation',
+                ),
+        );
+    }
+
+    async tryWriteIfAbsentOrReplaceExpired(
+        entry: ResourceEntry,
+    ): Promise<ResourceEntry | null> {
         const systemDate = toSystemDate(entry);
 
         const rows = await this.sql<ResourceInboxRow[]>`
@@ -399,18 +434,7 @@ export class ResourceInboxRepository {
             returning *
         `;
 
-        if (rows.length === 1) {
-            return toDomain(rows[0]);
-        }
-
-        const existing = await this.findAnyByKey(entry.key);
-        if (existing) {
-            return existing;
-        }
-
-        throw new Error(
-            'Write-if-absent failed: conflicting row was not returned and no active row exists',
-        );
+        return rows.length === 1 ? toDomain(rows[0]) : null;
     }
 
     async findByKey(key: Key): Promise<ResourceEntry | null> {

@@ -26,4 +26,30 @@ describe('API mutation failure HTTP decoding', () => {
 
     expect(error.mutationFailure).toEqual(JSON.parse(bodyText));
   });
+
+  it('preserves Retry-After alongside the exact canonical rate-limit failure', () => {
+    const bodyText = JSON.stringify({
+      type: 'api-mutation-failure',
+      version: 'canonical.v1',
+      code: 'rate-limited',
+      status: 429,
+      message: 'Too many mutation requests',
+      issues: null,
+      denial: null,
+      retry: {
+        kind: 'rate-limited',
+        retryAfterMs: 12_500,
+        attempts: null,
+        lane: null,
+        queueAgeMs: null,
+        dueAgeMs: null,
+      },
+    });
+    const headers = new Headers({ 'Retry-After': '13' });
+
+    const error = new ApiHttpError('POST', '/api/mutations/widgets', 429, bodyText, headers);
+
+    expect(error.mutationFailure).toEqual(JSON.parse(bodyText));
+    expect(error.headers?.get('Retry-After')).toBe('13');
+  });
 });

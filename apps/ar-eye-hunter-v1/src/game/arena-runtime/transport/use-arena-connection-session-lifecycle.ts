@@ -1,5 +1,8 @@
 import { useCallback, useEffect } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
+import type { RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
 
 import {
     GAME_AI_LANE_ID,
@@ -8,15 +11,30 @@ import {
     type GameRealtimeMessage,
 } from '../../types.ts';
 import { ARENA_RALLAR_GAME_DATA_CHANNEL_LANES } from '../../rallar-game-match-adapter.ts';
-import type {
-    ArenaConnectionLifecycle,
-    ArenaConnectionLifecycleInput,
-} from '../lifecycle/use-arena-connection-lifecycle.ts';
 import { toErrorMessage } from '../arena-connection-helpers.ts';
+import type { ArenaConnectionState } from '../arena-connection-contracts.ts';
+import type { RemotePlayer } from '../../types.ts';
+
+interface ArenaConnectionSessionLifecycleInput {
+    readonly acceptMotionMessage: (senderId: string, message: GameRealtimeMessage) => void;
+    readonly acceptRealtimeMessage: (senderId: string, message: GameRealtimeMessage) => void;
+    readonly bumpNetworkGeneration: () => number;
+    readonly connectionState: ArenaConnectionState;
+    readonly currentNetworkSignal: () => AbortSignal;
+    readonly isCurrentNetworkGeneration: (generation: number) => boolean;
+    readonly roomIdRef: RefObject<string | undefined>;
+    readonly setConnectionState: Dispatch<SetStateAction<ArenaConnectionState>>;
+    readonly setDirectorStatus: Dispatch<SetStateAction<RallarDirectorStatus>>;
+    readonly setError: Dispatch<SetStateAction<string | undefined>>;
+    readonly setRemotePlayers: Dispatch<SetStateAction<ReadonlyMap<string, RemotePlayer>>>;
+    readonly setRoomId: Dispatch<SetStateAction<string | undefined>>;
+    readonly setRooms: Dispatch<SetStateAction<readonly RallarRoomSummary[]>>;
+    readonly setSession: Dispatch<SetStateAction<AuthSession | undefined>>;
+}
 
 export function useArenaConnectionSessionLifecycle(
-    input: ArenaConnectionLifecycleInput,
-): Pick<ArenaConnectionLifecycle, 'connect'> {
+    input: ArenaConnectionSessionLifecycleInput,
+): Readonly<{ connect: () => Promise<void> }> {
     const {
         acceptMotionMessage,
         acceptRealtimeMessage,

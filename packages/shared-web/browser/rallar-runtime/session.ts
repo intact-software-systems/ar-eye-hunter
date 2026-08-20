@@ -318,9 +318,11 @@ export function createRallarSessionController(
             }
             if (endOptions.revoke && session) {
                 try {
+                    const requestId = crypto.randomUUID();
                     await runRallarCommand(
                         (signal) =>
                             authApi.logoutFromApi({
+                                requestId,
                                 signal,
                                 authSession: session,
                             }),
@@ -392,8 +394,9 @@ export function createRallarSessionController(
             authOptions: RallarOperationOptions = {},
         ): Promise<LoginResponse> => {
             const operationOptions = resolveOperationOptions(authOptions);
+            const requestId = crypto.randomUUID();
             const response = await runRallarCommand(
-                (signal) => authApi.loginToApi(request, { signal }),
+                (signal) => authApi.loginToApi(request, { requestId, signal }),
                 operationOptions,
             );
             if (options.connectionRuntime.readMiddleware() || isMiddlewareReady()) {
@@ -416,9 +419,11 @@ export function createRallarSessionController(
             registerOptions: RallarRegisterOptions = {},
         ): Promise<RegisterResponse> => {
             const operationOptions = resolveOperationOptions(registerOptions);
+            const requestId = crypto.randomUUID();
             return await runRallarCommand(
                 (signal) =>
                     authApi.registerWithApi(request, {
+                        requestId,
                         signal,
                         authSession: hasOwn(operationOptions, 'adminSession')
                             ? operationOptions.adminSession

@@ -41,7 +41,6 @@ import type { ApiV1TopologyServices } from './create-api-v1-topology-services.ts
 
 export interface ApiV1WsAuthRequestFacts {
   readonly requestId: string;
-  readonly capturedAtEpochMs: number;
 }
 
 export interface ApiV1RouteAuthRequest {

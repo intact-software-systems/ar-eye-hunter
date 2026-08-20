@@ -48,16 +48,19 @@ interface RoutedSession {
 async function routesEveryPublicMutationThroughDurableCommands(): Promise<void> {
   const runtimeRepository = new FakeRuntimeStateRepository();
   const secret = 'all-auth-verbs-secret-0123456789abcdef';
+  const clock = { now: Date.now() };
   const auth = createAuthInboxTestRuntime({
     runtimeRepository,
     serviceId: 'auth-test-service',
     credentialSecret: secret,
+    nowEpochMs: () => clock.now,
   });
-  const now = Date.now();
-  await registerRoutedUser(auth, now);
-  const session = await issueRoutedSession(auth, now);
+  const now = clock.now;
+  const clientId = await registerRoutedUser(auth);
+  const session = await issueRoutedSession(auth, now, clientId);
   const wsTicket = await issueRoutedWebSocketTicket(auth, now, session);
   const agentTickets = await issueRoutedAgentTickets(auth, now, session);
+  clock.now = now + 30_001;
   await consumeExpiredRoutedTickets({ auth, now, session, wsTicket, agentTickets });
   await logoutRoutedSession({ auth, runtimeRepository, now, session });
   await expectNoPlaintextCredentials(auth, [
@@ -68,24 +71,13 @@ async function routesEveryPublicMutationThroughDurableCommands(): Promise<void> 
   ]);
 }
 
-async function registerRoutedUser(auth: AuthInboxTestRuntime, now: number): Promise<void> {
+async function registerRoutedUser(auth: AuthInboxTestRuntime): Promise<string> {
   const registered = await runAuthCommand({
     pending: auth.service.registerUser({
       requestId: 'register-request',
-      capturedAtEpochMs: now,
-      user: {
-        clientId: 'client-registered',
+      request: {
         username: 'registered-user',
-        normalizedUsername: 'registered-user',
-        displayName: null,
-        passwordHash: 'password-hash',
-        passwordSalt: 'password-salt',
-        passwordAlgorithm: 'pbkdf2-sha256',
-        passwordIterations: 120_000,
-        roles: ['member'],
-        status: 'active',
-        createdAtEpochMs: now,
-        updatedAtEpochMs: now,
+        password: 'password-1',
       },
     }),
     queue: auth.queue,
@@ -93,23 +85,26 @@ async function registerRoutedUser(auth: AuthInboxTestRuntime, now: number): Prom
     minimumEntries: 1,
   });
   expect(registered.right).toMatchObject({ username: 'registered-user' });
+  return registered.right!.clientId;
 }
 
-async function issueRoutedSession(auth: AuthInboxTestRuntime, now: number): Promise<RoutedSession> {
+async function issueRoutedSession(
+  auth: AuthInboxTestRuntime,
+  now: number,
+  clientId: string,
+): Promise<RoutedSession> {
   const login = await runAuthCommand({
     pending: auth.service.issueSession({
       requestId: 'session-request',
-      capturedAtEpochMs: now + 1,
-      clientId: 'client-registered',
+      clientId,
       username: 'registered-user',
       authority: {
         kind: 'registered-user',
-        clientId: 'client-registered',
+        clientId,
         normalizedUsername: 'registered-user',
         userRevision: 0,
       },
-      sessionId: 'session-registered',
-      expiresAtEpochMs: now + 60_000,
+      ttlMs: 60_000,
     }),
     queue: auth.queue,
     reader: auth.reader,
@@ -118,7 +113,7 @@ async function issueRoutedSession(auth: AuthInboxTestRuntime, now: number): Prom
   expect(login.right).toBeDefined();
   return {
     ...login.right!,
-    issuedAtEpochMs: now + 1,
+    issuedAtEpochMs: now,
   };
 }
 
@@ -130,9 +125,8 @@ async function issueRoutedWebSocketTicket(
   const wsTicket = await runAuthCommand({
     pending: auth.service.issueWebSocketTicket({
       requestId: 'ws-issue-request',
-      capturedAtEpochMs: now + 2,
       session,
-      expiresAtEpochMs: now + 30_000,
+      ttlMs: 30_000,
     }),
     queue: auth.queue,
     reader: auth.reader,
@@ -143,9 +137,8 @@ async function issueRoutedWebSocketTicket(
     (
       await auth.service.issueWebSocketTicket({
         requestId: 'ws-issue-request',
-        capturedAtEpochMs: now + 2,
         session,
-        expiresAtEpochMs: now + 30_000,
+        ttlMs: 30_000,
       })
     ).right,
   ).toEqual(wsTicket.right);
@@ -153,9 +146,8 @@ async function issueRoutedWebSocketTicket(
     (
       await auth.service.issueWebSocketTicket({
         requestId: 'ws-issue-request',
-        capturedAtEpochMs: now + 2,
         session,
-        expiresAtEpochMs: now + 30_001,
+        ttlMs: 30_001,
       })
     ).left?.status,
   ).toBe(409);
@@ -170,13 +162,11 @@ async function issueRoutedAgentTickets(
   const agentTickets = await runAuthCommand({
     pending: auth.service.issueAgentSessionTickets({
       requestId: 'agent-issue-request',
-      capturedAtEpochMs: now + 3,
       session,
-      sessionExpiresAtEpochMs: session.expiresAtEpochMs,
-      ticketExpiresAtEpochMs: now + 30_000,
+      ticketTtlMs: 30_000,
       agents: [
-        { agentId: 'agent-a', sessionId: 'agent-session-a' },
-        { agentId: 'agent-b', sessionId: 'agent-session-b' },
+        { agentId: 'agent-a' },
+        { agentId: 'agent-b' },
       ],
     }),
     queue: auth.queue,
@@ -186,13 +176,11 @@ async function issueRoutedAgentTickets(
   expect(agentTickets.right?.tickets).toHaveLength(2);
   const agentIssueInput = {
     requestId: 'agent-issue-request',
-    capturedAtEpochMs: now + 3,
     session,
-    sessionExpiresAtEpochMs: session.expiresAtEpochMs,
-    ticketExpiresAtEpochMs: now + 30_000,
+    ticketTtlMs: 30_000,
     agents: [
-      { agentId: 'agent-a', sessionId: 'agent-session-a' },
-      { agentId: 'agent-b', sessionId: 'agent-session-b' },
+      { agentId: 'agent-a' },
+      { agentId: 'agent-b' },
     ],
   } as const;
   expect((await auth.service.issueAgentSessionTickets(agentIssueInput)).right).toEqual(
@@ -202,7 +190,7 @@ async function issueRoutedAgentTickets(
     (
       await auth.service.issueAgentSessionTickets({
         ...agentIssueInput,
-        ticketExpiresAtEpochMs: now + 30_001,
+        ticketTtlMs: 30_001,
       })
     ).left?.status,
   ).toBe(409);
@@ -227,7 +215,6 @@ async function consumeExpiredRoutedTickets({
   const expiredWs = await runAuthCommand({
     pending: auth.service.consumeWebSocketTicket({
       requestId: 'ws-expired-consume',
-      capturedAtEpochMs: now + 30_001,
       expectedSessionId: session.sessionId,
       ticket: wsTicket,
     }),
@@ -239,7 +226,6 @@ async function consumeExpiredRoutedTickets({
   const expiredAgent = await runAuthCommand({
     pending: auth.service.consumeAgentSessionTicket({
       requestId: 'agent-expired-consume',
-      capturedAtEpochMs: now + 30_001,
       ticket: agentTickets[0],
     }),
     queue: auth.queue,
@@ -265,7 +251,6 @@ async function logoutRoutedSession({
   const logout = await runAuthCommand({
     pending: auth.service.logoutSession({
       requestId: 'logout-request',
-      capturedAtEpochMs: now + 4,
       session,
     }),
     queue: auth.queue,
@@ -325,7 +310,6 @@ it('rechecks the parent session before issuing agent credentials', async () => {
   const issued = await runAuthCommand({
     pending: service.issueAgentSessionTickets({
       requestId: 'agent-without-authority',
-      capturedAtEpochMs: now,
       session: {
         clientId: 'absent-client',
         username: 'absent-user',
@@ -334,9 +318,8 @@ it('rechecks the parent session before issuing agent credentials', async () => {
         issuedAtEpochMs: now - 1,
         expiresAtEpochMs: now + 60_000,
       },
-      sessionExpiresAtEpochMs: now + 60_000,
-      ticketExpiresAtEpochMs: now + 30_000,
-      agents: [{ agentId: 'agent-a', sessionId: 'agent-session-a' }],
+      ticketTtlMs: 30_000,
+      agents: [{ agentId: 'agent-a' }],
     }),
     queue,
     reader,

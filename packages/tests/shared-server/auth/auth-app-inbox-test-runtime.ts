@@ -17,6 +17,8 @@ auth-mutation-service.ts';
 // prettier-ignore
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/\
 auth-credential-issuer.ts';
+import type { AuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/\
+auth-credential-issuer.ts';
 // prettier-ignore
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/\
 app-auth-inbox-service.ts';
@@ -37,7 +39,7 @@ export interface AuthInboxTestHarness {
 }
 
 export interface AuthInboxTestRuntime extends AuthInboxTestHarness {
-  readonly credentialIssuer: ReturnType<typeof createHmacAuthCredentialIssuer>;
+  readonly credentialIssuer: AuthCredentialIssuer;
   readonly database: AppInboxTestDatabase;
 }
 
@@ -46,6 +48,8 @@ interface CreateAuthInboxTestRuntimeInput {
   readonly serviceId: string;
   readonly credentialSecret: string;
   readonly databaseOptions?: AppInboxTestDatabaseOptions;
+  readonly credentialIssuer?: AuthCredentialIssuer;
+  readonly nowEpochMs?: () => number;
 }
 
 interface RunAuthInboxCommandInput<Result, P extends Promise<Either<AppInboxFailure, Result>>> {
@@ -56,6 +60,13 @@ interface RunAuthInboxCommandInput<Result, P extends Promise<Either<AppInboxFail
 }
 
 export class TestResourceInbox extends InMemoryQueueBox {
+  private readonly materializations = new Map<string, Promise<ResourceEntry>>();
+  private nextMaterializationGate: Promise<void> | undefined;
+
+  delayNextMaterializationUntil(gate: Promise<void>): void {
+    this.nextMaterializationGate = gate;
+  }
+
   async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
     const entry = await this.getItem(key);
     return entry !== undefined && statuses.includes(entry.status);
@@ -71,6 +82,37 @@ export class TestResourceInbox extends InMemoryQueueBox {
         entry.key.topicId === topicId &&
         entry.key.resourceId === resourceId,
     );
+  }
+
+  async writeMaterializedIfAbsentOrReplaceExpired(
+    placeholder: ResourceEntry,
+    materialize: () => Promise<ResourceEntry>,
+  ): Promise<ResourceEntry> {
+    const key = toKeyAsString(placeholder.key);
+    const active = this.materializations.get(key);
+    if (active) return await active;
+
+    const pending = this.materializeEntry(placeholder, materialize);
+    this.materializations.set(key, pending);
+    try {
+      return await pending;
+    } finally {
+      this.materializations.delete(key);
+    }
+  }
+
+  private async materializeEntry(
+    placeholder: ResourceEntry,
+    materialize: () => Promise<ResourceEntry>,
+  ): Promise<ResourceEntry> {
+    const existing = await this.getItem(placeholder.key);
+    if (existing) return existing;
+    const gate = this.nextMaterializationGate;
+    this.nextMaterializationGate = undefined;
+    await gate;
+    const materialized = await materialize();
+    const entry = { ...placeholder, resource: materialized.resource };
+    return await this.enqueueIfAbsent(entry);
   }
 }
 
@@ -110,11 +152,14 @@ export function createAuthInboxTestRuntime({
   serviceId,
   credentialSecret,
   databaseOptions,
+  credentialIssuer: credentialIssuerInput,
+  nowEpochMs,
 }: CreateAuthInboxTestRuntimeInput): AuthInboxTestRuntime {
   const queue = new TestResourceInbox();
   const results = new TestResourceInboxResults();
   const reader = new InboxQueueReader(queue);
-  const credentialIssuer = createHmacAuthCredentialIssuer(credentialSecret);
+  const credentialIssuer = credentialIssuerInput ??
+    createHmacAuthCredentialIssuer(credentialSecret);
   const database = createAppInboxTestDatabase(queue, results, {
     ...databaseOptions,
     runtimeRepository,
@@ -130,6 +175,7 @@ export function createAuthInboxTestRuntime({
     },
     {
       serviceId: serviceId,
+      authFactNowEpochMs: nowEpochMs,
     },
   );
   return { queue, results, reader, service, credentialIssuer, database };

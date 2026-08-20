@@ -205,6 +205,7 @@ export async function refreshStateHeartbeat(
   const expiresAtEpochMs =
     heartbeatAtEpochMs + (options.ttlMs ?? DEFAULT_STATE_HEARTBEAT_TTL_MSECS);
   const clientHeartbeatRequestId = toApiMutationWorkflowRequestId();
+  const clientPresenceRepairRequestId = toApiMutationWorkflowRequestId();
   const flow = CommandsOrchestrator.withPolicies<StateHeartbeatKey, StateHeartbeatWorkflowValue>(
     options.policies ?? {},
   );
@@ -215,9 +216,9 @@ export async function refreshStateHeartbeat(
       flow.commandStep(
         'client',
         (signal) =>
-          heartbeatStateClientSessionWithPresenceRepair(
+          heartbeatStateClientSessionWithPresenceRepair({
             clientData,
-            {
+            request: {
               generationId: options.generationId,
               actorPrincipalId: clientData.clientId,
               actorSessionId: clientData.sessionId,
@@ -227,11 +228,12 @@ export async function refreshStateHeartbeat(
               requestId: clientHeartbeatRequestId,
             },
             scope,
-            {
+            repairRequestId: clientPresenceRepairRequestId,
+            options: {
               signal,
               authSession: options.authSession,
             },
-          ),
+          }),
         {
           shouldRetry: (error, attempt) =>
             !isStateWorkflowNotFoundError(error) &&
@@ -305,12 +307,18 @@ export async function refreshStateHeartbeat(
   };
 }
 
+interface HeartbeatStateClientSessionWithPresenceRepairInput {
+  readonly clientData: ClientInfo;
+  readonly request: Parameters<typeof heartbeatStateClientSession>[3];
+  readonly scope: StateScope;
+  readonly repairRequestId: string;
+  readonly options: Parameters<typeof heartbeatStateClientSession>[5];
+}
+
 async function heartbeatStateClientSessionWithPresenceRepair(
-  clientData: ClientInfo,
-  request: Parameters<typeof heartbeatStateClientSession>[3],
-  scope: StateScope,
-  options: Parameters<typeof heartbeatStateClientSession>[5],
+  input: HeartbeatStateClientSessionWithPresenceRepairInput,
 ): Promise<ClientStateSnapshot> {
+  const { clientData, options, repairRequestId, request, scope } = input;
   try {
     return await heartbeatStateClientSession(
       clientData.clientId,
@@ -340,7 +348,7 @@ async function heartbeatStateClientSessionWithPresenceRepair(
       connectedAtEpochMs: request.lastHeartbeatAtEpochMs,
       lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs,
       expiresAtEpochMs: request.expiresAtEpochMs,
-      requestId: toApiMutationWorkflowRequestId(),
+      requestId: repairRequestId,
     },
     scope,
     options,

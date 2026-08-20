@@ -12,6 +12,44 @@ export interface ApiAuthCredentialProof {
   readonly clientId: string;
 }
 
+export type RequestAuthFailureKind = 'authentication' | 'authorization';
+
+export class RequestAuthFailure extends Error {
+  readonly kind: RequestAuthFailureKind;
+  readonly code: string;
+  readonly status: 401 | 403;
+  readonly details: Readonly<Record<string, boolean | null | number | string>> | null;
+
+  constructor(input: Readonly<{
+    kind: RequestAuthFailureKind;
+    code: string;
+    status: 401 | 403;
+    message: string;
+    details?: Readonly<Record<string, boolean | null | number | string>> | null;
+  }>) {
+    super(input.message);
+    this.kind = input.kind;
+    this.code = input.code;
+    this.status = input.status;
+    this.details = input.details ?? null;
+    this.name = 'RequestAuthFailure';
+  }
+}
+
+export function authenticationRequired(
+  message: string,
+  code = 'authentication-required',
+): RequestAuthFailure {
+  return new RequestAuthFailure({ kind: 'authentication', code, status: 401, message });
+}
+
+export function authorizationDenied(
+  message: string,
+  code = 'authorization-denied',
+): RequestAuthFailure {
+  return new RequestAuthFailure({ kind: 'authorization', code, status: 403, message });
+}
+
 export function readApiAuthCredentialProof(req: {
   header(name: string): string | undefined;
 }): ApiAuthCredentialProof | undefined {
@@ -54,7 +92,7 @@ export async function requireWsAuthSession(
     ticket?: string;
   },
   appAuthInbox: Pick<AppAuthInboxService, 'consumeWebSocketTicket'>,
-  facts: Readonly<{ requestId: string; capturedAtEpochMs: number }>,
+  facts: Readonly<{ requestId: string }>,
 ): Promise<IssuedAuthSession> {
   if (!input.ticket) {
     throw unauthorized('Missing websocket auth ticket');
@@ -88,8 +126,9 @@ export function toAuthErrorResponse(
   error: unknown,
 ): Response {
   const message = error instanceof Error ? error.message : String(error);
-  const status = readExplicitAuthErrorStatus(typeof error === 'object' ? error : null) ??
-    (message.startsWith('Unauthorized:') ? 401 : 400);
+  const status = error instanceof RequestAuthFailure
+    ? error.status
+    : readExplicitAuthErrorStatus(typeof error === 'object' ? error : null) ?? 400;
   return c.json({ error: message }, status);
 }
 
@@ -110,6 +149,6 @@ function readBearerToken(authorization?: string): string | undefined {
   return token.length > 0 ? token : undefined;
 }
 
-function unauthorized(message: string): Error {
-  return new Error(`Unauthorized: ${message}`);
+function unauthorized(message: string): RequestAuthFailure {
+  return authenticationRequired(`Unauthorized: ${message}`);
 }

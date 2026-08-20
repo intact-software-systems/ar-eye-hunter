@@ -644,6 +644,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'updateStateGroupMetadata',
             ],
             types: [
+                'ApiMutationRequestOptions',
                 'ApiRequestOptions',
                 'RefreshStateHeartbeatOptions',
                 'RefreshStateHeartbeatResult',

@@ -1,13 +1,23 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import type { ApiMutationRequestOptions } from '@shared-web/browser/api/http-request.ts';
 import {
     configureWebSocketTicketCircuitBreaker,
     configureWebSocketTicketLocalRateLimit,
-    createWebSocketTicket,
+    createWebSocketTicket as requestWebSocketTicket,
     readWebSocketTicketBackoffState,
     resetWebSocketTicketBackoff,
 } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
+
+function createWebSocketTicket(
+    options: Omit<ApiMutationRequestOptions, 'requestId'>,
+) {
+    return requestWebSocketTicket({
+        requestId: 'websocket-ticket-request-id',
+        ...options,
+    });
+}
 
 const SERVER_UNAVAILABLE_ERROR = new RegExp(
     'API POST /api/auth/ws-ticket/requests/[A-Za-z0-9_-]+ ' +
@@ -90,6 +100,39 @@ describe('createWebSocketTicket backoff', () => {
             status: 'idle',
         });
         expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('reuses a caller-owned request ID when a ws ticket response is lost', async () => {
+        const fetchMock = vi.fn()
+            .mockRejectedValueOnce(new TypeError('response lost'))
+            .mockResolvedValueOnce(
+                new Response(
+                    JSON.stringify({
+                        ticket: 'ticket-1',
+                        sessionId: 'session-1',
+                        expiresAtEpochMs: 10_000,
+                    }),
+                    {
+                        status: 200,
+                        headers: { 'content-type': 'application/json' },
+                    },
+                ),
+            );
+        vi.stubGlobal('fetch', fetchMock);
+        const options = {
+            requestId: 'websocket-lost-response-id',
+            authSession: null,
+        } as const;
+
+        await expect(requestWebSocketTicket(options)).rejects.toThrow('response lost');
+        await expect(requestWebSocketTicket(options)).resolves.toMatchObject({
+            ticket: 'ticket-1',
+        });
+
+        expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+            'https://api.test/api/auth/ws-ticket/requests/websocket-lost-response-id',
+            'https://api.test/api/auth/ws-ticket/requests/websocket-lost-response-id',
+        ]);
     });
 
     it('locally suppresses ticket storms before hitting the API', async () => {

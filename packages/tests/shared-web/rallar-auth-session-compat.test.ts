@@ -353,6 +353,27 @@ describe('Rallar auth session compatibility', () => {
         expect(loginOptions?.signal).toBeInstanceOf(AbortSignal);
     });
 
+    it('reuses one request ID when login retries after a lost response', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        mocks.loginToApi
+            .mockRejectedValueOnce(Object.assign(new Error('response lost'), { status: 503 }))
+            .mockResolvedValueOnce(mocks.ctx.session);
+
+        await createRallarFacade().auth.login(
+            { username: 'principal-1', password: 'password-1' },
+            { maxAttempts: 2 },
+        );
+
+        const requestIds = mocks.loginToApi.mock.calls.map((call) =>
+            (call[1] as { requestId?: string } | undefined)?.requestId
+        );
+        expect(requestIds).toHaveLength(2);
+        expect(requestIds[0]).toBeTruthy();
+        expect(new Set(requestIds).size).toBe(1);
+    });
+
     it('emits the current auth state to auth change subscribers', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
@@ -559,6 +580,32 @@ describe('Rallar auth session compatibility', () => {
         expect(registerOptions?.authSession).toBe(adminSession);
     });
 
+    it('reuses one request ID when registration retries after a lost response', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        mocks.registerWithApi
+            .mockRejectedValueOnce(Object.assign(new Error('response lost'), { status: 503 }))
+            .mockResolvedValueOnce({
+                clientId: 'client-new',
+                username: 'new-user',
+                displayName: null,
+                registeredAtEpochMs: 1_000,
+            });
+
+        await createRallarFacade().auth.register(
+            { username: 'new-user', password: 'password-1' },
+            { maxAttempts: 2 },
+        );
+
+        const requestIds = mocks.registerWithApi.mock.calls.map((call) =>
+            (call[1] as { requestId?: string } | undefined)?.requestId
+        );
+        expect(requestIds).toHaveLength(2);
+        expect(requestIds[0]).toBeTruthy();
+        expect(new Set(requestIds).size).toBe(1);
+    });
+
     it('can register and then log in with the new user', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
@@ -594,6 +641,24 @@ describe('Rallar auth session compatibility', () => {
             | undefined;
         expect(logoutOptions?.signal).toBeInstanceOf(AbortSignal);
         expect(mocks.clearSession).toHaveBeenCalledOnce();
+    });
+
+    it('reuses one request ID when logout retries after a lost response', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        mocks.logoutFromApi
+            .mockRejectedValueOnce(Object.assign(new Error('response lost'), { status: 503 }))
+            .mockResolvedValueOnce({ loggedOut: true });
+
+        await createRallarFacade().auth.logout({ maxAttempts: 2 });
+
+        const requestIds = mocks.logoutFromApi.mock.calls.map((call) =>
+            (call[0] as { requestId?: string } | undefined)?.requestId
+        );
+        expect(requestIds).toHaveLength(2);
+        expect(requestIds[0]).toBeTruthy();
+        expect(new Set(requestIds).size).toBe(1);
     });
 
     it('clears local auth before revoking manual logout and uses the captured session', async () => {

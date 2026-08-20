@@ -6,6 +6,7 @@ import type {
   ApiMutationFailureRetry,
 } from '@shared/api/mutation/api-mutation.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
+import { RequestAuthFailure } from '@shared-server/http/request-auth-service.ts';
 
 interface ApiMutationFailureResponseWriter {
   json(value: ApiMutationFailure, status?: number): Response;
@@ -102,6 +103,28 @@ export function toApiMutationRateLimitResponse(
       dueAgeMs: null,
     },
   });
+  const result = response.json(failure, failure.status);
+  result.headers.set('Retry-After', String(Math.ceil(retryAfterMs / 1_000)));
+  return result;
+}
+
+export function toApiMutationUnavailableResponse(
+  response: ApiMutationFailureResponseWriter,
+  message: string,
+): Response {
+  const failure = createApiMutationFailure({
+    code: 'api-mutation-unavailable',
+    status: 503,
+    message,
+    retry: {
+      kind: 'unavailable',
+      retryAfterMs: null,
+      attempts: null,
+      lane: null,
+      queueAgeMs: null,
+      dueAgeMs: null,
+    },
+  });
   return response.json(failure, failure.status);
 }
 
@@ -110,15 +133,21 @@ function readApiMutationFailure(error: Error): ApiMutationFailure {
     return error.failure;
   }
 
-  const message = error instanceof Error ? error.message : String(error);
+  const message = error.message;
+  if (error instanceof RequestAuthFailure) {
+    return createApiMutationFailure({
+      code: error.code,
+      status: error.status,
+      message,
+      denial: {
+        code: error.code,
+        message,
+        details: error.details,
+      },
+    });
+  }
   const status = readStatus(error);
   const code = readCode(error);
-  if (message.startsWith('Unauthorized:')) {
-    return denialFailure('authentication-required', 401, message);
-  }
-  if (message.startsWith('Forbidden:')) {
-    return denialFailure(code ?? 'authorization-denied', 403, message);
-  }
   if (error instanceof SyntaxError) {
     return validationFailure(
       'api-mutation-request-malformed',
@@ -166,15 +195,6 @@ function validationFailure(code: string, message: string): ApiMutationFailure {
     status: 400,
     message,
     issues: [{ code, path: null, message, details: null }],
-  });
-}
-
-function denialFailure(code: string, status: number, message: string): ApiMutationFailure {
-  return createApiMutationFailure({
-    code,
-    status,
-    message,
-    denial: { code, message, details: null },
   });
 }
 

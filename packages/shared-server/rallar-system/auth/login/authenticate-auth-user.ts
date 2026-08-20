@@ -37,7 +37,7 @@ export async function authenticateAuthUser(
   if (registeredUser) {
     if (
       registeredUser.value.status !== 'active' ||
-      !(await verifyPassword(loginRequest.password, registeredUser.value))
+      !(await verifyAuthUserPassword(loginRequest.password, registeredUser.value))
     ) {
       return undefined;
     }
@@ -79,7 +79,10 @@ function authenticateStaticClient(
   return undefined;
 }
 
-async function verifyPassword(password: string, user: AuthUser): Promise<boolean> {
+export async function verifyAuthUserPassword(
+  password: string,
+  user: AuthUser,
+): Promise<boolean> {
   if (user.passwordAlgorithm !== PASSWORD_ALGORITHM) {
     return false;
   }

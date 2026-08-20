@@ -1,11 +1,14 @@
 import { type Context, Hono } from 'jsr:@hono/hono@4.11.9';
 
 import type { LoginRequest, RegisterRequest, RegisterResponse } from '@shared/api/api-config.ts';
-import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import { readRateLimiter, readRequestClientKey } from '@shared-server/http/rate-limit-service.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
 
 import * as apiLoginService from '../../services/api-login-service.ts';
+import {
+  authenticationRequired,
+  authorizationDenied,
+} from '../../services/request-auth-service.ts';
 import type { ConfigRouteDependencies } from '../config-route.ts';
 import {
   toApiMutationFailureResponse,
@@ -98,19 +101,17 @@ async function issueLoginSession(
   if (!loginResponse) {
     return toApiMutationFailureResponse(
       { json: (value, status) => toJsonResponse(value, status) },
-      new Error('Unauthorized: Invalid username or password'),
+      authenticationRequired('Unauthorized: Invalid username or password'),
     );
   }
 
-  const issuedAtEpochMs = dependencies.now();
   return toJsonResponse(requireAuthMutationResult(
     await dependencies.appAuthInbox.issueSession({
       requestId,
-      capturedAtEpochMs: issuedAtEpochMs,
       clientId: loginResponse.clientId,
       username: loginResponse.username,
       authority: loginResponse.authority,
-      expiresAtEpochMs: issuedAtEpochMs + AUTH_SESSION_TTL_MS,
+      ttlMs: AUTH_SESSION_TTL_MS,
     }),
   ));
 }
@@ -160,43 +161,16 @@ async function registerUserThroughAppInbox(
   input: RegisterUserThroughAppInboxInput,
 ): Promise<Response> {
   await requireRegistrationAdminIfNeeded(input.context.req, input.dependencies);
-  const capturedAtEpochMs = input.dependencies.now();
-  const normalizedUsername = readNormalizedRegistrationUsername(input.request);
-  const registerResponse = await apiLoginService.register({
-    request: input.request,
-    staticClients: input.dependencies.staticClients,
-    capturedAtEpochMs,
-    clientId: await toDeterministicAuthUserId(input.requestId, normalizedUsername),
-    passwordSaltSeed: `auth-registration:${input.requestId}:${normalizedUsername}`,
-  });
   return toJsonResponse<RegisterResponse>(
     requireAuthMutationResult(
       await input.dependencies.appAuthInbox.registerUser({
         requestId: input.requestId,
-        capturedAtEpochMs: registerResponse.createdAtEpochMs,
-        user: registerResponse,
+        request: input.request,
+        staticClients: input.dependencies.staticClients,
       }),
     ),
     201,
   );
-}
-
-function readNormalizedRegistrationUsername(request: RegisterRequest): string {
-  const username = typeof request.username === 'string' ? request.username.trim() : '';
-  if (username.length === 0) {
-    throw new TypeError('Username is required');
-  }
-  return username.toLowerCase();
-}
-
-async function toDeterministicAuthUserId(
-  requestId: string,
-  normalizedUsername: string,
-): Promise<string> {
-  const digest = await hashAuthSecret(
-    JSON.stringify(['auth-registration-user', requestId, normalizedUsername]),
-  );
-  return `user-${digest.slice(0, 24)}`;
 }
 
 async function requireRegistrationAdminIfNeeded(
@@ -206,7 +180,7 @@ async function requireRegistrationAdminIfNeeded(
   if (dependencies.registrationMode !== 'admin') return;
   const authSession = await dependencies.requireApiAuthSession(req);
   if (!dependencies.adminClientIds.has(authSession.clientId)) {
-    throw new Error('Forbidden: admin auth session required to register users');
+    throw authorizationDenied('Forbidden: admin auth session required to register users');
   }
 }
 

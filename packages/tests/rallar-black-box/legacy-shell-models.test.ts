@@ -23,7 +23,7 @@ const ticketMocks = vi.hoisted(() => ({
     consumeAgentSessionTicketAt: vi.fn(),
 }));
 
-vi.mock('@shared-web/browser/api-integration.ts', () => ({
+vi.mock('@shared-web/browser/auth/agent-session-ticket-http-api.ts', () => ({
     consumeAgentSessionTicketAt: ticketMocks.consumeAgentSessionTicketAt,
 }));
 
@@ -318,6 +318,7 @@ describe('legacy agent-session ticket service', () => {
         expect(ticketMocks.consumeAgentSessionTicketAt).toHaveBeenCalledWith(
             'https://api-a.example.test',
             { ticket: 'ticket-a' },
+            { requestId: expect.any(String) },
         );
 
         resolveFirst(session);
@@ -332,10 +333,11 @@ describe('legacy agent-session ticket service', () => {
             2,
             'https://api-c.example.test',
             { ticket: 'ticket-a' },
+            { requestId: expect.any(String) },
         );
     });
 
-    it('clears a rejected consume from the in-flight cache', async () => {
+    it('reuses the request ID after a rejected consume response', async () => {
         const session: AuthSession = {
             clientId: 'retry-client',
             accessToken: 'retry-access-token',
@@ -357,5 +359,10 @@ describe('legacy agent-session ticket service', () => {
         )).resolves.toEqual(session);
 
         expect(ticketMocks.consumeAgentSessionTicketAt).toHaveBeenCalledTimes(2);
+        const requestIds = ticketMocks.consumeAgentSessionTicketAt.mock.calls.map(
+            (call) => call[2].requestId,
+        );
+        expect(requestIds[0]).toBeTruthy();
+        expect(new Set(requestIds).size).toBe(1);
     });
 });

@@ -12,7 +12,8 @@ let pendingAgentSessionTicketConsume:
     | Readonly<{
         ticket: string;
         apiBaseUrl: string;
-        promise: Promise<AuthSession>;
+        requestId: string;
+        promise?: Promise<AuthSession>;
     }>
     | undefined;
 
@@ -44,24 +45,37 @@ export function consumeBootstrapAgentSessionTicket(
     apiBaseUrl: string,
 ): Promise<AuthSession> {
     const normalizedApiBaseUrl = apiBaseUrl.trim().replace(/\/+$/, '');
-    if (
-        pendingAgentSessionTicketConsume?.ticket === ticket &&
-        pendingAgentSessionTicketConsume.apiBaseUrl === normalizedApiBaseUrl
-    ) {
-        return pendingAgentSessionTicketConsume.promise;
+    const current = pendingAgentSessionTicketConsume;
+    const isSameAttempt = current?.ticket === ticket &&
+        current.apiBaseUrl === normalizedApiBaseUrl;
+    if (isSameAttempt && current.promise) {
+        return current.promise;
     }
 
+    const requestId = isSameAttempt ? current.requestId : crypto.randomUUID();
     const promise = consumeAgentSessionTicketAt(
         normalizedApiBaseUrl,
         { ticket },
-    ).finally(() => {
+        { requestId },
+    ).then((session) => {
         if (pendingAgentSessionTicketConsume?.promise === promise) {
             pendingAgentSessionTicketConsume = undefined;
         }
+        return session;
+    }).catch((error) => {
+        if (pendingAgentSessionTicketConsume?.promise === promise) {
+            pendingAgentSessionTicketConsume = {
+                ticket,
+                apiBaseUrl: normalizedApiBaseUrl,
+                requestId,
+            };
+        }
+        throw error;
     });
     pendingAgentSessionTicketConsume = {
         ticket,
         apiBaseUrl: normalizedApiBaseUrl,
+        requestId,
         promise,
     };
     return promise;

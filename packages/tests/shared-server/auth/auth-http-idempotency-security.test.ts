@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
@@ -6,6 +6,9 @@ import {
 } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import {
+  createHmacAuthCredentialIssuer,
+} from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {
@@ -27,7 +30,6 @@ describe('auth HTTP AppInbox idempotency security', () => {
     await runAuthCommand({
       pending: runtime.auth.service.logoutSession({
         requestId: SHARED_REQUEST_ID,
-        capturedAtEpochMs: session.issuedAtEpochMs + 1,
         session,
       }),
       queue: runtime.auth.queue,
@@ -67,11 +69,10 @@ describe('auth HTTP AppInbox idempotency security', () => {
     })).resolves.toBeNull();
   });
 
-  it('converges equal login intent on one winner despite capture-time drift', async () => {
+  it('converges equal login intent on one winner', async () => {
     const runtime = createRuntime();
     const first = runtime.auth.service.issueSession({
       requestId: 'ConcurrentLoginRequest_0123',
-      capturedAtEpochMs: 1_000,
       clientId: 'static-client',
       username: 'Alice',
       authority: {
@@ -79,11 +80,10 @@ describe('auth HTTP AppInbox idempotency security', () => {
         clientId: 'static-client',
         normalizedUsername: 'alice',
       },
-      expiresAtEpochMs: 61_000,
+      ttlMs: 60_000,
     });
     const second = runtime.auth.service.issueSession({
       requestId: 'ConcurrentLoginRequest_0123',
-      capturedAtEpochMs: 1_500,
       clientId: 'static-client',
       username: 'Alice',
       authority: {
@@ -91,7 +91,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         clientId: 'static-client',
         normalizedUsername: 'alice',
       },
-      expiresAtEpochMs: 61_500,
+      ttlMs: 60_000,
     });
 
     await waitForAuthInboxEntry(runtime.auth.queue);
@@ -107,16 +107,100 @@ describe('auth HTTP AppInbox idempotency security', () => {
     expect(runtime.auth.results.allEntries()).toHaveLength(1);
   });
 
+  it('samples login time and creates credential facts only for the atomic winner', async () => {
+    const issuer = createHmacAuthCredentialIssuer(
+      'auth-winner-fact-secret-0123456789abcdef',
+    );
+    const issueAccessToken = vi.spyOn(issuer, 'issueAccessToken');
+    const nowEpochMs = vi.fn(() => 5_000);
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const auth = createAuthInboxTestRuntime({
+      runtimeRepository,
+      serviceId: 'auth-winner-fact-service',
+      credentialSecret: 'unused-auth-winner-fact-secret-0123456789abcdef',
+      credentialIssuer: issuer,
+      nowEpochMs,
+    });
+    const input = {
+      requestId: 'WinnerOwnedLoginRequest_01',
+      clientId: 'static-client',
+      username: 'Alice',
+      authority: {
+        kind: 'static-client' as const,
+        clientId: 'static-client',
+        normalizedUsername: 'alice',
+      },
+      ttlMs: 60_000,
+    };
+
+    const first = auth.service.issueSession(input);
+    const second = auth.service.issueSession(input);
+    await waitForAuthInboxEntry(auth.queue);
+
+    expect(nowEpochMs).toHaveBeenCalledOnce();
+    expect(issueAccessToken).toHaveBeenCalledOnce();
+
+    await auth.reader.dequeueInbox(
+      InboxQueueReader.INBOX_DEQUEUE_TYPES,
+      createAuthInboxTestResilience(),
+    );
+    await Promise.all([first, second]);
+
+    expect(nowEpochMs).toHaveBeenCalledOnce();
+    expect(issueAccessToken).toHaveBeenCalledTimes(4);
+  });
+
+  it('starts login TTL after winner execution rather than reservation queue delay', async () => {
+    let currentTime = 1_000;
+    const nowEpochMs = vi.fn(() => currentTime);
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const auth = createAuthInboxTestRuntime({
+      runtimeRepository,
+      serviceId: 'auth-winner-ttl-service',
+      credentialSecret: 'auth-winner-ttl-secret-0123456789abcdef',
+      nowEpochMs,
+    });
+    let releaseMaterialization!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseMaterialization = resolve;
+    });
+    auth.queue.delayNextMaterializationUntil(gate);
+
+    const pending = auth.service.issueSession({
+      requestId: 'WinnerTtlLoginRequest_0123',
+      clientId: 'static-client',
+      username: 'Alice',
+      authority: {
+        kind: 'static-client',
+        clientId: 'static-client',
+        normalizedUsername: 'alice',
+      },
+      ttlMs: 60_000,
+    });
+    await Promise.resolve();
+    expect(await readEntries(auth.queue)).toHaveLength(0);
+    expect(nowEpochMs).not.toHaveBeenCalled();
+
+    currentTime = 9_000;
+    releaseMaterialization();
+    const result = await runAuthCommand({
+      pending,
+      queue: auth.queue,
+      reader: auth.reader,
+    });
+
+    expect(result.right?.expiresAtEpochMs).toBe(69_000);
+    expect(nowEpochMs).toHaveBeenCalledOnce();
+  });
+
   it('replays a consumed agent ticket only with its original credential proof', async () => {
     const runtime = createRuntime();
     const authority = await putSession(runtime, 'operator-client', 'operator-session');
     const issued = await runAuthCommand({
       pending: runtime.auth.service.issueAgentSessionTickets({
         requestId: 'AgentTicketIssueRequest_0123',
-        capturedAtEpochMs: authority.issuedAtEpochMs + 1,
         session: authority,
-        sessionExpiresAtEpochMs: authority.expiresAtEpochMs,
-        ticketExpiresAtEpochMs: authority.issuedAtEpochMs + 30_000,
+        ticketTtlMs: 30_000,
         agents: [{ agentId: 'agent-one' }],
       }),
       queue: runtime.auth.queue,
@@ -128,7 +212,6 @@ describe('auth HTTP AppInbox idempotency security', () => {
     }
     const consumeInput = {
       requestId: 'AgentTicketConsumeRequest_01',
-      capturedAtEpochMs: authority.issuedAtEpochMs + 2,
       ticket,
     };
     const consumed = await runAuthCommand({
@@ -138,10 +221,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
       minimumEntries: 2,
     });
 
-    const replayed = await runtime.auth.service.consumeAgentSessionTicket({
-      ...consumeInput,
-      capturedAtEpochMs: consumeInput.capturedAtEpochMs + 1_000,
-    });
+    const replayed = await runtime.auth.service.consumeAgentSessionTicket(consumeInput);
 
     expect(replayed.right).toEqual(consumed.right);
     expect(await readEntries(runtime.auth.queue)).toHaveLength(2);
@@ -189,7 +269,6 @@ async function logout(
   const result = await runAuthCommand({
     pending: auth.service.logoutSession({
       requestId: SHARED_REQUEST_ID,
-      capturedAtEpochMs: session.issuedAtEpochMs + 1,
       session,
     }),
     queue: auth.queue,

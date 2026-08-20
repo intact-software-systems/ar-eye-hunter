@@ -64,6 +64,7 @@ Deno.test(
             waitJitterRatio: 0,
             nowEpochMs: () => nowEpochMs,
           },
+          authFactNowEpochMs: () => nowEpochMs,
         },
       );
       const accessToken = await credentialIssuer.issueAccessToken('logout-session');
@@ -88,7 +89,6 @@ Deno.test(
 
       const pending = appAuth.logoutSession({
         requestId: 'logout-outbox-collision',
-        capturedAtEpochMs: nowEpochMs + 1,
         session,
       });
       await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
@@ -155,6 +155,7 @@ Deno.test(
             waitJitterRatio: 0,
             nowEpochMs: () => nowEpochMs,
           },
+          authFactNowEpochMs: () => nowEpochMs,
         },
       );
       await sql`
@@ -179,20 +180,9 @@ Deno.test(
 
       const pending = appAuth.registerUser({
         requestId: 'auth-finalization-fence',
-        capturedAtEpochMs: nowEpochMs,
-        user: {
-          clientId: 'fence-client',
+        request: {
           username: 'fence-user',
-          normalizedUsername: 'fence-user',
-          displayName: null,
-          passwordHash: 'password-hash',
-          passwordSalt: 'password-salt',
-          passwordAlgorithm: 'pbkdf2-sha256',
-          passwordIterations: 120_000,
-          roles: ['member'],
-          status: 'active',
-          createdAtEpochMs: nowEpochMs,
-          updatedAtEpochMs: nowEpochMs,
+          password: 'password-1',
         },
       });
       await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');

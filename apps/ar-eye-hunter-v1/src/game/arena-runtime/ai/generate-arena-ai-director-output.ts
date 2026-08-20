@@ -9,7 +9,7 @@ import {
     validateAiDirectorProposalValue,
 } from '../../aiDirector.ts';
 import { arenaRevisionKey, hydrateArenaSnapshot } from '../../simulation.ts';
-import type { ArenaConnectionLifecycleInput } from '../lifecycle/use-arena-connection-lifecycle.ts';
+import type { ArenaAiDirectorScheduleInput } from './start-arena-ai-director-schedule.ts';
 import {
     type AiDirectorProposal,
     type AiDirectorProposalValue,
@@ -21,7 +21,7 @@ import { toErrorMessage } from '../arena-connection-helpers.ts';
 
 interface GenerateArenaAiDirectorOutputInput extends
     Pick<
-        ArenaConnectionLifecycleInput,
+        ArenaAiDirectorScheduleInput,
         | 'arenaMatchRef'
         | 'arenaSnapshotRef'
         | 'isCurrentNetworkGeneration'

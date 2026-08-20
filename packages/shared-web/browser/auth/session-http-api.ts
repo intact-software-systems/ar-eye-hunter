@@ -8,15 +8,18 @@ import type {
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
-import { type ApiRequestOptions, executeHttpRequest } from '../api/http-request.ts';
+import {
+    type ApiMutationRequestOptions,
+    executeHttpRequest,
+} from '../api/http-request.ts';
 
 export async function loginToApi(
     request: LoginRequest,
-    options?: ApiRequestOptions,
+    options: ApiMutationRequestOptions,
 ): Promise<LoginResponse> {
     return await executeHttpRequest<LoginRequest, LoginResponse>(
         readApiBaseUrl(),
-        toApiMutationRequestPath('/api/auth/login', crypto.randomUUID()),
+        toApiMutationRequestPath('/api/auth/login', options.requestId),
         'POST',
         request,
         options,
@@ -25,11 +28,11 @@ export async function loginToApi(
 
 export async function registerWithApi(
     request: RegisterRequest,
-    options?: ApiRequestOptions,
+    options: ApiMutationRequestOptions,
 ): Promise<RegisterResponse> {
     return await executeHttpRequest<RegisterRequest, RegisterResponse>(
         readApiBaseUrl(),
-        toApiMutationRequestPath('/api/auth/register', crypto.randomUUID()),
+        toApiMutationRequestPath('/api/auth/register', options.requestId),
         'POST',
         request,
         options,
@@ -37,11 +40,11 @@ export async function registerWithApi(
 }
 
 export async function logoutFromApi(
-    options?: ApiRequestOptions,
+    options: ApiMutationRequestOptions,
 ): Promise<LogoutResponse> {
     return await executeHttpRequest<Record<string, never>, LogoutResponse>(
         readApiBaseUrl(),
-        toApiMutationRequestPath('/api/auth/logout', crypto.randomUUID()),
+        toApiMutationRequestPath('/api/auth/logout', options.requestId),
         'POST',
         {},
         options,

@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
 
-import { startArenaAiDirectorSchedule } from './start-arena-ai-director-schedule.ts';
-import type { ArenaConnectionLifecycleInput } from '../lifecycle/use-arena-connection-lifecycle.ts';
+import {
+    type ArenaAiDirectorScheduleInput,
+    startArenaAiDirectorSchedule,
+} from './start-arena-ai-director-schedule.ts';
 
 export function useArenaAiDirectorLifecycle(
-    input: ArenaConnectionLifecycleInput,
+    input: ArenaAiDirectorScheduleInput,
 ): void {
     useEffect(() => startArenaAiDirectorSchedule(input), [
         input.connectionState,

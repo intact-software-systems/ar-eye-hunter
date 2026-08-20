@@ -1,15 +1,43 @@
 import { useCallback, useEffect } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
+import type { RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
 import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
 
 import { GAME_ROOM_NAME } from '../../types.ts';
-import type { ArenaActions, ArenaActionsInput } from './use-arena-actions.ts';
 import { toErrorMessage } from '../arena-connection-helpers.ts';
+import type {
+    ArenaConnection,
+    ArenaConnectionState,
+    DirectorAttemptSource,
+    DirectorAttemptState,
+} from '../arena-connection-contracts.ts';
+
+interface ArenaSessionActionsInput {
+    readonly attemptDirectorAppointment: (source: DirectorAttemptSource) => Promise<void>;
+    readonly clearRoomScopedArenaState: () => void;
+    readonly connect: () => Promise<void>;
+    readonly connectionState: ArenaConnectionState;
+    readonly directorAttemptRef: RefObject<DirectorAttemptState>;
+    readonly directorStatusRef: RefObject<RallarDirectorStatus>;
+    readonly isNetworkEnabled: () => boolean;
+    readonly resetForSignedOutAuth: () => void;
+    readonly roomId: string | undefined;
+    readonly roomIdRef: RefObject<string | undefined>;
+    readonly rooms: readonly RallarRoomSummary[];
+    readonly sessionRef: RefObject<AuthSession | undefined>;
+    readonly setConnectionState: Dispatch<SetStateAction<ArenaConnectionState>>;
+    readonly setError: Dispatch<SetStateAction<string | undefined>>;
+    readonly setRoomId: Dispatch<SetStateAction<string | undefined>>;
+    readonly setRooms: Dispatch<SetStateAction<readonly RallarRoomSummary[]>>;
+    readonly setSession: Dispatch<SetStateAction<AuthSession | undefined>>;
+}
 
 export function useArenaSessionActions(
-    input: ArenaActionsInput,
+    input: ArenaSessionActionsInput,
 ): Pick<
-    ArenaActions,
+    ArenaConnection,
     | 'login'
     | 'register'
     | 'logout'

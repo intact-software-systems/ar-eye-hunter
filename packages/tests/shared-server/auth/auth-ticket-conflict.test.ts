@@ -82,8 +82,8 @@ async function selectsSingleConcurrentWinner(): Promise<void> {
     credentialSecret: 'concurrent-auth-secret-0123456789abcdef',
   });
   const now = Date.now();
-  await expectSingleRegistrationWinner(auth, now);
-  const session = await issueRaceSession(auth, now);
+  const clientId = await expectSingleRegistrationWinner(auth);
+  const session = await issueRaceSession(auth, now, clientId);
   const ticket = await issueRaceTicket(auth, now, session);
   const consumeResults = await consumeRaceTicketTwice({
     auth,
@@ -99,31 +99,19 @@ async function selectsSingleConcurrentWinner(): Promise<void> {
 
 async function expectSingleRegistrationWinner(
   auth: AuthInboxTestRuntime,
-  now: number,
-): Promise<void> {
-  const user = {
+): Promise<string> {
+  const request = {
     username: 'same-user',
-    normalizedUsername: 'same-user',
-    displayName: null,
-    passwordHash: 'password-hash',
-    passwordSalt: 'password-salt',
-    passwordAlgorithm: 'pbkdf2-sha256' as const,
-    passwordIterations: 120_000,
-    roles: ['member'],
-    status: 'active' as const,
-    createdAtEpochMs: now,
-    updatedAtEpochMs: now,
+    password: 'password-1',
   };
   const registrations = [
     auth.service.registerUser({
       requestId: 'register-race-a',
-      capturedAtEpochMs: now,
-      user: { ...user, clientId: 'client-a' },
+      request,
     }),
     auth.service.registerUser({
       requestId: 'register-race-b',
-      capturedAtEpochMs: now,
-      user: { ...user, clientId: 'client-b' },
+      request,
     }),
   ];
   await waitForQueuedEntry(auth.queue, 2);
@@ -132,24 +120,27 @@ async function expectSingleRegistrationWinner(
   const registrationResults = await Promise.all(registrations);
   expect(registrationResults.filter((result) => result.right !== undefined)).toHaveLength(1);
   expect(registrationResults.filter((result) => result.left?.status === 409)).toHaveLength(1);
+  return registrationResults.find((result) => result.right)?.right!.clientId ?? '';
 }
 
-async function issueRaceSession(auth: AuthInboxTestRuntime, now: number) {
+async function issueRaceSession(
+  auth: AuthInboxTestRuntime,
+  now: number,
+  clientId: string,
+) {
   const issuedAtEpochMs = now + 1;
   const login = await runAuthCommand({
     pending: auth.service.issueSession({
       requestId: 'ticket-race-session',
-      capturedAtEpochMs: issuedAtEpochMs,
-      clientId: 'client-a',
+      clientId,
       username: 'same-user',
       authority: {
         kind: 'registered-user',
-        clientId: 'client-a',
+        clientId,
         normalizedUsername: 'same-user',
         userRevision: 0,
       },
-      sessionId: 'ticket-race-session',
-      expiresAtEpochMs: now + 60_000,
+      ttlMs: 60_000,
     }),
     queue: auth.queue,
     reader: auth.reader,
@@ -166,9 +157,8 @@ async function issueRaceTicket(
   const issuedTicket = await runAuthCommand({
     pending: auth.service.issueWebSocketTicket({
       requestId: 'ticket-race-issue',
-      capturedAtEpochMs: now + 2,
       session,
-      expiresAtEpochMs: now + 30_000,
+      ttlMs: 30_000,
     }),
     queue: auth.queue,
     reader: auth.reader,
@@ -193,13 +183,11 @@ async function consumeRaceTicketTwice({
   const consumes = [
     auth.service.consumeWebSocketTicket({
       requestId: 'ticket-race-consume-a',
-      capturedAtEpochMs: now + 3,
       expectedSessionId: sessionId,
       ticket,
     }),
     auth.service.consumeWebSocketTicket({
       requestId: 'ticket-race-consume-b',
-      capturedAtEpochMs: now + 3,
       expectedSessionId: sessionId,
       ticket,
     }),
