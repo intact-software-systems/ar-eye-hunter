@@ -30,6 +30,9 @@ import {
 import { readRtcTopologyWorkEnvelope } from '@shared-server/rallar-system/topology/replay/rtc-topology-work-codec.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { createTestGroup } from '../create-test-group.ts';
 
 describe('RTC topology APP_OUTBOX work', () => {
@@ -677,6 +680,107 @@ describe('RTC topology APP_OUTBOX work', () => {
     );
     expect(readTopologyPlanningAuthority).toHaveBeenCalledTimes(2);
     expect(observeRtt).toHaveBeenCalledTimes(3);
+  });
+
+  // The refinement gate defers the replan, never the activation decision:
+  // deferred RTT work for an establishing group still petitions the
+  // criterion, so the measurement that crosses the threshold activates the
+  // group instead of waiting for the deadline evaluation.
+  it('petitions the criterion for an establishing group when the gate defers the replan', async () => {
+    const queue = new InMemoryQueueBox();
+    const runtime = createRtcTopologyOutboxPublisher({
+      outboxQueueReader: new OutboxQueueReader(queue),
+      now: () => 1_000,
+    });
+    const refinement = new RtcRttRefinementService({
+      gate: new RtcRttRefinementGate({
+        minIntervalMs: 0,
+        vivaldiDeltaThresholdMs: Number.MAX_SAFE_INTEGER,
+      }),
+      nowEpochMs: () => 1_000,
+      observeRtt: () => true,
+      readPredictedNodeData: () => predictedNodes(4),
+    });
+    const base = createGroupSnapshot(3);
+    const group: GroupSnapshot = {
+      ...base,
+      group: {
+        ...base.group,
+        lifecycleState: 'establishing',
+        establishmentStartedAtEpochMs: 500,
+      },
+    };
+    const planned = {
+      sourceGroupStateCausalRevision: { groupRevision: 3, presenceRevision: 0 },
+      state: 'active',
+      overlayId: toScopedOverlayId(group.group),
+      groupRef: group.group,
+      name: 'room-1',
+      topology: 'star',
+      activeSessionIds: ['session-a', 'session-b'],
+      nextHopsBySessionId: {
+        'session-a': ['session-b'],
+        'session-b': ['session-a'],
+      },
+      degreeLimit: 5,
+      version: 1,
+      createdByClientId: 'owner',
+      createdAtEpochMs: 1,
+      updatedAtEpochMs: 1,
+    } as const;
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
+    await expect(snapshots.commitSnapshot({ candidate: planned })).resolves.toMatchObject({
+      status: 'accepted',
+    });
+    const authority = {
+      group,
+      rttMeasurements: [rtt('session-a', 'session-b', 1)],
+      nowEpochMs: 1_000,
+    };
+    const readTopologyPlanningAuthority = vi.fn(async () => authority);
+    const submitCommand = vi.fn(
+      async (_command: GroupMutationCommand, _atEpochMs: number) => {},
+    );
+    const handler = createRtcTopologyWorkHandler({
+      runtime,
+      database: createAppInboxTestDatabase(queue, {
+        replace: async (entry) => entry,
+      }),
+      topologyPlanning: {
+        readTopologyPlanningAuthority,
+        computeTopologyFromAuthority: vi.fn(),
+        observeCommittedTopology: vi.fn(),
+        recordTopologyPublication: vi.fn(),
+        recordTopologyRebuildSkippedFingerprint: vi.fn(),
+      } as never,
+      executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
+      rttRefinementService: refinement,
+      formationCriterion: {
+        readLifecyclePolicy: async () => ({
+          status: 'present',
+          policy: {
+            ...createDefaultGroupLifecyclePolicy(),
+            activation: {
+              mode: 'threshold',
+              successRate: 1,
+              minimumViableRate: 0,
+              deadlineMs: 0,
+              maxFormationAttempts: 1,
+              strictConfirmation: false,
+            },
+          },
+        }),
+        submitCommand,
+      },
+    });
+
+    const entry = await enqueueAndReserveRtt(queue, runtime, group, 1);
+    await expect(handler.onMessage(JSON.parse(entry.resource), entry)).resolves.toBeUndefined();
+
+    expect(readTopologyPlanningAuthority).toHaveBeenCalledTimes(1);
+    expect(submitCommand).toHaveBeenCalledTimes(1);
+    expect(submitCommand.mock.calls[0]?.[1]).toBe(1_000);
   });
 
   it('claims zero-knob RTT work and reuses its canonical observation on retry', async () => {
