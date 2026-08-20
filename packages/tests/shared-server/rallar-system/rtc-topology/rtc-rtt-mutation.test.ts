@@ -210,6 +210,92 @@ describe('RTC RTT mutation phases', () => {
     );
   });
 
+  // The composition resolves the limit per shared group (the group's
+  // effective topology config under the server reporting default) before the
+  // command is enqueued; the compute honors the resolved value as-is.
+  it('admits reports against the composition-resolved degree limit', () => {
+    const rtt = {
+      sessionIdFrom: 'session-a',
+      sessionIdTo: 'session-b',
+      rttMs: 5,
+      createdAtEpochMs: 1,
+      version: 1,
+    };
+    const group = rttGroupSnapshot(['session-a', 'session-b', 'session-c']);
+    const overlay: RallarOverlayTopologySnapshot = {
+      sourceGroupStateCausalRevision: { groupRevision: 2, presenceRevision: 0 },
+      state: 'active',
+      overlayId: 'overlay-1',
+      groupRef: group.group,
+      name: 'room-1',
+      topology: 'mesh',
+      activeSessionIds: ['session-a', 'session-b', 'session-c'],
+      nextHopsBySessionId: {
+        'session-a': ['session-b', 'session-c'],
+        'session-b': ['session-a'],
+        'session-c': ['session-a'],
+      },
+      degreeLimit: 3,
+      version: 1,
+      createdByClientId: 'owner',
+      createdAtEpochMs: 1,
+      updatedAtEpochMs: 1,
+    };
+    // Endpoint session-a already carries one admitted peer; under the server
+    // default limit of 1 this report would reject over-degree — exactly the
+    // starvation that left planned edges unobservable at burst scale.
+    const accepted = computeAndValidateRttTwice(
+      deepFreeze({
+        command: {
+          rtt,
+          alSenderId: 'session-a',
+          candidateGroups: [group],
+          overlaySnapshotsByGroupKey: new Map([[toWebRtcGroupKey(group.group), overlay]]),
+          degreeLimit: 3,
+        },
+        facts: {
+          requestedAtEpochMs: 1,
+          purgeAfterEpochMs: 60_001,
+          commandHash: RTT_COMMAND_HASH,
+          attemptCount: 1,
+        },
+        read: {
+          receipt: null,
+          expiredMeasurementEntry: null,
+          measurement: null,
+          endpointAdmissions: [
+            {
+              entry: {
+                key: 'endpoint=session-a',
+                value: '',
+                expireAtTimestamp: 60_001,
+                updatedTimestamp: 'now',
+                revision: 0,
+              },
+              value: {
+                endpointId: 'session-a',
+                peers: [
+                  {
+                    peerSessionId: 'session-c',
+                    expiresAtEpochMs: 60_001,
+                  },
+                ],
+                version: 1,
+                updatedAtEpochMs: 0,
+              },
+            },
+          ],
+          expiredEndpointAdmissionEntries: [],
+          measurements: [],
+        },
+      }),
+    );
+    expect(accepted).toMatchObject({
+      outcome: 'write',
+      receipt: { outcome: 'accepted', measurementVersion: 1 },
+    });
+  });
+
   it('rejects a malformed complete RTT write candidate before opening a transaction', async () => {
     const rtt = {
       sessionIdFrom: 'session-a',

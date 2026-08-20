@@ -246,6 +246,15 @@ export function initRallarSystemWsTopics(
     scheduleGlobalGraphRttRecompute,
     findGroupSnapshotByRef,
     enqueueRtcRttMutation: options.enqueueRtcRttMutation,
+    readGroupRttReportingDegreeLimit: rtcTopologyManagement
+      ? async (group) => {
+        const config = await rtcTopologyManagement.readConfig(group.group);
+        return rtcTopologyService.readRttReportingDegreeLimit({
+          ...config.effective,
+          rttReportingDegreeLimit: options.rtcTopologyOptions?.rttReportingDegreeLimit,
+        });
+      }
+      : undefined,
   });
   initRtcSignalingTopic(wsQBoxServerService);
   if (options.initDynamicTopics ?? true) {

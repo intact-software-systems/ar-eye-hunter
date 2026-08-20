@@ -68,6 +68,35 @@ lane is untouched by slice 6 and still has no lifecycle artifact.
   surface where a readiness-bookkeeping cliff would show. This is why the managed variants
   land at both upper tiers (decision 6.3).
 
+## 6b execution findings (2026-08-20)
+
+Building the managed threshold bursts surfaced three facts the fixed-size recipes could not:
+
+- **Planned mesh edges grow linearly, not quadratically.** The planner's mesh is k-regular
+  (`meshParamK` default 2, with rendezvous fill): at 20 sessions the plan carried 37 edges,
+  not ~190. Decision 6.3's "quadratic planned-edge surface (~1,225)" rationale was wrong
+  about the planner; the tiers still exercise planning, acceptance, and readiness
+  bookkeeping at 20/50 sessions.
+- **Write-side RTT acceptance ignored the per-group degree limit** (fixed in 6b). Planning
+  and the read-side readiness filter honour the per-group topology config, but acceptance
+  admitted reports against the global default (5) — so for a group configured above it,
+  accepted evidence could never cover the plan, and coverage stalled nondeterministically
+  (observed 19–29 of 37 edges across runs). Both acceptance paths now resolve the limit
+  exactly as the read side does — the group's effective topology config under the server
+  reporting default — in the compositions (api-v1's durable policy inputs; the memory
+  path via a `readGroupRttReportingDegreeLimit` hook wired from the topology management
+  service). An explicitly configured `rttReportingDegreeLimit` still wins over any
+  structural limit, which a first fix at the policy layer (overriding with the planned
+  snapshot's stamped limit) got wrong and an existing topic test caught.
+- **Threshold activation between deadline checks rides the refinement gate.** The criterion
+  is petitioned by RTT-triggered topology work, which the refinement gate debounces under
+  burst traffic — so a group whose evidence crosses the threshold mid-burst can sit ready
+  until the deadline evaluation activates it (`activated`, not degraded, since the rate met
+  `successRate`). The managed burst recipes align their deadlines inside the poll window
+  and pin the recorded outcome; tightening the evidence-leg latency is a possible follow-up,
+  not a v1 defect. Live `readiness` after activation legitimately decays to 0 as evidence
+  ages past the 60s freshness window — the durable truth is `lastFormationOutcome`.
+
 ## Decisions
 
 Recorded as decisions 6.1–6.4 in
