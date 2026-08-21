@@ -23,6 +23,8 @@ import {
   createPostgresAppInboxWorkerTrace as appInboxTrace,
   groupAppInboxStart as groupInboxStart,
   runGroupAppInbox as runGroupInbox,
+  toAuthenticatedGroupAppInboxEnqueue,
+  toGroupAppInboxStorageCommandId,
   unwrapAppInboxResult as unwrapAppInbox,
   waitForPostgresAppInboxWorkerParticipants,
 } from '../../../fixtures/postgres-app-inbox-worker-runtime.ts';
@@ -670,8 +672,8 @@ describe('Postgres presence expiry concurrency', () => {
         ]);
         left.armBarrier();
         right.armBarrier();
-        const results = await Promise.allSettled([
-          runGroupInbox({
+        const contenderInputs = [
+          {
             runtime: left,
             authority: authorities[0],
             type: AppInboxType.GROUP_JOIN,
@@ -684,8 +686,8 @@ describe('Postgres presence expiry concurrency', () => {
                 requestId: contenderRequestIds[0],
               },
             },
-          }),
-          runGroupInbox({
+          },
+          {
             runtime: right,
             authority: authorities[1],
             type: AppInboxType.GROUP_JOIN,
@@ -698,8 +700,11 @@ describe('Postgres presence expiry concurrency', () => {
                 requestId: contenderRequestIds[1],
               },
             },
-          }),
-        ]);
+          },
+        ] as const;
+        const results = await Promise.allSettled(
+          contenderInputs.map(async (input) => await runGroupInbox(input)),
+        );
 
         expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
         expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
@@ -723,9 +728,19 @@ describe('Postgres presence expiry concurrency', () => {
         );
         expect(terminalEvents).toHaveLength(1);
         const acceptedRequestId = terminalEvents[0]?.requestId;
-        const receipt = acceptedRequestId
-          ? (await repository.findIdempotentGroupMutationReceipt(groupRef, acceptedRequestId))
-              ?.receipt
+        const acceptedInput = contenderInputs.find(
+          (input) => input.data.request.requestId === acceptedRequestId,
+        );
+        const receipt = acceptedInput
+          ? (
+              await repository.findIdempotentGroupMutationReceipt(
+                groupRef,
+                await toGroupAppInboxStorageCommandId(
+                  toAuthenticatedGroupAppInboxEnqueue(acceptedInput),
+                  acceptedInput.authority.clientId,
+                ),
+              )
+            )?.receipt
           : undefined;
         if (!receipt) throw new Error('Expected accepted last-slot receipt');
         expectWorkerOutboxLifecycleEvidence(

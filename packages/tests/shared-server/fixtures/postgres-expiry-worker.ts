@@ -43,6 +43,9 @@ import type {
   ClientMutationCommandInput,
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 // prettier-ignore
+import { toAuthenticatedClientMutationContextId } from
+  '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
+// prettier-ignore
 import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
@@ -63,10 +66,7 @@ import {
 import type {
   GroupTopologyConfigMutationReceipt,
 } from '@shared/api/graph-topology-management-types.ts';
-import {
-  AppInboxType,
-  SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
-} from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 // prettier-ignore
 import {
@@ -75,6 +75,7 @@ import {
 import {
   createPostgresAppInboxWorkerRuntime,
   type PersistedAppInboxAttempt,
+  toGroupAppInboxStorageCommandId,
 } from './postgres-app-inbox-worker-runtime.ts';
 import { toPSqlSql } from './postgres-sql-adapter.ts';
 // prettier-ignore
@@ -270,11 +271,13 @@ async function runClientMutation(
   };
   await runtime.authSessions.putSession(authoritySession);
   runtime.armBarrier();
-  const contextId = inboxContextId(
-    input.scope.applicationId,
-    input.scope.workspaceId,
-    input.principalId,
-  );
+  const contextId = toAuthenticatedClientMutationContextId({
+    scope: input.scope,
+    principalId: input.principalId,
+    callerClientId: authoritySession.clientId,
+    callerSessionId: authoritySession.sessionId,
+  });
+  const type = toClientAppInboxType(input.command);
   const data = {
     scope: input.scope,
     principalId: input.principalId,
@@ -285,7 +288,8 @@ async function runClientMutation(
   const result = await runtime.runUntilCompletion(() =>
     runtime.client.processAuthenticatedEntryUntilCompletion(
       {
-        type: toClientAppInboxType(input.command),
+        type,
+        topicId: type,
         resourceId: requestId,
         contextId,
         senderId: input.principalId,
@@ -316,7 +320,7 @@ async function runClientMutation(
   }
   const entry = await runtime.resourceInbox.findAnyByKey(
     toAppQueueKey({
-      topicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+      topicId: type,
       resourceId: requestId,
       contextId,
     }),
@@ -441,8 +445,9 @@ async function runGroupMutation(
   };
   await runtime.authSessions.putSession(authority);
   const data = toGroupAppInboxData(input);
+  const type = toGroupAppInboxType(input.command);
   const enqueue = {
-    type: toGroupAppInboxType(input.command),
+    type,
     resourceId: requestId,
     contextId: inboxContextId(input.scope.applicationId, input.scope.workspaceId, input.groupId),
     senderId: actorPrincipalId,
@@ -467,7 +472,10 @@ async function runGroupMutation(
     : (
       await createGroupStateRepository(
         new PSqlRuntimeStateRepository(sql),
-      ).findIdempotentGroupMutationReceipt({ ...input.scope, groupId: input.groupId }, requestId)
+      ).findIdempotentGroupMutationReceipt(
+        { ...input.scope, groupId: input.groupId },
+        await toGroupAppInboxStorageCommandId(enqueue, authority.clientId),
+      )
     )?.receipt;
   if (!receipt) {
     throw new Error(`Group mutation receipt not found: ${requestId}`);
