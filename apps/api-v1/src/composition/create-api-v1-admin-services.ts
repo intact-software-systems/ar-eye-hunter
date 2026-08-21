@@ -17,8 +17,8 @@ import type {
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type { RallarGroupFormationMetricsRecorder } from '@shared-server/rallar-system/\
 formation-metrics.ts';
-import type { GroupStateService } from '@shared-server/rallar-system/services/\
-group-state-service.ts';
+import type { CachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/\
+cached-group-state-service.ts';
 import { SpaStatisticsService } from '@shared-server/rallar-system/spa-statistics/\
 SpaStatisticsService.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
@@ -52,8 +52,9 @@ export interface CreateApiV1AdminServicesInput {
     'readSnapshot' | 'readPresenceSnapshot' | 'listRecentEvents'
   >;
   readonly groupStateService: Pick<
-    GroupStateService,
+    CachedGroupStateService,
     | 'readSnapshot'
+    | 'readCurrentSnapshot'
     | 'listRecentEvents'
     | 'listSnapshots'
     | 'listSnapshotsPage'
