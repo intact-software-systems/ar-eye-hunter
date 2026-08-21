@@ -108,7 +108,8 @@ async function createWsTicket(
             throw new Error('Missing auth.session in localStorage.');
         }
         const session = JSON.parse(raw) as BrowserAuthSession;
-        const response = await fetch(`${baseUrl}/api/auth/ws-ticket`, {
+        const requestId = crypto.randomUUID();
+        const response = await fetch(`${baseUrl}/api/auth/ws-ticket/requests/${requestId}`, {
             method: 'POST',
             headers: {
                 authorization: `Bearer ${session.accessToken}`,
@@ -132,7 +133,8 @@ async function logoutWithStoredSession(page: Page, apiBaseUrl: string): Promise<
             throw new Error('Missing auth.session in localStorage.');
         }
         const session = JSON.parse(raw) as BrowserAuthSession;
-        const response = await fetch(`${baseUrl}/api/auth/logout`, {
+        const requestId = crypto.randomUUID();
+        const response = await fetch(`${baseUrl}/api/auth/logout/requests/${requestId}`, {
             method: 'POST',
             headers: {
                 authorization: `Bearer ${session.accessToken}`,
@@ -161,7 +163,7 @@ async function openHeldApiWebSocket(
         const session = JSON.parse(raw) as BrowserAuthSession;
         const [apiConfigResponse, ticketResponse] = await Promise.all([
             fetch(`${baseUrl}/api/config`),
-            fetch(`${baseUrl}/api/auth/ws-ticket`, {
+            fetch(`${baseUrl}/api/auth/ws-ticket/requests/${crypto.randomUUID()}`, {
                 method: 'POST',
                 headers: {
                     authorization: `Bearer ${session.accessToken}`,
@@ -226,7 +228,7 @@ async function openApiWebSocketOnce(
         const session = JSON.parse(raw) as BrowserAuthSession;
         const [apiConfigResponse, ticketResponse] = await Promise.all([
             fetch(`${baseUrl}/api/config`),
-            fetch(`${baseUrl}/api/auth/ws-ticket`, {
+            fetch(`${baseUrl}/api/auth/ws-ticket/requests/${crypto.randomUUID()}`, {
                 method: 'POST',
                 headers: {
                     authorization: `Bearer ${session.accessToken}`,

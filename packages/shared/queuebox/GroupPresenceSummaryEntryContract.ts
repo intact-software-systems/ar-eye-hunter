@@ -223,7 +223,6 @@ function requireCanonicalGroupPresenceSummaryWork(work: GroupPresenceSummaryWork
   if (
     work.effectKind !== GROUP_PRESENCE_SUMMARY_EFFECT_KIND ||
     work.expireAtEpochMs <= work.createdAtEpochMs ||
-    work.event.requestId !== work.commandId ||
     work.event.occurredAtEpochMs !== work.createdAtEpochMs ||
     work.event.snapshotVersion !== work.acceptedCausalRevision.groupRevision ||
     !causalRevisionsEqual(work.event.causalRevision, work.acceptedCausalRevision)

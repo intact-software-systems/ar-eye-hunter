@@ -217,7 +217,7 @@ class AppGroupInboxService extends AppInboxService {
       wakeQueue: this.wakeQueue,
       formationMetrics: config.formationMetrics,
       prepareMutation: (descriptor, authority) =>
-        this.groupStateService.prepareMutation(descriptor, authority),
+        this.groupStateService.prepareAppInboxMutation(descriptor, authority),
       persistPreparation: (context, preparation) =>
         this.persistReservedEntryAuthority(context, preparation),
     });

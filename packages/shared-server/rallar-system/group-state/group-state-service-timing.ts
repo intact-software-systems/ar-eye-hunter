@@ -68,6 +68,7 @@ function createTimedPreparationOperations(
   GroupStateService,
   | 'authorizeMutation'
   | 'prepareMutation'
+  | 'prepareAppInboxMutation'
   | 'prepareExpiredPresenceMutations'
   | 'prepareSessionCleanupMutations'
   | 'prepareFormationCriterionMutation'
@@ -86,6 +87,13 @@ function createTimedPreparationOperations(
         operation: 'prepareMutation',
         details: {},
         action: async () => await service.prepareMutation(descriptor, authority),
+      }),
+    prepareAppInboxMutation: async (descriptor, authority) =>
+      await timeGroupStateOperation({
+        ...input,
+        operation: 'prepareAppInboxMutation',
+        details: {},
+        action: async () => await service.prepareAppInboxMutation(descriptor, authority),
       }),
     prepareExpiredPresenceMutations: async (atEpochMs) =>
       await timeGroupStateOperation({

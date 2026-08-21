@@ -79,8 +79,8 @@ export class RealEngineAdminPruneFixture {
         accessToken: 'not-persisted',
         expiresAtEpochMs: this.now + 60_000,
       },
+      requestId: 'queue-engine-handoff-prune',
       request: {
-        requestId: 'queue-engine-handoff-prune',
         categories: ['runtime-state'],
         dryRun: false,
       },

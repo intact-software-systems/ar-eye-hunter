@@ -51,9 +51,10 @@ test.describe('rallar-black-box agent tab session tickets', () => {
 
       if (
         request.method() === 'POST' &&
-        url.pathname === '/api/auth/agent-session-tickets'
+        isStrictMutationPath(url.pathname, '/api/auth/agent-session-tickets')
       ) {
         const body = await request.postDataJSON() as { agentIds?: string[] };
+        expect(body).not.toHaveProperty('requestId');
         const agentIds = body.agentIds ?? [];
         const tickets = agentIds.map((agentId, index) => {
           const ticket = `ticket-${index + 1}-${agentId}`;
@@ -75,9 +76,10 @@ test.describe('rallar-black-box agent tab session tickets', () => {
 
       if (
         request.method() === 'POST' &&
-        url.pathname === '/api/auth/agent-session-tickets/consume'
+        isStrictMutationPath(url.pathname, '/api/auth/agent-session-tickets/consume')
       ) {
         const body = await request.postDataJSON() as { ticket?: string };
+        expect(body).not.toHaveProperty('requestId');
         const ticket = body.ticket ?? '';
         const issued = issuedTickets.get(ticket);
         if (!issued) {
@@ -157,6 +159,12 @@ test.describe('rallar-black-box agent tab session tickets', () => {
     }
   });
 });
+
+function isStrictMutationPath(path: string, mutationPath: string): boolean {
+  const prefix = `${mutationPath}/requests/`;
+  const requestId = path.startsWith(prefix) ? path.slice(prefix.length) : '';
+  return /^[A-Za-z0-9_-]{20,128}$/u.test(requestId);
+}
 
 function createSession(username: string, sessionId: string): BrowserAuthSession {
   return {

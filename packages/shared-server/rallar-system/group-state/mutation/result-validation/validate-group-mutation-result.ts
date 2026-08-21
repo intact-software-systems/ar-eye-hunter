@@ -67,7 +67,6 @@ export function validateGroupMutationIdempotencyRecord(
     throw new TypeError('Stored group idempotency receipt command differs from request identity');
   }
   if (
-    receipt.requestId !== value.requestId ||
     receipt.aggregateRef.applicationId !== ref.applicationId ||
     receipt.aggregateRef.workspaceId !== ref.workspaceId ||
     receipt.aggregateRef.groupId !== ref.groupId

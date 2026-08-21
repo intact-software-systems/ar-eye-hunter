@@ -165,6 +165,33 @@ export function createRegisteredHandlerHarness(
     topicId: options.topicId ?? 'app-inbox.group-state',
     resourceId: 'registered-handler-request',
     contextId: 'group-1',
+    authority: {
+      authorityProof: {
+        version: 1,
+        principalId: 'principal-1',
+        sessionId: 'session-1',
+        sessionIssuedAtEpochMs: NOW_EPOCH_MS - 1_000,
+        sessionExpiresAtEpochMs: NOW_EPOCH_MS + 60_000,
+        commandMac: '0'.repeat(64),
+      },
+      descriptor: {
+        operation: 'createGroup',
+        scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+        groupId: 'group-1',
+        targetPrincipalId: null,
+        sessionId: null,
+        request: {
+          groupId: 'group-1',
+          displayName: 'Group 1',
+          kind: 'room',
+          joinMode: 'open',
+          createdByPrincipalId: 'principal-1',
+          actorPrincipalId: 'principal-1',
+          actorSessionId: 'session-1',
+          requestId: 'registered-handler-request',
+        },
+      },
+    },
     data: { requestId: 'registered-handler-request' },
   } as const;
   return {
@@ -204,17 +231,19 @@ export function toRegisteredHandlerIdentityResource(
     payload: { typeId: string; resource: string };
   };
   message.payload.typeId = identity.outerType;
-  message.payload.resource =
-    identity.nested.kind === 'corrupt'
-      ? '{"secret":"nested-password"'
-      : JSON.stringify(
-          identity.nested.kind === 'missing'
-            ? { data: { secret: 'nested-password' } }
-            : {
-                type: identity.nested.type,
-                data: { secret: 'nested-password' },
-              },
-        );
+  if (identity.nested.kind === 'corrupt') {
+    message.payload.resource = '{"secret":"nested-password"';
+    return JSON.stringify(message);
+  }
+  const nestedCommand = JSON.parse(message.payload.resource) as {
+    type?: string;
+  };
+  if (identity.nested.kind === 'missing') {
+    delete nestedCommand.type;
+  } else {
+    nestedCommand.type = identity.nested.type;
+  }
+  message.payload.resource = JSON.stringify(nestedCommand);
   return JSON.stringify(message);
 }
 

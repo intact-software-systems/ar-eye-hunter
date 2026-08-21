@@ -15,6 +15,7 @@ import { sha256CanonicalJson } from './mutation/group-state-crypto.ts';
 import { createTimedGroupStateService } from './group-state-service-timing.ts';
 import {
   authorizeGroupMutation,
+  prepareAppInboxGroupMutation,
   prepareGroupMutation,
   type GroupMutationAuthorityDependencies,
   GroupMutationAuthorizationError,
@@ -157,6 +158,7 @@ function createPreparationOperations(
   GroupStateService,
   | 'authorizeMutation'
   | 'prepareMutation'
+  | 'prepareAppInboxMutation'
   | 'prepareExpiredPresenceMutations'
   | 'prepareSessionCleanupMutations'
   | 'prepareFormationCriterionMutation'
@@ -168,6 +170,8 @@ function createPreparationOperations(
       await authorizeGroupMutation(authorityDependencies, descriptor, authority),
     prepareMutation: async (descriptor, authority) =>
       await prepareGroupMutation(authorityDependencies, descriptor, authority),
+    prepareAppInboxMutation: async (descriptor, authority) =>
+      await prepareAppInboxGroupMutation(authorityDependencies, descriptor, authority),
     prepareExpiredPresenceMutations: async (atEpochMs) => {
       const candidates = (await repositoryFor(runtime).listAllPresenceSessions()).filter(
         (session) =>

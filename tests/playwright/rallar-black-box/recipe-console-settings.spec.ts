@@ -85,7 +85,7 @@ test('logs an authenticated operator out through the visible account control', a
     });
     await context.route(API_ROUTE, async route => {
         const url = new URL(route.request().url());
-        if (url.pathname === '/api/auth/logout') {
+        if (url.pathname.startsWith('/api/auth/logout/requests/')) {
             await fulfillJson(route, 200, { loggedOut: true });
             return;
         }

@@ -324,21 +324,21 @@ describe('AppInboxService registered handler finalization', () => {
         valid: false,
       },
       {
-        name: 'unsupported group exact-operation durable topic',
+        name: 'valid group exact-operation durable topic',
         outerType: AppInboxType.GROUP_CREATE as string,
         nested: { kind: 'operation' as const, type: AppInboxType.GROUP_CREATE as string },
         topicId: AppInboxType.GROUP_CREATE as string,
-        valid: false,
+        valid: true,
       },
       {
-        name: 'unsupported client exact-operation durable topic',
+        name: 'valid client exact-operation durable topic',
         outerType: AppInboxType.CLIENT_SESSION_CONNECT as string,
         nested: {
           kind: 'operation' as const,
           type: AppInboxType.CLIENT_SESSION_CONNECT as string,
         },
         topicId: AppInboxType.CLIENT_SESSION_CONNECT as string,
-        valid: false,
+        valid: true,
       },
       {
         name: 'valid outer nested and topic agreement',

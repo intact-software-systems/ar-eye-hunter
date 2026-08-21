@@ -19,14 +19,16 @@ import {
     toRallarServerBlackBoxCommand,
     toRallarServerCurl,
     toRallarServerRestCollectionRecipe,
-    type RallarServerEndpointPreset,
-    type RallarServerResponseBodyMode,
     type RallarServerRestCollectionStepResult,
     type RallarServerRestCollectionVariables,
-    type RallarServerRestMethod,
     type RallarServerRestRequestInput,
     type RallarServerRestResponse,
 } from '../../../rallar-server-workbench.ts';
+import type {
+    RallarServerEndpointPreset,
+    RallarServerResponseBodyMode,
+    RallarServerRestMethod,
+} from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
 import {
     createRallarServerRestCollectionTemplates,
 } from '../../../rallar-server-workbench/create-rallar-server-rest-collection-templates.ts';

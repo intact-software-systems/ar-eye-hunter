@@ -2,10 +2,12 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import {
     RALLAR_SERVER_ENDPOINT_PRESETS,
     applyRallarServerEndpointPreset,
-    type RallarServerEndpointPreset,
     type RallarServerRestRequestInput,
     type RallarServerWorkbenchVariables,
 } from '../../../rallar-server-workbench.ts';
+import type {
+    RallarServerEndpointPreset,
+} from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
 
 function rallarServerPresetById(presetId: string): RallarServerEndpointPreset {
     const preset = RALLAR_SERVER_ENDPOINT_PRESETS.find(

@@ -1,4 +1,4 @@
-import type { RallarServerEndpointPreset } from '../rallar-server-workbench.ts';
+import type { RallarServerEndpointPreset } from './rallar-server-workbench-contracts.ts';
 
 function stateWorkbenchPath(suffix: string): string {
   return '/api/state/apps/{applicationId}/workspaces/{workspaceId}' + suffix;

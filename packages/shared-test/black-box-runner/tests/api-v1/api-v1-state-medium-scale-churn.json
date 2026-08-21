@@ -8870,7 +8870,7 @@
             "TOPOLOGY_CONFIG_DELETE"
           ],
           "commandIdPrefixes": [
-            "lane-",
+            "group-app-inbox:",
             "control-"
           ],
           "minimumMatchedRows": 600,

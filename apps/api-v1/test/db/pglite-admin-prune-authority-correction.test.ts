@@ -50,13 +50,14 @@ Deno.test('production admin prune rereads current admin authority before creatin
         accessToken: 'not-persisted',
         expiresAtEpochMs: now + 60_000,
       },
+      requestId: 'revoked-prune',
       request: {
-        requestId: 'revoked-prune',
         categories: ['runtime-state'],
         dryRun: false,
       },
     });
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    await waitForWakeCount(() => wakeCount, 1);
     wakeCount = 0;
     await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
     await pending;
@@ -66,7 +67,7 @@ Deno.test('production admin prune rereads current admin authority before creatin
     `;
     const [completion] = await sql<{ ris_status: string; ris_resource: string }[]>`
       select ris_status, ris_resource from resource_inbox_results
-      where ris_topic_id = 'app-inbox.admin-operations'
+      where ris_topic_id = 'ADMIN_PRUNE_EXPIRED'
         and ris_resource_id = 'revoked-prune'
     `;
     assert.equal(Number(work?.count), 0);
@@ -119,14 +120,15 @@ Deno.test('committed initial admin page work wakes the queue after its transacti
         accessToken: 'not-persisted',
         expiresAtEpochMs: now + 60_000,
       },
+      requestId: 'committed-prune',
       request: {
-        requestId: 'committed-prune',
         categories: ['runtime-state'],
         dryRun: false,
       },
     });
 
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    await waitForWakeCount(() => wakeCount, 1);
     wakeCount = 0;
     await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
 
@@ -136,7 +138,6 @@ Deno.test('committed initial admin page work wakes the queue after its transacti
       from resource_inbox
       where ri_type_id = 'APP_OUTBOX'
         and ri_topic_id = 'rallar.admin.prune-expired'
-        and fk_ext_bank_id = 'committed-prune'
     `;
     assert.equal(page?.future, true);
     await waitForPGliteQueueRow(sql, 'APP_OUTBOX', 'NEW');
@@ -144,3 +145,13 @@ Deno.test('committed initial admin page work wakes the queue after its transacti
     await pending;
   });
 });
+
+async function waitForWakeCount(readCount: () => number, expected: number): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (readCount() >= expected) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error(`Timed out waiting for ${expected} queue wake(s)`);
+}

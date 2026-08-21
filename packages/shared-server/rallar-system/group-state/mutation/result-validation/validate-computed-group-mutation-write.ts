@@ -8,6 +8,7 @@ import type {
   GroupMutationFacts,
   GroupMutationRead,
 } from '../group-mutation-contracts.ts';
+import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
 import {
   resolveGroupMutationTargetPrincipalId,
   resolveGroupMutationTargetSessionId,
@@ -255,6 +256,7 @@ function validateComputedEventAndReceipt({
   if (
     computed.receipt.outcome !== 'applied' ||
     computed.receipt.commandId !== command.commandId ||
+    computed.receipt.requestId !== command.requestId ||
     computed.receipt.commandHash !== facts.commandHash
   ) {
     throw new TypeError('Group mutation computed receipt differs from command');
@@ -266,15 +268,16 @@ function validateComputedIdempotency(
   command: GroupMutationCommand,
   computed: ValidateComputedWriteInput['computed'],
 ): void {
+  const idempotencyKey = groupMutationIdempotencyKey(command);
   if (computed.idempotency !== null) {
     validateGroupMutationIdempotencyRecord(computed.idempotency, command.aggregateRef);
     if (
-      computed.idempotency.requestId !== command.requestId ||
+      computed.idempotency.requestId !== idempotencyKey ||
       !jsonEquals(computed.idempotency.receipt, computed.receipt)
     ) {
       throw new TypeError('Group mutation computed idempotency differs from receipt');
     }
-  } else if (command.requestId !== null) {
+  } else if (idempotencyKey !== null) {
     throw new TypeError('Group mutation computed idempotency is missing');
   }
 }

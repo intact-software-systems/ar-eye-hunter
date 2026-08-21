@@ -76,7 +76,7 @@ export function findMutationRouteReachabilityIssues({
   if (operation && operationHandlers.length !== 1) {
     issues.push(`${routeKey} operation is not connected to ${item.enqueueMarker}`);
   }
-  if (!routeConnected || !hasAuthCommandDiscriminator(typeOwnerSource, item, containsMarker)) {
+  if (!routeConnected || !hasAuthCommandDiscriminator(typeOwnerSource, item, matchesMarker)) {
     issues.push(
       `${routeKey} registered handler is not connected to ` +
         `${item.enqueueMarker} with AppInboxType.${item.type}`,
@@ -109,7 +109,7 @@ const AUTH_COMMAND_KIND_BY_TYPE: Readonly<Partial<Record<AppInboxType, string>>>
 function hasAuthCommandDiscriminator(
   typeOwnerSource: MutationRoutingAstNode,
   item: MutationRouteInventoryEntry,
-  hasMarker: (node: MutationRoutingAstNode, marker: string) => boolean,
+  matchesMarker: (node: MutationRoutingAstNode, marker: string) => boolean,
 ): boolean {
   const expected = AUTH_COMMAND_KIND_BY_TYPE[item.type];
   if (!expected) {
@@ -118,7 +118,32 @@ function hasAuthCommandDiscriminator(
   const publicHandoffs = findFunctionLikes(typeOwnerSource, item.enqueueMarker);
   return (
     publicHandoffs.length === 0 ||
-    publicHandoffs.some((method) => hasMarker(method, `'${expected}'`))
+    publicHandoffs.some((method) =>
+      findAll(
+        method,
+        (node) =>
+          node.type === 'CallExpression' &&
+          readMemberName(asNode(node.callee)) === 'reserveAuthIntent',
+      ).some((call) => {
+        const arguments_ = asNodes(call.arguments);
+        const identity = arguments_[0];
+        const materializer = arguments_[1];
+        return (
+          !!identity &&
+          hasExactObjectProperty(identity, 'type', (value) =>
+            matchesMarker(value, `AppInboxType.${item.type}`),
+          ) &&
+          !!materializer &&
+          hasReachableAstNode(typeOwnerSource, materializer, (node) =>
+            hasExactObjectProperty(
+              node,
+              'kind',
+              (value) => readStringLiteral(value) === expected,
+            ),
+          )
+        );
+      }),
+    )
   );
 }
 
@@ -233,14 +258,39 @@ function hasExpectedTypeWhenExplicit(
   matchesMarker: (node: MutationRoutingAstNode, marker: string) => boolean,
 ): boolean {
   const hasAnyExplicitType = hasReachableAstNode(handoff.program, handoff.root, (node) =>
-    readMemberPath(node).startsWith('AppInboxType.'),
+    hasExactObjectProperty(node, 'type', (value) =>
+      readMemberPath(value).startsWith('AppInboxType.'),
+    ),
   );
   return (
     !hasAnyExplicitType ||
     hasReachableAstNode(handoff.program, handoff.root, (node) =>
-      matchesMarker(node, `AppInboxType.${expectedType}`),
+      hasExactObjectProperty(node, 'type', (value) =>
+        matchesMarker(value, `AppInboxType.${expectedType}`),
+      ),
     )
   );
+}
+
+function hasExactObjectProperty(
+  node: MutationRoutingAstNode,
+  name: string,
+  matchesValue: (value: MutationRoutingAstNode) => boolean,
+): boolean {
+  if (node.type !== 'ObjectExpression') {
+    return false;
+  }
+  const property = asNodes(node.properties).find(
+    (candidate) => candidate.type === 'ObjectProperty' && readName(candidate.key) === name,
+  );
+  const value = property && asNode(property.value);
+  return value ? matchesValue(value) : false;
+}
+
+function readStringLiteral(node: MutationRoutingAstNode): string | undefined {
+  return node.type === 'StringLiteral' && typeof node.value === 'string'
+    ? node.value
+    : undefined;
 }
 
 interface ReachableHandoff {

@@ -748,6 +748,14 @@ moved or changed test.
       "coverageRelation": "The named recipe test reads the executable CRDT fixture and verifies that its broad durable selector is narrowed by the two exact command-ID prefixes owned by that recipe."
     },
     {
+      "id": "state-write-recipe-evidence--selects-strict-group-evidence-by-scoped-command-id",
+      "domain": "State-write recipe evidence",
+      "owner": "Shared Test maintainers",
+      "summary": "Strict group evidence follows the scoped internal command identity while retaining operation-specific topology selectors.",
+      "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#selects strict group evidence by its scoped internal command identity",
+      "coverageRelation": "The named recipe test reads all three executable group state-write fixtures and verifies that their durable selectors use the scoped group AppInbox command prefix."
+    },
+    {
       "id": "state-write-recipe-evidence--observes-committed-socket-authorization-before-clustered-ws-effe",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
@@ -975,9 +983,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#points every entry at a catalog recipe file"
     },
     {
-      "id": "test-structure-coupling-467e3560795fd1dc",
+      "id": "test-structure-coupling-4b2fa6ec95c9f794",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
-      "line": 168,
+      "line": 186,
       "column": 17,
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--forbids-literal-set-values-from-claiming-durable-state-write-evi",
@@ -1599,9 +1607,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts#rejects GROUP_CREATE removed from the imported live group registration collection"
     },
     {
-      "id": "test-structure-coupling-9034a417a537f3df",
+      "id": "test-structure-coupling-1497bb81c116c669",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
-      "line": 183,
+      "line": 201,
       "column": 35,
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--uses-one-bounded-execution-identity-for-the-command-and-its-evid",
@@ -1610,6 +1618,19 @@ moved or changed test.
       "owner": "Shared Test maintainers",
       "rationale": "Reads the bounded-execution recipe and compares the command identity with the evidence query identity in the same parsed fixture.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#uses one bounded execution identity for the command and its evidence"
+    },
+    {
+      "id": "test-structure-coupling-071d89b216ac8825",
+      "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
+      "line": 172,
+      "column": 17,
+      "kind": "production-source-read",
+      "contract": "state-write-recipe-evidence--selects-strict-group-evidence-by-scoped-command-id",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared Test maintainers",
+      "rationale": "Reads the executable contract, convergence, and medium-scale recipes to keep durable evidence aligned with the opaque scoped group AppInbox identity.",
+      "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#selects strict group evidence by its scoped internal command identity"
     },
     {
       "id": "test-structure-coupling-dd0e093a41ea8d1d",

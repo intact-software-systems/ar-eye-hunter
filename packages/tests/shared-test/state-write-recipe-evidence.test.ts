@@ -162,6 +162,24 @@ describe('API-v1 state-write recipe evidence', () => {
         });
     });
 
+    it('selects strict group evidence by its scoped internal command identity', () => {
+        for (const [name, retainedPrefixes] of [
+            ['api-v1-idempotency-contract.json', []],
+            ['api-v1-state-write-convergence.json', ['put-', 'delete-']],
+            ['api-v1-state-medium-scale-churn.json', ['control-']],
+        ] as const) {
+            const recipe = JSON.parse(
+                readFileSync(path.join(recipeRoot, name), 'utf8'),
+            ) as { steps: Array<Record<string, any>> };
+            const evidence = recipe.steps.find(step => step.name === 'exposeStateWriteEvidence');
+
+            expect(evidence?.request.stateWriteEvidence.commandIdPrefixes).toEqual([
+                'group-app-inbox:',
+                ...retainedPrefixes,
+            ]);
+        }
+    });
+
     it('forbids literal SET values from claiming durable state-write evidence', () => {
         for (const name of taskRecipes) {
             const recipe = JSON.parse(

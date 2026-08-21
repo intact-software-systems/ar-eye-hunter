@@ -17,6 +17,7 @@ import {
   isGroupAdmissionPolicyReadOperation,
   isGroupLifecycleTransitionOperation,
 } from '../group-mutation-contracts.ts';
+import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
 import {
   resolveGroupMutationReadIdentities,
   type GroupMutationReadIdentities,
@@ -356,13 +357,14 @@ function validateSummaryAndIdempotencyReads(
     validatePresenceSummaryValue(read.presenceSummary.value, ref);
   }
   if (read.idempotency) {
-    if (command.requestId === null || read.idempotency.value.requestId !== command.requestId) {
+    const idempotencyKey = groupMutationIdempotencyKey(command);
+    if (idempotencyKey === null || read.idempotency.value.requestId !== idempotencyKey) {
       throw new TypeError('Stored group idempotency request differs from command identity');
     }
     validateRuntimeEntryValue(
       read.idempotency,
       'Stored group idempotency',
-      groupStateIdempotencyStorageKey(ref, command.requestId),
+      groupStateIdempotencyStorageKey(ref, idempotencyKey),
     );
     validateGroupMutationIdempotencyRecord(read.idempotency.value, ref);
   }

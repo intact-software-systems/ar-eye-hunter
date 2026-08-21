@@ -47,21 +47,22 @@ test.describe('full-stack Rallar Quick Test WS delivery', () => {
                 readBrowserAuthSession(pageA),
                 readBrowserAuthSession(pageB),
             ]);
+            const inviteRequestId = `quick-invite-${suffix}`;
             const inviteResponse = await request.post(
                 `${config.apiBaseUrl}/api/state/apps/${
                     encodeURIComponent(config.applicationId)
                 }/workspaces/${encodeURIComponent(config.workspaceId)}/groups/${
                     encodeURIComponent(createdGroupId)
-                }/invites/${encodeURIComponent(sessionB.clientId)}`,
+                }/invites/${encodeURIComponent(sessionB.clientId)}/requests/${encodeURIComponent(
+                    inviteRequestId,
+                )}`,
                 {
                     headers: {
                         authorization: `Bearer ${sessionA.accessToken}`,
                         'x-client-id': sessionA.clientId,
                         'content-type': 'application/json',
                     },
-                    data: {
-                        requestId: `quick-invite-${suffix}`,
-                    },
+                    data: {},
                 },
             );
             expect(inviteResponse.ok(), await inviteResponse.text()).toBe(true);

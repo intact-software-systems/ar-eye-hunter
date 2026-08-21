@@ -5,20 +5,11 @@ import type { RallarBlackBoxTestHttpRequestCommand } from '@shared-test/rallar-b
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 
 import { RALLAR_SERVER_STATE_ENDPOINT_PRESETS } from './rallar-server-workbench/rallar-server-state-endpoint-presets.ts';
-
-export type RallarServerRestMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
-export type RallarServerResponseBodyMode = 'auto' | 'json' | 'text' | 'none';
-
-export type RallarServerEndpointPreset = Readonly<{
-    presetId: string;
-    tag: string;
-    label: string;
-    method: RallarServerRestMethod;
-    pathTemplate: string;
-    requiresAuth: boolean;
-    body?: unknown;
-    responseBodyMode?: RallarServerResponseBodyMode;
-}>;
+import type {
+    RallarServerEndpointPreset,
+    RallarServerResponseBodyMode,
+    RallarServerRestMethod,
+} from './rallar-server-workbench/rallar-server-workbench-contracts.ts';
 
 export type RallarServerEndpointDraft = Readonly<{
     method: RallarServerRestMethod;

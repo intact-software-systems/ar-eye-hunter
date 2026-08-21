@@ -326,7 +326,10 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     throw new Error('Expected auth.session in browser localStorage.');
                 }
                 const session = JSON.parse(raw) as BrowserAuthSession;
-                const response = await fetch(`${apiBaseUrl}/api/auth/logout`, {
+                const requestId = crypto.randomUUID();
+                const response = await fetch(
+                    `${apiBaseUrl}/api/auth/logout/requests/${requestId}`,
+                    {
                     method: 'POST',
                     headers: {
                         'authorization': `Bearer ${session.accessToken}`,
@@ -334,7 +337,8 @@ test.describe('full-stack Browser Rallar resilience', () => {
                         'x-client-id': session.clientId,
                     },
                     body: JSON.stringify({}),
-                });
+                    },
+                );
                 return response.status;
             },
             { apiBaseUrl: config.apiBaseUrl },
@@ -1192,12 +1196,15 @@ async function readBrowserSession(page: Page): Promise<BrowserAuthSession> {
 async function loginViaApi(
     request: APIRequestContext,
 ): Promise<BrowserAuthSession> {
-    const response = await request.post(`${config.apiBaseUrl}/api/auth/login`, {
+    const response = await request.post(
+        `${config.apiBaseUrl}/api/auth/login/requests/${crypto.randomUUID()}`,
+        {
         data: {
             username: config.userA.username,
             password: config.userA.password,
         },
-    });
+        },
+    );
     expect(response.ok()).toBe(true);
     return await response.json() as BrowserAuthSession;
 }

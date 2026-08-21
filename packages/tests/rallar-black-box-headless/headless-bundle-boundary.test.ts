@@ -47,7 +47,9 @@ describe('rallar-black-box-headless bundle boundary', () => {
     // Phase 3 M2 browser delta consumption (delta-envelope wire validation,
     // snapshot materialization, floored gap pull) adds ~1.9 KiB; measured
     // 200.40 at that change.
-    expect(result.brotliKiB).toBeLessThan(202);
+    // Strict AppInbox mutation paths and canonical failure decoding add
+    // ~0.87 KiB over the stacked base; measured 202.42 at that change.
+    expect(result.brotliKiB).toBeLessThan(203);
   });
 });
 

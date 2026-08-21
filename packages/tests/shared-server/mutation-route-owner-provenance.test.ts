@@ -101,9 +101,13 @@ it('rejects a cross-file admin handoff with the wrong type and dead correct evid
   const source = readFileSync(item.enqueueSourcePath, 'utf8');
   const mutated =
     source.replace(
-      'type: AppInboxType.TOPOLOGY_RECONFIGURE,',
-      'type: AppInboxType.TOPOLOGY_CONFIG_PUT,',
-    ) + '\nfunction deadAdminType(): void { void AppInboxType.TOPOLOGY_RECONFIGURE; }\n';
+      'processAuthenticatedHttpTopologyEntryUntilCompletionResult(',
+      'processAuthenticatedTopologyEntryUntilCompletionResult(',
+    ) +
+    '\nfunction deadAdminType(): void { ' +
+      'void AppInboxType.TOPOLOGY_RECONFIGURE; ' +
+      'void processAuthenticatedHttpTopologyEntryUntilCompletionResult; }\n';
+  expect(mutated).not.toBe(source);
 
   expect(validateWithOverride(item.enqueueSourcePath, mutated)).toEqual(
     expect.arrayContaining([expect.stringContaining('registered handler is not connected')]),

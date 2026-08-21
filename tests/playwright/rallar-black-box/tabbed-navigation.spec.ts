@@ -327,14 +327,15 @@ test('opens fresh same-user agent tabs through the visible UI', async ({ page })
     const issuedSessions = new Map<string, typeof operatorSession>();
     const context = page.context();
 
-    await context.route('http://localhost:8080/api/auth/login', async route => {
+    await context.route('http://localhost:8080/api/auth/login/requests/*', async route => {
+        expect(route.request().postDataJSON()).not.toHaveProperty('requestId');
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
             body: JSON.stringify(operatorSession),
         });
     });
-    await context.route('http://localhost:8080/api/auth/logout', async route => {
+    await context.route('http://localhost:8080/api/auth/logout/requests/*', async route => {
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
@@ -354,11 +355,14 @@ test('opens fresh same-user agent tabs through the visible UI', async ({ page })
             }),
         });
     });
-    await context.route('http://localhost:8080/api/auth/agent-session-tickets', async route => {
+    await context.route(
+        'http://localhost:8080/api/auth/agent-session-tickets/requests/*',
+        async route => {
         expect(route.request().headers().authorization).toBe(
             'Bearer operator-token-value',
         );
         const request = route.request().postDataJSON() as { agentIds?: readonly string[] };
+        expect(request).not.toHaveProperty('requestId');
         const tickets = (request.agentIds ?? []).map((agentId, index) => {
             const ticket = `agent-ticket-${index + 1}-secret-value`;
             const session = {
@@ -379,11 +383,13 @@ test('opens fresh same-user agent tabs through the visible UI', async ({ page })
             contentType: 'application/json',
             body: JSON.stringify({ tickets }),
         });
-    });
+        },
+    );
     await context.route(
-        'http://localhost:8080/api/auth/agent-session-tickets/consume',
+        'http://localhost:8080/api/auth/agent-session-tickets/consume/requests/*',
         async route => {
             const request = route.request().postDataJSON() as { ticket?: string };
+            expect(request).not.toHaveProperty('requestId');
             const session = request.ticket
                 ? issuedSessions.get(request.ticket)
                 : undefined;
@@ -1263,7 +1269,8 @@ test('runs a Rallar Server REST collection with assertions and extraction', asyn
 });
 
 test('runs auth command-center actions with redacted session output', async ({ page }) => {
-    await page.route('http://localhost:8080/api/auth/register', async route => {
+    await page.route('http://localhost:8080/api/auth/register/requests/*', async route => {
+        expect(route.request().postDataJSON()).not.toHaveProperty('requestId');
         await route.fulfill({
             status: 201,
             contentType: 'application/json',
@@ -1275,8 +1282,9 @@ test('runs auth command-center actions with redacted session output', async ({ p
             }),
         });
     });
-    await page.route('http://localhost:8080/api/auth/login', async route => {
+    await page.route('http://localhost:8080/api/auth/login/requests/*', async route => {
         const body = route.request().postDataJSON() as { username?: string; password?: string };
+        expect(body).not.toHaveProperty('requestId');
         if (body.password?.includes('invalid')) {
             await route.fulfill({
                 status: 401,
@@ -1298,7 +1306,7 @@ test('runs auth command-center actions with redacted session output', async ({ p
             }),
         });
     });
-    await page.route('http://localhost:8080/api/auth/ws-ticket', async route => {
+    await page.route('http://localhost:8080/api/auth/ws-ticket/requests/*', async route => {
         if (!route.request().headers().authorization) {
             await route.fulfill({
                 status: 401,

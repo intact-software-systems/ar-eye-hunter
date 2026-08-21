@@ -94,17 +94,19 @@ test.describe('full-stack Rallar Server REST workbench', () => {
       joinResponsePromise,
     ]);
     const joinPath = new URL(joinRequest.url()).pathname;
-
-    expect(joinPath).toBe(
+    const joinMutationPath =
       `${scopePath}/groups/${encodeURIComponent(config.roomId)}/members/${
         encodeURIComponent(authSession.clientId)
-      }`,
-    );
+      }`;
+
+    expect(isStrictMutationPath(joinPath, joinMutationPath)).toBe(true);
     expect(joinRequest.headers().authorization).toMatch(/^Bearer /);
     expect(joinRequest.headers()['x-client-id']).toBe(authSession.clientId);
-    expect(JSON.parse(joinRequest.postData() ?? '{}')).toMatchObject({
+    const joinBody = JSON.parse(joinRequest.postData() ?? '{}');
+    expect(joinBody).toMatchObject({
       status: 'active',
     });
+    expect(joinBody).not.toHaveProperty('requestId');
     expect([200, 201]).toContain(joinResponse.status());
     await expectResponseStatus(panel, [200, 201]);
   });
@@ -132,8 +134,9 @@ test.describe('full-stack Rallar Server REST workbench', () => {
       const url = new URL(response.url());
       return request.method() === 'PUT' &&
         url.origin === config.apiBaseUrl &&
-        url.pathname.endsWith(
-          `/groups/${encodeURIComponent(config.roomId)}/members/${
+        isStrictMutationPath(
+          url.pathname,
+          `${scopePath}/groups/${encodeURIComponent(config.roomId)}/members/${
             encodeURIComponent(authSession.clientId)
           }`,
         );
@@ -149,7 +152,7 @@ test.describe('full-stack Rallar Server REST workbench', () => {
     await panel.getByRole('textbox', { name: 'Path' }).fill(
       `${scopePath}/groups/${encodeURIComponent(config.roomId)}/members/${
         encodeURIComponent(wrongPrincipalId)
-      }`,
+      }/requests/full-stack-mismatch-${suffix}`,
     );
 
     const mismatchResponsePromise = page.waitForResponse((response) => {
@@ -157,7 +160,12 @@ test.describe('full-stack Rallar Server REST workbench', () => {
       const url = new URL(response.url());
       return request.method() === 'PUT' &&
         url.origin === config.apiBaseUrl &&
-        url.pathname.endsWith(`/members/${encodeURIComponent(wrongPrincipalId)}`);
+        isStrictMutationPath(
+          url.pathname,
+          `${scopePath}/groups/${encodeURIComponent(config.roomId)}/members/${
+            encodeURIComponent(wrongPrincipalId)
+          }`,
+        );
     });
     await panel.getByRole('button', { name: 'Send' }).click();
     const mismatchResponse = await mismatchResponsePromise;
@@ -188,6 +196,7 @@ test.describe('full-stack Rallar Server REST workbench', () => {
         workspaceId: config.workspaceId,
         groupId: config.roomId,
         principalId: authSession.clientId,
+        requestId: `full-stack-collection-${suffix}`,
       },
       null,
       2,
@@ -215,7 +224,8 @@ test.describe('full-stack Rallar Server REST workbench', () => {
             request: {
               method: 'PUT',
               path:
-                '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/groups/{{groupId}}/members/{{principalId}}',
+                '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/groups/{{groupId}}' +
+                '/members/{{principalId}}/requests/{{requestId}}',
               attachAuth: true,
               responseBodyMode: 'json',
               body: { status: 'active' },
@@ -311,7 +321,7 @@ async function createGroupFromWorkbench(
     const url = new URL(response.url());
     return request.method() === 'POST' &&
       url.origin === config.apiBaseUrl &&
-      url.pathname === `${scopePath}/groups`;
+      isStrictMutationPath(url.pathname, `${scopePath}/groups`);
   });
   await panel.getByRole('button', { name: 'Send' }).click();
   const createResponse = await createResponsePromise;
@@ -321,6 +331,12 @@ async function createGroupFromWorkbench(
         .text()}`,
     );
   }
+}
+
+function isStrictMutationPath(path: string, mutationPath: string): boolean {
+  const prefix = `${mutationPath}/requests/`;
+  const requestId = path.startsWith(prefix) ? path.slice(prefix.length) : '';
+  return /^[A-Za-z0-9_-]{20,128}$/u.test(requestId);
 }
 
 function authHeaders(authSession: BrowserAuthSession): Record<string, string> {
