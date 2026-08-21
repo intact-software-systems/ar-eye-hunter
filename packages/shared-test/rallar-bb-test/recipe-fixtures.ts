@@ -171,7 +171,8 @@ function rtcConnectReadiness(
 
     return {
         minReadyPeers: Math.max(1, Math.round(options.readyPeerCount)),
-        timeoutMs: typeof options.readyTimeoutMs === 'number' && Number.isFinite(options.readyTimeoutMs)
+        timeoutMs: typeof options.readyTimeoutMs === 'number' &&
+                Number.isFinite(options.readyTimeoutMs)
             ? Math.max(1, Math.round(options.readyTimeoutMs))
             : 5_000,
         intervalMs: 100
@@ -213,10 +214,15 @@ function multicastDeliveryPlan(
     logicalFanoutMessages: number;
 }> {
     const participantCount = normalizePositiveInteger(options.participantCount, 50, 2);
-    const senderCount = Math.min(participantCount, normalizePositiveInteger(options.senderCount, 1, 1));
+    const senderCount = Math.min(
+        participantCount,
+        normalizePositiveInteger(options.senderCount, 1, 1)
+    );
     const rateHz = normalizeRallarBlackBoxRtcRealtimeRateHz(options.rateHz);
     const intervalMs = Math.max(1, Math.round(1_000 / rateHz));
-    const durationSeconds = normalizeRallarBlackBoxRtcRealtimeDurationSeconds(options.durationSeconds);
+    const durationSeconds = normalizeRallarBlackBoxRtcRealtimeDurationSeconds(
+        options.durationSeconds
+    );
     const frameCount = Math.max(1, Math.round(durationSeconds * rateHz));
     const receiverCount = senderCount === participantCount
         ? participantCount
@@ -427,7 +433,7 @@ function ensureGroupRequestId(
     requestPrefix: string,
     operation: 'group' | 'member'
 ): string {
-    return `${requestPrefix}-ensure-${operation}-{runId}`;
+    return `${requestPrefix}-ensure-${operation}-{runtimeIdentity}`;
 }
 
 function createRallarBlackBoxEnsureGroupCommands(
@@ -478,7 +484,8 @@ function createRallarBlackBoxEnsureGroupCommands(
             commandId: `${input.commandPrefix}-ensure-member`,
             timeoutMs: 5_000,
             metadata: {
-                purpose: 'Ensure the logged-in browser client is an active group member before RTC room join.',
+                purpose: 'Ensure the logged-in browser client is an active group member ' +
+                    'before RTC room join.',
                 idempotent: true,
                 group: input.group
             },
@@ -593,48 +600,55 @@ export function createRallarBlackBoxProviderParityLiveRecipe(
         }
     });
     const configureCommand = baseRecipe.commands[0];
-    const scopedCommands = baseRecipe.commands.slice(1).map((command): RallarBlackBoxTestCommand => {
-        if (command.kind === 'rtc.connect') {
-            return {
-                ...command,
-                actor,
-                roomId: group.groupId,
-                applicationId: group.applicationId,
-                workspaceId: group.workspaceId,
-                roomRef,
-                timeoutMs: computeRtcConnectCommandTimeoutMs(options, command.timeoutMs ?? 5_000),
-                rallar: {
-                    ...command.rallar,
-                    apiBaseUrl,
+    const scopedCommands = baseRecipe.commands.slice(1).map(
+        (command): RallarBlackBoxTestCommand => {
+            if (command.kind === 'rtc.connect') {
+                return {
+                    ...command,
+                    actor,
+                    roomId: group.groupId,
                     applicationId: group.applicationId,
                     workspaceId: group.workspaceId,
-                    scope: {
+                    roomRef,
+                    timeoutMs: computeRtcConnectCommandTimeoutMs(
+                        options,
+                        command.timeoutMs ?? 5_000
+                    ),
+                    rallar: {
+                        ...command.rallar,
+                        apiBaseUrl,
                         applicationId: group.applicationId,
-                        workspaceId: group.workspaceId
+                        workspaceId: group.workspaceId,
+                        scope: {
+                            applicationId: group.applicationId,
+                            workspaceId: group.workspaceId
+                        },
+                        roomRef
                     },
-                    roomRef
-                },
-                readiness: rtcConnectReadiness(options)
-            };
+                    readiness: rtcConnectReadiness(options)
+                };
+            }
+            if (command.kind === 'rtc.send') {
+                const send = command.send &&
+                        typeof command.send === 'object' &&
+                        !Array.isArray(command.send)
+                    ? command.send
+                    : {};
+                return {
+                    ...command,
+                    applicationId: group.applicationId,
+                    workspaceId: group.workspaceId,
+                    roomRef,
+                    send: {
+                        ...send,
+                        roomId: group.groupId,
+                        roomRef
+                    }
+                };
+            }
+            return command;
         }
-        if (command.kind === 'rtc.send') {
-            const send = command.send && typeof command.send === 'object' && !Array.isArray(command.send)
-                ? command.send
-                : {};
-            return {
-                ...command,
-                applicationId: group.applicationId,
-                workspaceId: group.workspaceId,
-                roomRef,
-                send: {
-                    ...send,
-                    roomId: group.groupId,
-                    roomRef
-                }
-            };
-        }
-        return command;
-    });
+    );
 
     return {
         ...baseRecipe,
@@ -698,8 +712,8 @@ export function createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes(
         schemaVersion: 1,
         recipeId: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID,
         name: 'RTC messages principal multicast sender',
-        description:
-            `Connect RTC messages and multicast ${receiverPlan.frameCount} principal frames at ${receiverPlan.rateHz} Hz.`,
+        description: 'Connect RTC messages and multicast ' +
+            `${receiverPlan.frameCount} principal frames at ${receiverPlan.rateHz} Hz.`,
         continueOnFailure: false,
         metadata: senderMetadata,
         commands: [
@@ -765,8 +779,8 @@ export function createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes(
         schemaVersion: 1,
         recipeId: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_RECEIVER_RECIPE_FIXTURE_ID,
         name: 'RTC messages principal multicast receiver',
-        description:
-            `Connect RTC messages, hold for ${receiverPlan.durationSeconds}s, and assert principal multicast delivery.`,
+        description: `Connect RTC messages, hold for ${receiverPlan.durationSeconds}s, ` +
+            'and assert principal multicast delivery.',
         continueOnFailure: false,
         metadata: receiverMetadata,
         commands: [
@@ -841,8 +855,8 @@ export function createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe(
         schemaVersion: 1,
         recipeId: RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID,
         name: 'RTC messages all-peer multicast',
-        description:
-            `Connect RTC messages and multicast from every peer at ${plan.rateHz} Hz for ${plan.durationSeconds}s.`,
+        description: 'Connect RTC messages and multicast from every peer at ' +
+            `${plan.rateHz} Hz for ${plan.durationSeconds}s.`,
         continueOnFailure: false,
         metadata,
         commands: [
@@ -939,7 +953,9 @@ export function createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe(
 export function createRallarBlackBoxRtcRealtimeRecipe(
     options: RallarBlackBoxRtcRealtimeRecipeOptions = {}
 ): RallarBlackBoxTestRecipe {
-    const durationSeconds = normalizeRallarBlackBoxRtcRealtimeDurationSeconds(options.durationSeconds);
+    const durationSeconds = normalizeRallarBlackBoxRtcRealtimeDurationSeconds(
+        options.durationSeconds
+    );
     const rateHz = normalizeRallarBlackBoxRtcRealtimeRateHz(options.rateHz);
     const intervalMs = Math.max(1, Math.round(1_000 / rateHz));
     const frameCount = Math.max(1, Math.round(durationSeconds * rateHz));
@@ -949,6 +965,7 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
     const executionMode = options.executionMode ?? 'loop';
     const continueOnStreamSendFailure = options.stream?.continueOnSendFailure ??
         ((options.stream?.maxDroppedFrames ?? 0) > 0 ? true : undefined);
+
     const sendCommand: RallarBlackBoxTestCommand = {
         kind: 'rtc.send',
         commandId: 'rtc-realtime-position',
@@ -992,6 +1009,7 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
             }
         }
     };
+
     const streamCommand: RallarBlackBoxTestCommand = {
         kind: 'rtc.stream',
         commandId: 'rtc-realtime-position-stream',
@@ -1011,6 +1029,7 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
         ...(continueOnStreamSendFailure === undefined
             ? {}
             : { continueOnSendFailure: continueOnStreamSendFailure }),
+
         thresholds: {
             minSendSuccessRatio: options.stream?.minSendSuccessRatio ?? 0.99,
             maxDroppedFrames: options.stream?.maxDroppedFrames ?? 0,
@@ -1055,10 +1074,12 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
             }
         }
     };
+
     return {
         recipeId: RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
         name: 'RTC realtime position stream',
-        description: `Connect RTC and send game-style position updates at ${rateHz} Hz for the configured duration.`,
+        description: 'Connect RTC and send game-style position updates at ' +
+            `${rateHz} Hz for the configured duration.`,
         continueOnFailure: false,
         metadata: {
             profile: 'rtc-realtime',
@@ -1069,6 +1090,7 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
             executionMode,
             group
         },
+
         commands: [
             ...createRallarBlackBoxEnsureGroupCommands({
                 commandPrefix: 'rtc-realtime',
@@ -1258,11 +1280,13 @@ export const RALLAR_BLACK_BOX_RECIPE_FIXTURES: readonly RallarBlackBoxRecipeFixt
     {
         fixtureId: 'composite-evidence',
         label: 'Composite Evidence',
-        description: 'Runs loop, parallel, wait, and assert commands against local browser-agent evidence.',
+        description: 'Runs loop, parallel, wait, and assert commands against local ' +
+            'browser-agent evidence.',
         recipe: {
             recipeId: 'composite-evidence-recipe',
             name: 'Composite evidence recipe',
-            description: 'Validates composite command authoring without requiring live Rallar services.',
+            description: 'Validates composite command authoring without requiring live ' +
+                'Rallar services.',
             continueOnFailure: false,
             metadata: {
                 profile: 'composite',

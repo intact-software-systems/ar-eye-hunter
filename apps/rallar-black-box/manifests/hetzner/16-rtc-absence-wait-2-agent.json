@@ -39,7 +39,7 @@
             },
             "request": {
               "method": "POST",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/d23699bb-0a36-4076-8fab-10c942115141-{runId}",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/d23699bb-0a36-4076-8fab-10c942115141-{runtimeIdentity}",
               "body": {
                 "groupId": "hetzner-headless-room",
                 "displayName": "hetzner-headless-room",
@@ -71,7 +71,7 @@
             },
             "request": {
               "method": "PUT",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}/requests/595968fc-482e-4ef5-8125-565007433507-{runId}",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}/requests/595968fc-482e-4ef5-8125-565007433507-{runtimeIdentity}",
               "body": {
                 "status": "active"
               }

@@ -3,8 +3,8 @@ import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types
 
 const CONTROL_TOPIC = 'black-box.absence.control';
 const LEAK_PROBE_TOPIC = 'black-box.absence.leak-probe';
-const ENSURE_GROUP_REQUEST_ID = 'd23699bb-0a36-4076-8fab-10c942115141-{runId}';
-const ENSURE_MEMBER_REQUEST_ID = '595968fc-482e-4ef5-8125-565007433507-{runId}';
+const ENSURE_GROUP_REQUEST_ID = 'd23699bb-0a36-4076-8fab-10c942115141-{runtimeIdentity}';
+const ENSURE_MEMBER_REQUEST_ID = '595968fc-482e-4ef5-8125-565007433507-{runtimeIdentity}';
 
 // The Hetzner isolation contract pins every identity in a manifest to one
 // effective group, so the absence claims stay inside that room: the delivered
