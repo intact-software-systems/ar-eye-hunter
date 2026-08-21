@@ -434,11 +434,6 @@ describe('distributed recipes helpers', () => {
         const sendCommand = loopCommand?.commands[0] as
             | Extract<typeof recipe.commands[number], { kind: 'rtc.send'; }>
             | undefined;
-        const firstPayload = sendCommand?.send as {
-            roomId?: string;
-            roomRef?: Record<string, unknown>;
-            data?: Record<string, unknown>;
-        } | undefined;
         const preview = distributedRecipeCommandPreview(recipe);
 
         const groupRequestId = createRallarBlackBoxEnsureGroupRequestId({
@@ -488,7 +483,7 @@ describe('distributed recipes helpers', () => {
                 acceptedStatusCodes: [200, 201]
             }
         });
-        expect((connectCommand as { readiness?: unknown; } | undefined)?.readiness).toBeUndefined();
+        expect(connectCommand?.readiness).toBeUndefined();
         expect(loopCommand).toMatchObject({
             kind: 'loop',
             commandId: 'rtc-realtime-position-loop',
@@ -511,20 +506,22 @@ describe('distributed recipes helpers', () => {
             workspaceId: 'live',
             groupId: 'arena-1'
         });
-        expect(firstPayload?.roomId).toBe('arena-1');
-        expect(firstPayload?.data).toMatchObject({
-            topic: 'room.black-box.rtc-realtime.position',
-            actor: '{auth.clientId}',
-            seq: '{loop.index}',
-            rateHz: 20,
-            durationSeconds: 2,
-            totalFrames: 40,
-            tMs: '{loop.elapsedMs}',
-            position: {
-                frame: '{loop.iteration}',
-                x: '{loop.index}',
-                y: 0,
-                z: '{loop.index}'
+        expect(sendCommand?.send).toMatchObject({
+            roomId: 'arena-1',
+            data: {
+                topic: 'room.black-box.rtc-realtime.position',
+                actor: '{auth.clientId}',
+                seq: '{loop.index}',
+                rateHz: 20,
+                durationSeconds: 2,
+                totalFrames: 40,
+                tMs: '{loop.elapsedMs}',
+                position: {
+                    frame: '{loop.iteration}',
+                    x: '{loop.index}',
+                    y: 0,
+                    z: '{loop.index}'
+                }
             }
         });
         expect(recipe.metadata).toMatchObject({
@@ -571,12 +568,14 @@ describe('distributed recipes helpers', () => {
                 }
             }
         });
-        expect((stream?.send as { data?: Record<string, unknown>; } | undefined)?.data).toMatchObject({
-            seq: '{stream.index}',
-            tMs: '{stream.elapsedMs}',
-            position: {
-                frame: '{stream.iteration}',
-                x: '{stream.index}'
+        expect(stream?.send).toMatchObject({
+            data: {
+                seq: '{stream.index}',
+                tMs: '{stream.elapsedMs}',
+                position: {
+                    frame: '{stream.iteration}',
+                    x: '{stream.index}'
+                }
             }
         });
         expect(distributedRecipeCommandPreview(recipe)).toEqual({
@@ -599,7 +598,6 @@ describe('distributed recipes helpers', () => {
         const stream = recipe.commands.find((command) => command.kind === 'rtc.stream') as
             | Extract<typeof recipe.commands[number], { kind: 'rtc.stream'; }>
             | undefined;
-        const sendPayload = stream?.send as { data?: Record<string, unknown>; } | undefined;
 
         expect(recipe.description).toContain('10 Hz');
         expect(stream).toMatchObject({
@@ -621,11 +619,13 @@ describe('distributed recipes helpers', () => {
                 frameCount: 50
             }
         });
-        expect(sendPayload?.data).toMatchObject({
-            rateHz: 10,
-            intervalMs: 100,
-            durationSeconds: 5,
-            totalFrames: 50
+        expect(stream?.send).toMatchObject({
+            data: {
+                rateHz: 10,
+                intervalMs: 100,
+                durationSeconds: 5,
+                totalFrames: 50
+            }
         });
         expect(recipe.metadata).toMatchObject({
             rateHz: 10,
@@ -734,7 +734,7 @@ describe('distributed recipes helpers', () => {
             request: {
                 method: 'POST',
                 path: expect.stringMatching(
-                    /^\/api\/state\/apps\/game-app\/workspaces\/live\/groups\/requests\/[^/]+-\{runId\}$/
+                    /^\/api\/state\/apps\/game-app\/workspaces\/live\/groups\/requests\/[^/]+-\{runtimeIdentity\}$/
                 ),
                 body: {
                     groupId: 'arena-1',
@@ -750,7 +750,7 @@ describe('distributed recipes helpers', () => {
                 path: expect.stringMatching(
                     new RegExp(
                         '^/api/state/apps/game-app/workspaces/live/groups/arena-1/' +
-                            'members/\\{auth\\.clientId\\}/requests/[^/]+-\\{runId\\}$'
+                            'members/\\{auth\\.clientId\\}/requests/[^/]+-\\{runtimeIdentity\\}$'
                     )
                 ),
                 body: {
@@ -1020,7 +1020,7 @@ describe('distributed recipes helpers', () => {
             [
                 'http.request',
                 expect.stringMatching(
-                    /^POST \/api\/state\/apps\/game-app\/workspaces\/live\/groups\/requests\/[^/]+-\{runId\}$/
+                    /^POST \/api\/state\/apps\/game-app\/workspaces\/live\/groups\/requests\/[^/]+-\{runtimeIdentity\}$/
                 )
             ],
             [
@@ -1028,7 +1028,7 @@ describe('distributed recipes helpers', () => {
                 expect.stringMatching(
                     new RegExp(
                         '^PUT /api/state/apps/game-app/workspaces/live/groups/arena-1/' +
-                            'members/\\{auth\\.clientId\\}/requests/[^/]+-\\{runId\\}$'
+                            'members/\\{auth\\.clientId\\}/requests/[^/]+-\\{runtimeIdentity\\}$'
                     )
                 )
             ],
@@ -1077,11 +1077,7 @@ describe('distributed recipes helpers', () => {
             }
         );
 
-        const readinesses = [realtime, smoke, parity].map((recipe) =>
-            (recipe.commands.find((command) => command.kind === 'rtc.connect') as {
-                readiness?: unknown;
-            } | undefined)?.readiness
-        );
+        const readinesses = [realtime, smoke, parity].map((recipe) => recipe.commands.find((command) => command.kind === 'rtc.connect')?.readiness);
 
         expect(readinesses).toEqual([
             { minReadyPeers: 2, timeoutMs: 10_000, intervalMs: 100 },
@@ -1946,8 +1942,22 @@ describe('distributed recipes helpers', () => {
             { agentId: 'agent-c', role: 'observer', recipeIds: ['shared-recipe'] }
         ] as const;
         const commandLinks = [
-            { phase: 'stage', agentId: 'agent-a', commandId: 'sender-a', recipeId: 'sender-recipe', role: 'sender', queuedAtEpochMs: 1_100 },
-            { phase: 'stage', agentId: 'agent-b', commandId: 'receiver-b', recipeId: 'receiver-recipe', role: 'receiver', queuedAtEpochMs: 1_110 },
+            {
+                phase: 'stage',
+                agentId: 'agent-a',
+                commandId: 'sender-a',
+                recipeId: 'sender-recipe',
+                role: 'sender',
+                queuedAtEpochMs: 1_100
+            },
+            {
+                phase: 'stage',
+                agentId: 'agent-b',
+                commandId: 'receiver-b',
+                recipeId: 'receiver-recipe',
+                role: 'receiver',
+                queuedAtEpochMs: 1_110
+            },
             { phase: 'stage', agentId: 'agent-b', commandId: 'shared-b', recipeId: 'shared-recipe', queuedAtEpochMs: 1_120 },
             { phase: 'stage', agentId: 'agent-c', commandId: 'shared-c', recipeId: 'shared-recipe', queuedAtEpochMs: 1_130 }
         ] satisfies ControlDistributedRunSnapshot['commandLinks'];
@@ -3738,42 +3748,55 @@ describe('distributed recipes helpers', () => {
     });
 
     it('treats malformed manifest fields as absent without losing top-level history evidence', () => {
-        const malformedManifestRun: ControlDistributedRunSnapshot = {
-            ...distributedRun,
-            distributedRunId: 'dist-malformed-manifest',
-            manifest: undefined as unknown as ControlDistributedRunSnapshot['manifest']
-        };
-        const malformedFieldsRun: ControlDistributedRunSnapshot = {
-            ...distributedRun,
-            distributedRunId: 'dist-malformed-fields',
-            manifest: {
-                displayName: { text: 'not searchable' },
-                group: {
-                    applicationId: { text: 'not searchable' },
-                    workspaceId: { text: 'not searchable' },
-                    groupId: { text: 'not searchable' }
-                },
-                recipes: { recipeId: 'not-an-array' },
-                metadata: { createdBy: { name: 'not searchable' } }
-            } as unknown as ControlDistributedRunSnapshot['manifest']
-        };
-        const independentSelectionRun: ControlDistributedRunSnapshot = {
-            ...distributedRun,
-            distributedRunId: 'dist-independent-selections',
-            manifest: {
-                ...distributedRun.manifest,
-                recipes: [
-                    null,
-                    { profile: 'regression' },
-                    { recipeId: 'other-recipe', profile: 'smoke' },
-                    {
-                        recipeId: 'malformed-profile',
-                        profile: { text: 'not searchable' },
-                        role: { text: 'not searchable' }
-                    }
-                ]
-            } as unknown as ControlDistributedRunSnapshot['manifest']
-        };
+        const malformedManifestRun = Object.defineProperty(
+            {
+                ...distributedRun,
+                distributedRunId: 'dist-malformed-manifest'
+            },
+            'manifest',
+            { value: undefined }
+        );
+        const malformedFieldsRun = Object.defineProperty(
+            {
+                ...distributedRun,
+                distributedRunId: 'dist-malformed-fields'
+            },
+            'manifest',
+            {
+                value: {
+                    displayName: { text: 'not searchable' },
+                    group: {
+                        applicationId: { text: 'not searchable' },
+                        workspaceId: { text: 'not searchable' },
+                        groupId: { text: 'not searchable' }
+                    },
+                    recipes: { recipeId: 'not-an-array' },
+                    metadata: { createdBy: { name: 'not searchable' } }
+                }
+            }
+        );
+        const independentSelectionRun = Object.defineProperty(
+            {
+                ...distributedRun,
+                distributedRunId: 'dist-independent-selections'
+            },
+            'manifest',
+            {
+                value: {
+                    ...distributedRun.manifest,
+                    recipes: [
+                        null,
+                        { profile: 'regression' },
+                        { recipeId: 'other-recipe', profile: 'smoke' },
+                        {
+                            recipeId: 'malformed-profile',
+                            profile: { text: 'not searchable' },
+                            role: { text: 'not searchable' }
+                        }
+                    ]
+                }
+            }
+        );
 
         expect(
             filterDistributedRuns([

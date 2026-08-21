@@ -1,5 +1,6 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
+import { fnv1a64 } from '@shared/queuebox/AppQueueIdentity.ts';
 import {
     toRtcReadyPeerIds,
     waitForRtcConnectReadiness,
@@ -162,12 +163,25 @@ type WebSocketTicketResolution = Readonly<{
 const DEFAULT_WS_OPEN_TIMEOUT_MS = 5_000;
 const DEFAULT_HTTP_BODY_LIMIT = 64_000;
 const WEBSOCKET_OPEN_STATE = 1;
-const AUTH_PLACEHOLDER_PATTERN =
-    /(?:\{auth\.(clientId|username|sessionId|accessToken|wsTicket)\}|%7Bauth\.(clientId|username|sessionId|accessToken|wsTicket)%7D)/gi;
-const CONFIG_PLACEHOLDER_PATTERN = /(?:\{config\.(apiBaseUrl|wsBaseUrl)\}|%7Bconfig\.(apiBaseUrl|wsBaseUrl)%7D)/gi;
-const AUTH_PLACEHOLDER_TEST_PATTERN =
-    /(?:\{auth\.(clientId|username|sessionId|accessToken|wsTicket)\}|%7Bauth\.(clientId|username|sessionId|accessToken|wsTicket)%7D)/i;
-const CONFIG_PLACEHOLDER_TEST_PATTERN = /(?:\{config\.(apiBaseUrl|wsBaseUrl)\}|%7Bconfig\.(apiBaseUrl|wsBaseUrl)%7D)/i;
+const RUNTIME_IDENTITY_BASE36_LENGTH = 13;
+const AUTH_PLACEHOLDER_SOURCE = String.raw`(?:\{auth\.(clientId|username|sessionId|accessToken|wsTicket)\}|` +
+    String.raw`%7Bauth\.(clientId|username|sessionId|accessToken|wsTicket)%7D)`;
+const CONFIG_PLACEHOLDER_SOURCE = String.raw`(?:\{config\.(apiBaseUrl|wsBaseUrl)\}|` +
+    String.raw`%7Bconfig\.(apiBaseUrl|wsBaseUrl)%7D)`;
+const RUNTIME_IDENTITY_PLACEHOLDER_SOURCE = String.raw`(?:\{(runId|agentId|runtimeIdentity)\}|` +
+    String.raw`%7B(runId|agentId|runtimeIdentity)%7D)`;
+const AUTH_PLACEHOLDER_PATTERN = new RegExp(AUTH_PLACEHOLDER_SOURCE, 'gi');
+const CONFIG_PLACEHOLDER_PATTERN = new RegExp(CONFIG_PLACEHOLDER_SOURCE, 'gi');
+const RUNTIME_IDENTITY_PLACEHOLDER_PATTERN = new RegExp(
+    RUNTIME_IDENTITY_PLACEHOLDER_SOURCE,
+    'gi'
+);
+const AUTH_PLACEHOLDER_TEST_PATTERN = new RegExp(AUTH_PLACEHOLDER_SOURCE, 'i');
+const CONFIG_PLACEHOLDER_TEST_PATTERN = new RegExp(CONFIG_PLACEHOLDER_SOURCE, 'i');
+const RUNTIME_IDENTITY_PLACEHOLDER_TEST_PATTERN = new RegExp(
+    RUNTIME_IDENTITY_PLACEHOLDER_SOURCE,
+    'i'
+);
 const WS_TICKET_PLACEHOLDER_TEST_PATTERN = /(?:\{auth\.wsTicket\}|%7Bauth\.wsTicket%7D)/i;
 
 const RTC_FAILURE_STATUSES = new Set([
@@ -189,6 +203,14 @@ type RtcSendFailure = Readonly<{
     code: string;
     message: string;
     details?: unknown;
+}>;
+
+type RtcSendObservationInput = Readonly<{
+    command: Extract<CommandWithId, { kind: 'rtc.send'; }>;
+    diagnostics: object;
+    durationMs: number;
+    ok: boolean;
+    errorCode?: string;
 }>;
 
 const RTC_READY_PEER_IDS_PLACEHOLDER = '{rtc.readyPeerIds}';
@@ -334,24 +356,20 @@ function countDataChannelStatuses(diagnostics: unknown, status: string): number 
 }
 
 function rtcSendObservation(
-    command: Extract<CommandWithId, { kind: 'rtc.send'; }>,
-    diagnostics: unknown,
-    durationMs: number,
-    ok: boolean,
-    errorCode?: string
+    input: RtcSendObservationInput
 ): Readonly<Record<string, unknown>> {
-    const root = asRecord(diagnostics);
+    const root = asRecord(input.diagnostics);
     const message = asRecord(root.message);
     const status = firstDefined(
         toStringValue(root.status),
         toStringValue(message.status)
     );
     return {
-        commandId: command.commandId,
-        kind: command.kind,
-        transport: command.transport,
-        durationMs,
-        ok,
+        commandId: input.command.commandId,
+        kind: input.command.kind,
+        transport: input.command.transport,
+        durationMs: input.durationMs,
+        ok: input.ok,
         status,
         queued: status === 'queued' || status === 'buffered',
         enqueued: status === 'enqueued',
@@ -360,12 +378,12 @@ function rtcSendObservation(
             status === 'rate-limited' ||
             status === 'buffer-full' ||
             status === 'circuit-open',
-        droppedPayloadCount: countDataChannelStatuses(diagnostics, 'dropped'),
+        droppedPayloadCount: countDataChannelStatuses(input.diagnostics, 'dropped'),
         replacedPayloadCount: firstDefined(
             typeof root.replacedPayloadCount === 'number' ? root.replacedPayloadCount : undefined,
             typeof root.replacedCount === 'number' ? root.replacedCount : undefined
         ),
-        errorCode
+        errorCode: input.errorCode
     };
 }
 
@@ -570,20 +588,34 @@ function configWsBaseUrl(config: RallarBlackBoxTestConfig | undefined): string |
     }
 }
 
-function requiresAuthPlaceholder(value: unknown): boolean {
+function runtimeIdentity(config: RallarBlackBoxTestConfig | undefined): string {
+    if (!config?.runId || !config.agentId) {
+        throw new Error(
+            'Cannot resolve recipe placeholder {runtimeIdentity} without ' +
+                'configured runId and agentId.'
+        );
+    }
+
+    return fnv1a64(`${config.runId}\u0000${config.agentId}`)
+        .padStart(RUNTIME_IDENTITY_BASE36_LENGTH, '0');
+}
+
+function requiresCommandPlaceholder(value: unknown): boolean {
     if (typeof value === 'string') {
-        return AUTH_PLACEHOLDER_TEST_PATTERN.test(value) || CONFIG_PLACEHOLDER_TEST_PATTERN.test(value);
+        return AUTH_PLACEHOLDER_TEST_PATTERN.test(value) ||
+            CONFIG_PLACEHOLDER_TEST_PATTERN.test(value) ||
+            RUNTIME_IDENTITY_PLACEHOLDER_TEST_PATTERN.test(value);
     }
 
     if (Array.isArray(value)) {
-        return value.some((item) => requiresAuthPlaceholder(item));
+        return value.some((item) => requiresCommandPlaceholder(item));
     }
 
     if (!value || typeof value !== 'object') {
         return false;
     }
 
-    return Object.values(value).some((item) => requiresAuthPlaceholder(item));
+    return Object.values(value).some((item) => requiresCommandPlaceholder(item));
 }
 
 function requiresAuthSessionPlaceholder(value: unknown): boolean {
@@ -627,44 +659,77 @@ function replaceCommandPlaceholdersInString(
     }>
 ): string {
     return value
-        .replace(CONFIG_PLACEHOLDER_PATTERN, (_match, plainKey: string | undefined, encodedKey: string | undefined) => {
-            const key = plainKey ?? encodedKey;
-            const replacement = key === 'apiBaseUrl'
-                ? configApiBaseUrl(options.config)
-                : configWsBaseUrl(options.config);
-            if (!replacement) {
-                throw new Error(`Cannot resolve recipe placeholder {config.${key}} without configured ${key}.`);
-            }
-
-            return replacement;
-        })
-        .replace(AUTH_PLACEHOLDER_PATTERN, (_match, plainKey: string | undefined, encodedKey: string | undefined) => {
-            const key = plainKey ?? encodedKey;
-            if (key === 'wsTicket') {
-                if (!options.wsTicket?.ticket) {
-                    throw new Error('Cannot resolve recipe placeholder {auth.wsTicket} without a websocket ticket.');
+        .replace(
+            RUNTIME_IDENTITY_PLACEHOLDER_PATTERN,
+            (_match, plainKey: string | undefined, encodedKey: string | undefined) => {
+                const key = plainKey ?? encodedKey;
+                const replacement = key === 'runtimeIdentity'
+                    ? runtimeIdentity(options.config)
+                    : key === 'runId'
+                    ? options.config?.runId
+                    : options.config?.agentId;
+                if (!replacement) {
+                    throw new Error(
+                        `Cannot resolve recipe placeholder {${key}} without configured ${key}.`
+                    );
                 }
 
-                return options.wsTicket.ticket;
+                return replacement;
             }
+        )
+        .replace(
+            CONFIG_PLACEHOLDER_PATTERN,
+            (_match, plainKey: string | undefined, encodedKey: string | undefined) => {
+                const key = plainKey ?? encodedKey;
+                const replacement = key === 'apiBaseUrl'
+                    ? configApiBaseUrl(options.config)
+                    : configWsBaseUrl(options.config);
+                if (!replacement) {
+                    throw new Error(
+                        `Cannot resolve recipe placeholder {config.${key}} ` +
+                            `without configured ${key}.`
+                    );
+                }
 
-            if (!options.session) {
-                throw new Error(`Cannot resolve recipe placeholder {auth.${key}} without a logged-in Rallar session.`);
+                return replacement;
             }
+        )
+        .replace(
+            AUTH_PLACEHOLDER_PATTERN,
+            (_match, plainKey: string | undefined, encodedKey: string | undefined) => {
+                const key = plainKey ?? encodedKey;
+                if (key === 'wsTicket') {
+                    if (!options.wsTicket?.ticket) {
+                        throw new Error(
+                            'Cannot resolve recipe placeholder {auth.wsTicket} ' +
+                                'without a websocket ticket.'
+                        );
+                    }
 
-            switch (key) {
-                case 'clientId':
-                    return options.session.clientId;
-                case 'username':
-                    return options.session.username;
-                case 'sessionId':
-                    return options.wsTicket?.sessionId ?? options.session.sessionId;
-                case 'accessToken':
-                    return options.session.accessToken;
-                default:
-                    return '';
+                    return options.wsTicket.ticket;
+                }
+
+                if (!options.session) {
+                    throw new Error(
+                        `Cannot resolve recipe placeholder {auth.${key}} ` +
+                            'without a logged-in Rallar session.'
+                    );
+                }
+
+                switch (key) {
+                    case 'clientId':
+                        return options.session.clientId;
+                    case 'username':
+                        return options.session.username;
+                    case 'sessionId':
+                        return options.wsTicket?.sessionId ?? options.session.sessionId;
+                    case 'accessToken':
+                        return options.session.accessToken;
+                    default:
+                        return '';
+                }
             }
-        });
+        );
 }
 
 function replaceCommandPlaceholders<T>(
@@ -675,7 +740,7 @@ function replaceCommandPlaceholders<T>(
         wsTicket?: WebSocketTicketResolution;
     }>
 ): T {
-    if (!requiresAuthPlaceholder(value)) {
+    if (!requiresCommandPlaceholder(value)) {
         return value;
     }
 
@@ -1018,7 +1083,12 @@ class BrowserCommandAdapter {
             case 'crdt.health':
                 return await this.executeCrdt(command, context, 'health', 'rallar.bb.crdt.health');
             case 'crdt.wait':
-                return await this.executeCrdt(command, context, 'wait', 'rallar.bb.crdt.wait_matched');
+                return await this.executeCrdt(
+                    command,
+                    context,
+                    'wait',
+                    'rallar.bb.crdt.wait_matched'
+                );
             case 'crdt.undo':
                 return await this.executeCrdt(command, context, 'undo', 'rallar.bb.crdt.undone');
             case 'crdt.redo':
@@ -1026,21 +1096,61 @@ class BrowserCommandAdapter {
             case 'crdt.close':
                 return await this.executeCrdt(command, context, 'close', 'rallar.bb.crdt.closed');
             case 'crdt.destroy':
-                return await this.executeCrdt(command, context, 'destroy', 'rallar.bb.crdt.destroyed');
+                return await this.executeCrdt(
+                    command,
+                    context,
+                    'destroy',
+                    'rallar.bb.crdt.destroyed'
+                );
             case 'director.appoint':
-                return await this.executeDirector(command, context, 'appoint', 'rallar.bb.director.appointed');
+                return await this.executeDirector(
+                    command,
+                    context,
+                    'appoint',
+                    'rallar.bb.director.appointed'
+                );
             case 'director.resign':
-                return await this.executeDirector(command, context, 'resign', 'rallar.bb.director.resigned');
+                return await this.executeDirector(
+                    command,
+                    context,
+                    'resign',
+                    'rallar.bb.director.resigned'
+                );
             case 'director.status':
-                return await this.executeDirector(command, context, 'status', 'rallar.bb.director.status');
+                return await this.executeDirector(
+                    command,
+                    context,
+                    'status',
+                    'rallar.bb.director.status'
+                );
             case 'director.relay.start':
-                return await this.executeDirector(command, context, 'relayStart', 'rallar.bb.director.relay_started');
+                return await this.executeDirector(
+                    command,
+                    context,
+                    'relayStart',
+                    'rallar.bb.director.relay_started'
+                );
             case 'director.intent':
-                return await this.executeDirector(command, context, 'intent', 'rallar.bb.director.intent_sent');
+                return await this.executeDirector(
+                    command,
+                    context,
+                    'intent',
+                    'rallar.bb.director.intent_sent'
+                );
             case 'director.sync.request':
-                return await this.executeDirector(command, context, 'syncRequest', 'rallar.bb.director.sync_requested');
+                return await this.executeDirector(
+                    command,
+                    context,
+                    'syncRequest',
+                    'rallar.bb.director.sync_requested'
+                );
             case 'director.relay.stop':
-                return await this.executeDirector(command, context, 'relayStop', 'rallar.bb.director.relay_stopped');
+                return await this.executeDirector(
+                    command,
+                    context,
+                    'relayStop',
+                    'rallar.bb.director.relay_stopped'
+                );
             case 'health':
                 return await this.health(command, context);
             case 'close':
@@ -1481,9 +1591,13 @@ class BrowserCommandAdapter {
             return {
                 ...resolved,
                 handle: command.commandId,
-                apiBaseUrl: resolved.apiBaseUrl ?? context.config()?.apiBaseUrl ?? configuredRallar.apiBaseUrl,
+                apiBaseUrl: resolved.apiBaseUrl ??
+                    context.config()?.apiBaseUrl ??
+                    configuredRallar.apiBaseUrl,
                 actor: resolved.actor ?? context.config()?.actor,
-                sessionId: resolved.sessionId ?? context.config()?.sessionId ?? configuredRallar.sessionId,
+                sessionId: resolved.sessionId ??
+                    context.config()?.sessionId ??
+                    configuredRallar.sessionId,
                 roomId: resolved.roomId ?? context.config()?.roomId,
                 rallar: {
                     ...configuredRallar,
@@ -1496,9 +1610,13 @@ class BrowserCommandAdapter {
             const configuredRallar = asRecord(context.config()?.rallar);
             return {
                 ...resolved,
-                apiBaseUrl: resolved.apiBaseUrl ?? context.config()?.apiBaseUrl ?? configuredRallar.apiBaseUrl,
+                apiBaseUrl: resolved.apiBaseUrl ??
+                    context.config()?.apiBaseUrl ??
+                    configuredRallar.apiBaseUrl,
                 actor: resolved.actor ?? context.config()?.actor,
-                sessionId: resolved.sessionId ?? context.config()?.sessionId ?? configuredRallar.sessionId,
+                sessionId: resolved.sessionId ??
+                    context.config()?.sessionId ??
+                    configuredRallar.sessionId,
                 roomId: resolved.roomId ?? context.config()?.roomId,
                 rallar: {
                     ...configuredRallar,
@@ -1776,11 +1894,17 @@ class BrowserCommandAdapter {
         }
         const readinessOptions = this.rtcConnectReadinessOptions(command);
         if (readinessOptions) {
-            this.recordRtcReadinessDiagnostic(context, command, 'rallar.bb.rtc.readiness_wait_started', 'info', {
-                minReadyPeers: readinessOptions.minReadyPeers,
-                timeoutMs: readinessOptions.timeoutMs,
-                intervalMs: readinessOptions.intervalMs
-            });
+            this.recordRtcReadinessDiagnostic(
+                context,
+                command,
+                'rallar.bb.rtc.readiness_wait_started',
+                'info',
+                {
+                    minReadyPeers: readinessOptions.minReadyPeers,
+                    timeoutMs: readinessOptions.timeoutMs,
+                    intervalMs: readinessOptions.intervalMs
+                }
+            );
             readiness = await waitForRtcConnectReadiness(
                 this.requireRallarRuntime(),
                 readinessOptions,
@@ -1866,7 +1990,9 @@ class BrowserCommandAdapter {
         );
         let scopedSend: unknown = resolvedSend;
         if (Object.keys(scopedSendFields).length > 0) {
-            scopedSend = resolvedSend && typeof resolvedSend === 'object' && !Array.isArray(resolvedSend)
+            scopedSend = resolvedSend &&
+                    typeof resolvedSend === 'object' &&
+                    !Array.isArray(resolvedSend)
                 ? {
                     ...(resolvedSend as Record<string, unknown>),
                     ...Object.fromEntries(
@@ -1897,13 +2023,13 @@ class BrowserCommandAdapter {
             abort.cleanup();
         }
         const failure = rtcSendFailureFromDiagnostics(diagnostics);
-        const sendObservation = rtcSendObservation(
+        const sendObservation = rtcSendObservation({
             command,
-            diagnostics,
-            Math.max(0, Date.now() - sendStartedAtEpochMs),
-            failure === undefined,
-            failure?.code
-        );
+            diagnostics: asRecord(diagnostics),
+            durationMs: Math.max(0, Date.now() - sendStartedAtEpochMs),
+            ok: failure === undefined,
+            errorCode: failure?.code
+        });
         context.recordEvent({
             kind: 'diagnostic',
             topic: failure ? 'rallar.bb.rtc.send_failed' : 'rallar.bb.rtc.send_completed',
@@ -1965,7 +2091,8 @@ class BrowserCommandAdapter {
         const abort = this.commandAbortSignal(command, context);
         const streamStartedAtEpochMs = Date.now();
         const maxInFlight = toPositiveInteger(command.maxInFlight, 64);
-        const drainTimeoutMs = typeof command.drainTimeoutMs === 'number' && command.drainTimeoutMs >= 0
+        const drainTimeoutMs = typeof command.drainTimeoutMs === 'number' &&
+                command.drainTimeoutMs >= 0
             ? command.drainTimeoutMs
             : 5_000;
         const progressEveryMs = toPositiveInteger(command.progressEveryMs, 1_000);
@@ -2111,8 +2238,14 @@ class BrowserCommandAdapter {
                             scheduledAtEpochMs: activeFrame.scheduledAtEpochMs,
                             startedAtEpochMs: activeFrame.startedAtEpochMs,
                             completedAtEpochMs,
-                            startDriftMs: Math.max(0, activeFrame.startedAtEpochMs - activeFrame.scheduledAtEpochMs),
-                            durationMs: Math.max(0, completedAtEpochMs - activeFrame.startedAtEpochMs),
+                            startDriftMs: Math.max(
+                                0,
+                                activeFrame.startedAtEpochMs - activeFrame.scheduledAtEpochMs
+                            ),
+                            durationMs: Math.max(
+                                0,
+                                completedAtEpochMs - activeFrame.startedAtEpochMs
+                            ),
                             ok: false,
                             status: 'failed',
                             errorCode: error instanceof Error ? error.name : 'RALLAR_BLACK_BOX_RTC_STREAM_SEND_FAILED'
@@ -2145,7 +2278,10 @@ class BrowserCommandAdapter {
                         scheduledAtEpochMs: frame.scheduledAtEpochMs,
                         startedAtEpochMs: frame.startedAtEpochMs,
                         completedAtEpochMs: now,
-                        startDriftMs: Math.max(0, frame.startedAtEpochMs - frame.scheduledAtEpochMs),
+                        startDriftMs: Math.max(
+                            0,
+                            frame.startedAtEpochMs - frame.scheduledAtEpochMs
+                        ),
                         durationMs: Math.max(0, now - frame.startedAtEpochMs),
                         ok: false,
                         status: 'drain-timeout',
@@ -2398,7 +2534,8 @@ class BrowserCommandAdapter {
                 value,
                 error: {
                     code: 'RALLAR_BLACK_BOX_HTTP_STATUS_NOT_ACCEPTED',
-                    message: `http.request received status ${response.status}; accepted status codes: ${accepted}.`,
+                    message: `http.request received status ${response.status}; ` +
+                        `accepted status codes: ${accepted}.`,
                     details: value
                 },
                 nextStatus: 'failed'

@@ -45,7 +45,7 @@
             },
             "request": {
               "method": "POST",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/rtc-messages-principal-ensure-group-{runId}",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/rtc-messages-principal-ensure-group-{runtimeIdentity}",
               "body": {
                 "groupId": "world-fleet-room",
                 "displayName": "world-fleet-room",
@@ -77,7 +77,7 @@
             },
             "request": {
               "method": "PUT",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/world-fleet-room/members/{auth.clientId}/requests/rtc-messages-principal-ensure-member-{runId}",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/world-fleet-room/members/{auth.clientId}/requests/rtc-messages-principal-ensure-member-{runtimeIdentity}",
               "body": {
                 "status": "active"
               }
@@ -297,7 +297,7 @@
             },
             "request": {
               "method": "POST",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/rtc-messages-principal-ensure-group-{runId}",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/rtc-messages-principal-ensure-group-{runtimeIdentity}",
               "body": {
                 "groupId": "world-fleet-room",
                 "displayName": "world-fleet-room",
@@ -329,7 +329,7 @@
             },
             "request": {
               "method": "PUT",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/world-fleet-room/members/{auth.clientId}/requests/rtc-messages-principal-ensure-member-{runId}",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/world-fleet-room/members/{auth.clientId}/requests/rtc-messages-principal-ensure-member-{runtimeIdentity}",
               "body": {
                 "status": "active"
               }

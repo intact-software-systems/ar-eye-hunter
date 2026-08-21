@@ -37,7 +37,9 @@ describe.each(
                     !requestId.includes('auth.')
             )
         ).toBe(true);
-        expect(firstRequestIds.every((requestId) => requestId?.endsWith('-{runId}'))).toBe(true);
+        expect(firstRequestIds.every(
+            (requestId) => requestId?.endsWith('-{runtimeIdentity}')
+        )).toBe(true);
     });
 });
 

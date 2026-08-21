@@ -6,8 +6,8 @@ import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types
 
 const CONTROL_TOPIC = 'black-box.group-assertions.control';
 const LEAK_PROBE_TOPIC = 'black-box.group-assertions.leak-probe';
-const ENSURE_GROUP_REQUEST_ID = 'c9602657-7db6-48c2-b9dd-fadf8e4f76eb-{runId}';
-const ENSURE_MEMBER_REQUEST_ID = 'f026327b-5bb1-4246-9694-cec49a0ca372-{runId}';
+const ENSURE_GROUP_REQUEST_ID = 'c9602657-7db6-48c2-b9dd-fadf8e4f76eb-{runtimeIdentity}';
+const ENSURE_MEMBER_REQUEST_ID = 'f026327b-5bb1-4246-9694-cec49a0ca372-{runtimeIdentity}';
 
 export const HETZNER_GROUP_ASSERTIONS_RECIPE_ID = 'group-assertions-recipe';
 

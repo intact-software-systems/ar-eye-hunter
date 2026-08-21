@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { isApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/browser-adapter.ts';
 import { createRallarBlackBoxRtcRealtimeRecipe } from '../../shared-test/rallar-bb-test/recipe-fixtures.ts';
@@ -86,7 +87,9 @@ describe('rallar-bb browser adapter auth', () => {
 
         expect(result.ok).toBe(true);
         const headers = new Headers(fetchCalls[0].init?.headers);
-        expect(fetchCalls[0].input).toBe('https://api.example.test/api/state/apps/app/workspaces/ws/groups');
+        expect(fetchCalls[0].input).toBe(
+            'https://api.example.test/api/state/apps/app/workspaces/ws/groups'
+        );
         expect(headers.get('authorization')).toBe('Bearer token-1');
         expect(headers.get('x-client-id')).toBe('client-1');
         expect(headers.get('content-type')).toBeNull();
@@ -216,7 +219,9 @@ describe('rallar-bb browser adapter auth', () => {
         expect(authenticateConfigs).toHaveLength(1);
         expect(authenticateConfigs[0]).not.toHaveProperty('roomId');
         expect(connectCalls).toBe(0);
-        expect(fetchCalls[0].input).toBe('https://api.example.test/api/state/apps/app/workspaces/ws/groups');
+        expect(fetchCalls[0].input).toBe(
+            'https://api.example.test/api/state/apps/app/workspaces/ws/groups'
+        );
         expect(headers.get('authorization')).toBe('Bearer token-1');
         expect(headers.get('x-client-id')).toBe('controller-01');
     });
@@ -272,118 +277,122 @@ describe('rallar-bb browser adapter auth', () => {
         expect(connectConfigs).toHaveLength(1);
     });
 
-    it('preserves bootstrap Rallar credentials when recipe configure narrows live scope', async () => {
-        const authenticateConfigs: unknown[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async () =>
-                new Response(JSON.stringify({ ok: true }), {
-                    status: 201,
-                    headers: {
-                        'content-type': 'application/json'
-                    }
-                })) as typeof fetch,
-            rallarRuntime: {
-                authenticate: async (config) => {
-                    authenticateConfigs.push(config);
-                    const rallar = (config as { rallar?: { username?: string; password?: string; }; }).rallar;
-                    if (!rallar?.username || !rallar.password) {
-                        throw new Error('missing Rallar credentials');
-                    }
-                    storage.setItem(
-                        'auth.session',
-                        JSON.stringify({
-                            clientId: 'controller-01',
-                            accessToken: 'token-1',
-                            username: rallar.username,
-                            sessionId: 'controller-01',
-                            expiresAtEpochMs: Date.now() + 60_000
-                        })
-                    );
-                    return { status: 'authenticated' };
-                },
-                connect: async () => {
-                    throw new Error('full connect must not run for HTTP authentication');
-                },
-                send: async () => ({ sent: true }),
-                refreshRoom: async () => undefined,
-                close: async () => ({ closed: true }),
-                health: async () => ({ connected: true })
-            }
-        });
+    it(
+        'preserves bootstrap Rallar credentials when recipe configure ' +
+            'narrows live scope',
+        async () => {
+            const authenticateConfigs: unknown[] = [];
+            const runtime = createRallarBlackBoxBrowserTestRuntime({
+                fetch: (async () =>
+                    new Response(JSON.stringify({ ok: true }), {
+                        status: 201,
+                        headers: {
+                            'content-type': 'application/json'
+                        }
+                    })) as typeof fetch,
+                rallarRuntime: {
+                    authenticate: async (config) => {
+                        authenticateConfigs.push(config);
+                        const rallar = (config as { rallar?: { username?: string; password?: string; }; }).rallar;
+                        if (!rallar?.username || !rallar.password) {
+                            throw new Error('missing Rallar credentials');
+                        }
+                        storage.setItem(
+                            'auth.session',
+                            JSON.stringify({
+                                clientId: 'controller-01',
+                                accessToken: 'token-1',
+                                username: rallar.username,
+                                sessionId: 'controller-01',
+                                expiresAtEpochMs: Date.now() + 60_000
+                            })
+                        );
+                        return { status: 'authenticated' };
+                    },
+                    connect: async () => {
+                        throw new Error('full connect must not run for HTTP authentication');
+                    },
+                    send: async () => ({ sent: true }),
+                    refreshRoom: async () => undefined,
+                    close: async () => ({ closed: true }),
+                    health: async () => ({ connected: true })
+                }
+            });
 
-        await runtime.execute({
-            kind: 'configure',
-            commandId: 'bootstrap-configure',
-            config: {
-                apiBaseUrl: 'https://api.example.test',
-                actor: 'controller-01',
-                sessionId: 'controller-01',
-                roomId: 'hetzner-headless-room',
+            await runtime.execute({
+                kind: 'configure',
+                commandId: 'bootstrap-configure',
+                config: {
+                    apiBaseUrl: 'https://api.example.test',
+                    actor: 'controller-01',
+                    sessionId: 'controller-01',
+                    roomId: 'hetzner-headless-room',
+                    rallar: {
+                        username: 'rallar',
+                        password: 'secret',
+                        register: 'if-needed'
+                    }
+                }
+            });
+            await runtime.execute({
+                kind: 'configure',
+                commandId: 'recipe-configure-live-scope',
+                config: {
+                    apiBaseUrl: 'https://api.example.test',
+                    actor: 'controller-01',
+                    sessionId: 'controller-01',
+                    roomId: 'hetzner-headless-room',
+                    rallar: {
+                        apiBaseUrl: 'https://api.example.test',
+                        applicationId: 'rallar-server',
+                        workspaceId: 'default',
+                        timeoutMs: 10_000,
+                        logoutOnClose: false,
+                        leaveRoomOnClose: false,
+                        scope: {
+                            applicationId: 'rallar-server',
+                            workspaceId: 'default'
+                        },
+                        roomRef: {
+                            applicationId: 'rallar-server',
+                            workspaceId: 'default',
+                            groupId: 'hetzner-headless-room'
+                        }
+                    }
+                }
+            });
+            const result = await runtime.execute({
+                kind: 'http.request',
+                commandId: 'http-api-auth-after-recipe-configure',
+                request: {
+                    path: '/api/state/apps/rallar-server/workspaces/default/groups',
+                    method: 'POST',
+                    body: {
+                        requestId: 'ensure-group',
+                        groupId: 'hetzner-headless-room'
+                    }
+                },
+                response: {
+                    body: 'json'
+                }
+            });
+
+            expect(result.ok).toBe(true);
+            expect(authenticateConfigs).toHaveLength(1);
+            expect(authenticateConfigs[0]).toMatchObject({
                 rallar: {
                     username: 'rallar',
                     password: 'secret',
-                    register: 'if-needed'
-                }
-            }
-        });
-        await runtime.execute({
-            kind: 'configure',
-            commandId: 'recipe-configure-live-scope',
-            config: {
-                apiBaseUrl: 'https://api.example.test',
-                actor: 'controller-01',
-                sessionId: 'controller-01',
-                roomId: 'hetzner-headless-room',
-                rallar: {
-                    apiBaseUrl: 'https://api.example.test',
+                    register: 'if-needed',
                     applicationId: 'rallar-server',
                     workspaceId: 'default',
                     timeoutMs: 10_000,
                     logoutOnClose: false,
-                    leaveRoomOnClose: false,
-                    scope: {
-                        applicationId: 'rallar-server',
-                        workspaceId: 'default'
-                    },
-                    roomRef: {
-                        applicationId: 'rallar-server',
-                        workspaceId: 'default',
-                        groupId: 'hetzner-headless-room'
-                    }
+                    leaveRoomOnClose: false
                 }
-            }
-        });
-        const result = await runtime.execute({
-            kind: 'http.request',
-            commandId: 'http-api-auth-after-recipe-configure',
-            request: {
-                path: '/api/state/apps/rallar-server/workspaces/default/groups',
-                method: 'POST',
-                body: {
-                    requestId: 'ensure-group',
-                    groupId: 'hetzner-headless-room'
-                }
-            },
-            response: {
-                body: 'json'
-            }
-        });
-
-        expect(result.ok).toBe(true);
-        expect(authenticateConfigs).toHaveLength(1);
-        expect(authenticateConfigs[0]).toMatchObject({
-            rallar: {
-                username: 'rallar',
-                password: 'secret',
-                register: 'if-needed',
-                applicationId: 'rallar-server',
-                workspaceId: 'default',
-                timeoutMs: 10_000,
-                logoutOnClose: false,
-                leaveRoomOnClose: false
-            }
-        });
-    });
+            });
+        }
+    );
 
     it('resolves logged-in auth placeholders in HTTP paths and bodies', async () => {
         storage.setItem(
@@ -449,110 +458,265 @@ describe('rallar-bb browser adapter auth', () => {
         });
     });
 
-    it('authenticates before resolving HTTP auth placeholders without starting full connect', async () => {
+    it(
+        'authenticates before resolving HTTP auth placeholders without ' +
+            'starting full connect',
+        async () => {
+            const fetchCalls: Array<{
+                input: RequestInfo | URL;
+                init?: RequestInit;
+            }> = [];
+            const authenticateConfigs: unknown[] = [];
+            let connectCalls = 0;
+            const runtime = createRallarBlackBoxBrowserTestRuntime({
+                fetch: (async (input, init) => {
+                    fetchCalls.push({ input, init });
+                    return new Response(JSON.stringify({ ok: true }), {
+                        status: 200,
+                        headers: {
+                            'content-type': 'application/json'
+                        }
+                    });
+                }) as typeof fetch,
+                rallarRuntime: {
+                    authenticate: async (config) => {
+                        authenticateConfigs.push(config);
+                        storage.setItem(
+                            'auth.session',
+                            JSON.stringify({
+                                clientId: 'controller-01',
+                                accessToken: 'token-1',
+                                username: 'rallar',
+                                sessionId: 'controller-01',
+                                expiresAtEpochMs: Date.now() + 60_000
+                            })
+                        );
+                        return { status: 'authenticated' };
+                    },
+                    connect: async () => {
+                        connectCalls += 1;
+                        throw new Error('full connect must not run for HTTP authentication');
+                    },
+                    send: async () => ({ sent: true }),
+                    refreshRoom: async () => undefined,
+                    close: async () => ({ closed: true }),
+                    health: async () => ({ connected: true })
+                }
+            });
+
+            await runtime.execute({
+                kind: 'configure',
+                commandId: 'configure-api-auth-placeholders-with-runtime-login',
+                config: {
+                    apiBaseUrl: 'https://api.example.test',
+                    actor: 'controller-01',
+                    sessionId: 'controller-01',
+                    roomId: 'hetzner-headless-room',
+                    transport: 'realtime',
+                    rallar: {
+                        apiBaseUrl: 'https://api.example.test',
+                        username: 'rallar',
+                        password: 'secret',
+                        register: 'if-needed',
+                        transport: 'realtime'
+                    }
+                }
+            });
+            const result = await runtime.execute({
+                kind: 'http.request',
+                commandId: 'http-api-auth-placeholders-with-runtime-login',
+                request: {
+                    path: '/api/state/apps/app/workspaces/ws/groups/bb-group/members/{auth.clientId}',
+                    method: 'PUT',
+                    body: {
+                        requestId: 'ensure-member:{auth.clientId}',
+                        status: 'active'
+                    }
+                },
+                response: {
+                    body: 'json'
+                }
+            });
+
+            expect(result.ok).toBe(true);
+            const headers = new Headers(fetchCalls[0].init?.headers);
+            expect(authenticateConfigs).toEqual([
+                expect.objectContaining({
+                    connection: 'controller-01',
+                    actor: 'controller-01',
+                    rallar: expect.objectContaining({
+                        apiBaseUrl: 'https://api.example.test',
+                        username: 'rallar',
+                        password: 'secret',
+                        register: 'if-needed',
+                        transport: 'realtime',
+                        expectedSessionId: 'controller-01'
+                    })
+                })
+            ]);
+            expect(authenticateConfigs[0]).not.toHaveProperty('roomId');
+            expect(connectCalls).toBe(0);
+            expect(fetchCalls[0].input).toBe(
+                'https://api.example.test/api/state/apps/app/workspaces/ws/groups/bb-group/members/controller-01'
+            );
+            expect(headers.get('authorization')).toBe('Bearer token-1');
+            expect(JSON.parse(String(fetchCalls[0].init?.body))).toEqual({
+                requestId: 'ensure-member:controller-01',
+                status: 'active'
+            });
+        }
+    );
+
+    it('resolves raw and URL-encoded runtime identity placeholders in HTTP requests', async () => {
         const fetchCalls: Array<{
             input: RequestInfo | URL;
             init?: RequestInit;
         }> = [];
-        const authenticateConfigs: unknown[] = [];
-        let connectCalls = 0;
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             fetch: (async (input, init) => {
                 fetchCalls.push({ input, init });
-                return new Response(JSON.stringify({ ok: true }), {
-                    status: 200,
-                    headers: {
-                        'content-type': 'application/json'
-                    }
-                });
-            }) as typeof fetch,
-            rallarRuntime: {
-                authenticate: async (config) => {
-                    authenticateConfigs.push(config);
-                    storage.setItem(
-                        'auth.session',
-                        JSON.stringify({
-                            clientId: 'controller-01',
-                            accessToken: 'token-1',
-                            username: 'rallar',
-                            sessionId: 'controller-01',
-                            expiresAtEpochMs: Date.now() + 60_000
-                        })
-                    );
-                    return { status: 'authenticated' };
-                },
-                connect: async () => {
-                    connectCalls += 1;
-                    throw new Error('full connect must not run for HTTP authentication');
-                },
-                send: async () => ({ sent: true }),
-                refreshRoom: async () => undefined,
-                close: async () => ({ closed: true }),
-                health: async () => ({ connected: true })
-            }
+                return new Response('{}', { status: 200 });
+            }) as typeof fetch
         });
 
         await runtime.execute({
             kind: 'configure',
-            commandId: 'configure-api-auth-placeholders-with-runtime-login',
+            commandId: 'configure-runtime-identity-placeholders',
             config: {
                 apiBaseUrl: 'https://api.example.test',
-                actor: 'controller-01',
-                sessionId: 'controller-01',
-                roomId: 'hetzner-headless-room',
-                transport: 'realtime',
-                rallar: {
-                    apiBaseUrl: 'https://api.example.test',
-                    username: 'rallar',
-                    password: 'secret',
-                    register: 'if-needed',
-                    transport: 'realtime'
-                }
+                runId: 'distributed-run-325',
+                agentId: 'controller-01'
             }
         });
         const result = await runtime.execute({
             kind: 'http.request',
-            commandId: 'http-api-auth-placeholders-with-runtime-login',
+            commandId: 'http-runtime-identity-placeholders',
             request: {
-                path: '/api/state/apps/app/workspaces/ws/groups/bb-group/members/{auth.clientId}',
-                method: 'PUT',
-                body: {
-                    requestId: 'ensure-member:{auth.clientId}',
-                    status: 'active'
-                }
-            },
-            response: {
-                body: 'json'
+                path: '/api/state/requests/ensure-group-{runId}-%7BagentId%7D',
+                method: 'POST'
             }
         });
 
         expect(result.ok).toBe(true);
-        const headers = new Headers(fetchCalls[0].init?.headers);
-        expect(authenticateConfigs).toEqual([
-            expect.objectContaining({
-                connection: 'controller-01',
-                actor: 'controller-01',
-                rallar: expect.objectContaining({
-                    apiBaseUrl: 'https://api.example.test',
-                    username: 'rallar',
-                    password: 'secret',
-                    register: 'if-needed',
-                    transport: 'realtime',
-                    expectedSessionId: 'controller-01'
-                })
-            })
+        expect(fetchCalls.map((call) => call.input)).toEqual([
+            'https://api.example.test/api/state/requests/' +
+            'ensure-group-distributed-run-325-controller-01'
         ]);
-        expect(authenticateConfigs[0]).not.toHaveProperty('roomId');
-        expect(connectCalls).toBe(0);
-        expect(fetchCalls[0].input).toBe(
-            'https://api.example.test/api/state/apps/app/workspaces/ws/groups/bb-group/members/controller-01'
-        );
-        expect(headers.get('authorization')).toBe('Bearer token-1');
-        expect(JSON.parse(String(fetchCalls[0].init?.body))).toEqual({
-            requestId: 'ensure-member:controller-01',
-            status: 'active'
-        });
     });
+
+    it('creates stable bounded identities from long run and agent ids', async () => {
+        const requestIds: string[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            fetch: (async (input) => {
+                requestIds.push(new URL(String(input)).pathname.split('/').at(-1) ?? '');
+                return new Response('{}', { status: 200 });
+            }) as typeof fetch
+        });
+        const runId = 'rallar-live-three-browser-live3-1787338266520-7060e2f6c24808';
+
+        for (
+            const [index, agentId] of [
+                'live-realtime-a-live3-1787338266520-7060e2f6c24808',
+                'live-realtime-b-live3-1787338266520-7060e2f6c24808',
+                'live-realtime-a-live3-1787338266520-7060e2f6c24808'
+            ].entries()
+        ) {
+            await runtime.execute({
+                kind: 'configure',
+                commandId: `configure-runtime-identity-${index}`,
+                config: {
+                    apiBaseUrl: 'https://api.example.test',
+                    runId,
+                    agentId
+                }
+            });
+            const result = await runtime.execute({
+                kind: 'http.request',
+                commandId: `request-runtime-identity-${index}`,
+                request: {
+                    path: '/api/state/requests/ensure-group-{runtimeIdentity}',
+                    method: 'POST'
+                }
+            });
+            expect(result.ok).toBe(true);
+        }
+
+        expect(requestIds).toHaveLength(3);
+        expect(requestIds[0]).toBe(requestIds[2]);
+        expect(requestIds[0]).not.toBe(requestIds[1]);
+        expect(requestIds.every(isApiMutationRequestId)).toBe(true);
+    });
+
+    it('pads runtime identities to a fixed width', async () => {
+        const fetchCalls: Array<RequestInfo | URL> = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            fetch: (async (input) => {
+                fetchCalls.push(input);
+                return new Response('{}', { status: 200 });
+            }) as typeof fetch
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-fixed-width-runtime-identity',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+                runId: 'run',
+                agentId: 'agent-0'
+            }
+        });
+        const result = await runtime.execute({
+            kind: 'http.request',
+            commandId: 'request-fixed-width-runtime-identity',
+            request: {
+                path: '/api/state/requests/ensure-group-{runtimeIdentity}',
+                method: 'POST'
+            }
+        });
+
+        expect(result.ok).toBe(true);
+        expect(fetchCalls.map((call) => new URL(String(call)).pathname)).toEqual([
+            '/api/state/requests/ensure-group-05930sb3l88hy'
+        ]);
+    });
+
+    it(
+        'fails before fetch when a runtime identity placeholder has no ' +
+            'configured value',
+        async () => {
+            let fetchCalls = 0;
+            const runtime = createRallarBlackBoxBrowserTestRuntime({
+                fetch: (async () => {
+                    fetchCalls += 1;
+                    return new Response('{}', { status: 200 });
+                }) as typeof fetch
+            });
+
+            await runtime.execute({
+                kind: 'configure',
+                commandId: 'configure-incomplete-runtime-identity',
+                config: {
+                    apiBaseUrl: 'https://api.example.test',
+                    runId: 'distributed-run-325'
+                }
+            });
+            const result = await runtime.execute({
+                kind: 'http.request',
+                commandId: 'http-incomplete-runtime-identity',
+                request: {
+                    path: '/api/state/requests/ensure-group-{runtimeIdentity}',
+                    method: 'POST'
+                }
+            });
+
+            expect(result.ok).toBe(false);
+            expect(result.error?.message).toBe(
+                'Cannot resolve recipe placeholder {runtimeIdentity} without ' +
+                    'configured runId and agentId.'
+            );
+            expect(fetchCalls).toBe(0);
+        }
+    );
 
     it('runs the RTC realtime recipe setup before browser RTC connect', async () => {
         storage.setItem(
@@ -586,7 +750,12 @@ describe('rallar-bb browser adapter auth', () => {
                     operations.push('RTC connect');
                     return { connected: true };
                 },
-                send: async () => ({ status: 'sent', peerIds: ['bob-session'], results: [], health: [] }),
+                send: async () => ({
+                    status: 'sent',
+                    peerIds: ['bob-session'],
+                    results: [],
+                    health: []
+                }),
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true })
@@ -606,6 +775,8 @@ describe('rallar-bb browser adapter auth', () => {
             commandId: 'configure-rtc-realtime',
             config: {
                 apiBaseUrl: 'https://api.example.test',
+                runId: 'distributed-run-325',
+                agentId: 'controller-01',
                 actor: 'alice',
                 sessionId: 'session-1',
                 transport: 'realtime',
@@ -629,27 +800,19 @@ describe('rallar-bb browser adapter auth', () => {
 
         expect(runResult.ok).toBe(true);
         expect(operations.slice(0, 3)).toEqual([
-            expect.stringMatching(
-                /^POST \/api\/state\/apps\/rallar-server\/workspaces\/default\/groups\/requests\/[^/]+-%7BrunId%7D$/
-            ),
-            expect.stringMatching(
-                new RegExp(
-                    '^PUT /api/state/apps/rallar-server/workspaces/default/groups/' +
-                        'hetzner-headless-room/members/alice/requests/[^/]+-%7BrunId%7D$'
-                )
-            ),
+            'POST /api/state/apps/rallar-server/workspaces/default/groups/requests/' +
+            'rtc-realtime-ensure-group-2dg71r3s68rqz',
+            'PUT /api/state/apps/rallar-server/workspaces/default/groups/' +
+            'hetzner-headless-room/members/alice/requests/' +
+            'rtc-realtime-ensure-member-2dg71r3s68rqz',
             'RTC connect'
         ]);
         expect(fetchCalls.map((call) => new URL(String(call.input)).pathname)).toEqual([
-            expect.stringMatching(
-                /^\/api\/state\/apps\/rallar-server\/workspaces\/default\/groups\/requests\/[^/]+-%7BrunId%7D$/
-            ),
-            expect.stringMatching(
-                new RegExp(
-                    '^/api/state/apps/rallar-server/workspaces/default/groups/' +
-                        'hetzner-headless-room/members/alice/requests/[^/]+-%7BrunId%7D$'
-                )
-            )
+            '/api/state/apps/rallar-server/workspaces/default/groups/requests/' +
+            'rtc-realtime-ensure-group-2dg71r3s68rqz',
+            '/api/state/apps/rallar-server/workspaces/default/groups/' +
+            'hetzner-headless-room/members/alice/requests/' +
+            'rtc-realtime-ensure-member-2dg71r3s68rqz'
         ]);
         expect(JSON.parse(String(fetchCalls[0].init?.body))).toEqual({
             groupId: 'hetzner-headless-room',
@@ -771,7 +934,9 @@ describe('rallar-bb browser adapter auth', () => {
         expect(fetchCalls[0].input).toMatch(
             /^https:\/\/api\.example\.test\/api\/auth\/ws-ticket\/requests\/[^/]+$/
         );
-        expect(new Headers(fetchCalls[0].init?.headers).get('authorization')).toBe('Bearer token-1');
+        expect(
+            new Headers(fetchCalls[0].init?.headers).get('authorization')
+        ).toBe('Bearer token-1');
         expect(openedSockets).toEqual([
             'wss://api.example.test/api/ws/session-1?ticket=ticket-1'
         ]);
