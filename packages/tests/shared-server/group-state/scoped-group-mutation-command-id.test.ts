@@ -3,10 +3,9 @@ import { describe, expect, it } from 'vitest';
 // prettier-ignore
 import { toScopedGroupMutationCommandId } from
   '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
-import type {
-  GroupMutationAuthorityProof,
-  GroupMutationDescriptor,
-} from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+// prettier-ignore
+import type { GroupMutationDescriptor } from
+  '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 
 const descriptor: GroupMutationDescriptor = {
   operation: 'updateGroup',
@@ -22,40 +21,29 @@ const descriptor: GroupMutationDescriptor = {
   },
 };
 
-const authority: GroupMutationAuthorityProof = {
-  version: 1,
-  principalId: 'owner',
-  sessionId: 'owner-session-1',
-  sessionIssuedAtEpochMs: 1_000,
-  sessionExpiresAtEpochMs: 61_000,
-  commandMac: 'a'.repeat(64),
-};
-
 describe('scoped group AppInbox command identity', () => {
   it('survives an authenticated session renewal for the same stable principal', async () => {
-    const renewedAuthority: GroupMutationAuthorityProof = {
-      ...authority,
-      sessionId: 'owner-session-2',
-      sessionIssuedAtEpochMs: 2_000,
-      sessionExpiresAtEpochMs: 62_000,
-      commandMac: 'b'.repeat(64),
-    };
-
-    await expect(toScopedGroupMutationCommandId(descriptor, renewedAuthority)).resolves.toBe(
-      await toScopedGroupMutationCommandId(descriptor, authority),
+    await expect(toScopedGroupMutationCommandId(descriptor, 'owner')).resolves.toBe(
+      await toScopedGroupMutationCommandId(
+        {
+          ...descriptor,
+          request: { ...descriptor.request, actorSessionId: 'owner-session-2' },
+        },
+        'owner',
+      ),
     );
   });
 
   it('isolates operation, caller, target, and group scope with a bounded opaque key', async () => {
-    const baseline = await toScopedGroupMutationCommandId(descriptor, authority);
+    const baseline = await toScopedGroupMutationCommandId(descriptor, 'owner');
     const variants = await Promise.all([
-      toScopedGroupMutationCommandId({ ...descriptor, operation: 'appointDirector' }, authority),
-      toScopedGroupMutationCommandId(descriptor, { ...authority, principalId: 'other-owner' }),
+      toScopedGroupMutationCommandId({ ...descriptor, operation: 'appointDirector' }, 'owner'),
+      toScopedGroupMutationCommandId(descriptor, 'other-owner'),
       toScopedGroupMutationCommandId(
         { ...descriptor, targetPrincipalId: 'target-principal' },
-        authority,
+        'owner',
       ),
-      toScopedGroupMutationCommandId({ ...descriptor, groupId: 'other-group' }, authority),
+      toScopedGroupMutationCommandId({ ...descriptor, groupId: 'other-group' }, 'owner'),
     ]);
 
     expect(baseline).toMatch(/^group-app-inbox:[0-9a-f]{64}$/);

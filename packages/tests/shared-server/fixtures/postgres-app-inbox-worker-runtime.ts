@@ -28,8 +28,15 @@ import type {
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 // prettier-ignore
 import {
+  type AuthenticatedGroupMutationEnqueue,
   isAuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+// prettier-ignore
+import { toGroupMutationDescriptor } from
+  '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
+// prettier-ignore
+import { toScopedGroupMutationCommandId } from
+  '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
 // prettier-ignore
 import type {
   AppClientInboxService,
@@ -123,6 +130,24 @@ export function createPostgresAppInboxWorkerTrace(): PostgresAppInboxWorkerTrace
 export function groupAppInboxStart(
   input: GroupAppInboxMutationInput,
 ): () => Promise<Either<string, GroupStateInboxDurableResult>> {
+  const enqueue = toAuthenticatedGroupAppInboxEnqueue(input);
+  return () =>
+    input.runtime.group.processAuthenticatedGroupEntryUntilCompletion(enqueue, input.authority);
+}
+
+export async function toGroupAppInboxStorageCommandId(
+  enqueue: AuthenticatedGroupMutationEnqueue,
+  callerPrincipalId: string,
+): Promise<string> {
+  return await toScopedGroupMutationCommandId(
+    toGroupMutationDescriptor(enqueue),
+    callerPrincipalId,
+  );
+}
+
+export function toAuthenticatedGroupAppInboxEnqueue(
+  input: Pick<GroupAppInboxMutationInput, 'authority' | 'data' | 'type'>,
+): AuthenticatedGroupMutationEnqueue {
   const enqueue = {
     type: input.type,
     resourceId: input.data.request.requestId,
@@ -135,8 +160,7 @@ export function groupAppInboxStart(
   if (!isAuthenticatedGroupMutationEnqueue(enqueue)) {
     throw new TypeError(`Authenticated group mutation type is required: ${input.type}`);
   }
-  return () =>
-    input.runtime.group.processAuthenticatedGroupEntryUntilCompletion(enqueue, input.authority);
+  return enqueue;
 }
 
 export async function runGroupAppInbox(

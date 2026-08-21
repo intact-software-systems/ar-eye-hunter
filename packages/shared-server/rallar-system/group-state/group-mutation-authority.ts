@@ -234,7 +234,7 @@ async function materializeAuthenticatedGroupMutationCommand(
     command: useScopedCommandId
       ? {
           ...semanticCommand,
-          commandId: await toScopedGroupMutationCommandId(descriptor, authorityProof),
+          commandId: await toScopedGroupMutationCommandId(descriptor, authorityProof.principalId),
         }
       : semanticCommand,
   };
