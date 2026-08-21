@@ -6,7 +6,7 @@ import {
   AppInboxService,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
-// prettier-ignore
+
 import type {
   JsonWireValue,
 } from '@shared-server/rallar-system/services/mutation-command-identity.ts';

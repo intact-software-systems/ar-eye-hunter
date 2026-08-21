@@ -13,7 +13,7 @@ import {
   AuthSessionRepository,
   type IssuedAuthSession,
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-// prettier-ignore
+
 import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/\
 StateEventStore.ts';
 import {
@@ -30,7 +30,7 @@ import {
   type ClientStateWritten,
   createClientStateService,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
-// prettier-ignore
+
 import {
   createWsSessionGenerationLifecycleService,
 } from '@shared-server/rallar-system/services/ws-session-generation-lifecycle.ts';

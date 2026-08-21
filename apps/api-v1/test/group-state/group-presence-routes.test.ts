@@ -7,7 +7,7 @@ import type {
 import type {
   InactiveGroupPresenceResult,
 } from '@shared-server/rallar-system/group-state/presence/group-presence-service.ts';
-// prettier-ignore
+
 import type {
   AuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';

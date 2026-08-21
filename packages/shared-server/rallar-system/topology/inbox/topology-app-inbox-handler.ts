@@ -13,7 +13,7 @@ import type { JsonWireValue } from '../../services/mutation-command-identity.ts'
 import type { GroupTopologyConfigMutationService } from '../config/group-topology-config-mutation-service.ts';
 import { toTopologyConfigMutationResult } from '../config/mutation/to-topology-config-mutation-result.ts';
 import { writeTopologyConfigMutation } from '../config/mutation/write-topology-config-mutation.ts';
-// prettier-ignore
+
 import {
   readTopologyConfigReceiptBoundary,
 } from '../config/mutation/topology-config-mutation-boundary.ts';

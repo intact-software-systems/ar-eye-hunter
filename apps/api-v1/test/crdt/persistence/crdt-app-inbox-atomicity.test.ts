@@ -8,13 +8,13 @@ import {
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-// deno-fmt-ignore
+
 import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/\
 psql-crdt-mutation-repository.ts';
-// deno-fmt-ignore
+
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
 ResourceInboxRepository.ts';
-// deno-fmt-ignore
+
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/\
 create-crdt-mutation-service.ts';
 import {
@@ -23,7 +23,7 @@ import {
   CrdtMutationConflictError,
   type CrdtMutationRepository,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-// deno-fmt-ignore
+
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/\
 crdt-mutation-command-codec.ts';
 

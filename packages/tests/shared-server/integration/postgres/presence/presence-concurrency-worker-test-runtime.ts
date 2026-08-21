@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { expect } from 'vitest';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-// prettier-ignore
+
 import type {
   JsonWireObject,
   JsonWireValue,

@@ -2,24 +2,24 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-// prettier-ignore
+
 import {
   ResourceInboxRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-// prettier-ignore
+
 import {
   GroupTopologyConfigRepository,
 } from
   '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
-// prettier-ignore
+
 import {
   GroupTopologyManagementService,
 } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
-// prettier-ignore
+
 import {
   RallarRtcTopologyService,
 } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-// prettier-ignore
+
 import {
   computeRtcTopologyEntry,
 } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
@@ -27,7 +27,7 @@ import {
   type AppInboxMessageContext,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
-// prettier-ignore
+
 import {
   createAuthenticatedTopologyEnqueue,
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';

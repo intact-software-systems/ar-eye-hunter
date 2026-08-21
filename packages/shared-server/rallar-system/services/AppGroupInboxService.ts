@@ -6,18 +6,18 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql } from '../../postgres/PostgresSqlClient.ts';
 import { GroupMutationAuthorizationError } from '../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../group-state/group-state-service-contracts.ts';
-// prettier-ignore
+
 import type { GroupFormationGroupMutationSink } from '../formation-metrics.ts';
 import { GroupStateInboxHandler } from '../group-state/inbox/group-state-inbox-handler.ts';
-// prettier-ignore
+
 import type {
   GroupStateInboxDurableResult,
 } from '../group-state/inbox/group-state-inbox-result.ts';
-// prettier-ignore
+
 import {
   decodeGroupStateInboxDurableResult,
 } from '../group-state/inbox/group-state-inbox-result-codec.ts';
-// prettier-ignore
+
 import { toGroupMutationDescriptor } from '../group-state/inbox/to-group-mutation-descriptor.ts';
 import {
   GROUP_MUTATION_INBOX_TYPES,
@@ -28,7 +28,7 @@ import type {
   AuthenticatedGroupMutationInboxType,
   AuthenticatedGroupMutationPayloadByType,
 } from '../group-state/inbox/group-state-inbox-contracts.ts';
-// prettier-ignore
+
 import type {
   GroupPresenceSessionCleanupAppInboxPayload,
 } from '../group-state/presence/group-presence-session-cleanup-app-inbox-payload.ts';
@@ -37,10 +37,10 @@ import {
   toExpiredPresenceEnqueue,
   toGroupSessionCleanupEnqueue,
 } from '../group-state/presence/group-presence-service.ts';
-// prettier-ignore
+
 import type { GroupMutationCommand } from '../group-state/mutation/group-mutation-contracts.ts';
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
-// prettier-ignore
+
 import type {
   RtcRttAppInboxDependencies,
 } from '../rtc-topology/inbox/rtc-rtt-app-inbox-contracts.ts';
@@ -58,7 +58,7 @@ import {
   toTopologyHttpMutationContextId,
 } from '../topology/inbox/topology-app-inbox-command.ts';
 import type { TopologyAppInboxCommand } from '../topology/inbox/topology-app-inbox-contracts.ts';
-// prettier-ignore
+
 import type {
   GroupTopologyManagementService,
 } from '../topology/group-topology-management-service.ts';
@@ -107,7 +107,7 @@ export {
   type GroupUpdateAppInboxPayload,
 } from '../group-state/inbox/group-state-inbox-contracts.ts';
 
-// prettier-ignore
+
 export type {
   GroupPresenceSessionCleanupAppInboxPayload,
 } from '../group-state/presence/group-presence-session-cleanup-app-inbox-payload.ts';

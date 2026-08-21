@@ -2,16 +2,16 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-// prettier-ignore
+
 import {
   AppClientInboxService,
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-// prettier-ignore
+
 import {
   toUpsertPrincipalCommandInput,
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-// prettier-ignore
+
 import {
   RuntimeStateWriteConflictError,
 } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';

@@ -3,19 +3,19 @@ import { expect, it, vi } from 'vitest';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-// prettier-ignore
+
 import {
   ClientStateRepository,
 } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-// prettier-ignore
+
 import type {
   ClientStateWritten,
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-// prettier-ignore
+
 import {
   createClientStateService,
 } from '@shared-server/rallar-system/client-state/client-state-service.ts';
-// prettier-ignore
+
 import {
   AppClientInboxService,
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
@@ -49,7 +49,7 @@ interface SeedClientExpirySessionInput {
   readonly runtimeRepository: FakeRuntimeStateRepository;
 }
 
-// prettier-ignore
+
 it(
   'processes expired client sessions through the inbox and publishes written mutations',
   async () => {

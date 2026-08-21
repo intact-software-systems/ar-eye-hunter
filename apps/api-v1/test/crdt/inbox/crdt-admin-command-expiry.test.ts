@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-// deno-fmt-ignore
+
 import type { CrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/\
 crdt-mutation-contracts.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/services/\

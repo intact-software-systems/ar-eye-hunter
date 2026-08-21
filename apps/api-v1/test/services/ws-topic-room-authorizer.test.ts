@@ -3,11 +3,11 @@ import { newALEventRoute, newALMulticastMessage } from '@shared/al-contracts/al-
 import type { AuditStamp, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
-// prettier-ignore
+
 import {
   resolveGroupLifecyclePolicyPreset,
 } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
-// prettier-ignore
+
 import type {
   ApiV1RoomWsAuthorizerDependencies,
 } from '../../src/services/ws-topic-room-authorizer.ts';

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 
-// deno-fmt-ignore
+
 import type { CreateApiCrdtInboxServiceInput } from '../../src/crdt/\
 create-api-crdt-inbox-service.ts';
-// deno-fmt-ignore
+
 import type { createApiCrdtInboxFactory } from '../../src/crdt/\
 create-api-crdt-inbox-factory.ts';
 

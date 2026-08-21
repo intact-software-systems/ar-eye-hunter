@@ -66,7 +66,9 @@ export function validateRegistry(registry, candidates) {
       errors.push(`registry entry is stale: ${entry.id}`);
       continue;
     }
-    for (const field of ['path', 'line', 'column', 'kind']) {
+    // `line` and `column` are not identity: they move under any reformat. The id already pins the
+    // path, kind, and normalized detail, so only the fields a reader relies on are re-checked.
+    for (const field of ['path', 'kind']) {
       if (entry[field] !== candidate[field]) {
         errors.push(`registry entry ${entry.id} has stale ${field}`);
       }

@@ -7,15 +7,15 @@ import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-// prettier-ignore
+
 import {
   AuthSessionRepository,
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-// prettier-ignore
+
 import {
   GroupStateRepository,
 } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-// prettier-ignore
+
 import type {
   AuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
@@ -33,7 +33,7 @@ import {
   createGroupStateService,
   type GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
-// prettier-ignore
+
 import type {
   GroupMutationReceipt,
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';

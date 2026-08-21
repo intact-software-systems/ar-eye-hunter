@@ -30,7 +30,7 @@ import {
 import {
   readApiRtcTopologyReplayConfig,
 } from '../runtime/rtc-topology/rtc-topology-replay-config.ts';
-// deno-fmt-ignore
+
 import {
   myPublisherId,
   myRtcTopologyStreamId,

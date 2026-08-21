@@ -177,8 +177,11 @@ describe('repo code style authority integrity', () => {
       'plans/repo-human-traceability-refactoring-program-plan.md',
     );
 
+    // The base is the PR base unless a reviewer labels the pull request, which passes the empty
+    // base the main-push deploy path already uses. Only a repository-wide reformat earns it.
+    expect(branchReleaseGate).toContain('github.event.pull_request.base.sha }}');
     expect(branchReleaseGate).toContain(
-      'changed_repo_style_base: ${{ github.event.pull_request.base.sha }}',
+      "contains(github.event.pull_request.labels.*.name, 'skip-changed-gates')",
     );
     expect(branchReleaseGate).not.toContain('origin/main');
     expect(releaseGate).toContain('changed_repo_style_base:');

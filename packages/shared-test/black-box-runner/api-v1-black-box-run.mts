@@ -25,7 +25,7 @@ import {
   type ManagedApiServerLifecycleControls,
   withManagedApiServerPlans,
 } from './managed-api/with-managed-api-server-plans.mts';
-// Prettier would collapse this import beyond the repository's 100-column review limit.
+// The formatter would collapse this import beyond the repository's 100-column review limit.
 import { runApiV1RtcTopologyReplayProof } from './topology-replay/api-v1-rtc-topology-replay-proof.mts';
 
 export {

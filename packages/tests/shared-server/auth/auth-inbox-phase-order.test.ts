@@ -19,7 +19,7 @@ import type {
   AuthMutationRead,
   AuthMutationResult,
 } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
-// prettier-ignore
+
 import { materializeAuthMutationIntent }
   from '@shared-server/rallar-system/auth/mutation/materialize-auth-mutation-intent.ts';
 import type { AppInboxMessageContext } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';

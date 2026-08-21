@@ -3,7 +3,7 @@ import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
 import { DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS } from '@shared/api/group-director.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-// prettier-ignore
+
 import type {
   AuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
@@ -11,7 +11,7 @@ import {
   AppGroupInboxService,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-// prettier-ignore
+
 import {
   AppInboxIdempotencyConflictError,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
@@ -19,7 +19,7 @@ import {
   GroupMutationAuthorizationError,
   type GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
-// prettier-ignore
+
 import {
   RuntimeStateWriteConflictError,
 } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';

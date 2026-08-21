@@ -10,25 +10,25 @@ import {
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-// deno-fmt-ignore
+
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/\
 psql-crdt-log-repository.ts';
-// deno-fmt-ignore
+
 import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/\
 psql-crdt-mutation-repository.ts';
-// deno-fmt-ignore
+
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
 ResourceInboxRepository.ts';
-// deno-fmt-ignore
+
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
 ResourceInboxResultsRepository.ts';
-// deno-fmt-ignore
+
 import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/\
 app-crdt-inbox-service.ts';
-// deno-fmt-ignore
+
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/\
 create-crdt-mutation-service.ts';
-// deno-fmt-ignore
+
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/\
 crdt-mutation-command-codec.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';

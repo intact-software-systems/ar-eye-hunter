@@ -10,7 +10,7 @@ import {
   type RallarCrdtDocumentRef,
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
-// deno-fmt-ignore
+
 import {
   InMemoryRallarCrdtLogRepository,
 } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';

@@ -7,15 +7,15 @@ import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
-// deno-fmt-ignore
+
 import {
   GroupPresenceSummaryWork,
 } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
-// deno-fmt-ignore: This package import exceeds the repository's 100-column checker limit.
+
 import {
   APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC,
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
-// deno-fmt-ignore
+
 import {
   toAuthorisedWsClientConnectEnqueue,
 } from '@shared-server/rallar-system/services/authorised-ws-client-app-inbox.ts';

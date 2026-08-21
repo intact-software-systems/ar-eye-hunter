@@ -3,50 +3,50 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-// prettier-ignore
+
 import type {
   ResourceInboxAttemptReleaseTelemetry,
 } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-// prettier-ignore
+
 import type {
   ResourceInboxRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-// prettier-ignore
+
 import type {
   ResourceInboxResultsRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-// prettier-ignore
+
 import type {
   AuthSessionRepository,
   IssuedAuthSession,
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-// prettier-ignore
+
 import type {
   GroupStateInboxDurableResult,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
-// prettier-ignore
+
 import {
   type AuthenticatedGroupMutationEnqueue,
   isAuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-// prettier-ignore
+
 import { toGroupMutationDescriptor } from
   '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
-// prettier-ignore
+
 import { toScopedGroupMutationCommandId } from
   '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
-// prettier-ignore
+
 import type {
   AppClientInboxService,
 } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
-// prettier-ignore
+
 import type {
   AppGroupInboxService,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-// prettier-ignore
+
 import type {
   JsonWireObject,
 } from '@shared-server/rallar-system/services/mutation-command-identity.ts';

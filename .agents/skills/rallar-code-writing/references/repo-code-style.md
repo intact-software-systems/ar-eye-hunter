@@ -135,7 +135,7 @@ pull request and cannot be deferred through an issue to complete the work.
 - The full-repository checker reports tests, mocks, fixtures, and support tooling alongside
   production. Generated and vendored artifacts stay out of both the checker and the standard.
 - Enforcement on tests is staged. Feature-branch CI blocks a changed test file only on
-  `line.width`, `boundary.unknown`, and `construction.forward-capture`; every other rule is
+  `boundary.unknown` and `construction.forward-capture`; every other rule is
   reported for review without blocking. A rule joins that set once it has been measured against the
   test corpus, as `file.length` was. Staging is keyed on the path, so a directory-level layout
   finding under a test tree is staged the same way a file-level one is.
@@ -190,23 +190,25 @@ migration decision above.
 
 ## Formatting and spacing
 
-Use the nearest configured formatter. The repository TypeScript baseline is:
+The root dprint configuration (`dprint.json`) is the only formatter, and it owns every tree in the
+repository including the Deno applications. `deno fmt` is retired: no `deno.json` declares a `fmt`
+block or `fmt` task, so there is no second formatter to fight over the same TypeScript. Suppress a
+node with `// dprint-ignore`, or a whole file with `// dprint-ignore-file`.
 
-- 2-space indentation;
-- 100-character line width, measured on code. A module specifier is not measured: its length is
-  the path, and a formatter honouring the same width leaves the line intact. A `function` or
-  `interface` declaration header is measured at 140, because its length is the names it
-  declares. Import depth and naming are owned by the layout and type-organization rules;
-- semicolons;
-- single quotes;
-- trailing commas in multiline declarations, calls, objects, arrays, and types;
+`dprint.json` is the sole authority for indentation, line width, quotes, semicolons, trailing
+commas, brace position, and import ordering. Those values are deliberately not restated here: a
+second copy drifts, and the formatter is what actually decides. Run `npm run format` to apply it and
+`npm run format:check` to verify.
+
+Because the formatter decides line width, the checker no longer measures it — there is no
+`line.width` rule. Width is not a review topic; reach for the layout, cognitive-load, and
+type-organization rules when a line is hard to read for reasons a formatter cannot fix.
+
+The standard still governs what the formatter does not decide:
+
 - braces around control-flow bodies, including one-line bodies;
 - one statement per line;
 - no manual column alignment with runs of spaces.
-
-Use `deno fmt` where the nearest `deno.json` owns the source path. Use the root Prettier configuration elsewhere.
-Deno-owned application trees are listed in
-`.prettierignore` so the two formatters do not rewrite the same TypeScript.
 
 Imports use these groups, separated by one blank line:
 
@@ -505,26 +507,27 @@ Do not make every factory input optional and hide production decisions inside th
 contract and a separate default factory:
 
 ```ts
-interface CreateRallarServerInput {
-  readonly middleware: Middleware;
-  readonly repositories: RallarRepositoryRegistry;
-  readonly appDataRepository: AppDataRepositoryLike;
+interface CreateRallarServerInput
+{
+   readonly middleware: Middleware;
+   readonly repositories: RallarRepositoryRegistry;
+   readonly appDataRepository: AppDataRepositoryLike;
 }
 
 function createRallarServer(input: CreateRallarServerInput): RallarServerApplication {
-  return createRallarServerApplication({
-    runtime: input.middleware,
-    repositories: input.repositories,
-    appData: { repository: input.appDataRepository },
-  });
+   return createRallarServerApplication({
+      runtime: input.middleware,
+      repositories: input.repositories,
+      appData: { repository: input.appDataRepository }
+   });
 }
 
 function createDefaultRallarServer(): RallarServerApplication {
-  return createRallarServer({
-    middleware: initialiseMiddleware(),
-    repositories: createDefaultRallarRepositoryRegistry(),
-    appDataRepository: createDefaultAppDataRepository(),
-  });
+   return createRallarServer({
+      middleware: initialiseMiddleware(),
+      repositories: createDefaultRallarRepositoryRegistry(),
+      appDataRepository: createDefaultAppDataRepository()
+   });
 }
 ```
 
@@ -668,28 +671,33 @@ owned by the new stage. Use the predictable chain `input -> read -> computed -> 
 from prior stages into later records.
 
 ```ts
-interface InvoiceInputDto {
-  readonly invoiceId: InvoiceId;
+interface InvoiceInputDto
+{
+   readonly invoiceId: InvoiceId;
 }
 
-interface InvoiceRead {
-  readonly input: InvoiceInputDto;
-  readonly invoice: InvoiceRecord;
+interface InvoiceRead
+{
+   readonly input: InvoiceInputDto;
+   readonly invoice: InvoiceRecord;
 }
 
-interface InvoiceComputed {
-  readonly read: InvoiceRead;
-  readonly totals: InvoiceTotals;
+interface InvoiceComputed
+{
+   readonly read: InvoiceRead;
+   readonly totals: InvoiceTotals;
 }
 
-interface InvoiceWritten {
-  readonly computed: InvoiceComputed;
-  readonly writeResult: InvoiceWriteResult;
+interface InvoiceWritten
+{
+   readonly computed: InvoiceComputed;
+   readonly writeResult: InvoiceWriteResult;
 }
 
-interface InvoiceValidationFailure {
-  readonly computed: InvoiceComputed;
-  readonly issues: readonly InvoiceValidationIssue[];
+interface InvoiceValidationFailure
+{
+   readonly computed: InvoiceComputed;
+   readonly issues: readonly InvoiceValidationIssue[];
 }
 
 type InvoiceComputationResult = Either<InvoiceValidationFailure, InvoiceComputed>;
@@ -708,10 +716,10 @@ const computed = computeInvoice(read);
 const issues = validateInvoice(computed);
 
 if (issues.length > 0) {
-  return Either.ofLeft<InvoiceValidationFailure, InvoiceWritten>({
-    computed,
-    issues,
-  });
+   return Either.ofLeft<InvoiceValidationFailure, InvoiceWritten>({
+      computed,
+      issues
+   });
 }
 
 return Either.ofRight<InvoiceValidationFailure, InvoiceWritten>(writeInvoice(computed));
@@ -789,7 +797,7 @@ Normalize caught values once:
 
 ```ts
 function toError(value: unknown): Error {
-  return value instanceof Error ? value : new Error(String(value));
+   return value instanceof Error ? value : new Error(String(value));
 }
 ```
 
@@ -802,9 +810,9 @@ Domain error contracts carry `Error` or a named serializable cause, not
 
 ```ts
 function validateCreateReport(input: CreateReportInput): readonly ValidationIssue[] {
-  return input.retentionDays > 0
-    ? []
-    : [{ code: 'invalid-retention-days', message: 'Retention days must be positive' }];
+   return input.retentionDays > 0
+      ? []
+      : [{ code: 'invalid-retention-days', message: 'Retention days must be positive' }];
 }
 ```
 
@@ -829,10 +837,11 @@ Catch operational exceptions at the nearest side-effect boundary and return a ty
 every pure helper.
 
 ```ts
-interface RuntimeFailure {
-  readonly code: string;
-  readonly operation: string;
-  readonly cause: Error;
+interface RuntimeFailure
+{
+   readonly code: string;
+   readonly operation: string;
+   readonly cause: Error;
 }
 
 type FailureDisposition = 'retryable' | 'non-retryable' | 'manual';

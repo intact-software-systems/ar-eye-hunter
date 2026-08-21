@@ -1,9 +1,0 @@
-apps/api-v1/**
-apps/rallar-black-box-control-server/**
-apps/relic-hunter-server-v1/**
-
-**/node_modules/**
-**/dist/**
-**/build/**
-**/coverage/**
-tmp/**

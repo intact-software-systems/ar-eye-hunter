@@ -1,7 +1,7 @@
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { readGroupVersion, } from '@shared/api/group-client-views.ts';
-// prettier-ignore
+
 import type {
     GroupPreActivationAppData,
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';

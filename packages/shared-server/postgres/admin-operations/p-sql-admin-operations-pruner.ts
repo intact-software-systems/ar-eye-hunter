@@ -1,9 +1,9 @@
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
-// prettier-ignore
+
 import type {
   AdminOperationsPruner,
 } from '../../rallar-system/admin-operations/AdminOperationsService.ts';
-// prettier-ignore
+
 import type {
   AdminPruneExpiredOptions,
 } from '../../rallar-system/admin-operations/admin-prune-options.ts';

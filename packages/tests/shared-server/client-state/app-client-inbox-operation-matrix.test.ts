@@ -11,7 +11,7 @@ import type {
   ClientSessionDisconnectAppInboxPayload,
   ClientSessionHeartbeatAppInboxPayload,
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
-// prettier-ignore
+
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/\
 app-client-inbox-service.ts';
 import type {

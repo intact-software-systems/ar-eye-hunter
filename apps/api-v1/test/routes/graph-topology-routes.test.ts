@@ -7,7 +7,7 @@ import type {
   EffectiveGroupTopologyConfig,
   GraphDiagnosticReadResponse,
 } from '@shared/api/graph-topology-management-types.ts';
-// deno-fmt-ignore
+
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/\
 group-topology-config-canonical.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';

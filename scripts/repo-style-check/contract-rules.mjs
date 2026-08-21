@@ -152,6 +152,9 @@ export function scanPlainObjectTypeAliases(raw) {
   return messages;
 }
 
+// Counted per occurrence rather than per line. A formatter may split one declaration across two
+// lines or join two into one; neither changes how much unknown the boundary actually propagates, so
+// the magnitude must not move when only the wrapping does.
 export function findUnknownUsages(lines) {
   return lines
     .map((text, index) => ({
@@ -159,7 +162,10 @@ export function findUnknownUsages(lines) {
       line: index + 1,
       text: text.trim(),
     }))
-    .filter((entry) => /\bunknown\b/.test(entry.code));
+    .flatMap((entry) => {
+      const occurrenceCount = entry.code.match(/\bunknown\b/gu)?.length ?? 0;
+      return Array.from({ length: occurrenceCount }, () => entry);
+    });
 }
 
 function countReturnedObjectFields(body) {

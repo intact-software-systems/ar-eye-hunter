@@ -3,27 +3,27 @@ import { expect } from 'vitest';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-// prettier-ignore
+
 import type {
   ClientSessionConnectAppInboxPayload,
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
-// prettier-ignore
+
 import {
   AppClientInboxService,
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-// prettier-ignore
+
 import {
   toAuthenticatedClientMutationContextId,
 } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
-// prettier-ignore
+
 import {
   ClientStateRepository,
 } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-// prettier-ignore
+
 import type {
   ClientStateWritten,
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-// prettier-ignore
+
 import {
   InMemoryClientStateEventStore,
 } from '@shared-server/rallar-system/repositories/StateEventStore.ts';

@@ -1,23 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-// prettier-ignore
+
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/\
 auth-mutation-service.ts';
-// prettier-ignore
+
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/\
 auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
-// prettier-ignore
+
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/\
 app-auth-inbox-service.ts';
-// prettier-ignore
+
 import type { IssueAuthWsTicketCommand } from '@shared-server/rallar-system/auth/mutation/\
 auth-mutation-contracts.ts';
-// prettier-ignore
+
 import { captureAuthMutationFacts } from '@shared-server/rallar-system/auth/mutation/read/\
 capture-auth-mutation-facts.ts';
-// prettier-ignore
+
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/\
 auth-session-repository.ts';
 

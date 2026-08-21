@@ -1,18 +1,18 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
-// prettier-ignore
+
 import type {
   GroupTopologyConfigMutationReceipt,
 } from '@shared/api/graph-topology-management-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-// prettier-ignore
+
 import {
   PSqlRuntimeStateRepository,
 } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-// prettier-ignore
+
 import {
   ClientStateRepository,
 } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-// prettier-ignore
+
 import {
   GroupStateRepository,
 } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
@@ -24,12 +24,12 @@ import {
   type GroupMutationIdempotencyRecord,
   validateGroupMutationIdempotencyRecord,
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
-// prettier-ignore
+
 import {
   GroupTopologyConfigRepository,
 } from '@shared-server/rallar-system/topology/config/persistence/\
 group-topology-config-repository.ts';
-// prettier-ignore
+
 import {
   readTopologyConfigMutationRecordBoundary,
 } from '@shared-server/rallar-system/topology/config/mutation/\

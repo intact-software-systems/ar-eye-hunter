@@ -35,12 +35,10 @@ export function scanSources(sources) {
 function scanTestSource(file, source) {
   try {
     const dataflow = readTestSourceDataflow({ file, source });
-    return {
-      candidates: dataflow.blocks.flatMap((block) =>
-        scanBlock({ file, source, block, context: dataflow.context }),
-      ),
-      errors: [],
-    };
+    const blockCandidates = dataflow.blocks.flatMap((block) =>
+      scanBlock({ file, source, block, context: dataflow.context }),
+    );
+    return { candidates: toIdentifiedCandidates(file, blockCandidates), errors: [] };
   } catch (error) {
     return { candidates: [], errors: [toParseError(file, error)] };
   }
@@ -267,23 +265,34 @@ function isSourceSplitLength(node, sourceValues) {
 }
 
 function createCandidate({ file, source, location, kind, reason }) {
-  const line = location.loc.start.line;
-  const column = location.loc.start.column + 1;
   const detail = source.slice(location.start, location.end).replaceAll(/\s+/gu, ' ').trim();
-  const semanticKey = `${kind}\0${detail}`;
-  const id = createHash('sha256')
-    .update(`${file}\0${line}\0${column}\0${semanticKey}`)
-    .digest('hex')
-    .slice(0, 16);
   return {
-    id: `test-structure-coupling-${id}`,
     path: file,
-    line,
-    column,
+    line: location.loc.start.line,
+    column: location.loc.start.column + 1,
     kind,
     reason,
-    semanticKey,
+    semanticKey: `${kind}\0${detail}`,
   };
+}
+
+// The identity is deliberately free of line and column. `semanticKey` already carries the
+// whitespace-normalized detail, so a reformat that moves an occurrence must not re-key it and
+// invalidate its registered review. Repeated identical coupling inside one file is separated by
+// occurrence order, which reformatting preserves.
+function toIdentifiedCandidates(file, candidates) {
+  const occurrenceBySemanticKey = new Map();
+  return candidates
+    .toSorted((left, right) => left.line - right.line || left.column - right.column)
+    .map((candidate) => {
+      const occurrence = occurrenceBySemanticKey.get(candidate.semanticKey) ?? 0;
+      occurrenceBySemanticKey.set(candidate.semanticKey, occurrence + 1);
+      const id = createHash('sha256')
+        .update(`${file}\0${candidate.semanticKey}\0${occurrence}`)
+        .digest('hex')
+        .slice(0, 16);
+      return { ...candidate, id: `test-structure-coupling-${id}` };
+    });
 }
 
 export function isTestPath(file) {

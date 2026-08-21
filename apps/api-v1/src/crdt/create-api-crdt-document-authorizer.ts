@@ -5,7 +5,7 @@ import type {
   ClientSnapshot,
 } from '@shared/api/client-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
-// deno-fmt-ignore
+
 import type {
   GroupMemberStatus,
   GroupPresenceSession,
@@ -15,7 +15,7 @@ import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import type {
   CrdtMutationResponseAudience,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-// deno-fmt-ignore
+
 import type { ClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/\
 client-state-snapshot-read-through-cache.ts';
 

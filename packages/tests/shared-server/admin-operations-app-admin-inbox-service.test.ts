@@ -7,7 +7,7 @@ import {
   type AdminPruneExpiredRequest,
 } from '@shared/api/admin-operations-types.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-// prettier-ignore
+
 import type {
   JsonWireValue,
 } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
@@ -19,7 +19,7 @@ import {
   createAdminPruneCommand,
   decodeAdminPruneCommand,
 } from '@shared-server/rallar-system/admin-operations/admin-prune-work-codec.ts';
-// prettier-ignore
+
 import {
   ADMIN_PRUNE_AGGREGATE_TOPIC,
   toAdminPruneAggregateKey,

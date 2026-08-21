@@ -5,7 +5,7 @@ import {
   type RallarCrdtDocumentRef,
   toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
-// deno-fmt-ignore
+
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/\
 psql-crdt-log-repository.ts';
 

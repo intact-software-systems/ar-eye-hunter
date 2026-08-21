@@ -218,24 +218,24 @@ describe('repo style checker', () => {
   // Tests are in scope for the standard, so the full checker reports them. Enforcement is staged
   // separately in the changed-range gate; this checker is warning-only either way.
   it('reports test and mock paths alongside production', () => {
-    const longLine = `const value = '${'x'.repeat(150)}';`;
+    const flaggedSource = 'function probe(a: string, b: string, c: string, d: string) { return a; }';
     const fixtureRoot = createFixture({
-      'tests/example.ts': longLine,
-      'mocks/example.ts': longLine,
+      'tests/example.ts': flaggedSource,
+      'mocks/example.ts': flaggedSource,
     });
 
     const output = runChecker(fixtureRoot);
 
     expect(output).toContain('tests/example.ts');
     expect(output).toContain('mocks/example.ts');
-    expect(output).toContain('[line.width]');
+    expect(output).toContain('[function.input-contract]');
   });
 
   it('still excludes generated artifacts from the checker entirely', () => {
-    const longLine = `const value = '${'x'.repeat(110)}';`;
+    const flaggedSource = 'function probe(a: string, b: string, c: string, d: string) { return a; }';
     const fixtureRoot = createFixture({
-      'schema.generated.ts': longLine,
-      'generated/example.ts': longLine,
+      'schema.generated.ts': flaggedSource,
+      'generated/example.ts': flaggedSource,
     });
 
     expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
@@ -272,12 +272,12 @@ describe('repo style checker', () => {
   });
 
   it('excludes test-runner configuration files from production warnings', () => {
-    const longLine = `const value = '${'x'.repeat(110)}';`;
+    const flaggedSource = 'function probe(a: string, b: string, c: string, d: string) { return a; }';
     const fixtureRoot = createFixture({
-      'playwright.full-stack.config.ts': longLine,
-      'vitest.config.ts': longLine,
-      'jest.unit.config.ts': longLine,
-      'cypress.config.ts': longLine,
+      'playwright.full-stack.config.ts': flaggedSource,
+      'vitest.config.ts': flaggedSource,
+      'jest.unit.config.ts': flaggedSource,
+      'cypress.config.ts': flaggedSource,
     });
 
     expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
@@ -343,7 +343,9 @@ describe('repo style checker', () => {
       ...Object.fromEntries(
         Array.from({ length: 21 }, (_, index) => [
           `auth-command-${index}.ts`,
-          index === 0 ? `export const authCommand${index} = '${'x'.repeat(110)}';` : `export const authCommand${index} = ${index};`,
+          index === 0
+            ? `export const authCommand${index} = ${index};\nfunction probe(a: string, b: string, c: string, d: string) { return a; }`
+            : `export const authCommand${index} = ${index};`,
         ]),
       ),
     });
@@ -351,12 +353,12 @@ describe('repo style checker', () => {
     const layoutOnly = executeChecker(fixtureRoot, '--layout-only');
     expect(layoutOnly.status).toBe(0);
     expect(layoutOnly.stdout).toContain('[layout.directory-density]');
-    expect(layoutOnly.stdout).not.toContain('Line 1 exceeds');
+    expect(layoutOnly.stdout).not.toContain('has 4 parameters');
 
     const defaultRun = executeChecker(fixtureRoot);
     expect(defaultRun.status).toBe(0);
     expect(defaultRun.stdout).toContain('[layout.directory-density]');
-    expect(defaultRun.stdout).toContain('Line 1 exceeds');
+    expect(defaultRun.stdout).toContain('has 4 parameters');
   });
 
   it('adds detailed layout warnings only when requested', () => {
@@ -377,12 +379,14 @@ describe('repo style checker', () => {
       Object.fromEntries(
         Array.from({ length: 21 }, (_, index) => [
           `auth-command-${index}.mjs`,
-          index === 0 ? `export const value = '${'x'.repeat(110)}';` : 'export const value = 1;',
+          index === 0
+            ? 'export const value = 1;\nfunction probe(a, b, c, d) { return a; }'
+            : 'export const value = 1;',
         ]),
       ),
     );
 
-    expect(runChecker(fixtureRoot)).toContain('Line 1 exceeds');
+    expect(runChecker(fixtureRoot)).toContain('has 4 parameters');
 
     const layoutOnly = runChecker(fixtureRoot, '--layout-only');
     expect(layoutOnly).not.toContain('[layout.directory-density]');
@@ -394,7 +398,10 @@ describe('repo style checker', () => {
   it('caps displayed warnings while preserving full finding and affected-item counts', () => {
     const files = {
       ...Object.fromEntries(
-        Array.from({ length: 205 }, (_, index) => [`feature-${index}/long-line.ts`, `const value${index} = '${'x'.repeat(110)}';`]),
+        Array.from({ length: 205 }, (_, index) => [
+          `feature-${index}/wide-input.ts`,
+          `function value${index}(a: string, b: string, c: string, d: string) { return a; }`,
+        ]),
       ),
       'BadOne.ts': 'export const badOne = true;',
       'BadTwo.ts': 'export const badTwo = true;',
@@ -410,7 +417,7 @@ describe('repo style checker', () => {
 
   it('keeps warnings non-blocking and rejects unavailable strict mode', () => {
     const fixtureRoot = createFixture({
-      'long-line.ts': `const value = '${'x'.repeat(110)}';`,
+      'wide-input.ts': 'function value(a: string, b: string, c: string, d: string) { return a; }',
     });
 
     expect(executeChecker(fixtureRoot).status).toBe(0);

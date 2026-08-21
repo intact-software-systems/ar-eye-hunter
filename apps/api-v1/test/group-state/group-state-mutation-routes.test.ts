@@ -9,7 +9,7 @@ import type {
   GroupCreateAppInboxPayload,
   GroupUpdateAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-// prettier-ignore
+
 import type {
   AuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';

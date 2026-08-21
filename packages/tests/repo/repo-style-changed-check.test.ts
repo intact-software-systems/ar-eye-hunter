@@ -17,7 +17,7 @@ afterEach(() => {
 describe('changed repository style checker', () => {
   it('passes when a changed file retains an existing finding without worsening it', () => {
     const fixture = createGitFixture({
-      'apps/example/legacy-file.ts': overlongSource('legacy'),
+      'apps/example/legacy-file.ts': wideInputSource(0),
     });
     commitAll(fixture, 'base');
     appendSource(fixture, 'apps/example/legacy-file.ts', 'const added = true;\n');
@@ -197,13 +197,13 @@ describe('changed repository style checker', () => {
       'apps/example/feature.ts': 'export const value = true;\n',
     });
     commitAll(fixture, 'base');
-    writeFixture(fixture, 'apps/example/feature.ts', overlongSource('introduced'));
+    writeFixture(fixture, 'apps/example/feature.ts', wideInputSource(0));
 
     const result = runChangedChecker(fixture);
 
     expect(result.status).toBe(1);
     expect(result.stdout).toContain('FAIL: 1 new or worsened repository style finding');
-    expect(result.stdout).toContain('Line 1 exceeds 100 chars');
+    expect(result.stdout).toContain('has 4 parameters');
   });
 
   it('tolerates in-band growth of a file over the navigation backstop', () => {
@@ -247,10 +247,10 @@ describe('changed repository style checker', () => {
 
   it('fails when an existing finding becomes measurably worse', () => {
     const fixture = createGitFixture({
-      'apps/example/feature.ts': overlongSource('x'.repeat(1)),
+      'apps/example/feature.ts': wideInputSource(0),
     });
     commitAll(fixture, 'base');
-    writeFixture(fixture, 'apps/example/feature.ts', overlongSource('x'.repeat(20)));
+    writeFixture(fixture, 'apps/example/feature.ts', wideInputSource(20));
 
     const result = runChangedChecker(fixture);
 
@@ -309,7 +309,7 @@ describe('changed repository style checker', () => {
 
   it('passes when a finding is removed', () => {
     const fixture = createGitFixture({
-      'apps/example/feature.ts': overlongSource('removed'),
+      'apps/example/feature.ts': wideInputSource(0),
     });
     commitAll(fixture, 'base');
     writeFixture(fixture, 'apps/example/feature.ts', 'const value = true;\n');
@@ -319,7 +319,7 @@ describe('changed repository style checker', () => {
 
   it('preserves content finding identity across a rename but checks the new filename', () => {
     const fixture = createGitFixture({
-      'apps/example/legacy-file.ts': overlongSource('legacy'),
+      'apps/example/legacy-file.ts': wideInputSource(0),
     });
     commitAll(fixture, 'base');
     runGit(fixture, ['mv', 'apps/example/legacy-file.ts', 'apps/example/renamed-file.ts']);
@@ -335,14 +335,14 @@ describe('changed repository style checker', () => {
 
   it('checks untracked production files and ignores deleted findings', () => {
     const fixture = createGitFixture({
-      'apps/example/deleted.ts': overlongSource('deleted'),
+      'apps/example/deleted.ts': wideInputSource(0),
     });
     commitAll(fixture, 'base');
     runGit(fixture, ['rm', 'apps/example/deleted.ts']);
 
     expect(runChangedChecker(fixture).status).toBe(0);
 
-    writeFixture(fixture, 'apps/example/untracked.ts', overlongSource('untracked'));
+    writeFixture(fixture, 'apps/example/untracked.ts', wideInputSource(0));
     expect(runChangedChecker(fixture).status).toBe(1);
   });
 
@@ -363,13 +363,13 @@ describe('changed repository style checker', () => {
       'apps/example/feature.ts': 'export const value = true;\n',
     });
     commitAll(fixture, 'base');
-    writeFixture(fixture, 'apps/example/feature.ts', overlongSource('head'));
+    writeFixture(fixture, 'apps/example/feature.ts', wideInputSource(0));
     commitAll(fixture, 'introduce finding');
 
     const result = executeChecker(fixture, 'HEAD^', 'HEAD');
 
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain('Line 1 exceeds 100 chars');
+    expect(result.stdout).toContain('has 4 parameters');
   });
 
   it('reads explicit HEAD content instead of dirty working-tree content', () => {
@@ -377,14 +377,14 @@ describe('changed repository style checker', () => {
       'apps/example/feature.ts': 'export const value = true;\n',
     });
     commitAll(fixture, 'base');
-    writeFixture(fixture, 'apps/example/feature.ts', overlongSource('head'));
+    writeFixture(fixture, 'apps/example/feature.ts', wideInputSource(0));
     commitAll(fixture, 'introduce finding');
     writeFixture(fixture, 'apps/example/feature.ts', 'export const dirtyValue = true;\n');
 
     const result = executeChecker(fixture, 'HEAD^', 'HEAD');
 
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain('Line 1 exceeds 100 chars');
+    expect(result.stdout).toContain('has 4 parameters');
   });
 
   it('ignores non-code files when scanning an explicit commit', () => {
@@ -461,8 +461,9 @@ function decisionDenseSource(decisionCount: number): string {
   ].join('\n');
 }
 
-function overlongSource(label: string): string {
-  return `const value = '${label}${'x'.repeat(110)}';\n`;
+function wideInputSource(extraParameters: number): string {
+  const parameters = Array.from({ length: 4 + extraParameters }, (_, index) => `p${index}: string`);
+  return `function value(${parameters.join(', ')}): string {\n  return '';\n}\n`;
 }
 
 function valueExportSource(valueCount: number): string {

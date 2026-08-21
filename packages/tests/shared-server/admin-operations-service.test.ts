@@ -7,7 +7,7 @@ import type {
   AdminOperationsSystemResponse,
 } from '@shared/api/admin-operations-types.ts';
 import type { RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
-// prettier-ignore
+
 import type {
   AdminOperationsMutationGateway,
 } from '@shared-server/rallar-system/admin-operations/admin-operations-mutation-gateway.ts';
@@ -21,7 +21,7 @@ import type {
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/formation-metrics.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
-// prettier-ignore
+
 import type {
   TopologyReconfigureInboxResult,
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';

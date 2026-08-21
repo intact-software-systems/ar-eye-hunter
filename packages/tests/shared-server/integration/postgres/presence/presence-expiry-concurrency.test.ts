@@ -12,7 +12,7 @@ import {
   createGroupStateRepository,
 } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { createTestGroupStateRuntime } from '../../../group-state/group-state-test-runtime.ts';
-// prettier-ignore
+
 import {
   requireGroupMutationReceipt,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
@@ -57,7 +57,7 @@ import {
   type WorkerHandle,
   type WorkerInput,
 } from './presence-concurrency-worker-test-runtime.ts';
-// prettier-ignore
+
 import {
   createPostgresTestRequestIdFactory,
 } from '../../../fixtures/create-postgres-test-request-id-factory.ts';

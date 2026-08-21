@@ -2,15 +2,15 @@ import { expect, it } from 'vitest';
 
 import type { StateScope } from '@shared/api/state-types.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-// prettier-ignore
+
 import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-// prettier-ignore
+
 import type {
   AuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-// prettier-ignore
+
 import {
   requireGroupStateWritten,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
@@ -21,11 +21,11 @@ import {
   type GroupPresenceConnectAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-// prettier-ignore
+
 import {
   toAuthorisedWsClientConnectEnqueue,
 } from '@shared-server/rallar-system/services/authorised-ws-client-app-inbox.ts';
-// prettier-ignore
+
 import type {
   GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';

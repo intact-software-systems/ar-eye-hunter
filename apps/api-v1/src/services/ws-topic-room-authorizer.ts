@@ -1,6 +1,6 @@
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/services/ws-topic-room-authorizer.ts';
 import type { CachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
-// prettier-ignore
+
 import type {
   GroupLifecyclePolicyRead,
 } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';

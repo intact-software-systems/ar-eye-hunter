@@ -9,7 +9,7 @@ import type {
   StateScope,
 } from '@shared/api/state-types.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-// prettier-ignore
+
 import {
   PSqlRuntimeStateRepository,
 } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
@@ -22,7 +22,7 @@ import {
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-// prettier-ignore
+
 import type {
   AuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
@@ -47,11 +47,11 @@ import {
 } from './api-v1-state-write-durable-evidence.ts';
 import { mapWithConcurrency } from './map-with-concurrency.ts';
 import { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
-// prettier-ignore
+
 import {
   parseGroupTopologyRegressionReasons,
 } from './pool-group-topology-state-write-position-balanced-results.mjs';
-// prettier-ignore
+
 import {
   selectStateWriteRegressionReasons,
 } from './state-write/api-v1-state-write-regression-reasons.ts';

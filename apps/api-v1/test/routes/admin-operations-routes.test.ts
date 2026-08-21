@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
-// deno-fmt-ignore
+
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/\
 auth-session-types.ts';
 import type { RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';

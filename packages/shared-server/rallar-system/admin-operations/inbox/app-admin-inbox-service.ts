@@ -10,11 +10,11 @@ import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/res
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-// prettier-ignore
+
 import {
   ResourceInboxRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-// prettier-ignore
+
 import {
   ResourceInboxResultsRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
@@ -36,9 +36,9 @@ import {
 import type { AppInboxFailure } from '../../services/app-inbox-failure.ts';
 import { toUnavailableAppInboxFailure } from '../../services/app-inbox-failure.ts';
 import { AppInboxService, type AppInboxServiceOptions } from '../../services/AppInboxService.ts';
-// prettier-ignore
+
 import { type AppInboxMessageContext, AppInboxType } from '../../services/app-inbox-contracts.ts';
-// prettier-ignore
+
 import {
   type RallarTimingSink,
   recordRallarTiming,

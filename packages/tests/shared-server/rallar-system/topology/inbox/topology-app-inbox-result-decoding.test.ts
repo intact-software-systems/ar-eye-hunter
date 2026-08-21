@@ -6,7 +6,7 @@ import {
   waitForQueueEntry,
 } from '../../../group-state/inbox/group-state-inbox-test-runtime.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-// prettier-ignore
+
 import {
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';

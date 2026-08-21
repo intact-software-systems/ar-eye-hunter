@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-// prettier-ignore
+
 import {
   toCanonicalGroupTopologyConfigPatch,
 } from '@shared/api/group-topology-config-canonical.ts';
@@ -13,27 +13,27 @@ import type {
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 
-// prettier-ignore
+
 import type {
   PersistedAuthSession,
 } from '@shared-server/rallar-system/auth/persistence/auth-persistence-contracts.ts';
-// prettier-ignore
+
 import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-// prettier-ignore
+
 import {
   authSessionProofSecret,
 } from '@shared-server/rallar-system/auth/sessions/auth-session-proof-secret.ts';
-// prettier-ignore
+
 import type {
   GroupStateService,
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
-// prettier-ignore
+
 import type {
   GroupStateAuthorityGuard,
 } from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-contracts.ts';
-// prettier-ignore
+
 import type {
   ComputedRtcTopologyOutbox,
 } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
@@ -41,20 +41,20 @@ import {
   type AppInboxMessageContext,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
-// prettier-ignore
+
 import {
   createAuthenticatedTopologyEnqueue,
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
-// prettier-ignore
+
 import {
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
-// prettier-ignore
+
 import {
   toTopologyConfigMutationResult,
 } from '@shared-server/rallar-system/topology/config/mutation/\
 to-topology-config-mutation-result.ts';
-// prettier-ignore
+
 import {
   writeTopologyConfigMutation,
 } from '@shared-server/rallar-system/topology/config/mutation/write-topology-config-mutation.ts';
@@ -63,18 +63,18 @@ import {
   TopologyAppInboxHandler,
   type TopologyAppInboxMutationOwners,
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
-// prettier-ignore
+
 import type {
   GroupTopologyConfigMutationComputed,
   GroupTopologyConfigMutationReceipt,
 } from '@shared-server/rallar-system/topology/config/mutation/\
 group-topology-config-mutation-contracts.ts';
-// prettier-ignore
+
 import type {
   GroupTopologyConfigMutationAttemptRead,
   GroupTopologyConfigMutationPreparation,
 } from '@shared-server/rallar-system/topology/config/group-topology-config-mutation-service.ts';
-// prettier-ignore
+
 import type {
   GroupTopologyReconfigureComputed,
   GroupTopologyReconfigureRead,

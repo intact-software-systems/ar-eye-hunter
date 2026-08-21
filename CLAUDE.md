@@ -12,20 +12,20 @@ contract. This file adds Claude-Code-specific navigation on top of it; where the
 Detailed workflows live in `.agents/skills/**` (a repo-local skill tree, also packaged for Codex via
 `.codex-plugin/plugin.json`). These are plain Markdown — read them directly:
 
-| Skill | Read it when |
-| --- | --- |
-| `rallar-code-writing` | **Any** TypeScript change. Its `references/repo-code-style.md` is the authoritative code standard. |
-| `rallar-code-writing/references/convergent-service-writing.md` | Any authoritative DB or realtime mutation. |
+| Skill                                                            | Read it when                                                                                                                          |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `rallar-code-writing`                                            | **Any** TypeScript change. Its `references/repo-code-style.md` is the authoritative code standard.                                    |
+| `rallar-code-writing/references/convergent-service-writing.md`   | Any authoritative DB or realtime mutation.                                                                                            |
 | `rallar-code-writing/references/typescript-type-organization.md` | Naming, aliasing, or organizing TypeScript types: APIs, DTOs, type aliases, namespaces, class-owned vocabulary, public type surfaces. |
-| `rallar-testing/references/test-commands.md` | Choosing which tests to run for a change. |
-| `rallar-platform` | Package boundaries and public surfaces under `packages/**`. |
-| `rallar-realtime` | Rooms, `GroupRef`/scoped identity, WS/RTC, presence, state sync, topology. |
-| `rallar-games` | AR Eye Hunter, Relic Hunters, Rallar Game, Rallar Motion. |
-| `building-rallar-apps` | Greenfield apps and React/3D architecture. |
-| `rallar-ai` | RallarAI providers, schemas, deterministic helpers. |
-| `rallar-hetzner-ops` | Hetzner distributed recipes, headless agents, fleet artifacts. |
-| `performance-analysis` | Profiling and optimization work. |
-| `publishing-plan-progress` | Executing a written plan from `plans/`. |
+| `rallar-testing/references/test-commands.md`                     | Choosing which tests to run for a change.                                                                                             |
+| `rallar-platform`                                                | Package boundaries and public surfaces under `packages/**`.                                                                           |
+| `rallar-realtime`                                                | Rooms, `GroupRef`/scoped identity, WS/RTC, presence, state sync, topology.                                                            |
+| `rallar-games`                                                   | AR Eye Hunter, Relic Hunters, Rallar Game, Rallar Motion.                                                                             |
+| `building-rallar-apps`                                           | Greenfield apps and React/3D architecture.                                                                                            |
+| `rallar-ai`                                                      | RallarAI providers, schemas, deterministic helpers.                                                                                   |
+| `rallar-hetzner-ops`                                             | Hetzner distributed recipes, headless agents, fleet artifacts.                                                                        |
+| `performance-analysis`                                           | Profiling and optimization work.                                                                                                      |
+| `publishing-plan-progress`                                       | Executing a written plan from `plans/`.                                                                                               |
 
 ## Runtime split
 
@@ -33,11 +33,13 @@ This monorepo runs **two runtimes** and you must know which one owns the file yo
 
 - **Node + npm workspaces** — `packages/**`, browser apps (`apps/ar-eye-hunter-v1`,
   `apps/relic-hunters-v1`, `apps/rallar-black-box`, `apps/rallar-black-box-headless`). Vite + React;
-  tested with Vitest and Playwright. Formatted by Prettier.
+  tested with Vitest and Playwright.
 - **Deno** — `apps/api-v1`, `apps/rallar-black-box-control-server`, `apps/relic-hunter-server-v1`,
-  and the `packages/shared-test/black-box-runner` `.mts` entry points. Tested with `deno test`.
-  Formatted by `deno fmt` (2-space, 100 cols, single quotes, semicolons); these trees are in
-  `.prettierignore` so the two formatters never fight.
+  and the `packages/shared-test/black-box-runner` `.mts` entry points. Tested with `deno test`;
+  typechecked with `deno check` and linted with `deno lint`.
+
+Both runtimes are formatted by **dprint** (`dprint.json`) and nothing else. `deno fmt` is retired —
+no `deno.json` declares a `fmt` block or task. Suppress with `// dprint-ignore`.
 
 Both runtimes share the same `packages/**` source via path aliases: `@shared/*`, `@shared-web/*`,
 `@shared-server/*`, `@shared-graph/*`, `@shared-test/*`, `@relic-hunters/*` — declared three times
@@ -45,6 +47,16 @@ Both runtimes share the same `packages/**` source via path aliases: `@shared/*`,
 `deno.json`. Adding a new alias means updating all of them.
 
 ## Commands
+
+Formatting (dprint owns every tree; see "Runtime split"):
+
+```sh
+npm run format          # dprint fmt
+npm run format:check    # dprint check
+```
+
+`dprint` shells out to `shfmt` for `*.sh` and `*.bash`. Without it on `PATH`, both commands abort
+with `Cannot start formatter process`, so any CI job running them needs a `shfmt` setup step.
 
 Daily confidence:
 
@@ -169,7 +181,7 @@ HTTP/WS mutation -> APP_INBOX -> read -> compute -> validate
   -> commit -> resolve WS audience -> wake/poll workers
 ```
 
-`read` loads the decision surface *outside* the write transaction. Only `compute` and `validate` are
+`read` loads the decision surface _outside_ the write transaction. Only `compute` and `validate` are
 pure. `write(transaction, computed)` receives the transaction and never opens, commits, replaces, or
 retries one; its conditional guard comes first. Conflicts are typed values, not exceptions — a
 conflict rolls back and AppInbox starts a fresh attempt with fresh authorization and policy checks.
@@ -200,7 +212,7 @@ directly. A mechanically compliant change that is harder to read is not a succes
 Highest-frequency rules:
 
 - **Canonical verbs**, used consistently: `toXxx` (pure translation), `computeXxx` (pure
-  calculation), `validateXxx` (pure, returns *all* issues, never throws), `readXxx`/`writeXxx`
+  calculation), `validateXxx` (pure, returns _all_ issues, never throws), `readXxx`/`writeXxx`
   (crosses an observable boundary), `getXxx`/`setXxx` (in-memory only), `createXxx` (from explicit
   full input), `createDefaultXxx` (composition root), `resolveXxx` (pure selection),
   `initXxx`/`startXxx`/`stopXxx`. Banned: `handle`, `process`, `execute`, `perform`, `util`,
@@ -264,3 +276,12 @@ approval are separate. Read the exact disclosure requirements in `AGENTS.md` bef
 Branch CI (`branch-release-gate.yml` → `release-gate.yml`) runs on every non-main push:
 `check:repo-style:changed` against `origin/main`, `typecheck`, `test:ci`, app builds, Deno checks,
 Postgres migrations, API-v1 black-box recipes, and Postgres full-stack smoke tests.
+
+The two changed-range checks — `check-changed-repo-style.mjs` and `check-test-structure-coupling.mjs
+--changed` — run only when `release-gate.yml` receives a non-empty `changed_repo_style_base`. The
+main-push deploy path already omits it. On a pull request, the `skip-changed-gates` label passes the
+empty base instead. A repository-wide reformat re-keys every changed-scope finding at once and is
+the only thing that earns the label; nothing else in `release-gate.yml` is skipped.
+
+Formatting-only commits belong in `.git-blame-ignore-revs`. GitHub honours it automatically; locally
+run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once per clone.

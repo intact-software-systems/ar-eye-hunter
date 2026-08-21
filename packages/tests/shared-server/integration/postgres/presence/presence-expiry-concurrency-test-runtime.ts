@@ -4,21 +4,21 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-// prettier-ignore
+
 import {
   createGroupStateEventRepository,
 } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
-// prettier-ignore
+
 import {
   PSqlRuntimeStateRepository,
 } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { createTestGroupStateRuntime } from '../../../group-state/group-state-test-runtime.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
-// prettier-ignore
+
 import {
   createPostgresClientPhaseDriver,
 } from '../../../client-state/postgres-client-mutation-test-driver.ts';
-// prettier-ignore
+
 import {
   createPostgresTestRequestIdFactory,
 } from '../../../fixtures/create-postgres-test-request-id-factory.ts';

@@ -2,7 +2,7 @@ import { type Context, Hono } from 'jsr:@hono/hono@4.11.9';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ApiMutationFailureJsonValue } from '@shared/api/mutation/api-mutation-failure.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-// deno-fmt-ignore
+
 import { decodeJsonWireValue } from '@shared-server/rallar-system/services/\
 mutation-command-identity.ts';
 import {

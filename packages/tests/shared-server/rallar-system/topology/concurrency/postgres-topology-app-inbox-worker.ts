@@ -1,7 +1,7 @@
 import postgres from 'postgres';
 
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
-// prettier-ignore
+
 import type {
   GroupTopologyConfigMutationReceipt,
 } from '@shared/api/graph-topology-management-types.ts';
@@ -13,11 +13,11 @@ import {
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-// prettier-ignore
+
 import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-// prettier-ignore
+
 import type {
   GroupTopologyConfigMutationExecution,
 } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
@@ -25,7 +25,7 @@ import {
   type AppInboxFailure,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
-// prettier-ignore
+
 import type {
   JsonWireValue,
 } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
@@ -35,11 +35,11 @@ import {
   requireOneOf,
   requireString,
 } from '@shared-server/rallar-system/services/exact-object-codec.ts';
-// prettier-ignore
+
 import {
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-// prettier-ignore
+
 import {
   createPostgresAppInboxWorkerRuntime,
   type PostgresAppInboxWorkerRuntime,

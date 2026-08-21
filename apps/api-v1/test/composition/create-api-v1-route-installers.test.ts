@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
-// deno-fmt-ignore
+
 import {
   InMemoryRallarCrdtLogRepository,
 } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
-// deno-fmt-ignore
+
 import {
   AuthUserRepository,
 } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';

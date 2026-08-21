@@ -1,28 +1,28 @@
 import { describe, expect, it } from 'vitest';
 
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-// prettier-ignore
+
 import type {
   ClientPrincipalUpsertAppInboxPayload,
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
-// prettier-ignore
+
 import {
   AppClientInboxService,
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-// prettier-ignore
+
 import {
   computeClientMutation,
 } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-// prettier-ignore
+
 import {
   ClientStateRepository,
 } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-// prettier-ignore
+
 import type {
   ClientStateWritten,
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-// prettier-ignore
+
 import {
   ClientMutationIdempotencyConflictError,
 } from '@shared-server/rallar-system/services/client-state-service.ts';

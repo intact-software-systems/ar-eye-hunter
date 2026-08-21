@@ -10,14 +10,14 @@ import {
   AppInboxType,
   type GroupMemberUpsertAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-// prettier-ignore
+
 import { SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/services/\
 AppInboxService.ts';
-// prettier-ignore
+
 import {
   ClientMutationIdempotencyConflictError,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
-// prettier-ignore
+
 import type {
   JsonWireObject,
   JsonWireValue,

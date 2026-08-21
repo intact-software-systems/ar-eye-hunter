@@ -257,14 +257,14 @@ describe('reviewed repository style dispositions', () => {
     appendFixture(
       fixture,
       'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts',
-      `\nconst undispositionedFinding = '${'x'.repeat(110)}';\n`,
+      '\nfunction undispositionedFinding(a: string, b: string, c: string, d: string) {\n  return a + b + c + d;\n}\n',
     );
 
     const result = runChangedChecker(fixture);
 
     expect(result.status, result.stdout).toBe(1);
     expect(result.stdout).toContain('FAIL: 1 new or worsened repository style finding');
-    expect(result.stdout).toContain('line.width');
+    expect(result.stdout).toContain('function.input-contract');
   });
 
   it('keeps an unknown owned by another function blocking after reviewed overflow', () => {

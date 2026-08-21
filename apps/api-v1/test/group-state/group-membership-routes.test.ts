@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-// prettier-ignore
+
 import type {
   AuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';

@@ -7,7 +7,7 @@ import type {
   CrdtAdminCompactResult,
   CrdtAdminEraseResult,
 } from '../crdt/mutation/crdt-mutation-contracts.ts';
-// prettier-ignore
+
 import type {
   TopologyReconfigureInboxResult,
 } from '../topology/inbox/topology-app-inbox-handler.ts';

@@ -1,5 +1,5 @@
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-// deno-fmt-ignore
+
 import type { JsonWireValue } from '@shared-server/rallar-system/services/\
 mutation-command-identity.ts';
 import {

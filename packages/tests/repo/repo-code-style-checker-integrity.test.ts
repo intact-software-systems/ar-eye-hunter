@@ -72,18 +72,26 @@ describe('repo code style checker integrity', () => {
   });
 
   it('keeps TypeScript formatter settings aligned with the canonical baseline', () => {
-    expect(existsSync(path.join(repoRoot, '.prettierrc.json'))).toBe(true);
+    expect(existsSync(path.join(repoRoot, 'dprint.json'))).toBe(true);
 
-    const prettier = readJson('.prettierrc.json') as Record<string, unknown>;
-    expect(prettier).toMatchObject({
-      printWidth: 100,
-      tabWidth: 2,
+    const dprint = readJson('dprint.json') as {
+      lineWidth?: number;
+      typescript?: Readonly<Record<string, unknown>>;
+    };
+    expect(dprint.lineWidth).toBe(100);
+    expect(dprint.typescript).toMatchObject({
+      lineWidth: 120,
+      indentWidth: 3,
       useTabs: false,
-      semi: true,
-      singleQuote: true,
-      trailingComma: 'all',
+      quoteStyle: 'alwaysSingle',
+      semiColons: 'always',
+      trailingCommas: 'never',
     });
+  });
 
+  it('leaves dprint as the only formatter, including over Deno-owned TypeScript', () => {
+    // `deno fmt` was retired in favour of a single formatter. A reintroduced `fmt` block or task
+    // would silently reclaim these trees and fight dprint over the same TypeScript.
     for (const denoConfigPath of [
       'deno.json',
       'apps/api-v1/deno.json',
@@ -91,33 +99,23 @@ describe('repo code style checker integrity', () => {
       'apps/relic-hunter-server-v1/deno.json',
     ]) {
       const deno = readJson(denoConfigPath) as {
-        fmt?: Readonly<Record<string, unknown>>;
+        fmt?: unknown;
+        tasks?: Readonly<Record<string, string>>;
       };
-      expect(deno.fmt, denoConfigPath).toMatchObject({
-        lineWidth: 100,
-        indentWidth: 2,
-        useTabs: false,
-        semiColons: true,
-        singleQuote: true,
-      });
+      expect(deno.fmt, denoConfigPath).toBeUndefined();
+      expect(Object.keys(deno.tasks ?? {}), denoConfigPath).not.toContain('fmt');
     }
-  });
 
-  it('keeps Deno-owned TypeScript out of the Prettier formatting surface', () => {
-    const prettierIgnorePath = path.join(repoRoot, '.prettierignore');
-
-    expect(existsSync(prettierIgnorePath)).toBe(true);
-
-    const prettierIgnore = readRepo('.prettierignore');
+    const dprint = readJson('dprint.json') as { excludes?: readonly string[] };
     for (const denoAppPath of [
       'apps/api-v1/**',
       'apps/rallar-black-box-control-server/**',
       'apps/relic-hunter-server-v1/**',
     ]) {
-      expect(prettierIgnore).toContain(denoAppPath);
+      expect(dprint.excludes).not.toContain(denoAppPath);
     }
 
-    expectAll(readRepo(canonicalStylePath), ['`deno fmt`', '`.prettierignore`']);
+    expectAll(readRepo(canonicalStylePath), ['`dprint.json`']);
   });
 
   it('keeps every repo-style suite in the testing workflow', () => {

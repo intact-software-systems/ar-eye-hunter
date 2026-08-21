@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-// prettier-ignore
+
 import {
   STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS,
 } from '../../../scripts/perf/state-write-wait-options.ts';

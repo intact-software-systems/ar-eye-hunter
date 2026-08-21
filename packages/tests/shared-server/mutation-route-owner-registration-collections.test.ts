@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-// prettier-ignore
+
 import {
   describe,
   expect,

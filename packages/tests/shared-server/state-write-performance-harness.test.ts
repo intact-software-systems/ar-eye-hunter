@@ -3,7 +3,7 @@ import {
   compareStateWriteArtifacts,
   validateStateWriteArtifact,
 } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
-// prettier-ignore
+
 import {
   STATE_WRITE_REASONS,
 } from '../../../scripts/perf/state-write/api-v1-state-write-regression-reasons.ts';
@@ -15,7 +15,7 @@ import {
   readCanonicalEffectCommandId,
   readResourceEffectKind,
 } from '../../../scripts/perf/api-v1-state-write-outbox-evidence.ts';
-// prettier-ignore
+
 import {
   parseBenchmarkOptions,
 } from '../../../scripts/perf/state-write/api-v1-state-write-benchmark-options.ts';

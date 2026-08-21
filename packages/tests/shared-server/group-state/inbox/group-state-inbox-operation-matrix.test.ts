@@ -18,7 +18,7 @@ import {
   type GroupPresenceHeartbeatAppInboxPayload,
   type GroupUpdateAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-// prettier-ignore
+
 import * as AppGroupInboxModule
   from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import {

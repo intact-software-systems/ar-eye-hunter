@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-// prettier-ignore
+
 import { toScopedGroupMutationCommandId } from
   '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
-// prettier-ignore
+
 import type { GroupMutationDescriptor } from
   '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 

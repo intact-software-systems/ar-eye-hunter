@@ -1,0 +1,134 @@
+{
+  "lineWidth": 100,
+  "typescript": {
+    "lineWidth": 120,
+    "indentWidth": 3,
+    "useTabs": false,
+    "quoteStyle": "alwaysSingle",
+    "quoteProps": "asNeeded",
+    "semiColons": "always",
+    "trailingCommas": "never",
+
+    "bracePosition": "sameLine",
+    "classDeclaration.bracePosition": "nextLine",
+    "interfaceDeclaration.bracePosition": "nextLine",
+    "functionDeclaration.bracePosition": "sameLine",
+    "method.bracePosition": "sameLine",
+    "enumDeclaration.bracePosition": "sameLine",
+
+    "nextControlFlowPosition": "nextLine",
+    "ifStatement.nextControlFlowPosition": "nextLine",
+    "tryStatement.nextControlFlowPosition": "nextLine",
+
+    "useBraces": "always",
+    "singleBodyPosition": "nextLine",
+
+    "ifStatement.spaceAfterIfKeyword": true,
+    "forStatement.spaceAfterForKeyword": true,
+    "forOfStatement.spaceAfterForKeyword": true,
+    "forInStatement.spaceAfterForKeyword": true,
+    "whileStatement.spaceAfterWhileKeyword": true,
+    "doWhileStatement.spaceAfterWhileKeyword": true,
+    "functionDeclaration.spaceBeforeParentheses": false,
+    "functionExpression.spaceBeforeParentheses": true,
+    "method.spaceBeforeParentheses": false,
+    "constructor.spaceBeforeParentheses": false,
+    "getAccessor.spaceBeforeParentheses": false,
+    "setAccessor.spaceBeforeParentheses": false,
+    "typeAnnotation.spaceBeforeColon": false,
+
+    "spaceSurroundingProperties": true,
+    "objectExpression.spaceSurroundingProperties": true,
+    "typeLiteral.spaceSurroundingProperties": true,
+    "importDeclaration.spaceSurroundingNamedImports": true,
+    "exportDeclaration.spaceSurroundingNamedExports": true,
+    "arrayExpression.spaceAround": false,
+    "arguments.spaceAround": false,
+    "parameters.spaceAround": false,
+    "parenExpression.spaceAround": false,
+    "commentLine.forceSpaceAfterSlashes": true,
+
+    "typeLiteral.separatorKind.singleLine": "semiColon",
+    "typeLiteral.separatorKind.multiLine": "semiColon",
+    "enumDeclaration.memberSpacing": "newLine",
+
+    "arrowFunction.useParentheses": "force",
+    "operatorPosition": "sameLine",
+    "binaryExpression.linePerExpression": false,
+    "memberExpression.linePerExpression": false,
+
+    "preferHanging": false,
+    "preferSingleLine": false,
+    "objectExpression.preferSingleLine": false,
+    "importDeclaration.preferSingleLine": true,
+
+    "module.sortImportDeclarations": "caseInsensitive",
+    "module.sortExportDeclarations": "caseInsensitive",
+    "importDeclaration.sortNamedImports": "caseInsensitive",
+    "importDeclaration.sortTypeOnlyImports": "last",
+    "exportDeclaration.sortNamedExports": "caseInsensitive",
+
+    "jsx.quoteStyle": "preferDouble",
+    "jsx.multiLineParens": "prefer",
+    "jsxSelfClosingElement.spaceBeforeSlash": true,
+
+    "ignoreNodeCommentText": "dprint-ignore",
+    "ignoreFileCommentText": "dprint-ignore-file",
+    "conditionalExpression.operatorPosition": "nextLine",
+    "conditionalExpression.linePerExpression": true,
+
+    "overrides": [
+      {
+        "files": ["packages/tests/**", "**/*.test.ts", "**/*.test.tsx"],
+        "lineWidth": 160
+      }
+    ]
+  },
+  "json": {
+  },
+  "markdown": {
+    "textWrap": "maintain",
+    "lineWidth": 100
+  },
+  "dockerfile": {
+  },
+  "markup": {
+  },
+  "yaml": {
+    "quotes": "preferSingle"
+  },
+  "sql": {
+  },
+  "exec": {
+    "cwd": "${configDir}",
+    "commands": [
+      {
+        "command": "shfmt",
+        "exts": ["sh", "bash"]
+      }
+    ]
+  },
+  "excludes": [
+    "**/node_modules",
+    "**/*-lock.json",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "tmp/**",
+    "governance/**",
+    ".run/**",
+    "**/test-results/**",
+    "**/playwright-report/**",
+    "**/*.svg"
+  ],
+  "plugins": [
+    "npm:@dprint/typescript@0.96.1",
+    "npm:@dprint/json@0.23.0",
+    "npm:@dprint/markdown@0.22.1",
+    "npm:@dprint/dockerfile@0.5.0",
+    "npm:dprint-plugin-markup@0.27.3",
+    "npm:dprint-plugin-yaml@0.6.0",
+    "npm:lax-sql@0.3.0",
+    "npm:@dprint/exec@0.7.3/plugin.json@704701df449dd7e942a71144773778ac529d68c2e4657bfc236d393b898b9a67"
+  ]
+}

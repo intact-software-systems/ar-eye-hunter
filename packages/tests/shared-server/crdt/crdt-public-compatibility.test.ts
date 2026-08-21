@@ -58,7 +58,7 @@ it('keeps the public live-envelope validator on its named-input package contract
   expect(result.valid).toBe(false);
 });
 
-// Prettier's 120-column output exceeds the repository's 100-character review limit.
+// The formatter's line width exceeds the repository's 100-character review limit here.
 it('keeps every public CRDT server and in-memory repository type on the package root', () => {
   expectTypeOf<sharedServer.RallarCrdtServerEnvelopeKind>().toEqualTypeOf<RallarCrdtServerEnvelopeKind>();
   expectTypeOf<sharedServer.RallarCrdtServerTopicScope>().toEqualTypeOf<RallarCrdtServerTopicScope>();

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 
 import { Either } from '@shared/resilience/Either.ts';
-// prettier-ignore
+
 import type {
   AuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-// prettier-ignore
+
 import type {
   GroupStateInboxDurableResult,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';

@@ -5,7 +5,7 @@ import {
   commitAll,
   createSplitFixture,
   lineage,
-  overlongSource,
+  overParameterizedSource,
   readBlob,
   runChangedChecker,
   runGit,
@@ -24,8 +24,8 @@ afterEach(() => {
 describe('changed repository style structural lineage', () => {
   it('fails without aggregate lineage when one owner splits into multiple targets', () => {
     const fixture = createSplitFixture({
-      baseFindings: [overlongSource('alpha'), overlongSource('bravo')],
-      targetFindings: [[overlongSource('gamma')], [overlongSource('delta')]],
+      baseFindings: [overParameterizedSource('alpha'), overParameterizedSource('bravo')],
+      targetFindings: [[overParameterizedSource('gamma')], [overParameterizedSource('delta')]],
     });
 
     const result = runChangedChecker({ root: fixture.root, mergeBase: fixture.mergeBase });
@@ -36,8 +36,8 @@ describe('changed repository style structural lineage', () => {
 
   it('aggregates mapped split targets before consuming base findings', () => {
     const fixture = createSplitFixture({
-      baseFindings: [overlongSource('alpha'), overlongSource('bravo')],
-      targetFindings: [[overlongSource('gamma')], [overlongSource('delta')]],
+      baseFindings: [overParameterizedSource('alpha'), overParameterizedSource('bravo')],
+      targetFindings: [[overParameterizedSource('gamma')], [overParameterizedSource('delta')]],
       manifest: true,
     });
 
@@ -49,8 +49,8 @@ describe('changed repository style structural lineage', () => {
 
   it('ignores an untracked manifest when explicit HEAD owns policy', () => {
     const fixture = createSplitFixture({
-      baseFindings: [overlongSource('alpha')],
-      targetFindings: [[overlongSource('bravo')]],
+      baseFindings: [overParameterizedSource('alpha')],
+      targetFindings: [[overParameterizedSource('bravo')]],
     });
     writeLineageManifest(fixture.root, [lineage(fixture)]);
 
@@ -58,13 +58,13 @@ describe('changed repository style structural lineage', () => {
 
     expect(result.status).toBe(1);
     expect(result.stdout).toContain('FAIL: 1 new or worsened repository style finding');
-    expect(result.stdout).toContain('apps/example/target-a.ts [line.width]');
+    expect(result.stdout).toContain('apps/example/target-a.ts [function.input-contract]');
   });
 
   it('loads an untracked manifest when WORKTREE owns policy and sources', () => {
     const fixture = createSplitFixture({
-      baseFindings: [overlongSource('alpha')],
-      targetFindings: [[overlongSource('bravo')]],
+      baseFindings: [overParameterizedSource('alpha')],
+      targetFindings: [[overParameterizedSource('bravo')]],
     });
     writeLineageManifest(fixture.root, [lineage(fixture)]);
 
@@ -80,8 +80,8 @@ describe('changed repository style structural lineage', () => {
 
   it('loads a committed manifest when explicit HEAD owns policy and sources', () => {
     const fixture = createSplitFixture({
-      baseFindings: [overlongSource('alpha')],
-      targetFindings: [[overlongSource('bravo')]],
+      baseFindings: [overParameterizedSource('alpha')],
+      targetFindings: [[overParameterizedSource('bravo')]],
     });
     writeLineageManifest(fixture.root, [lineage(fixture)]);
     commitAll(fixture.root, 'add structural lineage policy');
@@ -94,8 +94,8 @@ describe('changed repository style structural lineage', () => {
 
   it('discovers nested manifests equivalently in WORKTREE and explicit HEAD', () => {
     const fixture = createSplitFixture({
-      baseFindings: [overlongSource('alpha')],
-      targetFindings: [[overlongSource('bravo')]],
+      baseFindings: [overParameterizedSource('alpha')],
+      targetFindings: [[overParameterizedSource('bravo')]],
     });
     writeLineageManifestAt(fixture.root, 'plans/repo-style-lineages/nested/example.json', [lineage(fixture)]);
 
@@ -163,8 +163,8 @@ describe('changed repository style structural lineage', () => {
 
   it('consumes a base finding only once when a split target duplicates it', () => {
     const fixture = createSplitFixture({
-      baseFindings: [overlongSource('base')],
-      targetFindings: [[overlongSource('next')], [overlongSource('more')]],
+      baseFindings: [overParameterizedSource('base')],
+      targetFindings: [[overParameterizedSource('next')], [overParameterizedSource('more')]],
       manifest: true,
     });
 
@@ -172,35 +172,35 @@ describe('changed repository style structural lineage', () => {
 
     expect(result.status).toBe(1);
     expect(result.stdout).toContain('FAIL: 1 new or worsened repository style finding');
-    expect(result.stdout).toContain('apps/example/target-b.ts [line.width]');
+    expect(result.stdout).toContain('apps/example/target-b.ts [function.input-contract]');
   });
 
   it('keeps a larger mapped target magnitude as worsened', () => {
     const fixture = createSplitFixture({
-      baseFindings: [overlongSource('base')],
-      targetFindings: [[overlongSource('target', 30)]],
+      baseFindings: [overParameterizedSource('base')],
+      targetFindings: [[overParameterizedSource('target', 30)]],
       manifest: true,
     });
 
     const result = runChangedChecker({ root: fixture.root, mergeBase: fixture.mergeBase });
 
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain('(actual 153)');
+    expect(result.stdout).toContain('has 34 parameters');
   });
 
   it('keeps an unmapped target finding new', () => {
     const fixture = createSplitFixture({
-      baseFindings: [overlongSource('base')],
-      targetFindings: [[overlongSource('mapped')]],
+      baseFindings: [overParameterizedSource('base')],
+      targetFindings: [[overParameterizedSource('mapped')]],
       manifest: true,
     });
-    writeFixture(fixture.root, 'apps/example/unmapped.ts', overlongSource('unmapped'));
+    writeFixture(fixture.root, 'apps/example/unmapped.ts', overParameterizedSource('unmapped'));
     commitAll(fixture.root, 'add unmapped target');
 
     const result = runChangedChecker({ root: fixture.root, mergeBase: fixture.mergeBase });
 
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain('apps/example/unmapped.ts [line.width]');
+    expect(result.stdout).toContain('apps/example/unmapped.ts [function.input-contract]');
   });
 
   it('keeps layout findings on a mapped target path', () => {
@@ -219,8 +219,8 @@ describe('changed repository style structural lineage', () => {
 
   it('does not load a lineage for a stale merge base', () => {
     const fixture = createSplitFixture({
-      baseFindings: [overlongSource('base')],
-      targetFindings: [[overlongSource('next')]],
+      baseFindings: [overParameterizedSource('base')],
+      targetFindings: [[overParameterizedSource('next')]],
     });
     writeLineageManifest(fixture.root, [lineage(fixture, { mergeBase: '0'.repeat(40) })]);
     commitAll(fixture.root, 'add stale lineage');
@@ -228,7 +228,7 @@ describe('changed repository style structural lineage', () => {
     const result = runChangedChecker({ root: fixture.root, mergeBase: fixture.mergeBase });
 
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain('apps/example/target-a.ts [line.width]');
+    expect(result.stdout).toContain('apps/example/target-a.ts [function.input-contract]');
   });
 
   it.each([
@@ -271,8 +271,8 @@ describe('changed repository style structural lineage', () => {
     },
   ])('fails closed for a $name', ({ mutate, diagnostic }) => {
     const fixture = createSplitFixture({
-      baseFindings: [overlongSource('base')],
-      targetFindings: [[overlongSource('target')]],
+      baseFindings: [overParameterizedSource('base')],
+      targetFindings: [[overParameterizedSource('target')]],
     });
     writeLineageManifest(fixture.root, [mutate(fixture)]);
     commitAll(fixture.root, 'add invalid lineage');
@@ -285,10 +285,10 @@ describe('changed repository style structural lineage', () => {
 
   it('fails closed when one target belongs to conflicting lineages', () => {
     const fixture = createSplitFixture({
-      baseFindings: [overlongSource('base')],
-      targetFindings: [[overlongSource('target')]],
+      baseFindings: [overParameterizedSource('base')],
+      targetFindings: [[overParameterizedSource('target')]],
     });
-    writeFixture(fixture.root, 'apps/example/other-owner.ts', overlongSource('other'));
+    writeFixture(fixture.root, 'apps/example/other-owner.ts', overParameterizedSource('other'));
     commitAll(fixture.root, 'add other base owner');
     const otherBlob = readBlob(fixture.root, 'HEAD', 'apps/example/other-owner.ts');
     writeLineageManifest(fixture.root, [
@@ -309,8 +309,8 @@ describe('changed repository style structural lineage', () => {
 
   it('fails closed when one source has conflicting lineage entries', () => {
     const fixture = createSplitFixture({
-      baseFindings: [overlongSource('alpha'), overlongSource('bravo')],
-      targetFindings: [[overlongSource('gamma')], [overlongSource('delta')]],
+      baseFindings: [overParameterizedSource('alpha'), overParameterizedSource('bravo')],
+      targetFindings: [[overParameterizedSource('gamma')], [overParameterizedSource('delta')]],
     });
     writeLineageManifest(fixture.root, [
       lineage(fixture, { targets: [fixture.targetPaths[0]] }),
@@ -326,8 +326,8 @@ describe('changed repository style structural lineage', () => {
 
   it('accepts a one-to-one move when Git rename detection loses identity', () => {
     const fixture = createSplitFixture({
-      baseFindings: [overlongSource('base')],
-      targetFindings: [[overlongSource('next')]],
+      baseFindings: [overParameterizedSource('base')],
+      targetFindings: [[overParameterizedSource('next')]],
     });
     writeLineageManifest(fixture.root, [lineage(fixture)]);
     runGit(fixture.root, ['rm', fixture.sourcePath]);
@@ -341,8 +341,8 @@ describe('changed repository style structural lineage', () => {
 
   it('authenticates split findings after the obsolete source owner is removed', () => {
     const fixture = createSplitFixture({
-      baseFindings: [overlongSource('alpha'), overlongSource('bravo')],
-      targetFindings: [[overlongSource('gamma')], [overlongSource('delta')]],
+      baseFindings: [overParameterizedSource('alpha'), overParameterizedSource('bravo')],
+      targetFindings: [[overParameterizedSource('gamma')], [overParameterizedSource('delta')]],
     });
     writeLineageManifest(fixture.root, [lineage(fixture)]);
     runGit(fixture.root, ['rm', fixture.sourcePath]);
@@ -356,8 +356,8 @@ describe('changed repository style structural lineage', () => {
 
   it('reports malformed manifests and manifest traversal deterministically', () => {
     const fixture = createSplitFixture({
-      baseFindings: [overlongSource('base')],
-      targetFindings: [[overlongSource('target')]],
+      baseFindings: [overParameterizedSource('base')],
+      targetFindings: [[overParameterizedSource('target')]],
     });
     writeFixture(fixture.root, 'plans/repo-style-lineages/zeta.json', '{"version":1,"lineages":"not-an-array"}\n');
     writeFixture(fixture.root, 'plans/repo-style-lineages/alpha.json', '{"version":2,"lineages":[]}\n');

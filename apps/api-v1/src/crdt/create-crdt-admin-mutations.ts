@@ -28,7 +28,7 @@ import {
   decodeExactSnapshotEnvelope,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
-// deno-fmt-ignore
+
 import { hashCanonicalCommand } from '@shared-server/rallar-system/services/\
 canonical-command-hash.ts';
 import type {

@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { Temporal } from '@js-temporal/polyfill';
 
-// deno-fmt-ignore
+
 import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/\
 PSqlAdminOperationsStatsReader.ts';
-// deno-fmt-ignore
+
 import { PSqlAdminPruneExpiredRepository } from '@shared-server/postgres/admin-operations/\
 PSqlAdminPruneExpiredRepository.ts';
-// deno-fmt-ignore
+
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
 ResourceInboxResultsRepository.ts';
 import {

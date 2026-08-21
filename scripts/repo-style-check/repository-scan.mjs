@@ -89,9 +89,6 @@ const limits = {
   // p99 is 1,242 lines. 1,500 keeps the backstop at the same "top ~1% of files" meaning the
   // production number carries, so a cohesive suite is not split to satisfy a production shape.
   testFileLineCount: 1500,
-  lineWidth: 100,
-  declarationWidth: 140,
-  testLineWidth: 140,
   handlerLineCount: 30,
   handlerComplexity: 8,
   factoryBlockLineCount: 45,
@@ -204,23 +201,6 @@ function isAmbientDeclarationFile(file) {
   return /\.d\.[cm]?ts$/u.test(file.toLowerCase());
 }
 
-const specifierOnlyPattern = /^\s*(?:import|export)\s*['"`][^'"`]+['"`];?\s*$/u;
-const specifierFromPattern = /^\s*(?:import|export)\b[^'"`]*from\s*['"`][^'"`]+['"`];?\s*$/u;
-
-function isModuleSpecifierLine(text) {
-  return specifierFromPattern.test(text) || specifierOnlyPattern.test(text);
-}
-
-const declarationHeaderPattern =
-  /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|interface)\b/u;
-
-function resolveLineWidth(text, file) {
-  if (isNonProductionPath(file)) {
-    return limits.testLineWidth;
-  }
-  return declarationHeaderPattern.test(text) ? limits.declarationWidth : limits.lineWidth;
-}
-
 function addFileMeasurementFindings(findings, sourceText) {
   const { lines } = sourceText;
   const navigationLength = resolveNavigationFileLength(sourceText);
@@ -233,25 +213,6 @@ function addFileMeasurementFindings(findings, sourceText) {
           `after the data-literal discount (${lines.length} physical lines). Split along ` +
           'real ownership; density review is owned by the cognitive-load tiers.',
       ),
-    );
-  }
-
-  const longLines = lines
-    .map((text, index) => ({ line: index + 1, text }))
-    .filter((line) => !isModuleSpecifierLine(line.text))
-    .filter((line) => line.text.length > resolveLineWidth(line.text, sourceText.file));
-  for (const line of longLines.slice(0, 8)) {
-    findings.push(
-      finding(
-        'line.width',
-        `Line ${line.line} exceeds ${resolveLineWidth(line.text, sourceText.file)} chars ` +
-          `(actual ${line.text.length}). Prefer wrapped, traceable formatting.`,
-      ),
-    );
-  }
-  if (longLines.length > 8) {
-    findings.push(
-      finding('line.width', `... and ${longLines.length - 8} additional over-long lines.`),
     );
   }
 }
@@ -370,11 +331,10 @@ export function resolveFileLineBackstop(file) {
 // test-path and test-filename exclusions. Generated, vendored, and runner-config files stay out of
 // both. The standard applies its universal rules here; which of them are enforced is separate.
 // Which rules block a branch when the changed file is a test. The standard applies universally, but
-// enforcement is staged: these three are unambiguous on any corpus and carry the highest value here
+// enforcement is staged: these two are unambiguous on any corpus and carry the highest value here
 // -- boundary.unknown is what reports `as unknown as`. The file metrics and layout rules stay
 // warning-only for tests until each is measured against the test corpus the way file.length was.
 export const testEnforcedRuleIds = new Set([
-  'line.width',
   'boundary.unknown',
   'construction.forward-capture',
 ]);

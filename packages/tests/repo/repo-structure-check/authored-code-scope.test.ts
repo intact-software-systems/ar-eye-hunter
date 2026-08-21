@@ -51,7 +51,6 @@ describe('repository structure authored-code scope', () => {
       'playwright.exhaustive.config',
       'playwright.full-stack.config',
       'playwright.recipe-console.config',
-      'prettier.config',
       'prisma.config',
       'vite.config',
       'vitest.config',

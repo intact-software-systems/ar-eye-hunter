@@ -32,7 +32,7 @@ import {
   type RallarTimingSink,
   recordRallarTiming,
 } from '../services/timing.ts';
-// prettier-ignore
+
 import type {
   TopologyReconfigureInboxResult,
 } from '../topology/inbox/topology-app-inbox-handler.ts';

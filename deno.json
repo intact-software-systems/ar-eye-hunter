@@ -1,8 +1,6 @@
 {
   "nodeModulesDir": "manual",
   "tasks": {
-    "fmt": "deno fmt",
-    "fmt:check": "deno fmt --check",
     "lint": "deno lint",
     "test:queue": "deno run -A --unstable-temporal npm:vitest@4.0.17 run packages/tests/queue.test.ts",
     "test:debug": "deno run -A --unstable-temporal npm:vitest@4.0.17 run",
@@ -28,20 +26,6 @@
     "erasableSyntaxOnly": true,
     "strict": true,
     "lib": ["deno.ns", "dom"]
-  },
-  "fmt": {
-    "include": [
-      "deno.json",
-      "apps/api-v1",
-      "apps/rallar-black-box-control-server",
-      "apps/relic-hunter-server-v1",
-      "packages/shared-rtc-bench"
-    ],
-    "lineWidth": 100,
-    "indentWidth": 2,
-    "useTabs": false,
-    "semiColons": true,
-    "singleQuote": true
   },
   "lint": {
     "include": [

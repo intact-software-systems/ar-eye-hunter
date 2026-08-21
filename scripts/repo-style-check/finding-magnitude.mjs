@@ -2,7 +2,6 @@ const magnitudePatternsByRule = {
   'file.length': /File length (\d+)/u,
   'file.cognitive-load': /File cognitive load (\d+)/u,
   'file.responsibility-count': /File exports (\d+) runtime values/u,
-  'line.width': /(?:actual |\.\.\. and )(\d+)/u,
   'route.handler-length': /has (\d+) lines/u,
   'route.handler-complexity': /complexity (\d+)/u,
   'factory.spacing': /has a (\d+)-line block/u,

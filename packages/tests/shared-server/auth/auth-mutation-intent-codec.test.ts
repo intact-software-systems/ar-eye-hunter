@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-// prettier-ignore
+
 import type { AuthMutationIntent }
   from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
-// prettier-ignore
+
 import { decodeAuthMutationIntent }
   from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-intent.ts';
 

@@ -113,7 +113,9 @@ describe('governance gate workflow', () => {
           uses: './.github/workflows/release-gate.yml',
           with: {
             candidate_ref: '${{ github.event.pull_request.head.sha }}',
-            changed_repo_style_base: '${{ github.event.pull_request.base.sha }}',
+            changed_repo_style_base:
+              "${{ contains(github.event.pull_request.labels.*.name, 'skip-changed-gates')"
+              + " && '' || github.event.pull_request.base.sha }}",
           },
         },
       },

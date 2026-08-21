@@ -1,11 +1,11 @@
 import { expect, vi } from 'vitest';
 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-// prettier-ignore
+
 import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-// prettier-ignore
+
 import {
   isAuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
@@ -15,7 +15,7 @@ import {
   type GroupMemberBanAppInboxPayload,
   type GroupMemberUnbanAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-// prettier-ignore
+
 import type {
   JsonWireObject,
   JsonWireValue,

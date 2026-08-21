@@ -7,17 +7,17 @@ import {
   type RallarCrdtOperationBatch,
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
-// deno-fmt-ignore
+
 import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/\
 psql-crdt-mutation-repository.ts';
-// deno-fmt-ignore
+
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/\
 create-crdt-mutation-service.ts';
 import {
   type CrdtMutationCommand,
   CrdtMutationConflictError,
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-// deno-fmt-ignore
+
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/\
 crdt-mutation-command-codec.ts';
 

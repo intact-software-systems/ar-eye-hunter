@@ -10,7 +10,6 @@ import {
   isTestSourceFile,
   resolveFileLineBackstop,
   testEnforcedRuleIds,
-  scanProductionSources,
 } from '../../../scripts/repo-style-check/repository-scan.mjs';
 
 const repoRoot = process.cwd();
@@ -22,36 +21,6 @@ function readStyleAuthority(): string {
 function readScanner(): string {
   return readFileSync(path.join(repoRoot, 'scripts/repo-style-check/repository-scan.mjs'), 'utf8');
 }
-
-describe('line width by line kind', () => {
-  const scan = (file: string, raw: string) =>
-    scanProductionSources({
-      repoRoot: process.cwd(),
-      sources: [{ file: path.join(process.cwd(), file), raw }],
-      options: {},
-    }).findings.filter((entry) => entry.ruleId === 'line.width');
-
-  const pad = (count: number) => 'A'.repeat(count);
-
-  it('measures code at 100', () => {
-    expect(scan('packages/shared/probe.ts', `const value = '${pad(95)}';\n`)).toHaveLength(1);
-    expect(scan('packages/shared/probe.ts', `const value = '${pad(60)}';\n`)).toHaveLength(0);
-  });
-
-  it('does not measure a module specifier at all', () => {
-    const long = `import type { Probe } from './${pad(180)}.ts';\n`;
-
-    expect(scan('packages/shared/probe.ts', long)).toHaveLength(0);
-  });
-
-  it('measures a function or interface declaration header at 140', () => {
-    const under = `export interface Probe${pad(60)} { readonly a: string }\n`;
-    const over = `export interface Probe${pad(140)} { readonly a: string }\n`;
-
-    expect(scan('packages/shared/probe.ts', under)).toHaveLength(0);
-    expect(scan('packages/shared/probe.ts', over)).toHaveLength(1);
-  });
-});
 
 describe('repo style test calibration', () => {
   it('gives test files the wider navigation backstop the test corpus was measured against', () => {
@@ -72,8 +41,10 @@ describe('repo style test calibration', () => {
   it('blocks only the staged rules when the changed file is a test', () => {
     const testFile = 'packages/tests/shared/queue.test.ts';
 
-    expect([...testEnforcedRuleIds].toSorted()).toEqual(['boundary.unknown', 'construction.forward-capture', 'line.width']);
-    expect(isTestEnforcedFinding(testFile, 'line.width')).toBe(true);
+    expect([...testEnforcedRuleIds].toSorted()).toEqual([
+      'boundary.unknown',
+      'construction.forward-capture',
+    ]);
     expect(isTestEnforcedFinding(testFile, 'boundary.unknown')).toBe(true);
     expect(isTestEnforcedFinding(testFile, 'file.cognitive-load')).toBe(false);
     expect(isTestEnforcedFinding(testFile, 'file.length')).toBe(false);
@@ -87,7 +58,7 @@ describe('repo style test calibration', () => {
   });
 
   it('leaves every rule blocking on production paths', () => {
-    for (const ruleId of ['line.width', 'file.cognitive-load', 'file.length', 'boundary.unknown']) {
+    for (const ruleId of ['file.cognitive-load', 'file.length', 'boundary.unknown']) {
       expect(isTestEnforcedFinding('packages/shared/queuebox/ResourceEntry.ts', ruleId)).toBe(true);
     }
   });

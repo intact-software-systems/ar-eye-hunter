@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-// prettier-ignore
+
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/\
 AuthSessionRepository.ts';
-// prettier-ignore
+
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/\
 ClientStateRepository.ts';
-// prettier-ignore
+
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/\
 GroupStateRepository.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
@@ -16,13 +16,13 @@ import {
   AppInboxType,
   type GroupCreateAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-// prettier-ignore
+
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/\
 auth-credential-issuer.ts';
-// prettier-ignore
+
 import { createAuthMutationService } from '@shared-server/rallar-system/services/\
 auth-state-mutations.ts';
-// prettier-ignore
+
 import { createGroupStateService } from '@shared-server/rallar-system/services/\
 group-state-service.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';

@@ -7,6 +7,8 @@ on:
       - synchronize
       - reopened
       - ready_for_review
+      - labeled
+      - unlabeled
 
 concurrency:
   group: branch-release-pr-${{ github.event.pull_request.number }}
@@ -84,7 +86,10 @@ jobs:
     uses: ./.github/workflows/release-gate.yml
     with:
       candidate_ref: ${{ github.event.pull_request.head.sha }}
-      changed_repo_style_base: ${{ github.event.pull_request.base.sha }}
+      # A repository-wide reformat re-keys every changed-scope finding at once, so the two
+      # changed-range checks cannot pass on that one commit. The label passes an empty base,
+      # which is the same configuration the main-push deploy path already uses.
+      changed_repo_style_base: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changed-gates') && '' || github.event.pull_request.base.sha }}
 
   publish-validation-evidence:
     name: Publish validation evidence

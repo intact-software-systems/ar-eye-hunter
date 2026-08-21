@@ -17,7 +17,7 @@ import {
   toTopologyAppInboxCommand,
   toTopologyHttpMutationSemanticHash,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-// deno-fmt-ignore
+
 import { decodeJsonWireValue } from '@shared-server/rallar-system/services/\
 mutation-command-identity.ts';
 

@@ -6,22 +6,22 @@ import {
   type RallarCrdtSnapshotEnvelope,
   toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
-// deno-fmt-ignore
+
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/\
 psql-crdt-log-repository.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-// deno-fmt-ignore
+
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
 ResourceInboxRepository.ts';
-// deno-fmt-ignore
+
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
 ResourceInboxResultsRepository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
-// deno-fmt-ignore
+
 import { decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/\
 crdt-mutation-value-codec.ts';
-// deno-fmt-ignore
+
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/\
 decode-crdt-mutation-result.ts';
 
@@ -33,7 +33,7 @@ import {
 } from '../../../src/crdt/create-api-crdt-inbox-factory.ts';
 import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';
 import { waitForPGliteQueueRow, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
-// deno-fmt-ignore
+
 import {
   appendCommand,
   queueNow,

@@ -1,4 +1,4 @@
-// prettier-ignore
+
 import {
   describe,
   expect,
@@ -18,24 +18,20 @@ import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInbo
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
+
 import {
   ResourceInboxRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
+
 import {
   ResourceInboxResultsRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
+
 import {
   AppCrdtInboxService,
   CRDT_APP_INBOX_TOPIC,
 } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
-// Prettier's single-line form exceeds the repository's 100-character review limit.
-// prettier-ignore
+
 import {
   createCrdtMutationService,
 } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';

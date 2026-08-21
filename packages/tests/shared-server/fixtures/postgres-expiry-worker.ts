@@ -24,11 +24,11 @@ import {
   createClientStateRepository,
   createGroupStateRepository,
 } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
-// prettier-ignore
+
 import {
   PSqlRuntimeStateRepository,
 } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-// prettier-ignore
+
 import type {
   ClientMutationReceipt,
 } from '@shared-server/rallar-system/services/client-state-mutations.ts';
@@ -42,33 +42,33 @@ import {
 import type {
   ClientMutationCommandInput,
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
-// prettier-ignore
+
 import { toAuthenticatedClientMutationContextId } from
   '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
-// prettier-ignore
+
 import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-// prettier-ignore
+
 import type {
   GroupMutationReceipt,
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
-// prettier-ignore
+
 import {
   type AuthenticatedGroupMutationEnqueue,
   isAuthenticatedGroupMutationEnqueue,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-// prettier-ignore
+
 import {
   requireGroupMutationReceipt,
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
-// prettier-ignore
+
 import type {
   GroupTopologyConfigMutationReceipt,
 } from '@shared/api/graph-topology-management-types.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-// prettier-ignore
+
 import {
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
@@ -78,7 +78,7 @@ import {
   toGroupAppInboxStorageCommandId,
 } from './postgres-app-inbox-worker-runtime.ts';
 import { toPSqlSql } from './postgres-sql-adapter.ts';
-// prettier-ignore
+
 import type {
   JsonWireObject,
   JsonWireValue,

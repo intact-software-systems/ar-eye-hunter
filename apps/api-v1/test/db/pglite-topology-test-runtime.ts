@@ -43,7 +43,7 @@ import {
 } from '@shared-server/rallar-system/topology/\
 group-topology-management-service.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-// deno-fmt-ignore
+
 import {
   validatePersistedALMessage,
 } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -52,7 +52,7 @@ import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/\
 group-topology-config-canonical.ts';
 import type { Group, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-// deno-fmt-ignore
+
 import type {
   JsonWireValue,
 } from '@shared-server/rallar-system/services/mutation-command-identity.ts';

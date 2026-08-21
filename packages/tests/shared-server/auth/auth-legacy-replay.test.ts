@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-// prettier-ignore
+
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/\
 auth-mutation-service.ts';
 import {
@@ -11,21 +11,21 @@ import {
   createHmacAuthCredentialIssuer,
 } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
-// prettier-ignore
+
 import type {
   JsonWireValue,
 } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
-// prettier-ignore
+
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/\
 app-auth-inbox-service.ts';
-// prettier-ignore
+
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
-// prettier-ignore
+
 import { decodeAuthMutationResult } from '@shared-server/rallar-system/auth/mutation/\
 decode-auth-mutation-result.ts';
 import type { AuthMutationResult } from '@shared-server/rallar-system/auth/mutation/\
 auth-mutation-contracts.ts';
-// prettier-ignore
+
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/\
 auth-session-repository.ts';
 
@@ -253,14 +253,14 @@ async function failsReplayAfterSecretRotation(): Promise<void> {
     throw new Error('Expected initial auth session');
   }
 
-  // prettier-ignore
+  
   const rotatedIssuer = createHmacAuthCredentialIssuer('second-auth-secret-0123456789abcdef-extra');
   const rotatedService = createServiceWithIssuer(auth, runtimeRepository, rotatedIssuer);
-  // prettier-ignore
+  
   await expect(rotatedService.issueSession(input)).rejects.toThrow(/digest differs/u);
   const durable = await durableResources(auth);
   expect(durable).not.toContain(first.right.accessToken);
-  // prettier-ignore
+  
   expect(durable).not.toContain(await rotatedIssuer.issueAccessToken(first.right.sessionId));
 }
 

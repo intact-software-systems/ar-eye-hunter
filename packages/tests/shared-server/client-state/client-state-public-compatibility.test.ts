@@ -112,10 +112,10 @@ function assertPredecessorPublicTypeIdentity(): void {
   expectTypeOf<PublicSharedServer.ClientSessionConnectAppInboxPayload>().toEqualTypeOf<ClientSessionConnectAppInboxPayload>();
   expectTypeOf<PublicSharedServer.ClientSessionHeartbeatAppInboxPayload>().toEqualTypeOf<ClientSessionHeartbeatAppInboxPayload>();
   expectTypeOf<PublicSharedServer.ClientSessionDisconnectAppInboxPayload>().toEqualTypeOf<ClientSessionDisconnectAppInboxPayload>();
-  // prettier-ignore
+  
   expectTypeOf<PublicSharedServer.ClientAuthorisedWsSessionConnectAppInboxPayload>()
     .toEqualTypeOf<ClientAuthorisedWsSessionConnectAppInboxPayload>();
-  // prettier-ignore
+  
   expectTypeOf<PublicSharedServer.ClientAuthorisedWsSessionDisconnectAppInboxPayload>()
     .toEqualTypeOf<ClientAuthorisedWsSessionDisconnectAppInboxPayload>();
   expectTypeOf<PublicSharedServer.ClientExpiredSessionsAppInboxPayload>().toEqualTypeOf<ClientExpiredSessionsAppInboxPayload>();

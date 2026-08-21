@@ -8,7 +8,7 @@ import type {
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-// prettier-ignore
+
 import type {
   GroupLifecyclePolicyRead,
 } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';

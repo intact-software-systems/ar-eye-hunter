@@ -6,7 +6,7 @@ import { hashCanonicalCommand } from './canonical-command-hash.ts';
 import { decodeAuthMutationIntent } from '../auth/mutation/decode-auth-mutation-intent.ts';
 import { toDescriptorCommand } from '../group-state/group-mutation-authority.ts';
 import type { GroupMutationDescriptor } from '../group-state/group-state-service-contracts.ts';
-// prettier-ignore
+
 import {
   validateGroupMutationCommand,
 } from '../group-state/mutation/command-validation/validate-group-mutation-command.ts';

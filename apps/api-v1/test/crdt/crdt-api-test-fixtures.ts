@@ -6,17 +6,17 @@ import {
   type RallarCrdtDocumentRef,
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
-// deno-fmt-ignore
+
 import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/\
 psql-crdt-mutation-repository.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-// deno-fmt-ignore
+
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/\
 create-crdt-mutation-service.ts';
-// deno-fmt-ignore
+
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/\
 crdt-mutation-command-codec.ts';
-// deno-fmt-ignore
+
 import type { CrdtMutationActor } from '@shared-server/rallar-system/crdt/mutation/\
 crdt-mutation-contracts.ts';
 

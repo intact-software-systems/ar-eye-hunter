@@ -184,8 +184,10 @@ function readGit(root: string, args: readonly string[]): string {
   return result.stdout;
 }
 
-export function overlongSource(label: string, extraLength = 0): string {
-  return `const ${label.replaceAll('-', '')} = '${'x'.repeat(105 + extraLength)}';\n`;
+export function overParameterizedSource(label: string, extraParameters = 0): string {
+  const name = label.replaceAll('-', '');
+  const parameters = Array.from({ length: 4 + extraParameters }, (_, index) => `p${index}: string`);
+  return `function ${name}(${parameters.join(', ')}): string {\n  return '';\n}\n`;
 }
 
 export function unknownSource(prefix: string, count: number): string {

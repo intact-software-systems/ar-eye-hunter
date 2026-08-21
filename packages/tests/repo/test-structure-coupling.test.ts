@@ -249,6 +249,50 @@ describe('test structure-coupling review', () => {
     expect(result.stdout).toContain('temporary ratchet entry requires a concrete removalCondition');
   });
 
+  it('keeps registered entries current when a reformat moves the occurrence', () => {
+    // Candidate identity must survive reformatting. When line and column were part of the id, a
+    // repository-wide format re-keyed every candidate at once and invalidated the whole registry.
+    const fixture = createGitFixture({
+      'packages/example/src/public.ts': 'export const publicApi = true;\n',
+      'packages/tests/example/structure.test.ts': [
+        "import { readFileSync } from 'node:fs';",
+        "const source = readFileSync('packages/example/src/public.ts', 'utf8');",
+        "expect(source).toContain('publicApi');",
+      ].join('\n'),
+    });
+    const candidates = readCandidates(runChecker(fixture).stdout);
+    writeRegistry(fixture.root, candidates.map(durableEntry));
+
+    expect(runChecker(fixture).status, 'registry must start current').toBe(0);
+
+    // Same assertions, re-indented and pushed down the file: every line and column moves.
+    writeFileSync(
+      path.join(fixture.root, 'packages/tests/example/structure.test.ts'),
+      [
+        "import { readFileSync } from 'node:fs';",
+        '',
+        'function readPublicApiSource() {',
+        '        const source = readFileSync(',
+        "                'packages/example/src/public.ts',",
+        "                'utf8',",
+        '        );',
+        "        expect(source).toContain('publicApi');",
+        '}',
+        '',
+        'readPublicApiSource();',
+      ].join('\n'),
+    );
+
+    const reformatted = runChecker(fixture);
+
+    expect(reformatted.status, reformatted.stdout).toBe(0);
+    expect(reformatted.stdout).not.toContain('registry entry is stale');
+    expect(reformatted.stdout).not.toContain('contract is not linked by a current candidate');
+    expect(readCandidates(reformatted.stdout).map((candidate) => candidate.id).toSorted()).toEqual(
+      candidates.map((candidate) => candidate.id).toSorted(),
+    );
+  });
+
   it('rejects escaped, control-only, and vague contract evidence', () => {
     const fixture = createGitFixture({
       'packages/example/src/public.ts': 'export const publicApi = true;\n',
