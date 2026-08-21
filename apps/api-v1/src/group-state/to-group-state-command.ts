@@ -288,8 +288,9 @@ function toGrantGroupAdmissionCommand(
 
   return {
     type: AppInboxType.GROUP_ADMISSION_GRANT,
+    topicId: AppInboxType.GROUP_ADMISSION_GRANT,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: {
       scope: input.scope,
@@ -308,8 +309,9 @@ function toDeclineGroupAdmissionCommand(
 
   return {
     type: AppInboxType.GROUP_ADMISSION_DECLINE,
+    topicId: AppInboxType.GROUP_ADMISSION_DECLINE,
     resourceId: request.requestId,
-    contextId: toGroupAppInboxContextId(input.scope, input.groupId),
+    contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
     senderId: input.authSession.clientId,
     data: {
       scope: input.scope,

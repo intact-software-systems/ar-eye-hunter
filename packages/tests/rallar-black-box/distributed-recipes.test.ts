@@ -752,7 +752,10 @@ describe('distributed recipes helpers', () => {
             request: {
                 method: 'PUT',
                 path: expect.stringMatching(
-                    /^\/api\/state\/apps\/game-app\/workspaces\/live\/groups\/arena-1\/members\/\{auth\.clientId\}\/requests\/[^/]+-\{runId\}$/,
+                    new RegExp(
+                        '^/api/state/apps/game-app/workspaces/live/groups/arena-1/' +
+                            'members/\\{auth\\.clientId\\}/requests/[^/]+-\\{runId\\}$',
+                    ),
                 ),
                 body: {
                     status: 'active',
@@ -1031,7 +1034,10 @@ describe('distributed recipes helpers', () => {
             [
                 'http.request',
                 expect.stringMatching(
-                    /^PUT \/api\/state\/apps\/game-app\/workspaces\/live\/groups\/arena-1\/members\/\{auth\.clientId\}\/requests\/[^/]+-\{runId\}$/,
+                    new RegExp(
+                        '^PUT /api/state/apps/game-app/workspaces/live/groups/arena-1/' +
+                            'members/\\{auth\\.clientId\\}/requests/[^/]+-\\{runId\\}$',
+                    ),
                 ),
             ],
             ['rtc.connect', 'connect RTC - rtcRealtime - arena-1'],

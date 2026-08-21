@@ -255,7 +255,7 @@
           "connection": "api",
           "request": {
             "method": "POST",
-            "path": "/api/auth/register",
+            "path": "/api/auth/register/requests/bb-3449295d16d26d34e81fbecf-{i}-{runId}",
             "headers": {
               "x-forwarded-for": "{clientIp}"
             },
@@ -278,7 +278,7 @@
           "connection": "api",
           "request": {
             "method": "POST",
-            "path": "/api/auth/login",
+            "path": "/api/auth/login/requests/bb-d73a75713ff46f0645299bfd-{i}-{runId}",
             "headers": {
               "x-forwarded-for": "{clientIp}"
             },
@@ -333,13 +333,12 @@
           "connection": "api",
           "request": {
             "method": "PUT",
-            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{client{i}ClientId}/principal",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{client{i}ClientId}/principal/requests/principal-client-large-{i}-{runId}",
             "headers": {
               "Authorization": "{client{i}AuthHeader}",
               "x-client-id": "{client{i}ClientId}"
             },
             "body": {
-              "requestId": "principal-client-{i}-{runId}",
               "username": "managed-burst-large-client-{i}-{runId}",
               "displayName": "Managed large client {i}",
               "status": "active",
@@ -356,14 +355,12 @@
           "connection": "api",
           "request": {
             "method": "POST",
-            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/join-client-large-{i}-{runId}",
             "headers": {
               "Authorization": "{client{i}AuthHeader}",
               "x-client-id": "{client{i}ClientId}"
             },
-            "body": {
-              "requestId": "join-client-{i}-{runId}"
-            }
+            "body": {}
           },
           "expect": {
             "status": 200,
@@ -380,7 +377,7 @@
           "connection": "api",
           "request": {
             "method": "POST",
-            "path": "/api/auth/ws-ticket",
+            "path": "/api/auth/ws-ticket/requests/bb-0548bb5d4cfa9299e7580e3d-{i}-{runId}",
             "headers": {
               "Authorization": "{client{i}AuthHeader}",
               "x-client-id": "{client{i}ClientId}"
@@ -433,13 +430,12 @@
           "connection": "api",
           "request": {
             "method": "PUT",
-            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{client{i}SessionId}",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{client{i}SessionId}/requests/presence-client-large-{i}-{runId}",
             "headers": {
               "Authorization": "{client{i}AuthHeader}",
               "x-client-id": "{client{i}ClientId}"
             },
             "body": {
-              "requestId": "presence-client-{i}-{runId}",
               "generationId": "generation-{runId}",
               "principalId": "{client{i}ClientId}"
             },
@@ -524,7 +520,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-10bedfc51a2bca63c5414f45-{runId}",
         "body": {
           "username": "managed-burst-large-creator-{runId}",
           "password": "{clientPassword}",
@@ -544,7 +540,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-b35fd084d5474dd3639fd5ca-{runId}",
         "body": {
           "username": "managed-burst-large-creator-{runId}",
           "password": "{clientPassword}"
@@ -588,13 +584,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-large-{groupId}-{runId}",
         "headers": {
           "Authorization": "{creatorAuthHeader}",
           "x-client-id": "{creatorClientId}"
         },
         "body": {
-          "requestId": "create-{groupId}-{runId}",
           "groupId": "{groupId}",
           "displayName": "{groupName}",
           "kind": "room",
@@ -630,14 +625,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config/requests/topology-config-large-{groupId}-{runId}",
         "headers": {
           "Authorization": "{creatorAuthHeader}",
-          "x-client-id": "{creatorClientId}",
-          "Idempotency-Key": "topology-config-{groupId}-{runId}"
+          "x-client-id": "{creatorClientId}"
         },
         "body": {
-          "requestId": "topology-config-{groupId}-{runId}",
           "config": {
             "degreeLimit": 54
           }
@@ -1361,14 +1354,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/establish/requests/establish-large-{groupId}-{runId}",
         "headers": {
           "Authorization": "{creatorAuthHeader}",
           "x-client-id": "{creatorClientId}"
         },
-        "body": {
-          "requestId": "establish-{groupId}-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,

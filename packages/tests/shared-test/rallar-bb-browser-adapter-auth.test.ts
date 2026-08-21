@@ -610,7 +610,10 @@ describe('rallar-bb browser adapter auth', () => {
                 /^POST \/api\/state\/apps\/rallar-server\/workspaces\/default\/groups\/requests\/[^/]+-%7BrunId%7D$/,
             ),
             expect.stringMatching(
-                /^PUT \/api\/state\/apps\/rallar-server\/workspaces\/default\/groups\/hetzner-headless-room\/members\/alice\/requests\/[^/]+-%7BrunId%7D$/,
+                new RegExp(
+                    '^PUT /api/state/apps/rallar-server/workspaces/default/groups/' +
+                        'hetzner-headless-room/members/alice/requests/[^/]+-%7BrunId%7D$',
+                ),
             ),
             'RTC connect',
         ]);
@@ -619,7 +622,10 @@ describe('rallar-bb browser adapter auth', () => {
                 /^\/api\/state\/apps\/rallar-server\/workspaces\/default\/groups\/requests\/[^/]+-%7BrunId%7D$/,
             ),
             expect.stringMatching(
-                /^\/api\/state\/apps\/rallar-server\/workspaces\/default\/groups\/hetzner-headless-room\/members\/alice\/requests\/[^/]+-%7BrunId%7D$/,
+                new RegExp(
+                    '^/api/state/apps/rallar-server/workspaces/default/groups/' +
+                        'hetzner-headless-room/members/alice/requests/[^/]+-%7BrunId%7D$',
+                ),
             ),
         ]);
         expect(JSON.parse(String(fetchCalls[0].init?.body))).toEqual({

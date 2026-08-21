@@ -206,9 +206,7 @@
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-
-        }
+        "body": {}
       },
       "expect": {
         "status": 200
@@ -245,9 +243,7 @@
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-
-        }
+        "body": {}
       },
       "expect": {
         "status": 403,
@@ -270,9 +266,7 @@
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -296,9 +290,7 @@
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-
-        }
+        "body": {}
       },
       "expect": {
         "status": 200
@@ -334,9 +326,7 @@
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -354,13 +344,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-leave-twin-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "group-create-leave-twin-{runId}",
           "groupId": "{leaveGroupId}",
           "displayName": "Voluntary leave twin {runId}",
           "kind": "room",
@@ -397,14 +386,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/join/requests/join-alice-leave-twin-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "join-alice-leave-twin-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -424,14 +411,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/lifecycle/establish/requests/establish-leave-twin-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "establish-leave-twin-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -449,13 +434,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/members/{aliceClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/members/{aliceClientId}/requests/leave-twin-alice-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "leave-twin-alice-{runId}",
           "status": "left"
         }
       },
@@ -497,14 +481,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/lifecycle/activate",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/lifecycle/activate/requests/activate-leave-twin-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "activate-leave-twin-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -522,13 +504,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-zero-establishing-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "group-create-zero-establishing-{runId}",
           "groupId": "{zeroEstablishingGroupId}",
           "displayName": "Zero manager establishing {runId}",
           "kind": "room",
@@ -565,14 +546,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/join/requests/join-alice-zero-establishing-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "join-alice-zero-establishing-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -592,14 +571,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/lifecycle/establish/requests/establish-zero-establishing-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "establish-zero-establishing-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -617,13 +594,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/members/{aliceClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/members/{aliceClientId}/requests/leave-zero-establishing-alice-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "leave-zero-establishing-alice-{runId}",
           "status": "left"
         }
       },
@@ -665,19 +641,20 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/lifecycle/activate",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/lifecycle/activate/requests/activate-zero-establishing-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "activate-zero-establishing-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 403,
         "body": {
-          "code": "lifecycle-manager-unavailable"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "lifecycle-manager-unavailable",
+          "status": 403
         }
       }
     },
@@ -687,14 +664,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/join/requests/rejoin-zero-establishing-alice-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "rejoin-zero-establishing-alice-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -780,9 +755,7 @@
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-
-        }
+        "body": {}
       },
       "expect": {
         "status": 403,
@@ -805,9 +778,7 @@
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-
-        }
+        "body": {}
       },
       "expect": {
         "status": 200

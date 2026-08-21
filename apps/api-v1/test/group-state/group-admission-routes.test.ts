@@ -120,6 +120,40 @@ const EXPECTED_ADMISSION_COMMANDS = [
       },
     },
   },
+  {
+    type: AppInboxType.GROUP_ADMISSION_GRANT,
+    topicId: AppInboxType.GROUP_ADMISSION_GRANT,
+    resourceId: 'group-route-grant-request',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
+    senderId: 'alice',
+    data: {
+      scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+      groupId: 'room-1',
+      principalId: 'bob',
+      request: {
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        requestId: 'group-route-grant-request',
+      },
+    },
+  },
+  {
+    type: AppInboxType.GROUP_ADMISSION_DECLINE,
+    topicId: AppInboxType.GROUP_ADMISSION_DECLINE,
+    resourceId: 'group-route-decline-request',
+    contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
+    senderId: 'alice',
+    data: {
+      scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+      groupId: 'room-1',
+      principalId: 'bob',
+      request: {
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        requestId: 'group-route-decline-request',
+      },
+    },
+  },
 ] satisfies readonly AuthenticatedGroupMutationEnqueue[];
 
 Deno.test('group admission commands retain every authenticated AppInbox envelope', () => {
@@ -172,6 +206,24 @@ Deno.test('group admission commands retain every authenticated AppInbox envelope
       request: {
         ...forgedActor,
         requestId: 'group-route-revoke-request',
+      },
+    }),
+    toGroupStateCommand({
+      operation: 'grant-group-admission',
+      ...commandBase,
+      principalId: 'bob',
+      request: {
+        ...forgedActor,
+        requestId: 'group-route-grant-request',
+      },
+    }),
+    toGroupStateCommand({
+      operation: 'decline-group-admission',
+      ...commandBase,
+      principalId: 'bob',
+      request: {
+        ...forgedActor,
+        requestId: 'group-route-decline-request',
       },
     }),
   ];
@@ -234,6 +286,16 @@ Deno.test('group admission routes retain every AppInbox envelope and actor overr
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
       requestId: 'group-route-revoke-request',
+    }),
+    await postGroupStateMutation(runtime.app, `${API_BASE}/admissions/bob/grant`, {
+      actorPrincipalId: 'forged-actor',
+      actorSessionId: 'forged-session',
+      requestId: 'group-route-grant-request',
+    }),
+    await postGroupStateMutation(runtime.app, `${API_BASE}/admissions/bob/decline`, {
+      actorPrincipalId: 'forged-actor',
+      actorSessionId: 'forged-session',
+      requestId: 'group-route-decline-request',
     }),
   ];
   for (const response of responses) {

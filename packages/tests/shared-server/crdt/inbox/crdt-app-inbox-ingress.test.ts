@@ -17,7 +17,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 // Prettier's single-line form exceeds the repository's 100-character review limit.
 // prettier-ignore
 import {
@@ -39,6 +39,8 @@ import {
 import {
   createCrdtMutationService,
 } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
+
+type SqlValue = Parameters<PSqlSql>[0][number];
 
 const DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
@@ -166,17 +168,14 @@ function appCrdt(inbox: InboxQueueReader): AppCrdtInboxService {
 }
 
 function createUnusedDatabase(): PSqlSql {
-  const database: PSqlSql = Object.assign(
-    <T>(
-      _stringsOrValues: TemplateStringsArray | readonly unknown[],
-      ..._values: unknown[]
-    ): Promise<T> => Promise.reject(new Error('Unexpected SQL execution in ingress unit test')),
-    {
-      begin: <T>(_run: (sql: PSqlTransactionSql) => Promise<T>): Promise<T> =>
-        Promise.reject(new Error('Unexpected transaction in ingress unit test')),
-    },
-  );
-  return database;
+  function query<T>(_strings: TemplateStringsArray, ..._values: SqlValue[]): Promise<T>;
+  function query(_values: readonly SqlValue[]): ReturnType<PSqlSql>;
+  function query(): never {
+    throw new Error('Unexpected SQL execution in ingress unit test');
+  }
+  return Object.assign(query, {
+    begin: <T>(): Promise<T> => Promise.reject(new Error('Unexpected transaction in ingress unit test')),
+  });
 }
 
 interface CrdtInboxInput {

@@ -54,6 +54,14 @@ const COVERED_API_MUTATIONS: readonly CoveredApiMutation[] = [
     method: 'post',
     path: `${GROUP_ITEM_PATH}/invites/{principalId}/revoke${REQUEST_PATH}`,
   },
+  {
+    method: 'post',
+    path: `${GROUP_ITEM_PATH}/admissions/{principalId}/grant${REQUEST_PATH}`,
+  },
+  {
+    method: 'post',
+    path: `${GROUP_ITEM_PATH}/admissions/{principalId}/decline${REQUEST_PATH}`,
+  },
   { method: 'post', path: `${GROUP_ITEM_PATH}/invites/accept${REQUEST_PATH}` },
   { method: 'post', path: `${GROUP_ITEM_PATH}/join-code/rotate${REQUEST_PATH}` },
   {
@@ -127,12 +135,12 @@ Deno.test('OpenAPI publishes the reusable strict API mutation request path param
   assert.equal(parameters.IdempotencyKey, undefined);
 });
 
-Deno.test('OpenAPI gives all 45 AppInbox REST mutations path-only request identity', async () => {
+Deno.test('OpenAPI gives all 47 AppInbox REST mutations path-only request identity', async () => {
   const document = await readOpenApiDocument();
   const paths = requireObject(document.paths);
   const schemas = requireObject(requireObject(document.components).schemas);
 
-  assert.equal(COVERED_API_MUTATIONS.length, 45);
+  assert.equal(COVERED_API_MUTATIONS.length, 47);
   for (const mutation of COVERED_API_MUTATIONS) {
     const operation = requireObject(requireObject(paths[mutation.path])[mutation.method]);
     const parameters = requireArray(operation.parameters);

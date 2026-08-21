@@ -49,7 +49,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-95e4d82a442d7c20d087d35b-{runId}",
         "body": {
           "username": "bangov-founder-{runId}",
           "password": "{clientPassword}",
@@ -69,7 +69,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-ec4e66d77b28745c3e5aaa31-{runId}",
         "body": {
           "username": "bangov-founder-{runId}",
           "password": "{clientPassword}"
@@ -113,7 +113,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-0c80cece2b208ea32f81d260-{runId}",
         "body": {
           "username": "bangov-offender-{runId}",
           "password": "{clientPassword}",
@@ -133,7 +133,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-d56ce74df22ec6e7d508b468-{runId}",
         "body": {
           "username": "bangov-offender-{runId}",
           "password": "{clientPassword}"
@@ -177,13 +177,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-bangov-{runId}",
         "headers": {
           "Authorization": "{founderAuthHeader}",
           "x-client-id": "{founderClientId}"
         },
         "body": {
-          "requestId": "create-bangov-{runId}",
           "groupId": "{groupId}",
           "displayName": "Ban governance group {runId}",
           "kind": "room",
@@ -206,13 +205,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}/requests/bangov-join-{runId}",
         "headers": {
           "Authorization": "{offenderAuthHeader}",
           "x-client-id": "{offenderClientId}"
         },
         "body": {
-          "requestId": "bangov-join-{runId}",
           "status": "active"
         }
       },
@@ -231,14 +229,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}/ban",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}/ban/requests/bangov-ban-{runId}",
         "headers": {
           "Authorization": "{founderAuthHeader}",
           "x-client-id": "{founderClientId}"
         },
-        "body": {
-          "requestId": "bangov-ban-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -255,21 +251,22 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}/requests/bangov-self-left-{runId}",
         "headers": {
           "Authorization": "{offenderAuthHeader}",
           "x-client-id": "{offenderClientId}"
         },
         "body": {
-          "requestId": "bangov-self-left-{runId}",
           "status": "left"
         }
       },
       "expect": {
         "status": 403,
         "body": {
-          "error": "string",
-          "code": "member-banned"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "member-banned",
+          "status": 403
         }
       }
     },
@@ -279,21 +276,22 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}/requests/bangov-self-rejoin-{runId}",
         "headers": {
           "Authorization": "{offenderAuthHeader}",
           "x-client-id": "{offenderClientId}"
         },
         "body": {
-          "requestId": "bangov-self-rejoin-{runId}",
           "status": "active"
         }
       },
       "expect": {
         "status": 403,
         "body": {
-          "error": "string",
-          "code": "member-banned"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "member-banned",
+          "status": 403
         }
       }
     },
@@ -303,14 +301,12 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}/unban",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}/unban/requests/bangov-unban-{runId}",
         "headers": {
           "Authorization": "{founderAuthHeader}",
           "x-client-id": "{founderClientId}"
         },
-        "body": {
-          "requestId": "bangov-unban-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -327,13 +323,12 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{offenderClientId}/requests/bangov-rejoin-{runId}",
         "headers": {
           "Authorization": "{offenderAuthHeader}",
           "x-client-id": "{offenderClientId}"
         },
         "body": {
-          "requestId": "bangov-rejoin-{runId}",
           "status": "active"
         }
       },

@@ -94,7 +94,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-d2875df53f63237f2ccf25a3-{runId}",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -133,7 +133,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-f94bcd3de16989076f140d68-{runId}",
         "body": {
           "username": "{bobUsername}",
           "password": "{bobPassword}"
@@ -172,7 +172,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-6b6bac8ad01abf30140bf28c-{runId}",
         "body": {
           "username": "{carolUsername}",
           "password": "{carolPassword}",
@@ -189,7 +189,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-672f57af95bdd5e2801baa94-{runId}",
         "body": {
           "username": "{carolUsername}",
           "password": "{carolPassword}"
@@ -228,7 +228,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-0081e727b43ed1f96e5390b5-{runId}",
         "body": {
           "username": "{danUsername}",
           "password": "{danPassword}",
@@ -245,7 +245,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-f8444b2a9311630577e463d4-{runId}",
         "body": {
           "username": "{danUsername}",
           "password": "{danPassword}"
@@ -284,13 +284,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-match-lobby-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-match-lobby-{runId}",
           "groupId": "{lobbyGroupId}",
           "displayName": "Match lobby {runId}",
           "kind": "room",
@@ -338,14 +337,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/join/requests/join-match-lobby-bob-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "join-match-lobby-bob-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -365,13 +362,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/sessions/{aliceSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/sessions/{aliceSessionId}/requests/presence-alice-lobby-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "presence-alice-lobby-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -386,13 +382,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/sessions/{bobSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/sessions/{bobSessionId}/requests/presence-bob-lobby-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "presence-bob-lobby-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{bobClientId}"
         }
@@ -407,7 +402,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-0747ac9fdb3d5c88ead16b48-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -462,7 +457,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-9ed5155069e51bc94e1cdbd3-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -565,14 +560,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/lifecycle/establish/requests/establish-match-lobby-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "establish-match-lobby-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -590,19 +583,20 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/join/requests/join-match-lobby-carol-denied-{runId}",
         "headers": {
           "Authorization": "{carolAuthHeader}",
           "x-client-id": "{carolClientId}"
         },
-        "body": {
-          "requestId": "join-match-lobby-carol-denied-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 403,
         "body": {
-          "code": "group-admission-closed"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "group-admission-closed",
+          "status": 403
         }
       }
     },
@@ -612,13 +606,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-match-arena-{runId}",
         "headers": {
           "Authorization": "{carolAuthHeader}",
           "x-client-id": "{carolClientId}"
         },
         "body": {
-          "requestId": "group-create-match-arena-{runId}",
           "groupId": "{arenaGroupId}",
           "displayName": "Match arena {runId}",
           "kind": "room",
@@ -646,14 +639,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/join/requests/join-match-arena-dan-{runId}",
         "headers": {
           "Authorization": "{danAuthHeader}",
           "x-client-id": "{danClientId}"
         },
-        "body": {
-          "requestId": "join-match-arena-dan-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -673,13 +664,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/sessions/{carolSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/sessions/{carolSessionId}/requests/presence-carol-arena-{runId}",
         "headers": {
           "Authorization": "{carolAuthHeader}",
           "x-client-id": "{carolClientId}"
         },
         "body": {
-          "requestId": "presence-carol-arena-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{carolClientId}"
         }
@@ -694,13 +684,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/sessions/{danSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/sessions/{danSessionId}/requests/presence-dan-arena-{runId}",
         "headers": {
           "Authorization": "{danAuthHeader}",
           "x-client-id": "{danClientId}"
         },
         "body": {
-          "requestId": "presence-dan-arena-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{danClientId}"
         }
@@ -715,7 +704,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-d7b0c261c826b520f3013f23-{runId}",
         "headers": {
           "Authorization": "{carolAuthHeader}",
           "x-client-id": "{carolClientId}"
@@ -770,7 +759,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-9a5f1e2cb1ace345942c076a-{runId}",
         "headers": {
           "Authorization": "{danAuthHeader}",
           "x-client-id": "{danClientId}"
@@ -825,14 +814,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/lifecycle/establish/requests/establish-match-arena-{runId}",
         "headers": {
           "Authorization": "{carolAuthHeader}",
           "x-client-id": "{carolClientId}"
         },
-        "body": {
-          "requestId": "establish-match-arena-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -1020,19 +1007,20 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/join/requests/join-match-arena-bob-denied-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "join-match-arena-bob-denied-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 403,
         "body": {
-          "code": "group-admission-closed"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "group-admission-closed",
+          "status": 403
         }
       }
     },
@@ -1072,14 +1060,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/join/requests/join-match-lobby-carol-reopened-{runId}",
         "headers": {
           "Authorization": "{carolAuthHeader}",
           "x-client-id": "{carolClientId}"
         },
-        "body": {
-          "requestId": "join-match-lobby-carol-reopened-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
