@@ -64,7 +64,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-b83361df7dc483bbf97d14b9-{runId}",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -103,7 +103,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-f904a76d8b16d5a81d82a6c9-{runId}",
         "body": {
           "username": "{bobUsername}",
           "password": "{bobPassword}"
@@ -142,7 +142,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-484145177f47b7805afcdc42-{runId}",
         "body": {
           "username": "{carolUsername}",
           "password": "{carolPassword}",
@@ -159,7 +159,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-d6de56ae8548f9e4556b2eda-{runId}",
         "body": {
           "username": "{carolUsername}",
           "password": "{carolPassword}"
@@ -197,13 +197,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-capacity-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-capacity-{runId}",
           "groupId": "{capacityGroupId}",
           "displayName": "Capacity window group {runId}",
           "kind": "room",
@@ -236,19 +235,20 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{capacityGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{capacityGroupId}/join/requests/join-capacity-bob-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "join-capacity-bob-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 403,
         "body": {
-          "code": "group-admission-capacity-reached"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "group-admission-capacity-reached",
+          "status": 403
         }
       }
     },
@@ -258,13 +258,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-capacity-reopen-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-capacity-reopen-{runId}",
           "groupId": "{capacityReopenGroupId}",
           "displayName": "Capacity reopen group {runId}",
           "kind": "room",
@@ -297,14 +296,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{capacityReopenGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{capacityReopenGroupId}/join/requests/join-capacity-under-bob-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "join-capacity-under-bob-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -324,19 +321,20 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{capacityReopenGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{capacityReopenGroupId}/join/requests/join-capacity-carol-denied-{runId}",
         "headers": {
           "Authorization": "{carolAuthHeader}",
           "x-client-id": "{carolClientId}"
         },
-        "body": {
-          "requestId": "join-capacity-carol-denied-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 403,
         "body": {
-          "code": "group-admission-capacity-reached"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "group-admission-capacity-reached",
+          "status": 403
         }
       }
     },
@@ -346,13 +344,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{capacityReopenGroupId}/members/{bobClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{capacityReopenGroupId}/members/{bobClientId}/requests/leave-capacity-bob-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "leave-capacity-bob-{runId}",
           "status": "left"
         }
       },
@@ -374,14 +371,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{capacityReopenGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{capacityReopenGroupId}/join/requests/join-capacity-carol-reopened-{runId}",
         "headers": {
           "Authorization": "{carolAuthHeader}",
           "x-client-id": "{carolClientId}"
         },
-        "body": {
-          "requestId": "join-capacity-carol-reopened-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -401,13 +396,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-deadline-window-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-deadline-window-{runId}",
           "groupId": "{deadlineGroupId}",
           "displayName": "Deadline window group {runId}",
           "kind": "room",
@@ -431,19 +425,20 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/join/requests/join-deadline-bob-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "join-deadline-bob-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 403,
         "body": {
-          "code": "group-admission-deadline-passed"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "group-admission-deadline-passed",
+          "status": 403
         }
       }
     },
@@ -453,13 +448,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-deadline-open-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-deadline-open-{runId}",
           "groupId": "{deadlineOpenGroupId}",
           "displayName": "Deadline open group {runId}",
           "kind": "room",
@@ -492,14 +486,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineOpenGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineOpenGroupId}/join/requests/join-deadline-open-bob-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "join-deadline-open-bob-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -519,13 +511,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-closed-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-closed-{runId}",
           "groupId": "{closedGroupId}",
           "displayName": "Closed group {runId}",
           "kind": "room",
@@ -570,14 +561,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{closedGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{closedGroupId}/lifecycle/establish/requests/establish-closed-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "establish-closed-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -595,19 +584,20 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{closedGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{closedGroupId}/join/requests/join-closed-establishing-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "join-closed-establishing-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 403,
         "body": {
-          "code": "group-admission-closed"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "group-admission-closed",
+          "status": 403
         }
       }
     },
@@ -643,19 +633,20 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{closedGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{closedGroupId}/join/requests/join-closed-active-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "join-closed-active-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 403,
         "body": {
-          "code": "group-admission-closed"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "group-admission-closed",
+          "status": 403
         }
       }
     },
@@ -665,13 +656,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-reopen-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-reopen-{runId}",
           "groupId": "{reopenGroupId}",
           "displayName": "Reopen group {runId}",
           "kind": "room",
@@ -716,14 +706,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/join/requests/join-reopen-forming-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "join-reopen-forming-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -743,13 +731,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/sessions/{aliceSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/sessions/{aliceSessionId}/requests/presence-alice-reopen-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "presence-alice-reopen-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -764,13 +751,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/sessions/{bobSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/sessions/{bobSessionId}/requests/presence-bob-reopen-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "presence-bob-reopen-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{bobClientId}"
         }
@@ -785,14 +771,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/lifecycle/establish/requests/establish-reopen-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "establish-reopen-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -840,13 +824,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/members/{bobClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/members/{bobClientId}/requests/leave-reopen-bob-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "leave-reopen-bob-{runId}",
           "status": "left"
         }
       },
@@ -868,14 +851,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/join/requests/rejoin-reopen-forming-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "rejoin-reopen-forming-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,

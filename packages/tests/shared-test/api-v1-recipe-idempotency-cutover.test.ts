@@ -71,6 +71,8 @@ const mutationRoutes: readonly MutationRoutePattern[] = [
     'join',
     `invites/${segment}`,
     `invites/${segment}/revoke`,
+    `admissions/${segment}/grant`,
+    `admissions/${segment}/decline`,
     'invites/accept',
     'join-code/rotate',
     `members/${segment}/remove`,
@@ -230,7 +232,7 @@ describe('API-v1 recipe mutation identity cutover', () => {
     const requests = readCoveredRecipeRequests();
     const staleRequests = requests.filter((request) => mutationIdentityIssues(request).length > 0);
 
-    expect(mutationRoutes).toHaveLength(45);
+    expect(mutationRoutes).toHaveLength(47);
     if (staleRequests.length > 0) {
       const examples = staleRequests
         .slice(0, 100)
@@ -415,7 +417,7 @@ describe('API-v1 recipe mutation identity cutover', () => {
       [
         'api-v1-group-lifecycle-transitions.json',
         'bobCannotStartEstablishment',
-        'member-not-active',
+        'forbidden-role',
       ],
       [
         'api-v1-idempotency-contract.json',

@@ -70,6 +70,18 @@ const GROUP_STATE_ROUTE_MATCHES: readonly GroupStateRouteMatch[] = [
   },
   {
     method: 'POST',
+    path: mutationPath(`${API_BASE}/room-1/admissions/bob/grant`),
+    body: {},
+    status: 200,
+  },
+  {
+    method: 'POST',
+    path: mutationPath(`${API_BASE}/room-1/admissions/bob/decline`),
+    body: {},
+    status: 200,
+  },
+  {
+    method: 'POST',
     path: mutationPath(`${API_BASE}/room-1/members/bob/remove`),
     body: {},
     status: 200,
@@ -174,7 +186,7 @@ Deno.test(
 );
 
 Deno.test(
-  'group state route registration matches all 21 public method and path contracts',
+  'group state route registration matches all 23 public method and path contracts',
   async () => {
     const snapshot = createGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
     const runtime = createGroupStateRouteTestRuntime({

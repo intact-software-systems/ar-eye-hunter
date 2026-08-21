@@ -61,7 +61,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-4683bee2e18384ab0689b30a-{runId}",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -100,7 +100,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-bcd52d6564654ee3b82775c3-{runId}",
         "body": {
           "username": "{bobUsername}",
           "password": "{bobPassword}"
@@ -139,7 +139,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register",
+        "path": "/api/auth/register/requests/bb-0945c402497f99a512abbfa9-{runId}",
         "body": {
           "username": "{carolUsername}",
           "password": "{carolPassword}",
@@ -156,7 +156,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-d33ebcdbea1d18138d6ccc00-{runId}",
         "body": {
           "username": "{carolUsername}",
           "password": "{carolPassword}"
@@ -194,13 +194,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-approval-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-approval-{runId}",
           "groupId": "{approvalGroupId}",
           "displayName": "Approval group {runId}",
           "kind": "room",
@@ -230,14 +229,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{approvalGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{approvalGroupId}/join/requests/park-bob-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "park-bob-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -280,19 +277,20 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{approvalGroupId}/admissions/{bobClientId}/grant",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{approvalGroupId}/admissions/{bobClientId}/grant/requests/self-grant-bob-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "self-grant-bob-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 403,
         "body": {
-          "code": "member-not-active"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "member-not-active",
+          "status": 403
         }
       }
     },
@@ -302,14 +300,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{approvalGroupId}/admissions/{bobClientId}/decline",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{approvalGroupId}/admissions/{bobClientId}/decline/requests/decline-bob-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "decline-bob-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -329,14 +325,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{approvalGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{approvalGroupId}/join/requests/repark-bob-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "repark-bob-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -356,14 +350,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{approvalGroupId}/admissions/{bobClientId}/grant",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{approvalGroupId}/admissions/{bobClientId}/grant/requests/grant-bob-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "grant-bob-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -411,13 +403,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-recovery-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-recovery-{runId}",
           "groupId": "{recoveryGroupId}",
           "displayName": "Recovery group {runId}",
           "kind": "room",
@@ -451,14 +442,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{recoveryGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{recoveryGroupId}/join/requests/park-bob-recovery-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "park-bob-recovery-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -478,19 +467,20 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{recoveryGroupId}/admissions/{bobClientId}/grant",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{recoveryGroupId}/admissions/{bobClientId}/grant/requests/grant-unavailable-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "grant-unavailable-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 403,
         "body": {
-          "code": "lifecycle-manager-unavailable"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "lifecycle-manager-unavailable",
+          "status": 403
         }
       }
     },
@@ -500,14 +490,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{recoveryGroupId}/invites/{bobClientId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{recoveryGroupId}/invites/{bobClientId}/requests/invite-bob-recovery-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "invite-bob-recovery-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -527,14 +515,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{recoveryGroupId}/invites/accept",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{recoveryGroupId}/invites/accept/requests/accept-bob-recovery-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "accept-bob-recovery-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -573,14 +559,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{recoveryGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{recoveryGroupId}/join/requests/park-carol-recovery-{runId}",
         "headers": {
           "Authorization": "{carolAuthHeader}",
           "x-client-id": "{carolClientId}"
         },
-        "body": {
-          "requestId": "park-carol-recovery-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -600,19 +584,20 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{recoveryGroupId}/admissions/{carolClientId}/grant",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{recoveryGroupId}/admissions/{carolClientId}/grant/requests/grant-carol-forbidden-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "grant-carol-forbidden-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 403,
         "body": {
-          "code": "forbidden-role"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "forbidden-role",
+          "status": 403
         }
       }
     },
@@ -622,13 +607,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-epoch-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-epoch-{runId}",
           "groupId": "{epochGroupId}",
           "displayName": "Epoch group {runId}",
           "kind": "room",
@@ -662,14 +646,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{epochGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{epochGroupId}/join/requests/park-bob-epoch-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "park-bob-epoch-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -689,14 +671,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{epochGroupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{epochGroupId}/lifecycle/establish/requests/establish-epoch-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "establish-epoch-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -771,14 +751,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{epochGroupId}/admissions/{bobClientId}/grant",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{epochGroupId}/admissions/{bobClientId}/grant/requests/grant-bob-epoch-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "grant-bob-epoch-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -801,14 +779,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{epochGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{epochGroupId}/join/requests/park-carol-active-{runId}",
         "headers": {
           "Authorization": "{carolAuthHeader}",
           "x-client-id": "{carolClientId}"
         },
-        "body": {
-          "requestId": "park-carol-active-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,

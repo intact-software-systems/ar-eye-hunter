@@ -96,7 +96,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-af77748b85ebf230e190e7ea-{runId}",
         "body": {
           "username": "{bobUsername}",
           "password": "{bobPassword}"
@@ -219,13 +219,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-optimistic-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-optimistic-{runId}",
           "groupId": "{optimisticGroupId}",
           "displayName": "Optimistic group {runId}",
           "kind": "room",
@@ -311,14 +310,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{optimisticGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{optimisticGroupId}/join/requests/join-bob-optimistic-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "join-bob-optimistic-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -338,14 +335,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{plainGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{plainGroupId}/join/requests/join-bob-plain-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "join-bob-plain-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -365,13 +360,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-strict-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-strict-{runId}",
           "groupId": "{strictGroupId}",
           "displayName": "Strict confirmation group {runId}",
           "kind": "room",
@@ -388,7 +382,10 @@
       "expect": {
         "status": 400,
         "body": {
-          "code": "app-inbox-malformed-command"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "app-inbox-malformed-command",
+          "status": 400
         }
       }
     },
@@ -414,13 +411,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-none-manager-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-none-manager-{runId}",
           "groupId": "{noneManagerGroupId}",
           "displayName": "None manager group {runId}",
           "kind": "room",
@@ -440,7 +436,10 @@
       "expect": {
         "status": 400,
         "body": {
-          "code": "app-inbox-malformed-command"
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "app-inbox-malformed-command",
+          "status": 400
         }
       }
     },

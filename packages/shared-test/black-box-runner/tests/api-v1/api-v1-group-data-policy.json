@@ -67,7 +67,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-be9f654d38581cf962ca591b-{runId}",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -106,7 +106,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login",
+        "path": "/api/auth/login/requests/bb-5c034a22241def7f31b1c7bf-{runId}",
         "body": {
           "username": "{bobUsername}",
           "password": "{bobPassword}"
@@ -145,13 +145,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-data-policy-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-data-policy-{runId}",
           "groupId": "{groupId}",
           "displayName": "Data policy group {runId}",
           "kind": "room",
@@ -195,14 +194,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/join-bob-data-policy-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "join-bob-data-policy-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -222,13 +219,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/presence-alice-data-policy-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "presence-alice-data-policy-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -243,13 +239,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/presence-bob-data-policy-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "presence-bob-data-policy-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{bobClientId}"
         }
@@ -264,7 +259,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-68bde70fc8c13f41907634cc-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -319,7 +314,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket",
+        "path": "/api/auth/ws-ticket/requests/bb-a313088c6c4714e3db05f4b4-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -520,13 +515,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-data-allowed-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-data-allowed-{runId}",
           "groupId": "{allowedGroupId}",
           "displayName": "Data allowed group {runId}",
           "kind": "room",
@@ -570,14 +564,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/join/requests/join-bob-data-allowed-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "join-bob-data-allowed-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -597,13 +589,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/sessions/{aliceSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/sessions/{aliceSessionId}/requests/presence-alice-data-allowed-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "presence-alice-data-allowed-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -618,13 +609,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/sessions/{bobSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/sessions/{bobSessionId}/requests/presence-bob-data-allowed-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "presence-bob-data-allowed-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{bobClientId}"
         }
@@ -691,13 +681,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-data-default-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "group-create-data-default-{runId}",
           "groupId": "{defaultDataGroupId}",
           "displayName": "Data default group {runId}",
           "kind": "room",
@@ -738,14 +727,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{defaultDataGroupId}/join",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{defaultDataGroupId}/join/requests/join-bob-data-default-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {
-          "requestId": "join-bob-data-default-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -765,13 +752,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{defaultDataGroupId}/sessions/{aliceSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{defaultDataGroupId}/sessions/{aliceSessionId}/requests/presence-alice-data-default-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "presence-alice-data-default-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -786,13 +772,12 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{defaultDataGroupId}/sessions/{bobSessionId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{defaultDataGroupId}/sessions/{bobSessionId}/requests/presence-bob-data-default-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "requestId": "presence-bob-data-default-{runId}",
           "generationId": "generation-{runId}",
           "principalId": "{bobClientId}"
         }
@@ -859,14 +844,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/establish",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/establish/requests/establish-data-policy-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "establish-data-policy-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -884,14 +867,12 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/activate",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/activate/requests/activate-data-policy-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "requestId": "activate-data-policy-{runId}"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,

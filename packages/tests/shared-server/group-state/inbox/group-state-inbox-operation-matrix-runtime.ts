@@ -17,6 +17,7 @@ import {
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 // prettier-ignore
 import type {
+  JsonWireObject,
   JsonWireValue,
 } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 
@@ -203,15 +204,19 @@ function requireOperationMatrixRequestId(data: JsonWireValue): string {
 }
 
 function readOperationMatrixGroupId(data: JsonWireValue): string | undefined {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+  if (!isJsonWireObject(data)) {
     return undefined;
   }
   if (typeof data.groupId === 'string') {
     return data.groupId;
   }
   const request = data.request;
-  if (!request || typeof request !== 'object' || Array.isArray(request)) {
+  if (!isJsonWireObject(request)) {
     return undefined;
   }
   return typeof request.groupId === 'string' ? request.groupId : undefined;
+}
+
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
