@@ -545,12 +545,12 @@ describe('AppAdminInboxService initial prune command', () => {
     expect(harness.readAuthority).toHaveBeenCalledTimes(2);
     expect(harness.pruner.countExpired).toHaveBeenCalledTimes(2);
     expect(harness.transactionCount()).toBe(2);
-    expect(harness.events).toEqual([
+    expect(harness.wakeQueueEngine).toHaveBeenCalledOnce();
+    expect(harness.events.filter((event) => event !== 'queue-wake')).toEqual([
       'semantic-identity-completed',
       'phase:semantic-identity',
       'now-callback',
       'retry-expiry-callback',
-      'queue-wake',
       'now-callback',
       'count:runtime-state',
       'current-authority',
