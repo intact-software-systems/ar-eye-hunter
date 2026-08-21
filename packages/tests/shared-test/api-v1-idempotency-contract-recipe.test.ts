@@ -216,7 +216,7 @@ describe('API-v1 equal AppInbox HTTP idempotency contract recipe', () => {
         stateWriteEvidence: {
           match: 'idem-contract-group-replay-{runId}',
           commandTypes: ['GROUP_UPDATE'],
-          commandIdPrefixes: ['idem-contract-group-replay-'],
+          commandIdPrefixes: ['group-app-inbox:'],
           minimumMatchedRows: 1,
           expectedEffectsByCommandType: {
             GROUP_UPDATE: ['group-presence-summary'],

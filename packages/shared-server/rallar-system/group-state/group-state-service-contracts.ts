@@ -169,6 +169,10 @@ export type GroupStateService = GroupStateMutationService &
       descriptor: GroupMutationDescriptor,
       authority: GroupMutationAuthority,
     ): Promise<GroupMutationPreparation>;
+    prepareAppInboxMutation(
+      descriptor: GroupMutationDescriptor,
+      authority: GroupMutationAuthority,
+    ): Promise<GroupMutationPreparation>;
     prepareExpiredPresenceMutations(
       atEpochMs: number,
     ): Promise<readonly GroupMutationPreparation[]>;

@@ -63,16 +63,26 @@ describe('Rallar group documentation compatibility', () => {
 
     it('keeps the OpenAPI spec in step with server-side group workflows', () => {
         expectAll(openApi, [
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/accept:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join-code/rotate:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{principalId}:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{principalId}/revoke:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/remove:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/ban:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/unban:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/role:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer:',
+            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/' +
+                'requests/{requestId}:',
+            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/' +
+                'accept/requests/{requestId}:',
+            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join-code/' +
+                'rotate/requests/{requestId}:',
+            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/' +
+                '{principalId}/requests/{requestId}:',
+            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/' +
+                '{principalId}/revoke/requests/{requestId}:',
+            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/' +
+                '{principalId}/remove/requests/{requestId}:',
+            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/' +
+                '{principalId}/ban/requests/{requestId}:',
+            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/' +
+                '{principalId}/unban/requests/{requestId}:',
+            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/' +
+                '{principalId}/role/requests/{requestId}:',
+            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/' +
+                'transfer/requests/{requestId}:',
             'JoinGroupRequest',
             'AcceptGroupInviteRequest',
             'RotateGroupJoinCodeRequest',

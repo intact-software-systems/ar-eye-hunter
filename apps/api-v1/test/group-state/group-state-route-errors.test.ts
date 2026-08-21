@@ -9,9 +9,6 @@ import {
 } from '../../src/group-state/group-state-route-errors.ts';
 
 import {
-  createGroupStateRouteAuthSession,
-  createGroupStateRouteSnapshot,
-  createGroupStateRouteTestRuntime,
   createPredecessorGroupStateRouteAuthSession,
   createPredecessorGroupStateRouteSnapshot,
   createPredecessorGroupStateRouteTestRuntime,
@@ -87,7 +84,8 @@ Deno.test('group route adapter preserves canonical AppInbox status code and mess
   });
 
   const response = await app.request(
-    '/api/state/apps/app-1/workspaces/workspace-1/groups',
+    '/api/state/apps/app-1/workspaces/workspace-1/groups/requests/' +
+      'group-conflict-request-001',
     {
       method: 'POST',
       headers: {
@@ -95,7 +93,6 @@ Deno.test('group route adapter preserves canonical AppInbox status code and mess
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        requestId: 'same-request',
         groupId: 'room-1',
         displayName: 'Room 1',
         kind: 'room',
@@ -106,8 +103,14 @@ Deno.test('group route adapter preserves canonical AppInbox status code and mess
 
   assert.equal(response.status, 409);
   assert.deepEqual(await response.json(), {
-    error: 'Group mutation command differs for request same-request',
+    type: 'api-mutation-failure',
+    version: 'canonical.v1',
     code: 'group-mutation-idempotency-conflict',
+    status: 409,
+    message: 'Group mutation command differs for request same-request',
+    issues: null,
+    denial: null,
+    retry: null,
   });
 });
 
@@ -169,7 +172,8 @@ Deno.test('group mutation routes return stable lifecycle policy error codes', as
     });
 
     const response = await app.request(
-      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1',
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/requests/' +
+        'group-lifecycle-denial-001',
       {
         method: 'PUT',
         headers: {
@@ -182,10 +186,18 @@ Deno.test('group mutation routes return stable lifecycle policy error codes', as
 
     assert.equal(response.status, 403);
     assert.deepEqual(await response.json(), {
-      error: 'Forbidden: Group is archived.',
+      type: 'api-mutation-failure',
+      version: 'canonical.v1',
       code: 'group-archived',
+      status: 403,
       message: 'Group is archived.',
-      details: { groupId: 'room-1' },
+      issues: null,
+      denial: {
+        code: 'group-archived',
+        message: 'Group is archived.',
+        details: { groupId: 'room-1' },
+      },
+      retry: null,
     });
   });
 });
@@ -217,7 +229,8 @@ Deno.test(
     });
 
     const response = await app.request(
-      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1',
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/requests/' +
+        'group-legacy-denial-001',
       {
         method: 'PUT',
         headers: {
@@ -225,7 +238,6 @@ Deno.test(
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          requestId: 'legacy-group-denial',
           displayName: 'Renamed',
         }),
       },
@@ -233,10 +245,18 @@ Deno.test(
 
     assert.equal(response.status, 403);
     assert.deepEqual(await response.json(), {
-      error: 'Forbidden: Invite required.',
+      type: 'api-mutation-failure',
+      version: 'canonical.v1',
       code: 'group-invite-required',
+      status: 403,
       message: 'Invite required.',
-      details: { groupId: 'room-1' },
+      issues: null,
+      denial: {
+        code: 'group-invite-required',
+        message: 'Invite required.',
+        details: { groupId: 'room-1' },
+      },
+      retry: null,
     });
   },
 );

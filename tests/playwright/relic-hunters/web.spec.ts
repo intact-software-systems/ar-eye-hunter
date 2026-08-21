@@ -938,7 +938,11 @@ test.describe('Relic Hunters web app', () => {
         await expect(page.getByRole('button', { name: 'New Room' })).toBeVisible();
 
         expect(requests).toContain('GET /api/config');
-        expect(requests).toContain('POST /api/auth/ws-ticket');
+        expect(
+            requests.some(request =>
+                request.startsWith('POST /api/auth/ws-ticket/requests/')
+            ),
+        ).toBe(true);
         expect(requests).toContain('GET /api/state/apps/rallar-server/workspaces/default/clients');
         expect(requests).toContain('GET /api/state/apps/rallar-server/workspaces/default/groups');
 
@@ -1072,7 +1076,8 @@ async function mockBackend(page: Page, options: MockBackendOptions): Promise<voi
             });
         }
 
-        if (path === '/api/auth/register') {
+        if (path.startsWith('/api/auth/register/requests/')) {
+            expect(request.postDataJSON()).not.toHaveProperty('requestId');
             return json(route, {
                 clientId: session.clientId,
                 username: session.username,
@@ -1081,11 +1086,12 @@ async function mockBackend(page: Page, options: MockBackendOptions): Promise<voi
             }, 201);
         }
 
-        if (path === '/api/auth/login') {
+        if (path.startsWith('/api/auth/login/requests/')) {
+            expect(request.postDataJSON()).not.toHaveProperty('requestId');
             return json(route, session);
         }
 
-        if (path === '/api/auth/ws-ticket') {
+        if (path.startsWith('/api/auth/ws-ticket/requests/')) {
             return json(route, {
                 ticket: 'test-ticket',
                 sessionId: session.sessionId,

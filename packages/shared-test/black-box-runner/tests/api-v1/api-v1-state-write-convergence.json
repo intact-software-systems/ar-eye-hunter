@@ -1972,12 +1972,7 @@
             "TOPOLOGY_CONFIG_DELETE"
           ],
           "commandIdPrefixes": [
-            "create-bounded-",
-            "activate-primary-contender-",
-            "activate-secondary-contender-",
-            "connect-generation-",
-            "connect-expiry-probe-",
-            "reconnect-generation-",
+            "group-app-inbox:",
             "put-",
             "delete-"
           ],

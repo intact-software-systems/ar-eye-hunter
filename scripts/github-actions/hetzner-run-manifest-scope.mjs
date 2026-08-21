@@ -20,9 +20,11 @@ function validateEmbeddedPathScope(value, expectedGroupRef, location) {
   }
 
   const issues = [];
-  const match = value.match(
-    /^\/api\/state\/apps\/([^/]+)\/workspaces\/([^/]+)\/groups(?:\/([^/]+))?(?:\/|$)/,
+  const groupPathPattern = new RegExp(
+    String.raw`^/api/state/apps/([^/]+)/workspaces/([^/]+)/groups` +
+      String.raw`(?:/(?!requests(?:/|$))([^/]+))?(?:/|$)`,
   );
+  const match = value.match(groupPathPattern);
   if (!match) {
     return [`${location} has an unrecognized state group path ${JSON.stringify(value)}`];
   }

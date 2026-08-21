@@ -85,9 +85,11 @@ Deno.test('initial admin page work does not wake until its successful transactio
         accessToken: 'not-persisted',
         expiresAtEpochMs: now + 60_000,
       },
-      request: { requestId: 'deferred-commit-prune', categories: ['runtime-state'], dryRun: false },
+      requestId: 'deferred-commit-prune',
+      request: { categories: ['runtime-state'], dryRun: false },
     });
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    await waitForWakeCount(() => wakeCount, 1);
     wakeCount = 0;
     const processing = inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
     await writeObserved;
@@ -143,9 +145,11 @@ Deno.test('dry-run initial admin work does not wake after its transaction commit
         accessToken: 'not-persisted',
         expiresAtEpochMs: now + 60_000,
       },
-      request: { requestId: 'dry-run-prune', categories: ['runtime-state'], dryRun: true },
+      requestId: 'dry-run-prune',
+      request: { categories: ['runtime-state'], dryRun: true },
     });
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    await waitForWakeCount(() => wakeCount, 1);
     wakeCount = 0;
     await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
     await pending;
@@ -206,16 +210,19 @@ Deno.test('rolled-back initial admin page work does not wake the queue', async (
         accessToken: 'not-persisted',
         expiresAtEpochMs: now + 60_000,
       },
-      request: { requestId: 'rollback-prune', categories: ['runtime-state'], dryRun: false },
+      requestId: 'rollback-prune',
+      request: { categories: ['runtime-state'], dryRun: false },
     });
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    await waitForWakeCount(() => wakeCount, 1);
     wakeCount = 0;
     await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
     await pending;
     assert.equal(wakeCount, 0);
     const [page] = await sql<{ count: string }[]>`
       select count(*) as count from resource_inbox
-      where ri_type_id = 'APP_OUTBOX' and fk_ext_bank_id = 'rollback-prune'
+      where ri_type_id = 'APP_OUTBOX'
+        and ri_topic_id = 'rallar.admin.prune-expired'
     `;
     assert.equal(Number(page?.count ?? 0), 0);
   });
@@ -285,16 +292,19 @@ Deno.test('rejected initial admin outbox write does not wake or persist page wor
         accessToken: 'not-persisted',
         expiresAtEpochMs: now + 60_000,
       },
-      request: { requestId: 'write-rejected-prune', categories: ['runtime-state'], dryRun: false },
+      requestId: 'write-rejected-prune',
+      request: { categories: ['runtime-state'], dryRun: false },
     });
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    await waitForWakeCount(() => wakeCount, 1);
     wakeCount = 0;
     await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
     await pending;
     assert.equal(wakeCount, 0);
     const [page] = await sql<{ count: string }[]>`
       select count(*) as count from resource_inbox
-      where ri_type_id = 'APP_OUTBOX' and fk_ext_bank_id = 'write-rejected-prune'
+      where ri_type_id = 'APP_OUTBOX'
+        and ri_topic_id = 'rallar.admin.prune-expired'
     `;
     assert.equal(Number(page?.count ?? 0), 0);
   });
@@ -309,8 +319,8 @@ async function runRealEngineHandoffTest(sql: PGliteSql): Promise<void> {
     const rows = await sql<Readonly<{ status: string; attempts: number }>[]>`
       select ri_status as status, ri_attempts as attempts
       from resource_inbox
-      where fk_ext_bank_id = 'queue-engine-handoff-prune'
-        and ri_type_id = 'APP_OUTBOX'
+      where ri_type_id = 'APP_OUTBOX'
+        and ri_topic_id = 'rallar.admin.prune-expired'
     `;
     assert.equal(result.right?.status, 'completed');
     assert.deepEqual(rows, [{ status: 'COMPLETED', attempts: 1 }]);
@@ -318,4 +328,14 @@ async function runRealEngineHandoffTest(sql: PGliteSql): Promise<void> {
   } finally {
     await fixture.stopAndDrain();
   }
+}
+
+async function waitForWakeCount(readCount: () => number, expected: number): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (readCount() >= expected) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error(`Timed out waiting for ${expected} queue wake(s)`);
 }

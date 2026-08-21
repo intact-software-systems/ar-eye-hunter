@@ -21,7 +21,6 @@ import type {
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import {
   AppGroupInboxService,
-  AppInboxService,
   type AppInboxEnqueueInput,
   AppInboxType,
   type GroupCreateAppInboxPayload,
@@ -103,22 +102,71 @@ describe('AppGroupInboxService authenticated authority', () => {
     ).toHaveLength(0);
   });
 
+  it('isolates one request id across distinct group mutation operations', async () => {
+    const harness = await createAuthorityHarness(['owner']);
+    const requestId = 'shared-operation-request-001';
+    const groupId = 'operation-isolation-room';
+    const identity = {
+      resourceId: requestId,
+      contextId: 'application=ar-eye-hunter:workspace=default:group=operation-isolation-room',
+      senderId: 'owner',
+    } as const;
+    const created = await processAuthenticated({
+      service: harness.service,
+      reader: harness.reader,
+      authority: harness.sessions.owner,
+      input: {
+        type: AppInboxType.GROUP_CREATE,
+        topicId: AppInboxType.GROUP_CREATE,
+        ...identity,
+        data: {
+          scope: SCOPE,
+          request: {
+            groupId,
+            displayName: 'Operation Isolation',
+            kind: 'room',
+            joinMode: 'open',
+            createdByPrincipalId: 'owner',
+            actorPrincipalId: 'owner',
+            actorSessionId: 'owner-session',
+            requestId,
+          },
+        },
+      },
+    });
+    expect(requireGroupStateResult(created).status).toBe('created');
+
+    const joined = await processAuthenticated({
+      service: harness.service,
+      reader: harness.reader,
+      authority: harness.sessions.owner,
+      input: {
+        type: AppInboxType.GROUP_MEMBER_UPSERT,
+        topicId: AppInboxType.GROUP_MEMBER_UPSERT,
+        ...identity,
+        data: {
+          scope: SCOPE,
+          groupId,
+          principalId: 'owner',
+          request: {
+            status: 'active',
+            actorPrincipalId: 'owner',
+            actorSessionId: 'owner-session',
+            requestId,
+          },
+        },
+      },
+    });
+    expect(requireGroupStateResult(joined).status).toBe('ok');
+  });
+
   it('rejects a dequeued user command whose authority proof has extra fields', async () => {
     const harness = await createAuthorityHarness(['owner']);
-    const input: AppInboxEnqueueInput<GroupCreateAppInboxPayload> = {
+    const input: AuthenticatedGroupMutationEnqueue = {
       type: AppInboxType.GROUP_CREATE,
       resourceId: 'raw-extra-proof',
       contextId: 'ar-eye-hunter:default:raw-extra-proof',
       senderId: 'owner',
-      authority: {
-        version: 1,
-        principalId: 'owner',
-        sessionId: 'owner-session',
-        sessionIssuedAtEpochMs: harness.sessions.owner.issuedAtEpochMs,
-        sessionExpiresAtEpochMs: harness.sessions.owner.expiresAtEpochMs,
-        commandMac: '0'.repeat(64),
-        internalAuthority: 'expiry',
-      },
       data: {
         scope: SCOPE,
         request: {
@@ -134,14 +182,32 @@ describe('AppGroupInboxService authenticated authority', () => {
       },
     };
 
-    const pending = AppInboxService.prototype.processEntryUntilCompletion.call(
-      harness.service,
+    const pending = harness.service.processAuthenticatedGroupEntryUntilCompletion(
       input,
+      harness.sessions.owner,
     );
     await waitForQueueEntry(harness.queue);
+    const entry = (await harness.queueEntries()).find(
+      (candidate) => candidate.status === EntityStatus.NEW,
+    );
+    if (!entry) {
+      throw new Error('Expected queued authenticated group command');
+    }
+    const message = JSON.parse(entry.resource) as {
+      payload: { resource: string };
+    };
+    const command = JSON.parse(message.payload.resource) as {
+      authority: { authorityProof: Record<string, string | number> };
+    };
+    command.authority.authorityProof.internalAuthority = 'expiry';
+    message.payload.resource = JSON.stringify(command);
+    await harness.queue.enqueue({
+      ...entry,
+      resource: JSON.stringify(message),
+    });
     await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
-    expect((await pending).left).toContain('durable group mutation facts are malformed');
+    expect((await pending).left).toContain('authenticated group mutation intent is malformed');
     expect(
       await harness.repository.readSnapshot({
         ...SCOPE,

@@ -9,7 +9,10 @@ import {
 } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 import type { RallarCrdtAdminReadRepository, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
-import type { CrdtAdminMutationInput } from '../../../src/crdt/create-crdt-admin-mutations.ts';
+import type {
+  CrdtAdminMutationInput,
+  CrdtAdminPublicResult,
+} from '../../../src/crdt/create-crdt-admin-mutations.ts';
 import * as crdtAdminRoutes from '../../../src/crdt/register-crdt-admin-routes.ts';
 
 const NOW = 1_700_000_000_000;
@@ -77,7 +80,7 @@ function createCrdtAdminRoutingFixture(): CrdtAdminRoutingFixture {
     crdtAdminMutations: {
       writeCrdtAdminMutation: (input) => {
         mutationCalls.push({ operation: input.operation, input });
-        return Promise.resolve({ operation: input.operation, status: 'completed' });
+        return Promise.resolve(toCrdtAdminRoutingResult(input));
       },
     },
     requireApiAdminSession: () => Promise.resolve(SESSION),
@@ -126,11 +129,10 @@ async function exerciseCrdtAdminMutationRoutes(app: Hono): Promise<void> {
       }],
     ] as const
   ) {
-    const response = await post(app, path, body);
+    const response = await post(app, `${path}/requests/crdt-routing-request-001`, body);
     assert.equal(response.status, 200);
     const responseBody = await readJsonObject(response);
-    const result = requireRecord(responseBody.result, 'CRDT mutation route result');
-    assert.equal(result.operation, operation);
+    assert.equal(responseBody.ok, true, operation);
   }
 }
 
@@ -197,7 +199,7 @@ Deno.test('CRDT admin routes never fall back to direct mutation methods', async 
       },
     }),
     crdtAdminMutations: {
-      writeCrdtAdminMutation: () => Promise.resolve({ status: 'queued' }),
+      writeCrdtAdminMutation: (input) => Promise.resolve(toCrdtAdminRoutingResult(input)),
     },
     requireApiAdminSession: () => Promise.resolve(SESSION),
     requireApiUserSession: () => Promise.resolve(SESSION),
@@ -213,7 +215,7 @@ Deno.test('CRDT admin routes never fall back to direct mutation methods', async 
     ]
   ) {
     assert.equal(
-      (await post(app, path, {
+      (await post(app, `${path}/requests/crdt-routing-request-001`, {
         document: DOCUMENT,
         lifecycle: 'archived',
         mode: 'destroy-document',
@@ -239,13 +241,32 @@ Deno.test('CRDT admin routes preserve retryable mutation failure status', async 
       adminClientIds: ['platform-admin'],
     });
 
-    const response = await post(app, '/api/crdt/admin/documents/compact', {
-      document: DOCUMENT,
-    });
+    const response = await post(
+      app,
+      '/api/crdt/admin/documents/compact/requests/crdt-routing-request-001',
+      {
+        document: DOCUMENT,
+      },
+    );
     assert.equal(response.status, status);
     assert.deepEqual(await readJsonObject(response), {
-      ok: false,
-      error: `mutation unavailable ${status}`,
+      type: 'api-mutation-failure',
+      version: 'canonical.v1',
+      code: status === 503 ? 'api-mutation-unavailable' : 'api-mutation-429',
+      status,
+      message: `mutation unavailable ${status}`,
+      issues: null,
+      denial: null,
+      retry: status === 503
+        ? {
+          kind: 'unavailable',
+          attempts: null,
+          lane: null,
+          queueAgeMs: null,
+          dueAgeMs: null,
+          retryAfterMs: null,
+        }
+        : null,
     });
   }
 });
@@ -264,6 +285,67 @@ function createCrdtReadRepository(
     verifyIntegrity: unused,
     ...overrides,
   };
+}
+
+function toCrdtAdminRoutingResult(input: CrdtAdminMutationInput): CrdtAdminPublicResult {
+  const metadata = {
+    document: DOCUMENT,
+    documentKey: 'app-1/workspace-1/room/checklist/doc-1',
+    documentRevision: 1,
+    lifecycle: 'active' as const,
+    createdAtEpochMs: NOW,
+    updatedAtEpochMs: NOW,
+    archivedAtEpochMs: null,
+    destroyedAtEpochMs: null,
+    lastAppendSequence: 0,
+    updateCount: 0,
+    snapshotCount: 0,
+    storedUpdateBytes: 0,
+    retention: null,
+    quota: null,
+    projectionIds: [],
+  };
+  switch (input.operation) {
+    case 'rebuild-projection':
+      return {
+        documentKey: metadata.documentKey,
+        valid: true,
+        checkedUpdateCount: 0,
+        sequenceGaps: [],
+        issues: [],
+      };
+    case 'compact':
+      return {
+        document: DOCUMENT,
+        documentKey: metadata.documentKey,
+        appendSequence: 0,
+        snapshot: {
+          protocolVersion: 1,
+          document: DOCUMENT,
+          snapshotId: 'snapshot-1',
+          schemaVersion: 1,
+          createdAtEpochMs: NOW,
+          maxLamport: 0,
+          includedUpdateIds: [],
+          value: null,
+          metadata: { updateCount: 0, reason: 'routing-test' },
+        },
+      };
+    case 'lifecycle':
+      return metadata;
+    case 'erase':
+      return {
+        request: {
+          document: DOCUMENT,
+          requestedAtEpochMs: NOW,
+          requestedBy: SESSION.clientId,
+          reason: 'routing-test',
+          mode: 'destroy-document',
+        },
+        auditEvent: { kind: 'erase', atEpochMs: NOW },
+        metadata,
+      };
+  }
 }
 
 async function readJsonObject(response: Response): Promise<Record<string, unknown>> {

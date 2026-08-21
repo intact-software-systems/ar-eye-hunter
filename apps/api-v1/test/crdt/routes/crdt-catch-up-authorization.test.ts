@@ -15,6 +15,7 @@ import {
 } from '@shared/crdt/mod.ts';
 
 import * as crdtAdminRoutes from '../../../src/crdt/register-crdt-admin-routes.ts';
+import { authenticationRequired } from '../../../src/services/request-auth-service.ts';
 
 const NOW = 1_700_000_000_000;
 const USER: IssuedAuthSession = {
@@ -140,7 +141,7 @@ Deno.test('durable CRDT catch-up rejects a missing bearer token with 401', async
     }),
     crdtAdminMutations: UNUSED_CRDT_ADMIN_MUTATIONS,
     requireApiUserSession: () => {
-      throw new Error('Unauthorized: Missing bearer token');
+      throw authenticationRequired('Unauthorized: Missing bearer token');
     },
     requireApiAdminSession: () => Promise.resolve(USER),
     authorizeCatchUp: () => Promise.resolve({ allowed: true }),
@@ -175,20 +176,29 @@ Deno.test(
       authorizeAdmin: () => false,
     });
 
-    const response = await app.request('/api/crdt/admin/documents/compact', {
-      method: 'POST',
-      headers: {
-        authorization: 'Bearer token',
-        'x-client-id': 'non-admin',
-        'content-type': 'application/json',
+    const response = await app.request(
+      '/api/crdt/admin/documents/compact/requests/crdt-admin-denial-001',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer token',
+          'x-client-id': 'non-admin',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ document: DOCUMENT }),
       },
-      body: JSON.stringify({ document: DOCUMENT }),
-    });
-    assert.equal(response.status, 403);
-    assert.equal(
-      (await readJsonRecord(response)).error,
-      'Forbidden: CRDT admin authorization required.',
     );
+    assert.equal(response.status, 403);
+    assert.deepEqual(await readJsonRecord(response), {
+      type: 'api-mutation-failure',
+      version: 'canonical.v1',
+      code: 'api-mutation-403',
+      status: 403,
+      message: 'Forbidden: CRDT admin authorization required.',
+      issues: null,
+      denial: null,
+      retry: null,
+    });
   },
 );
 

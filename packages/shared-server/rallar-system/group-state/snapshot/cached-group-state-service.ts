@@ -40,6 +40,8 @@ export function createCachedGroupStateService(
       await options.durable.authorizeMutation(descriptor, authority),
     prepareMutation: async (descriptor, authority) =>
       await options.durable.prepareMutation(descriptor, authority),
+    prepareAppInboxMutation: async (descriptor, authority) =>
+      await options.durable.prepareAppInboxMutation(descriptor, authority),
     prepareExpiredPresenceMutations: async (atEpochMs) =>
       await options.durable.prepareExpiredPresenceMutations(atEpochMs),
     prepareSessionCleanupMutations: async (input) =>

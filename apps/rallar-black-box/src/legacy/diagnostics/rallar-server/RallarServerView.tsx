@@ -5,9 +5,11 @@ import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
     redactRallarServerUrl,
     redactRallarServerValue,
-    type RallarServerResponseBodyMode,
-    type RallarServerRestMethod,
 } from '../../../rallar-server-workbench.ts';
+import type {
+    RallarServerResponseBodyMode,
+    RallarServerRestMethod,
+} from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
 import { CollapsiblePanelSection } from '../../shared/CollapsiblePanelSection.tsx';
 import {
     redactedJson,

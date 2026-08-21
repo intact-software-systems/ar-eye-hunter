@@ -27,6 +27,10 @@ import {
 import { toLifecycleMutationCommand } from './to-lifecycle-mutation-command.ts';
 import { toPresenceMutationCommand } from './group-presence-mutation-command.ts';
 import {
+  isScopedGroupMutationCommandId,
+  toScopedGroupMutationCommandId,
+} from './scoped-group-mutation-command-id.ts';
+import {
   GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,
   type AuthorizedGroupMutation,
   type GroupMutationAuthority,
@@ -58,6 +62,13 @@ interface VerifyGroupMutationAuthorityInput {
   readonly nowEpochMs: number;
 }
 
+interface PrepareAuthorizedGroupMutationInput {
+  readonly dependencies: GroupMutationAuthorityDependencies;
+  readonly descriptor: GroupMutationDescriptor;
+  readonly authority: GroupMutationAuthority;
+  readonly useScopedCommandId: boolean;
+}
+
 export class GroupMutationAuthorizationError extends Error {
   readonly status = 403;
   readonly code = 'group-mutation-authority-denied';
@@ -73,9 +84,40 @@ export async function prepareGroupMutation(
   descriptor: GroupMutationDescriptor,
   authority: GroupMutationAuthority,
 ): Promise<GroupMutationPreparation> {
+  return await prepareAuthorizedGroupMutation({
+    dependencies,
+    descriptor,
+    authority,
+    useScopedCommandId: false,
+  });
+}
+
+export async function prepareAppInboxGroupMutation(
+  dependencies: GroupMutationAuthorityDependencies,
+  descriptor: GroupMutationDescriptor,
+  authority: GroupMutationAuthority,
+): Promise<GroupMutationPreparation> {
+  return await prepareAuthorizedGroupMutation({
+    dependencies,
+    descriptor,
+    authority,
+    useScopedCommandId: true,
+  });
+}
+
+async function prepareAuthorizedGroupMutation(
+  input: PrepareAuthorizedGroupMutationInput,
+): Promise<GroupMutationPreparation> {
+  const { dependencies, descriptor, authority, useScopedCommandId } = input;
   const authorized = await authorizeGroupMutation(dependencies, descriptor, authority);
-  const command = toDescriptorCommand(authorized.descriptor, dependencies.randomId);
-  const commandHash = await hashMutationCommand(command as JsonWireValue);
+  const materialized = await materializeAuthenticatedGroupMutationCommand(
+    authorized.descriptor,
+    authorized.authorityProof,
+    dependencies.randomId,
+    useScopedCommandId,
+  );
+  const { command } = materialized;
+  const commandHash = await hashMutationCommand(materialized.semanticCommand as JsonWireValue);
   const resolvedJoinCode = resolveCommandJoinCode(command, commandHash);
   const facts: Omit<GroupMutationFacts, 'attemptCount'> = {
     nowEpochMs: dependencies.now(),
@@ -160,8 +202,14 @@ export async function verifyPreparedGroupMutationAuthority(
       'Authenticated mutation descriptor changed before execution.',
     );
   }
-  const command = toDescriptorCommand(verified.descriptor, dependencies.randomId);
-  const commandHash = await hashMutationCommand(command as JsonWireValue);
+  const materialized = await materializeAuthenticatedGroupMutationCommand(
+    verified.descriptor,
+    prepared.authorityProof,
+    dependencies.randomId,
+    isScopedGroupMutationCommandId(prepared.command.commandId),
+  );
+  const { command } = materialized;
+  const commandHash = await hashMutationCommand(materialized.semanticCommand as JsonWireValue);
   if (
     canonicalJson(command) !== canonicalJson(prepared.command) ||
     commandHash !== prepared.facts.commandHash ||
@@ -172,6 +220,24 @@ export async function verifyPreparedGroupMutationAuthority(
       'Durable group mutation facts differ from authenticated command.',
     );
   }
+}
+
+async function materializeAuthenticatedGroupMutationCommand(
+  descriptor: GroupMutationDescriptor,
+  authorityProof: GroupMutationAuthorityProof,
+  randomId: () => string,
+  useScopedCommandId: boolean,
+): Promise<Readonly<{ command: GroupMutationCommand; semanticCommand: GroupMutationCommand }>> {
+  const semanticCommand = toDescriptorCommand(descriptor, randomId);
+  return {
+    semanticCommand,
+    command: useScopedCommandId
+      ? {
+          ...semanticCommand,
+          commandId: await toScopedGroupMutationCommandId(descriptor, authorityProof),
+        }
+      : semanticCommand,
+  };
 }
 
 export function mutationDescriptor(

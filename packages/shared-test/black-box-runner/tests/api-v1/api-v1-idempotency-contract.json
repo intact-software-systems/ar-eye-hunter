@@ -505,7 +505,7 @@
       "name": "exposeStateWriteEvidence",
       "type": "set.state-write-evidence",
       "output": "stateWriteEvidence",
-      "request": { "stateWriteEvidence": { "match": "idem-contract-group-replay-{runId}", "commandTypes": ["GROUP_UPDATE"], "commandIdPrefixes": ["idem-contract-group-replay-"], "minimumMatchedRows": 1, "expectedEffectsByCommandType": { "GROUP_UPDATE": ["group-presence-summary"] } } }
+      "request": { "stateWriteEvidence": { "match": "idem-contract-group-replay-{runId}", "commandTypes": ["GROUP_UPDATE"], "commandIdPrefixes": ["group-app-inbox:"], "minimumMatchedRows": 1, "expectedEffectsByCommandType": { "GROUP_UPDATE": ["group-presence-summary"] } } }
     },
     {
       "name": "assertAtomicAppInboxCompletion",

@@ -8,6 +8,8 @@ import { GroupTopologyConfigRepository } from '@shared-server/mod.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import * as ClientMutations from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import * as GroupMutations from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { groupMutationIdempotencyKey } from
+  '@shared-server/rallar-system/group-state/mutation/group-mutation-idempotency-key.ts';
 import * as TopologyMutation from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
 import * as AppInboxCommandIdentity from '@shared-server/rallar-system/services/app-inbox-command-identity.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
@@ -376,6 +378,10 @@ async function readGroupReceipt(input: ReadGroupReceiptInput): Promise<Persisted
   GroupMutations.validateGroupMutationCommand(prepared.command);
   const command = prepared.command;
   const requestId = readString(command.requestId, 'group requestId');
+  const idempotencyKey = groupMutationIdempotencyKey(command);
+  if (idempotencyKey === null) {
+    throw new TypeError('Group AppInbox command is missing its idempotency identity');
+  }
   const facts = readRecord(prepared.facts, 'group facts');
   const commandHash = readString(facts.commandHash, 'group commandHash');
   const physicalResourceId = toAppQueueKey({
@@ -396,13 +402,14 @@ async function readGroupReceipt(input: ReadGroupReceiptInput): Promise<Persisted
   }
   const stored = await new GroupState.GroupStateRepository(
     runtime,
-  ).findIdempotentGroupMutationReceipt(command.aggregateRef, requestId);
+  ).findIdempotentGroupMutationReceipt(command.aggregateRef, idempotencyKey);
   if (
     !stored ||
-    stored.requestId !== requestId ||
+    stored.requestId !== idempotencyKey ||
     stored.commandHash !== commandHash ||
     stored.receipt.commandHash !== commandHash ||
     stored.receipt.commandId !== command.commandId ||
+    stored.receipt.requestId !== requestId ||
     stored.aggregateRef.applicationId !== command.aggregateRef.applicationId ||
     stored.aggregateRef.workspaceId !== command.aggregateRef.workspaceId ||
     stored.aggregateRef.groupId !== command.aggregateRef.groupId

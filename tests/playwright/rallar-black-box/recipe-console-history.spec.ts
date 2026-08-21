@@ -634,8 +634,9 @@ test('preserves runner-agent launch ticket semantics in legacy', async ({ contex
         const request = route.request();
         const url = new URL(request.url());
         if (request.method() === 'POST' &&
-            url.pathname === '/api/auth/agent-session-tickets/consume') {
+            url.pathname.startsWith('/api/auth/agent-session-tickets/consume/requests/')) {
             const body = await request.postDataJSON() as { ticket?: string };
+            expect(body).not.toHaveProperty('requestId');
             consumedTickets.push(body.ticket ?? '');
             await new Promise(resolve => setTimeout(resolve, 100));
             await route.fulfill({

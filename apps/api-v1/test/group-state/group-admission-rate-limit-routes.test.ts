@@ -26,8 +26,21 @@ Deno.test('join route answers 429 with Retry-After once the join-admission windo
   assert.equal(response.status, 429);
   assert.equal(response.headers.get('retry-after'), '60');
   assert.deepEqual(await response.json(), {
-    error: 'Too many group join-admission requests',
-    code: 'group-admission-rate-limited',
+    type: 'api-mutation-failure',
+    version: 'canonical.v1',
+    code: 'rate-limited',
+    status: 429,
+    message: 'Too many group join-admission requests',
+    issues: null,
+    denial: null,
+    retry: {
+      kind: 'rate-limited',
+      retryAfterMs: 60_000,
+      attempts: null,
+      lane: null,
+      queueAgeMs: null,
+      dueAgeMs: null,
+    },
   });
 });
 
@@ -62,8 +75,21 @@ Deno.test('presence connect route answers 429 from the presence-connect window',
   assert.equal(response.status, 429);
   assert.equal(response.headers.get('retry-after'), '60');
   assert.deepEqual(await response.json(), {
-    error: 'Too many group presence-connect requests',
-    code: 'group-admission-rate-limited',
+    type: 'api-mutation-failure',
+    version: 'canonical.v1',
+    code: 'rate-limited',
+    status: 429,
+    message: 'Too many group presence-connect requests',
+    issues: null,
+    denial: null,
+    retry: {
+      kind: 'rate-limited',
+      retryAfterMs: 60_000,
+      attempts: null,
+      lane: null,
+      queueAgeMs: null,
+      dueAgeMs: null,
+    },
   });
 });
 
@@ -77,7 +103,7 @@ Deno.test('a group whose window is untouched still admits joins through the guar
   const response = await postGroupStateMutation(
     runtime.app,
     toGroupPath(groupRef, '/join'),
-    { requestId: 'join-allowed' },
+    { requestId: 'join-allowed-request-001' },
   );
 
   assert.equal(response.status, 200);

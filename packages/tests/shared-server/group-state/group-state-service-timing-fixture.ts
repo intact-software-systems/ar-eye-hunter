@@ -15,6 +15,7 @@ export type PromiseReturningGroupStateServiceKey = PromiseReturningMethodKey<Gro
 export const TIMED_ASYNC_OPERATIONS = [
   'authorizeMutation',
   'prepareMutation',
+  'prepareAppInboxMutation',
   'prepareExpiredPresenceMutations',
   'prepareSessionCleanupMutations',
   'prepareFormationCriterionMutation',
@@ -107,6 +108,7 @@ function createPreparationFake(
   GroupStateService,
   | 'authorizeMutation'
   | 'prepareMutation'
+  | 'prepareAppInboxMutation'
   | 'prepareExpiredPresenceMutations'
   | 'prepareSessionCleanupMutations'
   | 'prepareFormationCriterionMutation'
@@ -116,6 +118,8 @@ function createPreparationFake(
       (await record('authorizeMutation', arguments_)) as never,
     prepareMutation: async (...arguments_) =>
       (await record('prepareMutation', arguments_)) as never,
+    prepareAppInboxMutation: async (...arguments_) =>
+      (await record('prepareAppInboxMutation', arguments_)) as never,
     prepareExpiredPresenceMutations: async (...arguments_) =>
       (await record('prepareExpiredPresenceMutations', arguments_)) as never,
     prepareFormationCriterionMutation: async (...arguments_) =>
@@ -240,6 +244,7 @@ type TimedOperationArgumentsByOperation = {
 export const TIMED_OPERATION_ARGUMENTS: TimedOperationArgumentsByOperation = {
   authorizeMutation: [timingDescriptor, timingAuthority],
   prepareMutation: [timingDescriptor, timingAuthority],
+  prepareAppInboxMutation: [timingDescriptor, timingAuthority],
   prepareExpiredPresenceMutations: [1_000],
   prepareSessionCleanupMutations: [timingCleanup],
   prepareFormationCriterionMutation: [{} as never, 1_000],
@@ -264,6 +269,10 @@ const TIMED_OPERATION_INVOCATIONS: Readonly<
     await service.authorizeMutation(...TIMED_OPERATION_ARGUMENTS.authorizeMutation),
   prepareMutation: async (service) =>
     await service.prepareMutation(...TIMED_OPERATION_ARGUMENTS.prepareMutation),
+  prepareAppInboxMutation: async (service) =>
+    await service.prepareAppInboxMutation(
+      ...TIMED_OPERATION_ARGUMENTS.prepareAppInboxMutation,
+    ),
   prepareExpiredPresenceMutations: async (service) =>
     await service.prepareExpiredPresenceMutations(
       ...TIMED_OPERATION_ARGUMENTS.prepareExpiredPresenceMutations,

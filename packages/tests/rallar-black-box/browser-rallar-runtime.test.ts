@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { RallarValidationError } from '../../../packages/shared/api/rallar-validation.ts';
+import { ApiHttpError } from '../../../packages/shared-web/browser/api/http-error.ts';
 import {
     createRallarBlackBoxBrowserTestRuntime,
     type RallarBlackBoxBrowserRoomRefreshOptions,
@@ -585,10 +586,12 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
     it.each([
         [
             'HTTP authorization',
-            Object.assign(new Error('room refresh forbidden'), {
-                name: 'ApiHttpError',
-                status: 403,
-            }),
+            new ApiHttpError(
+                'GET',
+                '/api/state/rooms/example',
+                403,
+                'room refresh forbidden',
+            ),
         ],
         [
             'configuration validation',

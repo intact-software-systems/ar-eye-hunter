@@ -90,10 +90,10 @@ export const HANDLER_FINALIZED_SUMMARY_SCENARIOS: readonly HandlerFinalizedSumma
       contextId: 'wrong-group-ref-derived-context',
     }),
   ),
-  scenario('event requestId differs from commandId', false, (reserved) =>
+  scenario('event requestId is independent of the internal commandId', true, (reserved) =>
     updateEvent(reserved, (event) => ({
       ...event,
-      requestId: 'wrong-event-request',
+      requestId: 'logical-request-id',
     })),
   ),
   scenario('event occurrence differs from command creation', false, (reserved) =>

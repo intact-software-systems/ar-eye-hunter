@@ -24,6 +24,7 @@ import type {
   PresenceGuardCandidate,
 } from './group-mutation-contracts.ts';
 import { GroupMutationRejectedError } from './group-mutation-contracts.ts';
+import { groupMutationIdempotencyKey } from './group-mutation-idempotency-key.ts';
 import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -137,10 +138,11 @@ function toGroupMutationIdempotency(
   facts: GroupMutationFacts,
   receipt: GroupMutationReceipt,
 ): GroupMutationIdempotencyRecord | null {
-  if (command.requestId === null) return null;
+  const idempotencyKey = groupMutationIdempotencyKey(command);
+  if (idempotencyKey === null) return null;
   return {
     aggregateRef: command.aggregateRef,
-    requestId: command.requestId,
+    requestId: idempotencyKey,
     commandHash: facts.commandHash,
     receipt,
   };

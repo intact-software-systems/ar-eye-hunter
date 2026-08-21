@@ -297,7 +297,7 @@ export async function sendWsTicketFromRestWorkbench(
   config: FullStackConfig,
 ): Promise<Readonly<Record<string, string>>> {
   const requestPromise = page.waitForRequest((request) =>
-    request.url() === `${config.apiBaseUrl}/api/auth/ws-ticket` &&
+    request.url().startsWith(`${config.apiBaseUrl}/api/auth/ws-ticket/requests/`) &&
     request.method() === 'POST'
   );
   const panel = page.locator('#panel-rallar-server');

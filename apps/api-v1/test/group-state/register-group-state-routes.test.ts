@@ -11,6 +11,7 @@ import {
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups';
 const GROUP_STATE_ROUTE_BASE = '/api/state/apps/:applicationId/workspaces/:workspaceId/groups';
 const GROUP_ROUTE_PATH = `${GROUP_STATE_ROUTE_BASE}/:groupId`;
+const GROUP_MUTATION_REQUEST_ID = 'group-registration-request-001';
 
 interface GroupStateRouteMatch {
   readonly method: 'GET' | 'POST' | 'PUT';
@@ -23,59 +24,89 @@ const GROUP_STATE_ROUTE_MATCHES: readonly GroupStateRouteMatch[] = [
   { method: 'GET', path: API_BASE, status: 200 },
   {
     method: 'POST',
-    path: API_BASE,
+    path: mutationPath(API_BASE),
     body: { groupId: 'room-1', displayName: 'Room', kind: 'room' },
     status: 201,
   },
   { method: 'GET', path: `${API_BASE}/room-1`, status: 200 },
-  { method: 'PUT', path: `${API_BASE}/room-1`, body: { displayName: 'Room' }, status: 200 },
+  {
+    method: 'PUT',
+    path: mutationPath(`${API_BASE}/room-1`),
+    body: { displayName: 'Room' },
+    status: 200,
+  },
   { method: 'GET', path: `${API_BASE}/room-1/events`, status: 200 },
   { method: 'GET', path: `${API_BASE}/room-1/events/page`, status: 200 },
   {
     method: 'POST',
-    path: `${API_BASE}/room-1/director/appoint`,
+    path: mutationPath(`${API_BASE}/room-1/director/appoint`),
     body: { heartbeatTtlMs: 1 },
     status: 200,
   },
-  { method: 'POST', path: `${API_BASE}/room-1/join`, body: {}, status: 200 },
-  { method: 'POST', path: `${API_BASE}/room-1/invites/accept`, body: {}, status: 200 },
+  { method: 'POST', path: mutationPath(`${API_BASE}/room-1/join`), body: {}, status: 200 },
   {
     method: 'POST',
-    path: `${API_BASE}/room-1/join-code/rotate`,
+    path: mutationPath(`${API_BASE}/room-1/invites/accept`),
+    body: {},
+    status: 200,
+  },
+  {
+    method: 'POST',
+    path: mutationPath(`${API_BASE}/room-1/join-code/rotate`),
     body: { joinCode: 'next', expiresAtEpochMs: 1 },
     status: 200,
   },
   {
     method: 'POST',
-    path: `${API_BASE}/room-1/invites/bob`,
+    path: mutationPath(`${API_BASE}/room-1/invites/bob`),
     body: { invitationExpiresAtEpochMs: 1 },
     status: 200,
   },
-  { method: 'POST', path: `${API_BASE}/room-1/invites/bob/revoke`, body: {}, status: 200 },
-  { method: 'POST', path: `${API_BASE}/room-1/members/bob/remove`, body: {}, status: 200 },
-  { method: 'POST', path: `${API_BASE}/room-1/members/bob/ban`, body: {}, status: 200 },
-  { method: 'POST', path: `${API_BASE}/room-1/members/bob/unban`, body: {}, status: 200 },
+  {
+    method: 'POST',
+    path: mutationPath(`${API_BASE}/room-1/invites/bob/revoke`),
+    body: {},
+    status: 200,
+  },
+  {
+    method: 'POST',
+    path: mutationPath(`${API_BASE}/room-1/members/bob/remove`),
+    body: {},
+    status: 200,
+  },
+  {
+    method: 'POST',
+    path: mutationPath(`${API_BASE}/room-1/members/bob/ban`),
+    body: {},
+    status: 200,
+  },
+  {
+    method: 'POST',
+    path: mutationPath(`${API_BASE}/room-1/members/bob/unban`),
+    body: {},
+    status: 200,
+  },
   {
     method: 'PUT',
-    path: `${API_BASE}/room-1/members/bob/role`,
+    path: mutationPath(`${API_BASE}/room-1/members/bob/role`),
     body: { role: 'admin' },
     status: 200,
   },
   {
     method: 'POST',
-    path: `${API_BASE}/room-1/owner/transfer`,
+    path: mutationPath(`${API_BASE}/room-1/owner/transfer`),
     body: { newOwnerPrincipalId: 'bob' },
     status: 200,
   },
   {
     method: 'PUT',
-    path: `${API_BASE}/room-1/members/alice`,
+    path: mutationPath(`${API_BASE}/room-1/members/alice`),
     body: { status: 'active' },
     status: 200,
   },
   {
     method: 'PUT',
-    path: `${API_BASE}/room-1/sessions/alice-session`,
+    path: mutationPath(`${API_BASE}/room-1/sessions/alice-session`),
     body: {
       generationId: 'generation',
       connectedAtEpochMs: 1,
@@ -86,13 +117,13 @@ const GROUP_STATE_ROUTE_MATCHES: readonly GroupStateRouteMatch[] = [
   },
   {
     method: 'POST',
-    path: `${API_BASE}/room-1/sessions/alice-session/heartbeat`,
+    path: mutationPath(`${API_BASE}/room-1/sessions/alice-session/heartbeat`),
     body: { generationId: 'generation', lastHeartbeatAtEpochMs: 1, expiresAtEpochMs: 1 },
     status: 200,
   },
   {
     method: 'POST',
-    path: `${API_BASE}/room-1/sessions/alice-session/disconnect`,
+    path: mutationPath(`${API_BASE}/room-1/sessions/alice-session/disconnect`),
     body: {
       generationId: 'generation',
       lastHeartbeatAtEpochMs: 1,
@@ -116,28 +147,28 @@ Deno.test(
       `GET ${GROUP_ROUTE_PATH}`,
       `GET ${GROUP_ROUTE_PATH}/events`,
       `GET ${GROUP_ROUTE_PATH}/events/page`,
-      `POST ${GROUP_STATE_ROUTE_BASE}`,
-      `PUT ${GROUP_ROUTE_PATH}`,
-      `POST ${GROUP_ROUTE_PATH}/director/appoint`,
-      `POST ${GROUP_ROUTE_PATH}/lifecycle/establish`,
-      `POST ${GROUP_ROUTE_PATH}/lifecycle/activate`,
-      `POST ${GROUP_ROUTE_PATH}/lifecycle/reopen`,
-      `POST ${GROUP_ROUTE_PATH}/join`,
-      `POST ${GROUP_ROUTE_PATH}/invites/accept`,
-      `POST ${GROUP_ROUTE_PATH}/join-code/rotate`,
-      `POST ${GROUP_ROUTE_PATH}/invites/:principalId`,
-      `POST ${GROUP_ROUTE_PATH}/invites/:principalId/revoke`,
-      `POST ${GROUP_ROUTE_PATH}/admissions/:principalId/grant`,
-      `POST ${GROUP_ROUTE_PATH}/admissions/:principalId/decline`,
-      `POST ${GROUP_ROUTE_PATH}/members/:principalId/remove`,
-      `POST ${GROUP_ROUTE_PATH}/members/:principalId/ban`,
-      `POST ${GROUP_ROUTE_PATH}/members/:principalId/unban`,
-      `PUT ${GROUP_ROUTE_PATH}/members/:principalId/role`,
-      `POST ${GROUP_ROUTE_PATH}/owner/transfer`,
-      `PUT ${GROUP_ROUTE_PATH}/members/:principalId`,
-      `PUT ${GROUP_ROUTE_PATH}/sessions/:sessionId`,
-      `POST ${GROUP_ROUTE_PATH}/sessions/:sessionId/heartbeat`,
-      `POST ${GROUP_ROUTE_PATH}/sessions/:sessionId/disconnect`,
+      `POST ${GROUP_STATE_ROUTE_BASE}/requests/:requestId`,
+      `PUT ${GROUP_ROUTE_PATH}/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/director/appoint/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/lifecycle/establish/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/lifecycle/activate/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/lifecycle/reopen/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/join/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/invites/accept/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/join-code/rotate/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/invites/:principalId/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/invites/:principalId/revoke/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/admissions/:principalId/grant/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/admissions/:principalId/decline/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/members/:principalId/remove/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/members/:principalId/ban/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/members/:principalId/unban/requests/:requestId`,
+      `PUT ${GROUP_ROUTE_PATH}/members/:principalId/role/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/owner/transfer/requests/:requestId`,
+      `PUT ${GROUP_ROUTE_PATH}/members/:principalId/requests/:requestId`,
+      `PUT ${GROUP_ROUTE_PATH}/sessions/:sessionId/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/sessions/:sessionId/heartbeat/requests/:requestId`,
+      `POST ${GROUP_ROUTE_PATH}/sessions/:sessionId/disconnect/requests/:requestId`,
     ]);
   },
 );
@@ -181,19 +212,27 @@ Deno.test('moved group snapshots retain first-active-principal ownership', () =>
 
 Deno.test('moved group route runtime rejects unexpected mutations by default', async () => {
   const { app } = createPredecessorGroupStateRouteTestRuntime();
-  const response = await app.request(API_BASE, {
+  const response = await app.request(mutationPath(API_BASE), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       groupId: 'room-2',
       displayName: 'Room 2',
       kind: 'room',
-      requestId: 'unexpected-mutation',
     }),
   });
 
-  assert.equal(response.status, 400);
-  assert.match((await response.json()).error, /Unexpected group mutation/);
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), {
+    type: 'api-mutation-failure',
+    version: 'canonical.v1',
+    code: 'api-mutation-unexpected',
+    status: 500,
+    message: 'API mutation failed unexpectedly',
+    issues: null,
+    denial: null,
+    retry: null,
+  });
 });
 
 async function requestRegisteredGroupStateRoute(
@@ -205,4 +244,8 @@ async function requestRegisteredGroupStateRoute(
     headers: expected.body ? { 'content-type': 'application/json' } : undefined,
     body: expected.body ? JSON.stringify(expected.body) : undefined,
   });
+}
+
+function mutationPath(path: string): string {
+  return `${path}/requests/${GROUP_MUTATION_REQUEST_ID}`;
 }

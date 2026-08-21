@@ -79,7 +79,7 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
       };
       const phaseService = {
         authorizeMutation: vi.fn(async () => authorizedMutation),
-        prepareMutation: vi.fn(async () => ({
+        prepareAppInboxMutation: vi.fn(async () => ({
           ...authorizedMutation,
           command: {
             operation: 'updateGroup',
@@ -421,7 +421,7 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
       },
     });
     await createRoom(harness, 'coalesced-room', 'Before Coalescing');
-    const prepareMutation = vi.spyOn(harness.groupStateService, 'prepareMutation');
+    const prepareMutation = vi.spyOn(harness.groupStateService, 'prepareAppInboxMutation');
     const input: AuthenticatedGroupMutationEnqueue = {
       type: AppInboxType.GROUP_UPDATE,
       resourceId: 'coalesced-update',
@@ -492,7 +492,7 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
         },
       },
     });
-    const prepareMutation = vi.spyOn(harness.groupStateService, 'prepareMutation');
+    const prepareMutation = vi.spyOn(harness.groupStateService, 'prepareAppInboxMutation');
     const input: AuthenticatedGroupMutationEnqueue = {
       type: AppInboxType.GROUP_DIRECTOR_APPOINT,
       topicId: AppInboxType.GROUP_DIRECTOR_APPOINT,
@@ -551,7 +551,7 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
       },
     });
     await createRoom(harness, 'different-contender-room', 'Before Contention');
-    const prepareMutation = vi.spyOn(harness.groupStateService, 'prepareMutation');
+    const prepareMutation = vi.spyOn(harness.groupStateService, 'prepareAppInboxMutation');
     const input: AuthenticatedGroupMutationEnqueue = {
       type: AppInboxType.GROUP_UPDATE,
       topicId: AppInboxType.GROUP_UPDATE,
@@ -573,6 +573,7 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
       input,
       harness.sessions.owner,
     );
+    await waitForQueueEntry(harness.queue);
     const conflict = harness.service.processAuthenticatedGroupEntryUntilCompletion(
       {
         ...input,
@@ -586,7 +587,6 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
     const conflictExpectation = expect(conflict).rejects.toBeInstanceOf(
       AppInboxIdempotencyConflictError,
     );
-    await waitForQueueEntry(harness.queue);
     await conflictExpectation;
     expect(prepareMutation).not.toHaveBeenCalled();
 

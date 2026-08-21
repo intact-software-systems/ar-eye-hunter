@@ -558,44 +558,54 @@ Deno.test(
         12,
       );
 
-      for (
-        const collisionAuthority of [
-          {
-            ...authority,
-            clientId: 'other-principal',
-            sessionId: 'other-principal-session',
-            accessToken: 'other-principal-token',
-          },
-          {
-            ...authority,
-            sessionId: 'owner-second-session',
-            accessToken: 'owner-second-token',
-          },
-        ]
-      ) {
-        await authSessions.putSession(collisionAuthority);
-        const actorDivergent = await toTopologyAppInboxCommand({
-          actor: {
-            principalId: collisionAuthority.clientId,
-            sessionId: collisionAuthority.sessionId,
-          },
-          groupRef,
-          requestId: first.requestId,
-          capturedAtEpochMs: 15_000,
-          payload: { operation: 'putConfig', config: { topologyKind: 'tree' } },
-        });
-        await assert.rejects(
-          () =>
-            submitPGliteTopologyCommand(
-              appGroup,
-              collisionAuthority,
-              actorDivergent,
-            ),
-          (error) =>
-            error instanceof Error &&
-            'code' in error && error.code === 'app-inbox-idempotency-conflict',
-        );
-      }
+      const otherPrincipal = {
+        ...authority,
+        clientId: 'other-principal',
+        sessionId: 'other-principal-session',
+        accessToken: 'other-principal-token',
+      };
+      await authSessions.putSession(otherPrincipal);
+      const actorDivergent = await toTopologyAppInboxCommand({
+        actor: {
+          principalId: otherPrincipal.clientId,
+          sessionId: otherPrincipal.sessionId,
+        },
+        groupRef,
+        requestId: first.requestId,
+        capturedAtEpochMs: 15_000,
+        payload: { operation: 'putConfig', config: { topologyKind: 'tree' } },
+      });
+      await assert.rejects(
+        () => submitPGliteTopologyCommand(appGroup, otherPrincipal, actorDivergent),
+        (error) =>
+          error instanceof Error &&
+          'code' in error && error.code === 'app-inbox-idempotency-conflict',
+      );
+
+      const renewedAuthority = {
+        ...authority,
+        sessionId: 'owner-second-session',
+        accessToken: 'owner-second-token',
+      };
+      await authSessions.putSession(renewedAuthority);
+      const renewedSessionReplay = await toTopologyAppInboxCommand({
+        actor: {
+          principalId: renewedAuthority.clientId,
+          sessionId: renewedAuthority.sessionId,
+        },
+        groupRef,
+        requestId: first.requestId,
+        capturedAtEpochMs: 15_000,
+        payload: { operation: 'putConfig', config: { topologyKind: 'tree' } },
+      });
+      assert.deepEqual(
+        (await submitPGliteTopologyCommand(
+          appGroup,
+          renewedAuthority,
+          renewedSessionReplay,
+        )).right,
+        firstResult.right,
+      );
 
       const revokedCommand = await toTopologyAppInboxCommand({
         actor: first.actor,

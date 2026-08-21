@@ -362,7 +362,11 @@ describe('AppInbox expired row replacement', () => {
       );
       const replacementReceipt = (await runtime.findAllEntries('group-state:idempotent'))
         .map((entry) => readJsonObject(entry.value, 'Group idempotency entry'))
-        .find((entry) => entry.requestId === 'replace-group');
+        .find(
+          (entry) =>
+            requireJsonObject(entry.receipt, 'Group idempotency receipt').requestId ===
+            'replace-group',
+        );
       expect(replacedGroup?.revision).toBe(expiredGroupRevision + 1);
       expect(replacedSummary?.revision).toBe(oldSummaryRevision + 1);
       expect(groupValue).toMatchObject({ displayName: 'New room' });
@@ -372,8 +376,8 @@ describe('AppInbox expired row replacement', () => {
         causalRevision: { groupRevision: snapshotVersion },
       });
       expect(replacementReceipt).toMatchObject({
-        requestId: 'replace-group',
         receipt: {
+          requestId: 'replace-group',
           attemptCount: 2,
           acceptedStorageRevision: expiredGroupRevision + 1,
           causalRevision: summaryCausalRevision,

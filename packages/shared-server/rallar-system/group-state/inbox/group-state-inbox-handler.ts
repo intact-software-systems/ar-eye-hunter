@@ -231,13 +231,33 @@ function readAuthorizedGroupMutation<Value>(value: Value): AuthorizedGroupMutati
 }
 
 function isAuthorityProofOrNull(value: unknown): boolean {
+  if (value === null) {
+    return true;
+  }
+  const expectedKeys = [
+    'commandMac',
+    'principalId',
+    'sessionExpiresAtEpochMs',
+    'sessionId',
+    'sessionIssuedAtEpochMs',
+    'version',
+  ];
   return (
-    value === null ||
-    (typeof value === 'object' &&
-      !Array.isArray(value) &&
-      value !== null &&
-      'version' in value &&
-      value.version === 1)
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    JSON.stringify(Object.keys(value).toSorted()) === JSON.stringify(expectedKeys) &&
+    'version' in value &&
+    value.version === 1 &&
+    'principalId' in value &&
+    typeof value.principalId === 'string' &&
+    'sessionId' in value &&
+    typeof value.sessionId === 'string' &&
+    'sessionIssuedAtEpochMs' in value &&
+    typeof value.sessionIssuedAtEpochMs === 'number' &&
+    'sessionExpiresAtEpochMs' in value &&
+    typeof value.sessionExpiresAtEpochMs === 'number' &&
+    'commandMac' in value &&
+    typeof value.commandMac === 'string'
   );
 }
 

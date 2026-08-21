@@ -7,6 +7,7 @@ import {
   isGroupAdmissionPolicyReadOperation,
   isGroupLifecycleTransitionOperation,
 } from '../group-mutation-contracts.ts';
+import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
 import {
   readGroupMutationRelatedEntries,
   type SequentialRelatedEntries,
@@ -44,11 +45,12 @@ async function readExactGroupMutation(
   const actorPrincipalId = command.input.actorPrincipalId;
   const targetPrincipalId = targetPrincipalIdFor(command);
   const presenceSessionId = presenceSessionIdFor(command);
+  const idempotencyKey = groupMutationIdempotencyKey(command);
   return await repository.readMutationExactEntries({
     aggregateRef: command.aggregateRef,
     includeGroup: true,
     includePresenceSummary: true,
-    requestIds: command.requestId === null ? [] : [command.requestId],
+    requestIds: idempotencyKey === null ? [] : [idempotencyKey],
     memberPrincipalIds: uniqueDefined([actorPrincipalId, targetPrincipalId]),
     presenceSessionIds: uniqueDefined([presenceSessionId]),
     admissionPrincipalIds: uniqueDefined([targetPrincipalId]),
@@ -71,6 +73,7 @@ function assembleExactGroupMutationRead(
       : exactEntry(read.members, targetPrincipalId);
   const targetPresence = exactEntry(read.presenceSessions, presenceSessionId);
   const targetAdmission = exactEntry(read.admissions, targetPrincipalId);
+  const idempotencyKey = groupMutationIdempotencyKey(command);
   const ownerPrincipalId = group?.value.ownerPrincipalId;
   const director = readRallarGroupDirectorAppointment(group?.value.metadata);
   const authorityMemberEntry =
@@ -86,8 +89,7 @@ function assembleExactGroupMutationRead(
         ? targetMemberEntry
         : null;
   return {
-    idempotency:
-      command.requestId === null ? null : exactEntry(read.idempotency, command.requestId),
+    idempotency: idempotencyKey === null ? null : exactEntry(read.idempotency, idempotencyKey),
     group,
     expiredGroupEntry: read.expiredGroupEntry,
     actorMember: actorMemberEntry?.value ?? null,
@@ -165,10 +167,11 @@ async function readSequentialPrimaryEntries(
   command: GroupMutationCommand,
 ): Promise<SequentialPrimaryEntries> {
   const presenceSessionId = presenceSessionIdFor(command);
+  const idempotencyKey = groupMutationIdempotencyKey(command);
   const [idempotency, groupRead, targetPresenceRead, presenceSummary] = await Promise.all([
-    command.requestId === null
+    idempotencyKey === null
       ? Promise.resolve(undefined)
-      : repository.findIdempotentGroupMutationReceiptEntry(command.aggregateRef, command.requestId),
+      : repository.findIdempotentGroupMutationReceiptEntry(command.aggregateRef, idempotencyKey),
     repository.readGroupEntry(command.aggregateRef),
     presenceSessionId
       ? repository.readPresenceEntry({

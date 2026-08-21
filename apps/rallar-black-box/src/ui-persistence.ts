@@ -8,9 +8,11 @@ import type {
 import type {
     RallarServerRestCollection,
     RallarServerRestCollectionVariables,
+} from './rallar-server-workbench.ts';
+import type {
     RallarServerResponseBodyMode,
     RallarServerRestMethod,
-} from './rallar-server-workbench.ts';
+} from './rallar-server-workbench/rallar-server-workbench-contracts.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 
 export type RallarBlackBoxUiStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;

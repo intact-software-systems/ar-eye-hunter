@@ -3,13 +3,15 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { verifyRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-operator-token.ts';
 import * as configRoutes from '../../src/routes/config-route.ts';
+import { authenticationRequired } from '../../src/services/request-auth-service.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
 const DEFAULT_TTL_MS = 86_400_000;
 
 Deno.test('black-box control token route rejects unauthenticated requests', async () => {
   const app = createApp({
-    requireApiAuthSession: () => Promise.reject(new Error('Unauthorized: Missing bearer token')),
+    requireApiAuthSession: () =>
+      Promise.reject(authenticationRequired('Unauthorized: Missing bearer token')),
     readEnv: (name) =>
       name === 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET' ? 'operator-secret' : undefined,
   });

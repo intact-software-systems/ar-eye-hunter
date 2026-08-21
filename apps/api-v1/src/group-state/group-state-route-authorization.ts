@@ -5,6 +5,7 @@ import {
   canUpdateGroupSnapshot,
   GroupPolicyDeniedError,
 } from '@shared-server/rallar-system/group-policy.ts';
+import { authorizationDenied } from '@shared-server/http/request-auth-service.ts';
 
 import type {
   GroupStateRouteAuthSession,
@@ -128,11 +129,11 @@ async function assertCanUpdateGroup(
   }
 
   if (result.code === 'member-not-active') {
-    throw new Error('Forbidden: only active group owners/admins can update groups');
+    throw authorizationDenied('Forbidden: only active group owners/admins can update groups');
   }
 
   if (result.code === 'forbidden-role') {
-    throw new Error('Forbidden: only group owners/admins can update groups');
+    throw authorizationDenied('Forbidden: only group owners/admins can update groups');
   }
 
   throw new GroupPolicyDeniedError(result);
@@ -140,7 +141,7 @@ async function assertCanUpdateGroup(
 
 function assertSelfPrincipal(clientId: string, principalId: string): void {
   if (clientId !== principalId) {
-    throw new Error('Forbidden: principal id does not match authenticated client');
+    throw authorizationDenied('Forbidden: principal id does not match authenticated client');
   }
 }
 
@@ -149,7 +150,7 @@ function assertSelfSession(
   sessionId: string,
 ): void {
   if (session.sessionId !== sessionId) {
-    throw new Error('Forbidden: session id does not match authenticated session');
+    throw authorizationDenied('Forbidden: session id does not match authenticated session');
   }
 }
 
@@ -157,7 +158,7 @@ function assertSelfServiceMemberStatus(
   status: UpsertGroupMemberRequest['status'],
 ): void {
   if (status !== 'active' && status !== 'left') {
-    throw new Error(
+    throw authorizationDenied(
       'Forbidden: self-service membership changes only support active/left',
     );
   }
