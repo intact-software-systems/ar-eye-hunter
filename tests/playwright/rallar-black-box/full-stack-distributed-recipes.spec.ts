@@ -1600,7 +1600,7 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                                                                                              request,
                                                                                          }, testInfo) => {
         test.setTimeout(420_000);
-        const suffix = `dist-live-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const suffix = `dist-live-${uniqueSuffix()}`;
         const runId = `distributed-live-${suffix}`;
         const group: RallarBlackBoxDistributedGroupRef = {
             applicationId: config.applicationId,

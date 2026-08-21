@@ -562,7 +562,7 @@ export function uniqueAgentId(testInfo: TestInfo, prefix = 'agent'): string {
 }
 
 export function uniqueSuffix(): string {
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${Date.now()}-${crypto.randomUUID()}`;
 }
 
 const TAB_LABELS: Readonly<Record<ExhaustiveTabId, string>> = {
